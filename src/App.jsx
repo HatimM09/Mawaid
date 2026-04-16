@@ -1,197 +1,135 @@
-// src/App.jsx — Al-Mawaid Enhanced with Weekly Menu & Feedback
+// src/App.jsx — Al-Mawaid Food Survey System v5
+// Unified login: Member · Khidmat Guzar · Admin
 import React, { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
 import {
-  Home, FileText, Info, X, Sun, Moon, User, ClipboardList,
-  Star, Send, Bell, Palette, Check, LogOut,
-  Mail, Lock, Eye, EyeOff, AlertCircle, ChevronDown, ArrowLeft,
-  MessageSquare, MessageCircle, Calendar, Camera, Video, Image, Utensils,
-  PauseCircle, PlayCircle, Plus, ChevronRight, Smile, Meh, Frown, Menu, MessageSquarePlus
+  Home, FileText, User, X,
+  Star, Camera, Check, LogOut,
+  Mail, Lock, Eye, EyeOff, AlertCircle, ChevronDown, ChevronUp,
+  ClipboardList, MessageCircle, ChevronLeft, ChevronRight,
+  Phone, MapPin, Users, Upload, Wallet, Bell, LifeBuoy, Info,
+  Shield, Utensils
 } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
+import { useNavigate } from 'react-router-dom'
 
-// ─── Supabase connection ──────────────────────────────────────
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-if (!supabaseUrl || !supabaseKey) {
-  console.error('Missing Supabase env vars.')
-}
+// ─── Supabase ────────────────────────────────────────────────
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL  ?? ''
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? ''
 const supabase = createClient(supabaseUrl, supabaseKey)
+export { supabase }
 
-const RATING_EMOJIS = {
-  1: { emoji: '😢', label: 'Poor', color: '#ef4444' },
-  2: { emoji: '😕', label: 'Below Average', color: '#f97316' },
-  3: { emoji: '😐', label: 'Average', color: '#eab308' },
-  4: { emoji: '😊', label: 'Good', color: '#22c55e' },
-  5: { emoji: '😍', label: 'Excellent', color: '#10b981' }
-}
-
-// ─── Star Rating Component ──────────────────────────────────────
-const StarRating = ({ rating, onChange, theme }) => {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-      <div style={{ display: 'flex', gap: 8 }}>
-        {[1, 2, 3, 4, 5].map((star) => (
-          <button
-            key={star}
-            onClick={() => onChange(star)}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              padding: 4, transition: 'transform 0.2s',
-              transform: star === rating ? 'scale(1.2)' : 'scale(1)',
-              WebkitTapHighlightColor: 'transparent'
-            }}
-          >
-            <Star
-              size={32}
-              fill={star <= rating ? theme.accent : 'none'}
-              color={star <= rating ? theme.accent : theme.border}
-              strokeWidth={2}
-            />
-          </button>
-        ))}
-      </div>
-      {rating > 0 && (
-        <div style={{
-          textAlign: 'center', animation: 'fadeInUp 0.3s ease',
-          background: theme.accentBg, padding: '8px 16px', borderRadius: 12,
-          border: `1px solid ${theme.accentBorder}`
-        }}>
-          <div style={{ fontSize: 32, marginBottom: 4 }}>{RATING_EMOJIS[rating].emoji}</div>
-          <div style={{ fontSize: 12, fontWeight: 800, color: theme.accent, textTransform: 'uppercase' }}>
-            {RATING_EMOJIS[rating].label}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-
-// ─── 5 PREMIUM THEMES ────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// THEMES
+// ══════════════════════════════════════════════════════════════
 const THEMES = {
-  classic_blue: {
-    id: 'classic_blue', label: 'Classic Blue', emoji: '🏢',
-    bg: '#f8fbff', bgGrad: 'linear-gradient(180deg,#f8fbff 0%,#eef4ff 60%,#e0ebff 100%)',
-    card: '#ffffff', cardActive: 'linear-gradient(135deg,#ffffff,#f0f7ff)',
-    border: 'rgba(26,115,232,0.12)', borderActive: 'rgba(26,115,232,0.3)',
-    accent: '#1a73e8', accentGrad: 'linear-gradient(135deg,#4285f4,#1a73e8)',
-    accentBg: 'rgba(26,115,232,0.08)', accentBorder: 'rgba(26,115,232,0.25)',
-    text: '#1f1f1f', textSub: '#474747', textBody: '#3c4043',
-    navBg: 'linear-gradient(180deg,#ffffff,#f8fbff)', navBorder: 'rgba(26,115,232,0.15)',
-    geo: 'rgba(26,115,232,0.04)', popupBg: 'rgba(255,255,255,0.98)',
-    spinnerBorder: 'rgba(26,115,232,0.15)', spinnerTop: '#1a73e8',
-    inputBg: 'rgba(255,255,255,1)', inputBorder: 'rgba(26,115,232,0.2)',
-    loginCard: 'rgba(255,255,255,0.95)', loginText: '#1f1f1f',
+  midnight: {
+    id: 'midnight', name: 'Midnight Oud', icon: '🌙',
+    bg: '#0b0f1a', bgGrad: 'linear-gradient(160deg,#0b0f1a 0%,#111827 60%,#0d1120 100%)',
+    card: '#141d2e', cardActive: 'linear-gradient(135deg,#1a2540,#111827)',
+    border: 'rgba(180,140,80,0.14)', borderActive: 'rgba(196,156,90,0.45)',
+    accent: '#c49c5a', accentGrad: 'linear-gradient(135deg,#d4aa6a,#a87c40)',
+    accentBg: 'rgba(196,156,90,0.10)', accentBorder: 'rgba(196,156,90,0.32)',
+    text: '#f0ead8', textSub: '#9aabb8', textBody: '#c8d0da',
+    navBg: 'rgba(11,15,26,0.97)', navBorder: 'rgba(196,156,90,0.18)',
+    geo: 'rgba(196,156,90,0.05)', spinnerBorder: 'rgba(196,156,90,0.2)', spinnerTop: '#c49c5a',
+    inputBg: 'rgba(255,255,255,0.04)', inputBorder: 'rgba(196,156,90,0.22)',
+    loginCard: 'rgba(20,29,46,0.92)', headerWave: '#0b0f1a',
+    successBg: 'rgba(74,163,110,0.12)', successBorder: 'rgba(74,163,110,0.3)', successText: '#5eba82',
   },
-  prof_gray: {
-    id: 'prof_gray', label: 'Professional Gray', emoji: '👤',
-    bg: '#fcfcfc', bgGrad: 'linear-gradient(180deg,#fcfcfc 0%,#f1f3f4 60%,#e8eaed 100%)',
-    card: '#ffffff', cardActive: 'linear-gradient(135deg,#ffffff,#f1f3f4)',
-    border: 'rgba(95,99,104,0.12)', borderActive: 'rgba(95,99,104,0.3)',
-    accent: '#5f6368', accentGrad: 'linear-gradient(135deg,#80868b,#5f6368)',
-    accentBg: 'rgba(95,99,104,0.08)', accentBorder: 'rgba(95,99,104,0.25)',
-    text: '#202124', textSub: '#5f6368', textBody: '#3c4043',
-    navBg: 'linear-gradient(180deg,#ffffff,#fcfcfc)', navBorder: 'rgba(95,99,104,0.15)',
-    geo: 'rgba(95,99,104,0.04)', popupBg: 'rgba(255,255,255,0.98)',
-    spinnerBorder: 'rgba(95,99,104,0.15)', spinnerTop: '#5f6368',
-    inputBg: 'rgba(255,255,255,1)', inputBorder: 'rgba(95,99,104,0.2)',
-    loginCard: 'rgba(255,255,255,0.95)', loginText: '#202124',
+  ivory: {
+    id: 'ivory', name: 'Ivory Dune', icon: '🏺',
+    bg: '#faf6ef', bgGrad: 'linear-gradient(160deg,#faf6ef 0%,#f3ece0 60%,#faf6ef 100%)',
+    card: '#ffffff', cardActive: 'linear-gradient(135deg,#fffdf8,#fef9f0)',
+    border: 'rgba(160,100,60,0.14)', borderActive: 'rgba(185,105,55,0.4)',
+    accent: '#9c5a2a', accentGrad: 'linear-gradient(135deg,#b8672f,#874a20)',
+    accentBg: 'rgba(156,90,42,0.08)', accentBorder: 'rgba(156,90,42,0.28)',
+    text: '#2a1a0e', textSub: '#7a5a40', textBody: '#5a3d28',
+    navBg: 'rgba(250,246,239,0.97)', navBorder: 'rgba(156,90,42,0.18)',
+    geo: 'rgba(156,90,42,0.06)', spinnerBorder: 'rgba(156,90,42,0.2)', spinnerTop: '#9c5a2a',
+    inputBg: 'rgba(156,90,42,0.04)', inputBorder: 'rgba(156,90,42,0.2)',
+    loginCard: 'rgba(255,255,255,0.96)', headerWave: '#faf6ef',
+    successBg: 'rgba(60,140,80,0.08)', successBorder: 'rgba(60,140,80,0.28)', successText: '#3a7a50',
   },
-  emerald: {
-    id: 'emerald', label: 'Emerald Green', emoji: '🌿',
-    bg: '#f7fdf9', bgGrad: 'linear-gradient(180deg,#f7fdf9 0%,#e6f4ea 60%,#ceead6 100%)',
-    card: '#ffffff', cardActive: 'linear-gradient(135deg,#ffffff,#e6f4ea)',
-    border: 'rgba(30,142,62,0.12)', borderActive: 'rgba(30,142,62,0.3)',
-    accent: '#1e8e3e', accentGrad: 'linear-gradient(135deg,#34a853,#1e8e3e)',
-    accentBg: 'rgba(30,142,62,0.08)', accentBorder: 'rgba(30,142,62,0.25)',
-    text: '#137333', textSub: '#188038', textBody: '#202124',
-    navBg: 'linear-gradient(180deg,#ffffff,#f7fdf9)', navBorder: 'rgba(30,142,62,0.15)',
-    geo: 'rgba(30,142,62,0.04)', popupBg: 'rgba(255,255,255,0.98)',
-    spinnerBorder: 'rgba(30,142,62,0.15)', spinnerTop: '#1e8e3e',
-    inputBg: 'rgba(255,255,255,1)', inputBorder: 'rgba(30,142,62,0.2)',
-    loginCard: 'rgba(255,255,255,0.95)', loginText: '#137333',
-  },
-  burgundy: {
-    id: 'burgundy', label: 'Burgundy Red', emoji: '🍷',
-    bg: '#fff8f7', bgGrad: 'linear-gradient(180deg,#fff8f7 0%,#fce8e6 60%,#f9dada 100%)',
-    card: '#ffffff', cardActive: 'linear-gradient(135deg,#ffffff,#fce8e6)',
-    border: 'rgba(165,14,14,0.12)', borderActive: 'rgba(165,14,14,0.3)',
-    accent: '#a50e0e', accentGrad: 'linear-gradient(135deg,#d93025,#a50e0e)',
-    accentBg: 'rgba(165,14,14,0.08)', accentBorder: 'rgba(165,14,14,0.25)',
-    text: '#700a0a', textSub: '#c5221f', textBody: '#202124',
-    navBg: 'linear-gradient(180deg,#ffffff,#fff8f7)', navBorder: 'rgba(165,14,14,0.15)',
-    geo: 'rgba(165,14,14,0.04)', popupBg: 'rgba(255,255,255,0.98)',
-    spinnerBorder: 'rgba(165,14,14,0.15)', spinnerTop: '#a50e0e',
-    inputBg: 'rgba(255,255,255,1)', inputBorder: 'rgba(165,14,14,0.2)',
-    loginCard: 'rgba(255,255,255,0.95)', loginText: '#700a0a',
-  },
-  navy: {
-    id: 'navy', label: 'Navy Blue', emoji: '⚓',
-    bg: '#f0f4f9', bgGrad: 'linear-gradient(180deg,#f0f4f9 0%,#d2e3fc 60%,#aecbfa 100%)',
-    card: '#ffffff', cardActive: 'linear-gradient(135deg,#ffffff,#d2e3fc)',
-    border: 'rgba(13,71,161,0.12)', borderActive: 'rgba(13,71,161,0.3)',
-    accent: '#0d47a1', accentGrad: 'linear-gradient(135deg,#1565c0,#0d47a1)',
-    accentBg: 'rgba(13,71,161,0.08)', accentBorder: 'rgba(13,71,161,0.25)',
-    text: '#002171', textSub: '#1565c0', textBody: '#202124',
-    navBg: 'linear-gradient(180deg,#ffffff,#f0f4f9)', navBorder: 'rgba(13,71,161,0.15)',
-    geo: 'rgba(13,71,161,0.04)', popupBg: 'rgba(255,255,255,0.98)',
-    spinnerBorder: 'rgba(13,71,161,0.15)', spinnerTop: '#0d47a1',
-    inputBg: 'rgba(255,255,255,1)', inputBorder: 'rgba(13,71,161,0.2)',
-    loginCard: 'rgba(255,255,255,0.95)', loginText: '#002171',
+  forest: {
+    id: 'forest', name: 'Forest Qalam', icon: '🌿',
+    bg: '#0a130e', bgGrad: 'linear-gradient(160deg,#0a130e 0%,#0f1f15 60%,#091108 100%)',
+    card: '#111e14', cardActive: 'linear-gradient(135deg,#162a1a,#0f1f15)',
+    border: 'rgba(120,180,100,0.13)', borderActive: 'rgba(180,158,80,0.42)',
+    accent: '#b89e50', accentGrad: 'linear-gradient(135deg,#cab060,#9a7e38)',
+    accentBg: 'rgba(184,158,80,0.10)', accentBorder: 'rgba(184,158,80,0.30)',
+    text: '#e8f0e2', textSub: '#7aab82', textBody: '#a8c8a0',
+    navBg: 'rgba(10,19,14,0.97)', navBorder: 'rgba(184,158,80,0.18)',
+    geo: 'rgba(120,180,100,0.06)', spinnerBorder: 'rgba(184,158,80,0.2)', spinnerTop: '#b89e50',
+    inputBg: 'rgba(120,180,100,0.05)', inputBorder: 'rgba(184,158,80,0.22)',
+    loginCard: 'rgba(17,30,20,0.92)', headerWave: '#0a130e',
+    successBg: 'rgba(80,180,100,0.12)', successBorder: 'rgba(80,180,100,0.3)', successText: '#60c078',
   },
 }
 
-function getSavedThemeId() { try { return localStorage.getItem('al-mawaid-theme') || 'classic_blue' } catch { return 'classic_blue' } }
-function saveThemeId(id) { try { localStorage.setItem('al-mawaid-theme', id) } catch { } }
+// ─── Menu Data ────────────────────────────────────────────────
+const WEEKLY_MENU = {
+  monday:    { en: 'Monday',    ar: 'الاثنين',   lunch: ['Chola', 'Kulcha', 'Shreekhand', 'Dal', 'Chawal'],           dinner: ['FMB MENU'] },
+  tuesday:   { en: 'Tuesday',   ar: 'الثلاثاء',  lunch: ['American Choupsey', 'Wafers', 'Butter Khichdi'],            dinner: ['Roti', 'Veg Jaipuri', 'Chicken Pulao', 'Soup'] },
+  wednesday: { en: 'Wednesday', ar: 'الأربعاء',  lunch: ['Vegetable Sandwich', 'Bhel Salad', 'Corn Pulao'],           dinner: ['Roti', 'White Chicken', 'Manchurian Rice', 'Gravy'] },
+  thursday:  { en: 'Thursday',  ar: 'الخميس',    lunch: ['Chicken 65', 'Corn Munch Salad', 'Dal Makhni', 'Chawal'],   dinner: ['Roti', 'Mango Custard', 'Matar Paneer', 'Tuwar Pulao', 'Palidu'] },
+  friday:    { en: 'Friday',    ar: 'الجمعة',    lunch: ['FMB MENU'],                                                  dinner: ['Roti', 'Gobi Matar', 'Chicken Kashmiri Pulao', 'Soup'] },
+  saturday:  { en: 'Saturday',  ar: 'السبت',     lunch: ['Chana Bateta', 'Dal Makhni', 'Chawal'],                     dinner: ['Roti', 'Chicken Tarkari', 'Veg Coconut Rice', 'Kung Pao Gravy'] },
+}
+const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+const ROTI_ITEMS = ['roti', 'chapati', 'naan', 'paratha']
+const isRotiItem = (dish) => ROTI_ITEMS.some(r => dish.toLowerCase().includes(r))
 
-const ThemeCtx = createContext(null)
+const getTodayKey = () => {
+  const d = new Date().getDay()
+  const map = { 1: 'monday', 2: 'tuesday', 3: 'wednesday', 4: 'thursday', 5: 'friday', 6: 'saturday' }
+  return map[d] || 'monday'
+}
+
+const isSurveyOpen = () => {
+  const now = new Date(), day = now.getDay(), total = now.getHours() * 60 + now.getMinutes()
+  if (day === 6 && total >= 1200) return true
+  if (day === 0) return true
+  if (day === 1 && total <= 600) return true
+  return false
+}
+
+const getSurveyWindowMessage = () => {
+  const now = new Date(), day = now.getDay(), hour = now.getHours()
+  if (day === 6 && hour < 20) return `Survey opens today at 8:00 PM (in ~${20 - hour}h)`
+  if (day === 1 && hour >= 10) return 'Survey window closed. Opens next Saturday at 8:00 PM.'
+  return 'Survey opens Saturday at 8:00 PM.'
+}
+
+// ─── Contexts ─────────────────────────────────────────────────
+const ThemeCtx = createContext(THEMES.midnight)
 const useTheme = () => useContext(ThemeCtx)
-
-// ─── Toast Component & Hook ───────────────────────────────────────────────────────
-// Simple toast that reads the current theme via useTheme(). If the theme context is
-// unavailable (e.g., during early loading), it falls back to sensible defaults.
-const Toast = ({msg, type}) => {
-  const t = useTheme() || {}
-  const bg = type === 'error' ? (t.accent || '#ef4444') : (t.accent || '#22c55e')
-  const text = '#fff'
-  return (
-    <div style={{
-      position: 'fixed', top: 20, right: 20, zIndex: 2000,
-      background: bg, color: text,
-      padding: '12px 20px', borderRadius: 8,
-      boxShadow: `0 4px 12px ${bg}80`,
-      fontSize: 14, fontWeight: 600,
-      animation: 'fadeInDown 0.3s ease'
-    }}>{msg}</div>
-  )
-}
-
-// Hook to expose toast functionality to any component.
-const useToast = () => {
-  const [toastInfo, setToastInfo] = useState(null)
-  const showToast = (msg, type = 'success') => {
-    setToastInfo({msg, type})
-    setTimeout(() => setToastInfo(null), 4000)
-  }
-  return {toastInfo, showToast}
-}
-
 const AuthCtx = createContext(null)
 const useAuth = () => useContext(AuthCtx)
 
-/* ─── Shared Components ─────────────────────────────────────────── */
+export { ThemeCtx, useTheme, AuthCtx, useAuth }
+
+// ─── WhatsApp icon ────────────────────────────────────────────
+const WhatsAppLogo = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path fill="currentColor"
+      d="M19.05 4.91A9.82 9.82 0 0 0 12.03 2c-5.46 0-9.9 4.44-9.9 9.9 0 1.74.45 3.43 1.31 4.92L2 22l5.33-1.4a9.86 9.86 0 0 0 4.7 1.2h.01c5.46 0 9.9-4.44 9.9-9.9a9.83 9.83 0 0 0-2.89-6.99Zm-7.02 15.22h-.01a8.2 8.2 0 0 1-4.18-1.14l-.3-.18-3.16.83.84-3.08-.2-.31a8.18 8.18 0 0 1-1.25-4.35c0-4.53 3.69-8.22 8.23-8.22a8.16 8.16 0 0 1 5.82 2.41 8.16 8.16 0 0 1 2.41 5.82c0 4.54-3.69 8.22-8.2 8.22Zm4.51-6.16c-.25-.13-1.47-.72-1.7-.8-.23-.08-.4-.13-.57.12-.17.25-.65.8-.8.96-.15.17-.3.19-.55.07-.25-.13-1.07-.39-2.03-1.23-.75-.67-1.26-1.49-1.41-1.74-.15-.25-.02-.38.11-.5.11-.11.25-.29.38-.43.13-.15.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.57-1.37-.78-1.88-.21-.5-.43-.43-.57-.43h-.49c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.02 2.61.13.17 1.77 2.7 4.29 3.79.6.26 1.07.42 1.43.54.6.19 1.15.16 1.58.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.06-.1-.23-.17-.48-.29Z"/>
+  </svg>
+)
+
+/* ─── Geo Background ─────────────────────────────────────────── */
 const GeoBg = ({ t: tProp }) => {
   const ctx = useTheme()
   const t = tProp || ctx
   return (
-    <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', opacity: 0.4 }}>
+    <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', opacity: 0.7 }}>
       <defs>
-        <pattern id="geo" x="0" y="0" width="50" height="50" patternUnits="userSpaceOnUse">
-          <circle cx="25" cy="25" r="1.5" fill={t.geo} />
-          <circle cx="0" cy="0" r="1" fill={t.geo} />
-          <circle cx="50" cy="0" r="1" fill={t.geo} />
-          <circle cx="0" cy="50" r="1" fill={t.geo} />
-          <circle cx="50" cy="50" r="1" fill={t.geo} />
+        <pattern id="geo" x="0" y="0" width="48" height="48" patternUnits="userSpaceOnUse">
+          <path d="M24 2L46 24L24 46L2 24Z" fill="none" stroke={t.geo} strokeWidth="0.7" />
+          <circle cx="24" cy="24" r="4.5" fill="none" stroke={t.geo} strokeWidth="0.5" />
+          <circle cx="0" cy="0" r="2" fill={t.geo} />
+          <circle cx="48" cy="0" r="2" fill={t.geo} />
+          <circle cx="0" cy="48" r="2" fill={t.geo} />
+          <circle cx="48" cy="48" r="2" fill={t.geo} />
         </pattern>
       </defs>
       <rect width="100%" height="100%" fill="url(#geo)" />
@@ -199,12 +137,13 @@ const GeoBg = ({ t: tProp }) => {
   )
 }
 
+/* ─── Spinner ─────────────────────────────────────────────────── */
 const Spinner = ({ fullPage = true }) => {
   const t = useTheme()
   const inner = (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-      <div className="spin" style={{ width: 40, height: 40, border: `3px solid ${t.spinnerBorder}`, borderTop: `3px solid ${t.spinnerTop}`, borderRadius: '50%' }} />
-      {fullPage && <p style={{ margin: 0, fontSize: 14, color: t.textSub, opacity: 0.6, fontWeight: 600 }}>Loading…</p>}
+      <div className="spin" style={{ width: 34, height: 34, border: `2.5px solid ${t.spinnerBorder}`, borderTop: `2.5px solid ${t.spinnerTop}`, borderRadius: '50%' }} />
+      {fullPage && <p style={{ margin: 0, fontSize: 12, color: t.textSub, opacity: 0.45, fontFamily: "'DM Sans',sans-serif", letterSpacing: '0.08em' }}>Loading…</p>}
     </div>
   )
   return fullPage
@@ -212,145 +151,222 @@ const Spinner = ({ fullPage = true }) => {
     : inner
 }
 
+/* ─── Error Banner ───────────────────────────────────────────── */
 const ErrorBanner = ({ msg }) => (
   <div style={{
-    margin: '10px 0', padding: '14px 16px', borderRadius: 14,
-    background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)',
-    color: '#dc2626', fontSize: 14, display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600
+    margin: '8px 0', padding: '11px 14px', borderRadius: 10,
+    background: 'rgba(220,60,60,0.09)', border: '1px solid rgba(220,60,60,0.28)',
+    color: '#e05555', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8,
+    fontFamily: "'DM Sans',sans-serif"
   }}>
-    <AlertCircle size={16} style={{ flexShrink: 0 }} />{msg}
+    <AlertCircle size={14} style={{ flexShrink: 0 }} />{msg}
   </div>
 )
 
-/* ─── Theme Switcher (Profile Only) ─────────────────────────────────────────── */
-function ThemeSwitcher({ themeId, setThemeId, theme }) {
-  const [open, setOpen] = useState(false)
+/* ─── Avatar ─────────────────────────────────────────────────── */
+const Avatar = ({ avatarUrl, name, email, size = 56 }) => {
+  const t = useTheme()
+  const initials = (name || email || 'U').charAt(0).toUpperCase()
   return (
-    <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 100 }}>
-      <button onClick={() => setOpen(o => !o)}
-        style={{
-          background: theme.card, border: `1.5px solid ${theme.border}`,
-          borderRadius: '50%', width: 44, height: 44, cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.1)', transition: 'all 0.3s',
-          WebkitTapHighlightColor: 'transparent', color: theme.accent
-        }}>
-        <Palette size={22} strokeWidth={2.4} />
-      </button>
-      {open && (
-        <div style={{
-          position: 'absolute', top: 60, right: 0, background: theme.card,
-          border: `1.5px solid ${theme.border}`, borderRadius: 16,
-          padding: 12, display: 'flex', flexDirection: 'column', gap: 8,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.12)', minWidth: 180
-        }}>
-          {Object.values(THEMES).map(th => {
-            const active = th.id === themeId
-            return (
-              <button key={th.id} onClick={() => { setThemeId(th.id); setOpen(false) }}
-                style={{
-                  background: active ? th.accentBg : 'transparent',
-                  border: `1.5px solid ${active ? th.accentBorder : th.border}`,
-                  borderRadius: 10, padding: '10px 12px', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  transition: 'all 0.2s', WebkitTapHighlightColor: 'transparent'
-                }}>
-                <span style={{ fontSize: 18 }}>{th.emoji}</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: th.text }}>{th.label}</span>
-                {active && <Check size={16} color={th.accent} strokeWidth={2.5} style={{ marginLeft: 'auto' }} />}
-              </button>
-            )
-          })}
-        </div>
-      )}
+    <div style={{ width: size, height: size, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, border: `2px solid ${t.accent}`, boxShadow: `0 4px 16px ${t.accentBg}` }}>
+      {avatarUrl
+        ? <img src={avatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        : <div style={{ width: '100%', height: '100%', background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.38, fontWeight: 800, color: '#fff', fontFamily: "'Playfair Display',serif" }}>
+            {initials}
+          </div>
+      }
     </div>
   )
 }
 
-/* ─── LOGIN PAGE ─────────────────────────────────────────────────────────────────── */
-function LoginPage({ themeId, setThemeId }) {
-  const theme = THEMES[themeId]
-  const [email, setEmail] = useState('')
-  const [pass, setPass] = useState('')
-  const [showPass, setShowPass] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+/* ─── Card ───────────────────────────────────────────────────── */
+const Card = ({ children, active, style: extraStyle = {} }) => {
+  const t = useTheme()
+  return (
+    <div style={{
+      padding: '18px 18px', borderRadius: 16,
+      background: active ? t.cardActive : t.card,
+      border: `1px solid ${active ? t.borderActive : t.border}`,
+      boxShadow: active ? `0 6px 24px ${t.accentBg}` : '0 2px 8px rgba(0,0,0,0.08)',
+      ...extraStyle
+    }}>
+      {children}
+    </div>
+  )
+}
 
-  const handleLogin = async (e) => {
+const SectionLabel = ({ children }) => {
+  const t = useTheme()
+  return <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', color: t.textSub, textTransform: 'uppercase', marginBottom: 12, fontFamily: "'DM Sans',sans-serif", opacity: 0.7 }}>{children}</div>
+}
+
+export { Card, Spinner, ErrorBanner, Avatar }
+
+// ══════════════════════════════════════════════════════════════
+// UNIFIED LOGIN PAGE  (3 roles: Member · Khidmat Guzar · Admin)
+// ══════════════════════════════════════════════════════════════
+function LoginPage({ onRoleLogin }) {
+  const t = THEMES.midnight
+  const [role, setRole]         = useState('member')
+  const [email, setEmail]       = useState('')
+  const [password, setPassword] = useState('')
+  const [showPass, setShowPass] = useState(false)
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState('')
+  const [mode, setMode]         = useState('login')
+
+  const ROLES = [
+    { id: 'member',  label: 'Member',        icon: '👤' },
+    { id: 'khidmat', label: 'Khidmat Guzar', icon: '🍽️' },
+    { id: 'admin',   label: 'Admin',          icon: '🛡️' },
+  ]
+
+  const inp = {
+    width: '100%', padding: '13px 13px 13px 44px', borderRadius: 12, boxSizing: 'border-box',
+    background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text,
+    fontSize: 15, outline: 'none', fontFamily: "'DM Sans',sans-serif", transition: 'border 0.2s'
+  }
+
+  const handleAuth = async (e) => {
     e.preventDefault()
-    if (!email || !pass) return setError('Please enter email and password')
-    setLoading(true)
-    setError('')
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password: pass })
-    setLoading(false)
-    if (err) setError(err.message)
+    setError(''); setLoading(true)
+    try {
+      // Sign Up (member only)
+      if (role === 'member' && mode === 'signup') {
+        const { error: err } = await supabase.auth.signUp({ email, password })
+        if (err) throw err
+        setError('✅ Check your email for a verification link!')
+        setLoading(false)
+        return
+      }
+
+      // Sign In
+      const { data: { session }, error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
+      if (signInErr) throw signInErr
+
+      // Role check for staff
+      if (role === 'khidmat' || role === 'admin') {
+        const { data: staffRow } = await supabase
+          .from('staff')
+          .select('role')
+          .eq('user_id', session.user.id)
+          .single()
+
+        const dbRole = staffRow?.role || ''
+
+        if (role === 'admin' && dbRole !== 'admin') {
+          await supabase.auth.signOut()
+          throw new Error('You do not have admin privileges.')
+        }
+        if (role === 'khidmat' && !['khidmat_guzar', 'admin', 'supervisor'].includes(dbRole)) {
+          await supabase.auth.signOut()
+          throw new Error('You are not registered as a Khidmat Guzar.')
+        }
+        // Tell root App which portal to open
+        onRoleLogin(dbRole)
+      } else {
+        onRoleLogin('member')
+      }
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
     <div style={{
-      minHeight: '100vh', background: theme.bgGrad,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
-      fontFamily: "'Inter', -apple-system, sans-serif", position: 'relative', overflow: 'hidden'
+      minHeight: '100vh', background: t.bgGrad, display: 'flex', alignItems: 'center',
+      justifyContent: 'center', padding: 20, position: 'relative', overflow: 'hidden',
+      fontFamily: "'DM Sans',sans-serif"
     }}>
-      <GeoBg t={theme} />
-      <ThemeSwitcher themeId={themeId} setThemeId={setThemeId} theme={theme} />
+      <GeoBg t={t} />
+
       <div style={{
         position: 'relative', zIndex: 1, width: '100%', maxWidth: 420,
-        background: theme.loginCard, backdropFilter: 'blur(20px)',
-        border: `2px solid ${theme.border}`, borderRadius: 24, padding: '40px 32px',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.15)'
+        background: t.loginCard, backdropFilter: 'blur(24px)', borderRadius: 24,
+        padding: '36px 28px', border: `1px solid ${t.borderActive}`,
+        boxShadow: '0 32px 80px rgba(0,0,0,0.5)'
       }}>
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-            <img src="/logo.png" alt="Logo" style={{ width: 60, height: 60, objectFit: 'contain' }} />
+        {/* Logo */}
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <div style={{ width: 80, height: 80, margin: '0 auto 14px', borderRadius: '50%', background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 12px 36px rgba(196,156,90,0.25)' }}>
+            <img src="/al-mawaid.png" alt="Al-Mawaid" style={{ width: 54, height: 54, objectFit: 'contain' }} />
           </div>
-          <h1 style={{
-            margin: '0 0 8px', fontSize: 32, fontWeight: 900, color: theme.accent,
-            textShadow: `0 0 24px ${theme.accentBg}`, letterSpacing: '0.02em'
-          }}>Al-Mawaid</h1>
-          <p style={{ margin: 0, fontSize: 13, color: theme.textSub, opacity: 0.7, letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 600 }}>
-            Sign in to continue
+          <h1 style={{ margin: '0 0 4px', fontSize: 28, fontWeight: 700, color: t.accent, letterSpacing: '0.06em', fontFamily: "'Playfair Display',serif" }}>Al-Mawaid</h1>
+          <p style={{ margin: 0, fontSize: 14, color: t.textSub, fontFamily: "'Noto Nastaliq Urdu','Amiri',serif", lineHeight: 1.8 }}>
+            بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ
           </p>
         </div>
 
-        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <div>
-            <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 700, color: theme.text, letterSpacing: '0.03em' }}>
-              EMAIL
-            </label>
-            <div style={{ position: 'relative' }}>
-              <Mail size={18} color={theme.textSub} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
+        {/* Role Tabs */}
+        <div style={{ display: 'flex', gap: 5, marginBottom: 22, background: 'rgba(255,255,255,0.04)', borderRadius: 14, padding: 5 }}>
+          {ROLES.map(r => {
+            const active = role === r.id
+            return (
+              <button key={r.id} onClick={() => { setRole(r.id); setError(''); setMode('login') }}
                 style={{
-                  width: '100%', padding: '14px 14px 14px 44px', fontSize: 15, fontWeight: 500,
-                  background: theme.inputBg, border: `1.5px solid ${theme.inputBorder}`,
-                  borderRadius: 12, color: theme.text, outline: 'none', transition: 'all 0.3s'
-                }}
-                placeholder="your.email@example.com"
-              />
+                  flex: 1, padding: '10px 6px', borderRadius: 10, border: 'none',
+                  background: active ? t.accentGrad : 'transparent',
+                  color: active ? '#fff' : t.textSub,
+                  fontWeight: active ? 700 : 500, fontSize: 11,
+                  cursor: 'pointer', transition: 'all 0.25s', fontFamily: "'DM Sans',sans-serif",
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                }}>
+                <span style={{ fontSize: 18 }}>{r.icon}</span>
+                <span style={{ letterSpacing: '0.01em', lineHeight: 1.2 }}>{r.label}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Member sub-tabs (Sign In / Sign Up) */}
+        {role === 'member' && (
+          <div style={{ display: 'flex', gap: 4, marginBottom: 18, background: 'rgba(255,255,255,0.03)', borderRadius: 10, padding: 4 }}>
+            {['login','signup'].map(m => (
+              <button key={m} onClick={() => setMode(m)}
+                style={{
+                  flex: 1, padding: '8px', borderRadius: 7, border: 'none',
+                  background: mode === m ? 'rgba(196,156,90,0.15)' : 'transparent',
+                  color: mode === m ? t.accent : t.textSub,
+                  fontWeight: mode === m ? 700 : 500, fontSize: 13,
+                  cursor: 'pointer', transition: 'all 0.2s', fontFamily: "'DM Sans',sans-serif",
+                  borderBottom: mode === m ? `2px solid ${t.accent}` : '2px solid transparent',
+                }}>
+                {m === 'login' ? 'Sign In' : 'Sign Up'}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Staff role description */}
+        {role !== 'member' && (
+          <div style={{ marginBottom: 18, padding: '10px 14px', borderRadius: 10, background: 'rgba(196,156,90,0.07)', border: '1px solid rgba(196,156,90,0.18)', fontSize: 12, color: t.textSub, textAlign: 'center', lineHeight: 1.6 }}>
+            {role === 'admin'
+              ? '🛡️ Admin access — full management portal'
+              : '🍽️ Khidmat Guzar — service staff portal'}
+          </div>
+        )}
+
+        {/* Form */}
+        <form onSubmit={handleAuth}>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 7, letterSpacing: '0.14em', fontFamily: "'DM Sans',sans-serif" }}>EMAIL</label>
+            <div style={{ position: 'relative' }}>
+              <Mail size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: t.accent, opacity: 0.6 }} />
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required style={inp} placeholder="your@email.com" autoComplete="email" />
             </div>
           </div>
 
-          <div>
-            <label style={{ display: 'block', marginBottom: 8, fontSize: 13, fontWeight: 700, color: theme.text, letterSpacing: '0.03em' }}>
-              PASSWORD
-            </label>
+          <div style={{ marginBottom: 20 }}>
+            <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 7, letterSpacing: '0.14em', fontFamily: "'DM Sans',sans-serif" }}>PASSWORD</label>
             <div style={{ position: 'relative' }}>
-              <Lock size={18} color={theme.textSub} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
-              <input type={showPass ? 'text' : 'password'} value={pass} onChange={e => setPass(e.target.value)} required
-                style={{
-                  width: '100%', padding: '14px 44px 14px 44px', fontSize: 15, fontWeight: 500,
-                  background: theme.inputBg, border: `1.5px solid ${theme.inputBorder}`,
-                  borderRadius: 12, color: theme.text, outline: 'none', transition: 'all 0.3s'
-                }}
-                placeholder="••••••••"
-              />
-              <button type="button" onClick={() => setShowPass(!showPass)}
-                style={{
-                  position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-                  background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex'
-                }}>
-                {showPass ? <EyeOff size={18} color={theme.textSub} /> : <Eye size={18} color={theme.textSub} />}
+              <Lock size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: t.accent, opacity: 0.6 }} />
+              <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} required
+                style={{ ...inp, paddingRight: 44 }} placeholder="••••••••" autoComplete="current-password" />
+              <button type="button" onClick={() => setShowPass(s => !s)}
+                style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
+                {showPass ? <EyeOff size={14} color={t.accent} /> : <Eye size={14} color={t.accent} />}
               </button>
             </div>
           </div>
@@ -359,1243 +375,357 @@ function LoginPage({ themeId, setThemeId }) {
 
           <button type="submit" disabled={loading}
             style={{
-              marginTop: 8, padding: '16px', fontSize: 15, fontWeight: 800, letterSpacing: '0.08em',
-              textTransform: 'uppercase', color: '#fff', background: theme.accentGrad,
-              border: 'none', borderRadius: 14, cursor: loading ? 'not-allowed' : 'pointer',
-              boxShadow: `0 6px 24px ${theme.accentBg}`, transition: 'all 0.3s',
-              opacity: loading ? 0.7 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10
+              width: '100%', padding: 14, borderRadius: 12, border: 'none',
+              background: loading ? t.border : t.accentGrad,
+              color: '#fff', fontSize: 15, fontWeight: 700,
+              cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1,
+              boxShadow: `0 6px 20px ${t.accentBg}`, transition: 'all 0.25s', marginTop: 8,
+              fontFamily: "'DM Sans',sans-serif", letterSpacing: '0.02em',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             }}>
-            {loading ? <Spinner fullPage={false} /> : 'Sign In'}
+            {loading ? 'Please wait…'
+              : role === 'admin'   ? '🛡️ Enter Admin Portal'
+              : role === 'khidmat' ? '🍽️ Enter Staff Portal'
+              : mode === 'signup'  ? 'Create Account'
+              : 'Sign In'}
           </button>
         </form>
       </div>
+
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin .8s linear infinite}body{margin:0}`}</style>
     </div>
   )
 }
 
-/* ─── HOME PAGE WITH WEEKLY MENU ─────────────────────────────────────────────────────────────── */
-function HomePage() {
-  const t = useTheme()
+// ══════════════════════════════════════════════════════════════
+// KHIDMAT GUZAR PORTAL
+// Simple read-only view of today's menu + member list
+// ══════════════════════════════════════════════════════════════
+function KhidmatPortal({ signOut }) {
+  const t = THEMES.midnight
   const { user } = useAuth()
-  const [profile, setProfile] = useState(null)
-  const [weeklyMenu, setWeeklyMenu] = useState([])
-  const [expandedDay, setExpandedDay] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [feedbackRatings, setFeedbackRatings] = useState({})
+  const [staffInfo, setStaffInfo] = useState(null)
+  const [members, setMembers]     = useState([])
+  const [loading, setLoading]     = useState(true)
+  const [activeDay, setActiveDay] = useState(getTodayKey())
 
   useEffect(() => {
-    loadData()
-  }, [])
-
-  const loadData = async () => {
-    setLoading(true)
-    // Load profile
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single()
-    setProfile(profileData)
-
-    // Get current week's Monday
-    const today = new Date()
-    const dayOfWeek = today.getDay()
-    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
-    const monday = new Date(today)
-    monday.setDate(today.getDate() + mondayOffset)
-    const weekStart = monday.toISOString().split('T')[0]
-
-    // Load weekly menu
-    const { data: menuData } = await supabase
-      .from('weekly_menu')
-      .select('*')
-      .eq('week_start_date', weekStart)
-      .order('day_name')
-      .order('meal_type')
-
-    setWeeklyMenu(menuData || [])
-
-    // Load user's feedback ratings
-    if (menuData) {
-      const menuIds = menuData.map(m => m.id)
-      const { data: feedbackData } = await supabase
-        .from('menu_feedback')
-        .select('*')
-        .eq('user_id', user.id)
-        .in('menu_id', menuIds)
-
-      const ratings = {}
-      feedbackData?.forEach(f => {
-        ratings[f.menu_id] = f.rating
-      })
-      setFeedbackRatings(ratings)
+    const load = async () => {
+      const [{ data: staff }, { data: mems }] = await Promise.all([
+        supabase.from('staff').select('*').eq('user_id', user.id).single(),
+        supabase.from('user_stats').select('name,thali_number,phone,address').order('thali_number'),
+      ])
+      setStaffInfo(staff)
+      setMembers(mems || [])
+      setLoading(false)
     }
+    load()
+  }, [user])
 
-    setLoading(false)
-  }
-
-  const handleFeedbackSubmit = async (menuId, rating) => {
-    // Check if this meal is from today or past
-    const meal = weeklyMenu.find(m => m.id === menuId)
-    if (!meal) return
-
-    const today = new Date().getDay() // 0 = Sunday, 1 = Monday, etc.
-    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    const currentDay = dayNames[today]
-
-    // Only allow feedback for today and past days
-    const dayOrder = {
-      'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4,
-      'Friday': 5, 'Saturday': 6, 'Sunday': 7
-    }
-
-    if (dayOrder[meal.day_name] > dayOrder[currentDay]) {
-      alert('Feedback is locked for future days!')
-      return
-    }
-
-    // Upsert feedback
-    const { error } = await supabase
-      .from('menu_feedback')
-      .upsert({
-        user_id: user.id,
-        menu_id: menuId,
-        rating: rating
-      }, { onConflict: 'user_id,menu_id' })
-
-    if (!error) {
-      setFeedbackRatings({ ...feedbackRatings, [menuId]: rating })
-      alert('Feedback submitted! Thank you.')
-    }
-  }
-
-  if (loading) return <Spinner />
-
-  const dayOrder = {
-    'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4,
-    'Friday': 5, 'Saturday': 6, 'Sunday': 7
-  }
-
-  const groupedByDay = weeklyMenu.reduce((acc, meal) => {
-    if (!acc[meal.day_name]) acc[meal.day_name] = []
-    acc[meal.day_name].push(meal)
-    return acc
-  }, {})
-
-  const sortedDays = Object.keys(groupedByDay).sort((a, b) => dayOrder[a] - dayOrder[b])
-
-  const todayDay = new Date().getDay()
-  const dayNamesArr = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-  const currentDay = dayNamesArr[todayDay]
-
-  const filteredDays = sortedDays.filter(day => day !== 'Sunday')
-
-  const hour = new Date().getHours()
-  const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening'
+  const todayMenu = WEEKLY_MENU[activeDay]
 
   return (
-    <div style={{ flex: 1, padding: '20px 20px 100px', background: t.bg }}>
-      {/* Personalized Header */}
-      <div style={{ marginBottom: 28, padding: '0 4px' }}>
-        <p style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 700, color: t.textSub, opacity: 0.7, letterSpacing: '0.05em' }}>
-          {greeting.toUpperCase()}
-        </p>
-        <h2 style={{ margin: 0, fontSize: 28, fontWeight: 900, color: t.text, letterSpacing: '-0.02em' }}>
-          {profile?.full_name?.split(' ')[0] || 'Member'} <span style={{ color: t.accent }}>👋</span>
-        </h2>
-      </div>
-
-      {/* Profile Summary Card */}
-      {profile && (
-        <div style={{
-          background: t.cardActive || t.card, border: `1.5px solid ${t.borderActive || t.border}`,
-          borderRadius: 24, padding: '24px', marginBottom: 32,
-          display: 'flex', alignItems: 'center', gap: 20,
-          boxShadow: `0 12px 32px ${t.accentBg}`, position: 'relative', overflow: 'hidden'
-        }}>
-          <div style={{
-            width: 80, height: 80, borderRadius: '24px',
-            background: profile.profile_pic_url ? `url(${profile.profile_pic_url})` : t.accentGrad,
-            backgroundSize: 'cover', backgroundPosition: 'center',
-            border: `3px solid rgba(255,255,255,0.2)`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 32, fontWeight: 900, color: '#fff', boxShadow: '0 8px 16px rgba(0,0,0,0.1)'
-          }}>
-            {!profile.profile_pic_url && (profile.full_name?.[0] || 'U')}
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
-              <span style={{ fontSize: 13, fontWeight: 800, color: t.textSub, opacity: 0.6 }}>Thali Number</span>
-              <span style={{ fontSize: 24, fontWeight: 900, color: t.accent }}>#{profile.thali_number}</span>
+    <ThemeCtx.Provider value={t}>
+      <div style={{ minHeight: '100vh', background: t.bgGrad, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>
+        {/* Header */}
+        <header style={{ position: 'relative', overflow: 'hidden', background: t.bgGrad, padding: '20px 20px 0' }}>
+          <GeoBg t={t} />
+          <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 38, height: 38, borderRadius: 10, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🍽️</div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16, color: t.accent }}>Khidmat Guzar</div>
+                <div style={{ fontSize: 11, color: t.textSub }}>{staffInfo?.name || user.email}</div>
+              </div>
             </div>
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              background: 'rgba(0,0,0,0.05)', padding: '6px 12px', borderRadius: 10,
-              fontSize: 12, fontWeight: 700, color: t.textSub
-            }}>
-              <Check size={14} color={t.accent} /> Active Member
-            </div>
+            <button onClick={() => { if (confirm('Log out?')) signOut() }}
+              style={{ background: 'rgba(220,60,60,0.12)', border: '1px solid rgba(220,60,60,0.25)', borderRadius: 10, padding: '8px 14px', color: '#e05555', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <LogOut size={14} />Logout
+            </button>
           </div>
-          <div style={{
-            position: 'absolute', right: -20, top: -20, width: 100, height: 100,
-            background: t.accent, opacity: 0.05, borderRadius: '50%'
-          }} />
-        </div>
-      )}
+          <svg style={{ display: 'block', position: 'relative', zIndex: 1 }} width="100%" viewBox="0 0 1440 28" preserveAspectRatio="none">
+            <path d="M0,10 C200,28 400,0 600,14 C800,28 1000,4 1200,18 C1320,26 1400,10 1440,14 L1440,28 L0,28 Z" fill={t.headerWave} opacity="0.9" />
+          </svg>
+        </header>
 
-      {/* Weekly Menu */}
-      <h2 style={{
-        margin: '0 0 16px', fontSize: 22, fontWeight: 800, color: t.accent,
-        textTransform: 'uppercase', letterSpacing: '0.05em'
-      }}>
-        Weekly Menu
-      </h2>
-
-      {filteredDays.map(day => {
-        const meals = groupedByDay[day]
-        const isExpanded = expandedDay === day
-        const isToday = day === currentDay
-
-        return (
-          <div key={day} style={{ marginBottom: 16 }}>
-            <div style={{
-              background: t.card, border: `2px solid ${isExpanded ? t.accent : t.border}`,
-              borderRadius: 20, overflow: 'hidden',
-              boxShadow: isExpanded ? `0 8px 32px ${t.accentBg}` : '0 4px 16px rgba(0,0,0,0.04)',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-            }}>
-              {/* Day Accordion Header */}
-              <div
-                onClick={() => setExpandedDay(isExpanded ? null : day)}
-                style={{
-                  padding: '20px 24px', background: isExpanded ? t.accentBg : 'transparent',
-                  cursor: 'pointer', display: 'flex', alignItems: 'center',
-                  justifyContent: 'space-between', borderBottom: isExpanded ? `1.5px solid ${t.border}` : 'none'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <div style={{ 
-                    width: 34, height: 34, borderRadius: 10, overflow: 'hidden', 
-                    background: '#fff', display: 'flex', alignItems: 'center', 
-                    justifyContent: 'center', border: `1.5px solid ${t.border}`,
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
-                  }}>
-                    <img src="/al-mawaid.png" alt="" style={{ width: '82%', height: '82%', objectFit: 'contain' }} />
-                  </div>
-                  <h3 style={{
-                    margin: 0, fontSize: 18, fontWeight: 800,
-                    color: isExpanded ? t.accent : t.text
-                  }}>
-                    {day}
-                  </h3>
-                  {isToday && (
-                    <span style={{
-                      fontSize: 10, fontWeight: 800, color: '#fff',
-                      background: t.accentGrad, padding: '4px 10px',
-                      borderRadius: 8, boxShadow: `0 4px 12px ${t.accentBg}`
-                    }}>
-                      TODAY
-                    </span>
-                  )}
-                </div>
-                <div style={{
-                  transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)',
-                  transition: 'transform 0.3s ease', display: 'flex'
-                }}>
-                  <ChevronDown size={20} color={t.textSub} />
+        <main style={{ padding: '20px 20px 40px', maxWidth: 800, margin: '0 auto' }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 60, color: t.textSub }}>Loading…</div>
+          ) : (
+            <>
+              {/* Day picker */}
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: t.textSub, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 12 }}>Today's Service</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {DAYS.map(d => {
+                    const isActive = activeDay === d
+                    return (
+                      <button key={d} onClick={() => setActiveDay(d)}
+                        style={{
+                          padding: '8px 14px', borderRadius: 10, border: `1px solid ${isActive ? t.accentBorder : t.border}`,
+                          background: isActive ? t.accentGrad : t.card, color: isActive ? '#fff' : t.textSub,
+                          fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s',
+                        }}>
+                        {WEEKLY_MENU[d].en.slice(0, 3)}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 
-              {/* Day Accordion Body (Meals) */}
-              {isExpanded && (
-                <div style={{
-                  animation: 'fadeIn 0.4s ease',
-                  background: t.bg === '#111111' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)'
-                }}>
-                  {meals.map((meal, idx) => (
-                    <div key={meal.id} style={{
-                      padding: '24px', borderBottom: idx === meals.length - 1 ? 'none' : `1px solid ${t.border}`,
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 20 }}>
-                        <div style={{
-                          background: t.accentBg, borderRadius: 12, padding: 10,
-                          color: t.accent, display: 'flex'
-                        }}>
-                          <Utensils size={20} />
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 15, fontWeight: 800, color: t.text, marginBottom: 6 }}>
-                            {meal.meal_type}
-                          </div>
-                          <div style={{ fontSize: 14, color: t.textSub, lineHeight: 1.6, fontWeight: 500 }}>
-                            {meal.items}
-                          </div>
-                          {meal.special_notes && (
-                            <div style={{
-                              marginTop: 10, padding: '8px 12px', background: t.card,
-                              borderRadius: 8, fontSize: 12, fontStyle: 'italic',
-                              color: t.accent, opacity: 0.8, border: `1px dashed ${t.border}`
-                            }}>
-                              Note: {meal.special_notes}
-                            </div>
-                          )}
-                        </div>
+              {/* Menu */}
+              <div style={{ marginBottom: 28 }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: t.accent, marginBottom: 14 }}>{todayMenu.en}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  {['lunch', 'dinner'].map(meal => (
+                    <div key={meal} style={{ background: t.card, border: `1px solid ${t.border}`, borderRadius: 16, padding: '18px 20px' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.14em', marginBottom: 12 }}>
+                        {meal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}
                       </div>
-
-                      {/* Integrated Feedback System */}
-                      <div style={{
-                        marginTop: 20, paddingTop: 20, borderTop: `1.5px solid ${t.border}`,
-                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12
-                      }}>
-                        <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          Rate this food
-                        </p>
-                        <StarRating
-                          rating={feedbackRatings[meal.id] || 0}
-                          onChange={(r) => handleFeedbackSubmit(meal.id, r)}
-                          theme={t}
-                        />
-                      </div>
+                      {todayMenu[meal].map((item, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: i < todayMenu[meal].length - 1 ? `1px solid ${t.border}` : 'none' }}>
+                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: t.accent, flexShrink: 0 }} />
+                          <span style={{ fontSize: 14, color: t.text }}>{item}</span>
+                          {isRotiItem(item) && <span style={{ marginLeft: 'auto', fontSize: 10, color: t.accent, fontWeight: 700, background: t.accentBg, padding: '2px 7px', borderRadius: 6 }}>ROTI</span>}
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
-          </div>
-        )
-      })}
+              </div>
 
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-      `}</style>
-    </div>
+              {/* Member list */}
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: t.textSub, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 14 }}>
+                  Member Thali List ({members.length})
+                </div>
+                <div style={{ background: t.card, border: `1px solid ${t.border}`, borderRadius: 16, overflow: 'hidden' }}>
+                  {members.map((m, i) => (
+                    <div key={i} style={{
+                      display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px',
+                      borderBottom: i < members.length - 1 ? `1px solid ${t.border}` : 'none',
+                    }}>
+                      <div style={{ width: 36, height: 36, borderRadius: '50%', background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+                        {(m.name || 'M').charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{m.name || '—'}</div>
+                        <div style={{ fontSize: 12, color: t.textSub }}>{m.phone || m.address || ''}</div>
+                      </div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: t.accent }}>#{m.thali_number || '—'}</div>
+                    </div>
+                  ))}
+                  {members.length === 0 && (
+                    <div style={{ padding: '40px 20px', textAlign: 'center', color: t.textSub, fontSize: 14 }}>No members found.</div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </main>
+
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin .8s linear infinite}body{margin:0}`}</style>
+      </div>
+    </ThemeCtx.Provider>
   )
 }
 
+// ══════════════════════════════════════════════════════════════
+// ── ALL YOUR EXISTING PAGE COMPONENTS GO HERE ────────────────
+// (HomePage, FeedbackPage, PostPage, ProfilePage, SurveyPage, etc.)
+// Keep them exactly as they are in your original App.jsx
+// Only the ROOT App() function below changes.
+// ══════════════════════════════════════════════════════════════
 
-// ─── Survey Percentage Bar Component ──────────────────────────────────────
-const QuantityBar = ({ value, onChange, theme }) => {
-  const steps = [0, 25, 50, 100]
-  return (
-    <div style={{ width: '100%', padding: '10px 0' }}>
-      <div style={{
-        height: 8, background: theme.border, borderRadius: 10,
-        position: 'relative', marginBottom: 16, display: 'flex', alignItems: 'center'
-      }}>
-        <div style={{
-          position: 'absolute', height: '100%', background: theme.accentGrad,
-          width: `${value}%`, borderRadius: 10, transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
-        }} />
-        {steps.map(s => (
-          <button key={s}
-            onClick={() => onChange(s)}
-            style={{
-              position: 'absolute', left: `calc(${s}% - 12px)`, width: 24, height: 24,
-              borderRadius: '50%', background: value === s ? theme.card : '#fff',
-              border: `3px solid ${value === s ? theme.accent : theme.border}`,
-              cursor: 'pointer', zIndex: 2, transition: 'all 0.2s',
-              boxShadow: value === s ? `0 0 12px ${theme.accentBg}` : 'none'
-            }}
-          />
-        ))}
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0 4px' }}>
-        {steps.map(s => (
-          <span key={s} style={{
-            fontSize: 10, fontWeight: 800, color: value === s ? theme.accent : theme.textSub,
-            opacity: value === s ? 1 : 0.5
-          }}>
-            {s}%
-          </span>
-        ))}
-      </div>
-    </div>
-  )
-}
+// [[ INSERT YOUR EXISTING: HomePage, FeedbackPage, PostPage, ProfilePage, etc. HERE ]]
+// They are unchanged — do NOT re-paste them, just keep them in the file.
 
-/* ─── SURVEY PAGE (Overhauled) ─────────────────────────────────────────────────────────────── */
-function SurveyPage() {
-  const t = useTheme()
-  const { user } = useAuth()
-  const [loading, setLoading] = useState(true)
-  const [hasSubmitted, setHasSubmitted] = useState(false)
-  const [isEditing, setIsEditing] = useState(false)
-  const [weeklyMenu, setWeeklyMenu] = useState([])
-  const [surveyResponses, setSurveyResponses] = useState({}) // { menu_id: { item_name: rating, roti: 'No' } }
-  const [expandedMeal, setExpandedMeal] = useState(null)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+// ══════════════════════════════════════════════════════════════
+// ROOT APP
+// ══════════════════════════════════════════════════════════════
+export default function App() {
+  const [session, setSession] = useState(undefined)
+  const [portalRole, setPortalRole] = useState(() => sessionStorage.getItem('al_mawaid_portal') || null)
+  const [theme, setTheme] = useState(() => localStorage.getItem('almawaid_theme') || 'midnight')
+
+  const currentTheme = THEMES[theme] || THEMES.midnight
+
+  const handleSetTheme = (id) => {
+    setTheme(id)
+    localStorage.setItem('almawaid_theme', id)
+  }
 
   useEffect(() => {
-    loadData()
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_evt, session) => {
+      setSession(session)
+      // On sign-out clear portal role
+      if (!session) {
+        setPortalRole(null)
+        sessionStorage.removeItem('al_mawaid_portal')
+      }
+    })
+    return () => subscription.unsubscribe()
   }, [])
 
-  const loadData = async () => {
-    setLoading(true)
-    const today = new Date()
-    const monday = getMondayOfWeek(today)
-    const weekStart = monday.toISOString().split('T')[0]
+  const signOut = useCallback(async () => {
+    await supabase.auth.signOut()
+    setPortalRole(null)
+    sessionStorage.removeItem('al_mawaid_portal')
+  }, [])
 
-    // Load menu
-    const { data: menuData } = await supabase
-      .from('weekly_menu')
-      .select('*')
-      .eq('week_start_date', weekStart)
-      .order('day_name')
-
-    const sortedMenu = (menuData || []).filter(m => m.day_name !== 'Sunday')
-    setWeeklyMenu(sortedMenu)
-
-    // Load existing response
-    const { data: existingResponse } = await supabase
-      .from('survey_responses')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('week_start_date', weekStart)
-      .single()
-
-    if (existingResponse) {
-      setSurveyResponses(existingResponse.responses || {})
-      setHasSubmitted(true)
-    }
-
-    setLoading(false)
+  const handleRoleLogin = (dbRole) => {
+    sessionStorage.setItem('al_mawaid_portal', dbRole)
+    setPortalRole(dbRole)
   }
 
-  const getMondayOfWeek = (date) => {
-    const d = new Date(date)
-    const day = d.getDay()
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-    return new Date(d.setDate(diff))
-  }
-
-  const handleUpdateItemRating = (menuId, itemName, value) => {
-    setSurveyResponses(prev => ({
-      ...prev,
-      [menuId]: {
-        ...(prev[menuId] || {}),
-        [itemName]: value
-      }
-    }))
-  }
-
-  const handleSubmitSurvey = async () => {
-    setIsSubmitting(true)
-    const monday = getMondayOfWeek(new Date())
-    const weekStart = monday.toISOString().split('T')[0]
-
-    const { error } = await supabase
-      .from('survey_responses')
-      .upsert({
-        user_id: user.id,
-        week_start_date: weekStart,
-        responses: surveyResponses
-      }, { onConflict: 'user_id,week_start_date' })
-
-    setIsSubmitting(false)
-    if (!error) {
-      setHasSubmitted(true)
-      setIsEditing(false)
-    } else {
-      alert('Error saving survey: ' + error.message)
-    }
-  }
-
-  if (loading) return <Spinner />
-
-  if (hasSubmitted && !isEditing) {
+  // Loading
+  if (session === undefined) {
     return (
-      <div style={{ flex: 1, padding: '20px 20px 100px', background: t.bg }}>
-        <div style={{
-          textAlign: 'center', marginBottom: 32, padding: '40px 20px',
-          background: t.card, borderRadius: 32, border: `2px solid ${t.border}`,
-          boxShadow: `0 20px 48px ${t.accentBg}`, animation: 'fadeInUp 0.6s ease'
-        }}>
-          <div style={{
-            width: 80, height: 80, background: t.accentBg, borderRadius: '50%',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto 20px', fontSize: 40, border: `2px solid ${t.accentBorder}`
-          }}>
-            ✅
-          </div>
-          <h2 style={{ margin: '0 0 8px', fontSize: 26, fontWeight: 900, color: t.accent }}>Submission Successful</h2>
-          <p style={{ margin: 0, fontSize: 14, color: t.textSub, fontWeight: 600, opacity: 0.7 }}>
-            Your quantity responses for this week have been recorded.
-          </p>
-          <button onClick={() => setIsEditing(true)}
-            style={{
-              marginTop: 24, padding: '12px 24px', fontSize: 14, fontWeight: 800,
-              color: t.accent, background: t.accentBg, border: `1.5px solid ${t.accentBorder}`,
-              borderRadius: 12, cursor: 'pointer', transition: 'all 0.2s',
-              display: 'inline-flex', alignItems: 'center', gap: 8
-            }}>
-            <Palette size={18} /> Edit My Responses
-          </button>
-        </div>
-
-        <h3 style={{
-          margin: '0 0 20px', fontSize: 13, fontWeight: 800,
-          color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.15em',
-          display: 'flex', alignItems: 'center', gap: 10
-        }}>
-          <div style={{ height: 1.5, flex: 1, background: t.border }} />
-          Your Submitted Data
-          <div style={{ height: 1.5, flex: 1, background: t.border }} />
-        </h3>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {sortedDays.map(day => {
-            const meals = groupedMenu[day].filter(m => surveyResponses[m.id])
-            if (meals.length === 0) return null
-            return (
-              <div key={day} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ fontSize: 14, fontWeight: 900, color: t.text, opacity: 0.6, marginLeft: 4 }}>{day}</div>
-                {meals.map(meal => {
-                  const res = surveyResponses[meal.id]
-                  return (
-                    <div key={meal.id} style={{
-                      background: t.card, border: `1.5px solid ${t.border}`,
-                      borderRadius: 24, padding: '20px 24px'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                        <div style={{ color: t.accent }}>
-                          {meal.meal_type.toLowerCase().includes('lunch') ? <Sun size={18} /> : <Moon size={18} />}
-                        </div>
-                        <div style={{ fontSize: 15, fontWeight: 800, color: t.text }}>{meal.meal_type}</div>
-                      </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                        {Object.entries(res).map(([item, val]) => {
-                          if (item.endsWith('_received')) return null
-                          return (
-                            <div key={item} style={{
-                              padding: '10px 16px', background: t.bg, borderRadius: 14,
-                              border: `1.5px solid ${t.border}`, flex: '1 1 calc(50% - 10px)',
-                              minWidth: 140
-                            }}>
-                              <div style={{ fontSize: 11, fontWeight: 800, color: t.textSub, marginBottom: 4, textTransform: 'uppercase' }}>{item}</div>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                <span style={{ fontSize: 16, fontWeight: 900, color: t.accent }}>{val}%</span>
-                                {res[`${item}_received`] && (
-                                  <span style={{ 
-                                    fontSize: 9, fontWeight: 900, padding: '3px 6px', 
-                                    borderRadius: 6, background: res[`${item}_received`] === 'Yes' ? '#22c55e20' : '#ef444420',
-                                    color: res[`${item}_received`] === 'Yes' ? '#10b981' : '#ef4444',
-                                    border: `1px solid ${res[`${item}_received`] === 'Yes' ? '#10b98140' : '#ef444440'}`
-                                  }}>
-                                    {res[`${item}_received`] === 'Yes' ? 'RECEIVED' : 'NOT REC'}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })}
-        </div>
+      <div style={{ minHeight: '100vh', background: THEMES.midnight.bgGrad, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="spin" style={{ width: 36, height: 36, border: '2.5px solid rgba(196,156,90,0.2)', borderTop: '2.5px solid #c49c5a', borderRadius: '50%' }} />
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin .8s linear infinite}body{margin:0}`}</style>
       </div>
     )
   }
 
-  const dayOrder = { 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 6 }
-  const groupedMenu = weeklyMenu.reduce((acc, m) => {
-    if (!acc[m.day_name]) acc[m.day_name] = []
-    acc[m.day_name].push(m)
-    return acc
-  }, {})
-  const sortedDays = Object.keys(groupedMenu).sort((a, b) => dayOrder[a] - dayOrder[b])
+  // Not logged in → unified login
+  if (!session) {
+    return <LoginPage onRoleLogin={handleRoleLogin} />
+  }
+
+  const t = currentTheme
+
+  // ── Admin portal ──────────────────────────────────────────
+  if (portalRole === 'admin') {
+    // Dynamically lazy-load the admin layout to keep bundle small
+    // We use a simple redirect approach: render a bridge component
+    return (
+      <AuthCtx.Provider value={{ user: session.user, signOut }}>
+        <AdminBridge signOut={signOut} />
+      </AuthCtx.Provider>
+    )
+  }
+
+  // ── Khidmat Guzar portal ──────────────────────────────────
+  if (portalRole === 'khidmat_guzar' || portalRole === 'supervisor') {
+    return (
+      <AuthCtx.Provider value={{ user: session.user, signOut }}>
+        <KhidmatPortal signOut={signOut} />
+      </AuthCtx.Provider>
+    )
+  }
+
+  // ── Member app (default) ──────────────────────────────────
+  const tabs = [
+    { id: 'home',     label: 'Home',     Icon: Home },
+    { id: 'feedback', label: 'Feedback', Icon: Star },
+    { id: 'post',     label: 'Requests', Icon: FileText },
+    { id: 'profile',  label: 'Profile',  Icon: User },
+  ]
+  const tabLabels = { home: 'AL-MAWAID', feedback: 'FEEDBACK', post: 'REQUESTS', profile: 'PROFILE' }
 
   return (
-    <div style={{ flex: 1, padding: '20px 20px 120px', background: t.bg }}>
-      <div style={{ marginBottom: 32, textAlign: 'center' }}>
-        <h2 style={{ margin: '0 0 8px', fontSize: 28, fontWeight: 900, color: t.accent, letterSpacing: '-0.02em' }}>Quantity Survey</h2>
-        <p style={{ margin: 0, fontSize: 14, color: t.textSub, fontWeight: 600, opacity: 0.6 }}>Tell us how much you consumed of each item</p>
-      </div>
-
-      {sortedDays.map(day => (
-        <div key={day} style={{ marginBottom: 32 }}>
-          <h3 style={{
-            margin: '0 0 16px', fontSize: 13, fontWeight: 800,
-            color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.15em',
-            paddingLeft: 4, opacity: 0.8
-          }}>{day}</h3>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {groupedMenu[day].map(meal => {
-              const res = surveyResponses[meal.id] || {}
-              const isExpanded = expandedMeal === meal.id
-
-              const rawItems = meal.items.split(',').map(i => i.trim())
-              // Prioritize Roti
-              const items = [
-                ...rawItems.filter(i => i.toLowerCase().includes('roti')),
-                ...rawItems.filter(i => !i.toLowerCase().includes('roti'))
-              ]
-
-              return (
-                <div key={meal.id} style={{
-                  background: t.card, border: `1.5px solid ${isExpanded ? t.accent : t.border}`,
-                  borderRadius: 24, overflow: 'hidden', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                  boxShadow: isExpanded ? `0 12px 32px ${t.accentBg}` : 'none'
-                }}>
-                  <div
-                    onClick={() => setExpandedMeal(isExpanded ? null : meal.id)}
-                    style={{
-                      padding: '20px 24px', cursor: 'pointer', display: 'flex',
-                      alignItems: 'center', justifyContent: 'space-between'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                      <div style={{
-                        width: 48, height: 48, borderRadius: 14, background: t.accentBg,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: t.accent, fontSize: 22, boxShadow: `inset 0 0 0 1.5px ${t.accentBorder}`
-                      }}>
-                        {meal.meal_type.toLowerCase().includes('lunch') ? <Sun size={20} /> : <Moon size={20} />}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 16, fontWeight: 900, color: t.text }}>{meal.meal_type}</div>
-                        <div style={{ fontSize: 12, color: t.accent, fontWeight: 800, opacity: 0.8 }}>
-                          {Object.keys(res).length} items rated
-                        </div>
-                      </div>
-                    </div>
-                    <div style={{
-                      transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)',
-                      transition: 'transform 0.3s ease', color: t.textSub
-                    }}>
-                      <ChevronDown size={20} />
-                    </div>
-                  </div>
-
-                  {isExpanded && (
-                    <div style={{ padding: '0 24px 24px', animation: 'fadeIn 0.3s ease' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                        {items.map(itemName => (
-                          <div key={itemName} style={{
-                            padding: '16px', background: t.bg, borderRadius: 18,
-                            border: `1.5px solid ${t.border}`, transition: 'all 0.2s'
-                          }}>
-                            <div style={{
-                              fontSize: 14, fontWeight: 800, color: t.text, marginBottom: 12,
-                              display: 'flex', alignItems: 'center', gap: 8
-                            }}>
-                              {itemName.toLowerCase().includes('roti') && <span style={{ fontSize: 18 }}>🍞</span>}
-                              {itemName}
-                            </div>
-                            <QuantityBar
-                              value={res[itemName] || 0}
-                              onChange={(v) => handleUpdateItemRating(meal.id, itemName, v)}
-                              theme={t}
-                            />
-                            {itemName.toLowerCase().includes('roti') && (
-                              <div style={{
-                                marginTop: 12, display: 'flex', alignItems: 'center',
-                                gap: 12, paddingTop: 12, borderTop: `1px dashed ${t.border}`
-                              }}>
-                                <span style={{ fontSize: 11, fontWeight: 800, color: t.textSub }}>RECEIVED?</span>
-                                <div style={{ display: 'flex', gap: 6 }}>
-                                  {['Yes', 'No'].map(opt => (
-                                    <button key={opt}
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        handleUpdateItemRating(meal.id, `${itemName}_received`, opt)
-                                      }}
-                                      style={{
-                                        padding: '4px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800,
-                                        background: res[`${itemName}_received`] === opt ? t.accent : t.card,
-                                        color: res[`${itemName}_received`] === opt ? '#fff' : t.textSub,
-                                        border: `1px solid ${res[`${itemName}_received`] === opt ? t.accent : t.border}`
-                                      }}
-                                    >
-                                      {opt}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      ))}
-
-      <div style={{ height: 100 }} /> {/* Spacer for fixed button */}
-      
-      <div style={{
-        position: 'fixed', bottom: 90, left: 0, right: 0,
-        padding: '20px 24px', background: `linear-gradient(0deg, ${t.bg} 80%, transparent)`,
-        zIndex: 100
-      }}>
-        <button onClick={handleSubmitSurvey} disabled={isSubmitting}
-          style={{
-            width: '100%', padding: '20px', fontSize: 16, fontWeight: 900,
-            color: '#fff', background: t.accentGrad, border: 'none',
-            borderRadius: 20, cursor: isSubmitting ? 'not-allowed' : 'pointer', 
-            boxShadow: `0 12px 32px ${t.accentBg}`,
-            textTransform: 'uppercase', letterSpacing: '0.12em',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
-            opacity: isSubmitting ? 0.8 : 1, transition: 'all 0.3s'
-          }}>
-          {isSubmitting ? (
-            <div className="spin" style={{ width: 20, height: 20, border: '3px solid rgba(255,255,255,0.3)', borderTop: '3px solid #fff', borderRadius: '50%' }} />
-          ) : (
-            <Send size={20} strokeWidth={2.5} />
-          )}
-          {isSubmitting ? 'Saving...' : 'Save Survey Responses'}
-        </button>
-      </div>
-    </div>
+    <ThemeCtx.Provider value={t}>
+      <AuthCtx.Provider value={{ user: session.user, signOut }}>
+        <MemberApp
+          theme={theme}
+          setTheme={handleSetTheme}
+          tabs={tabs}
+          tabLabels={tabLabels}
+          t={t}
+        />
+      </AuthCtx.Provider>
+    </ThemeCtx.Provider>
   )
 }
 
-/* ─── THALI REQUESTS PAGE (POSTS) ─────────────────────────────────────────────────────────────── */
-function ThaliRequestsPage() {
-  const t = useTheme()
-  const { user, showToast } = useAuth()
+// ── Admin Bridge: renders the admin area inline (no separate route needed)
+// Import AdminLayout lazily to avoid bundling it unless needed.
+import { lazy, Suspense } from 'react'
+const AdminLayout   = lazy(() => import('./admin/AdminLayout'))
+const AdminDash     = lazy(() => import('./admin/Dashboard'))
 
-  // Form state
-  const [stopDates, setStopDates] = useState({ start: '', end: '' })
-  const [resumeDates, setResumeDates] = useState({ start: '', end: '' })
-  const [extra, setExtra] = useState({ qty: 1, start: '', end: '' })
-  const [issue, setIssue] = useState({ message: '', media: null })
-  const [loading, setLoading] = useState(false)
-
-  const handleInsert = async (type, payload) => {
-    setLoading(true)
-    const { error } = await supabase.from('thali_requests').insert({
-      user_id: user.id,
-      thali_number: (await supabase.from('profiles').select('thali_number').eq('id', user.id).single()).data?.thali_number,
-      request_type: type,
-      ...payload
-    })
-    setLoading(false)
-    if (error) {
-      showToast(error.message, 'error')
-    } else {
-      showToast('Request submitted')
-      // reset relevant fields
-      if (type === 'stop') setStopDates({ start: '', end: '' })
-      if (type === 'resume') setResumeDates({ start: '', end: '' })
-      if (type === 'extra') setExtra({ qty: 1, start: '', end: '' })
-      if (type === 'issue') setIssue({ message: '', media: null })
-    }
-  }
-
-  const uploadMedia = async (file) => {
-    const fileExt = file.name.split('.').pop()
-    const fileName = `${Date.now()}.${fileExt}`
-    const { data, error } = await supabase.storage.from('thali_media').upload(fileName, file)
-    if (error) throw error
-    const { publicURL } = supabase.storage.from('thali_media').getPublicUrl(fileName)
-    return publicURL
-  }
-
-  const submitIssue = async () => {
-    let mediaUrl = null
-    if (issue.media) {
-      try { mediaUrl = await uploadMedia(issue.media) } catch (e) { showToast(e.message, 'error'); return }
-    }
-    await handleInsert('issue', { message: issue.message, media_url: mediaUrl })
-  }
-
-  return (
-    <div style={{ flex: 1, padding: '20px 20px 120px', background: t.bg }}>
-      <h2 style={{ margin: '0 0 16px', fontSize: 24, fontWeight: 900, color: t.text }}>Thali Requests</h2>
-
-      {/* Stop Thali */}
-      <section style={{ marginBottom: 28 }}>
-        <h3 style={{ fontSize: 18, fontWeight: 800, color: t.textSub }}>Stop Thali</h3>
-        <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-          <input type="date" value={stopDates.start} onChange={e => setStopDates({ ...stopDates, start: e.target.value })} style={{ flex: 1, ...inputStyle(t) }} />
-          <input type="date" value={stopDates.end} onChange={e => setStopDates({ ...stopDates, end: e.target.value })} style={{ flex: 1, ...inputStyle(t) }} />
-        </div>
-        <button onClick={() => handleInsert('stop', { start_date: stopDates.start, end_date: stopDates.end })} disabled={loading} style={primaryBtn(t)}>{loading ? 'Saving...' : 'Submit Stop'}</button>
-      </section>
-
-      {/* Resume Thali */}
-      <section style={{ marginBottom: 28 }}>
-        <h3 style={{ fontSize: 18, fontWeight: 800, color: t.textSub }}>Resume Thali</h3>
-        <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-          <input type="date" value={resumeDates.start} onChange={e => setResumeDates({ ...resumeDates, start: e.target.value })} style={{ flex: 1, ...inputStyle(t) }} />
-          <input type="date" value={resumeDates.end} onChange={e => setResumeDates({ ...resumeDates, end: e.target.value })} style={{ flex: 1, ...inputStyle(t) }} />
-        </div>
-        <button onClick={() => handleInsert('resume', { start_date: resumeDates.start, end_date: resumeDates.end })} disabled={loading} style={primaryBtn(t)}>{loading ? 'Saving...' : 'Submit Resume'}</button>
-      </section>
-
-      {/* Extra Food */}
-      <section style={{ marginBottom: 28 }}>
-        <h3 style={{ fontSize: 18, fontWeight: 800, color: t.textSub }}>Extra Food</h3>
-        <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-          <select value={extra.qty} onChange={e => setExtra({ ...extra, qty: Number(e.target.value) })} style={inputStyle(t)}>
-            {[1,2,3,4].map(n => (<option key={n} value={n}>{n} portion{n>1?'s':''}</option>))}
-          </select>
-          <input type="date" value={extra.start} onChange={e => setExtra({ ...extra, start: e.target.value })} style={{ flex: 1, ...inputStyle(t) }} />
-          <input type="date" value={extra.end} onChange={e => setExtra({ ...extra, end: e.target.value })} style={{ flex: 1, ...inputStyle(t) }} />
-        </div>
-        <button onClick={() => handleInsert('extra', { quantity: extra.qty, start_date: extra.start, end_date: extra.end })} disabled={loading} style={primaryBtn(t)}>{loading ? 'Saving...' : 'Submit Extra Food'}</button>
-      </section>
-
-      {/* Report Issue */}
-      <section style={{ marginBottom: 28 }}>
-        <h3 style={{ fontSize: 18, fontWeight: 800, color: t.textSub }}>Report Issue</h3>
-        <textarea placeholder="Describe the issue..." value={issue.message} onChange={e => setIssue({ ...issue, message: e.target.value })} style={{ width: '100%', minHeight: 80, marginTop: 8, ...inputStyle(t) }} />
-        <input type="file" accept="image/*,video/*" onChange={e => setIssue({ ...issue, media: e.target.files[0] })} style={{ marginTop: 8 }} />
-        <button onClick={submitIssue} disabled={loading} style={primaryBtn(t)}>{loading ? 'Saving...' : 'Submit Issue'}</button>
-      </section>
-    </div>
-  )
-}
-
-// Helper styles used in the request page
-const inputStyle = (t) => ({
-  background: t.inputBg, border: `1.5px solid ${t.inputBorder}`,
-  borderRadius: 8, padding: '8px 12px', color: t.text, fontSize: 14, outline: 'none'
-})
-
-const primaryBtn = (t) => ({
-  marginTop: 8,
-  padding: '10px 16px',
-  background: t.accentGrad,
-  color: '#fff',
-  border: 'none',
-  borderRadius: 8,
-  cursor: 'pointer',
-  fontWeight: 600
-})
-
-      /* ─── PROFILE PAGE WITH LOGOUT ─────────────────────────────────────────────────────────────────── */
-      function ProfilePage() {
-  const t = useTheme()
-      const {user, signOut} = useAuth()
-      const [profile, setProfile] = useState(null)
-      const [loading, setLoading] = useState(true)
-
+function AdminBridge({ signOut }) {
+  // We use react-router's Outlet pattern but need the Router context from MainRouter.
+  // Simply redirect the browser to /admin which MainRouter handles.
   useEffect(() => {
-        loadProfile()
-      }, [])
+    window.location.replace('/admin')
+  }, [])
+  return (
+    <div style={{ minHeight: '100vh', background: THEMES.midnight.bgGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#c49c5a', fontFamily: "'DM Sans',sans-serif" }}>
+      Redirecting to Admin Portal…
+    </div>
+  )
+}
 
-  const loadProfile = async () => {
-    const {data} = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single()
-      setProfile(data)
-      setLoading(false)
-  }
+// ── Member App shell (extracted so root stays clean) ──────────
+function MemberApp({ theme, setTheme, tabs, tabLabels, t }) {
+  const [activeTab, setActiveTab] = useState('home')
 
-  const handleLogout = async () => {
-    if (confirm('Are you sure you want to log out?')) {
-        await signOut()
-      }
-  }
+  return (
+    <div style={{ fontFamily: "'DM Sans','Segoe UI',-apple-system,sans-serif", minHeight: '100vh', background: t.bgGrad, color: t.text, display: 'flex', flexDirection: 'column' }}>
 
-      if (loading) return <Spinner />
-
-      return (
-      <div style={{ flex: 1, padding: '20px 20px 100px', background: t.bg }}>
-        {/* Profile Card */}
-        {profile && (
-          <div style={{
-            background: t.card, border: `2px solid ${t.border}`,
-            borderRadius: 20, padding: 32, marginBottom: 24, textAlign: 'center',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.06)'
-          }}>
-            <div style={{
-              width: 100, height: 100, borderRadius: '50%',
-              background: profile.profile_pic_url ? `url(${profile.profile_pic_url})` : t.accentGrad,
-              backgroundSize: 'cover', backgroundPosition: 'center',
-              border: `4px solid ${t.accent}`, margin: '0 auto 20px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 40, fontWeight: 900, color: '#fff'
-            }}>
-              {!profile.profile_pic_url && (profile.full_name?.[0] || 'U')}
-            </div>
-
-            <h2 style={{ margin: '0 0 8px', fontSize: 24, fontWeight: 800, color: t.text }}>
-              {profile.full_name}
-            </h2>
-            <p style={{ margin: '0 0 16px', fontSize: 14, color: t.textSub }}>
-              {profile.email}
-            </p>
-            <div style={{
-              display: 'inline-block', background: t.accentBg,
-              border: `2px solid ${t.accentBorder}`, borderRadius: 10,
-              padding: '8px 16px', fontSize: 15, fontWeight: 800,
-              color: t.accent, letterSpacing: '0.05em'
-            }}>
-              Thali #{profile.thali_number}
-            </div>
+      {/* Header */}
+      <header style={{ position: 'relative', overflow: 'hidden', background: t.bgGrad, padding: '14px 18px 0', flexShrink: 0 }}>
+        <GeoBg t={t} />
+        <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <img src="/al-mawaid.png" alt="" style={{ width: 24, height: 24, objectFit: 'contain', filter: 'drop-shadow(0 2px 6px rgba(196,156,90,0.5))' }} />
+            <span style={{ fontSize: 9, letterSpacing: '0.24em', textTransform: 'uppercase', color: t.textSub, opacity: 0.55, fontWeight: 700, fontFamily: "'DM Sans',sans-serif" }}>Al-Mawaid</span>
+          </div>
+          <span style={{ fontSize: 11, color: t.textSub, opacity: 0.4, fontFamily: "'DM Sans',sans-serif" }}>
+            {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+          </span>
+        </div>
+        {activeTab === 'home' && (
+          <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', marginBottom: 2 }}>
+            <p style={{ fontFamily: "'Noto Nastaliq Urdu','Amiri',serif", fontSize: 16, color: t.accent, margin: 0, lineHeight: 1.8 }}>بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</p>
           </div>
         )}
-
-        {/* Profile Details */}
-        <div style={{
-          background: t.card, border: `2px solid ${t.border}`,
-          borderRadius: 16, overflow: 'hidden', marginBottom: 24
-        }}>
-          {profile?.phone && (
-            <div style={{
-              padding: '16px 20px', borderBottom: `1px solid ${t.border}`,
-              display: 'flex', justifyContent: 'space-between'
-            }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: t.textSub }}>Phone</span>
-              <span style={{ fontSize: 14, fontWeight: 700, color: t.text }}>{profile.phone}</span>
-            </div>
-          )}
-          {profile?.address && (
-            <div style={{
-              padding: '16px 20px', borderBottom: `1px solid ${t.border}`,
-              display: 'flex', justifyContent: 'space-between'
-            }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: t.textSub }}>Address</span>
-              <span style={{ fontSize: 14, fontWeight: 700, color: t.text, textAlign: 'right' }}>
-                {profile.address}
-              </span>
-            </div>
-          )}
-          {profile?.city && (
-            <div style={{
-              padding: '16px 20px',
-              display: 'flex', justifyContent: 'space-between'
-            }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: t.textSub }}>City</span>
-              <span style={{ fontSize: 14, fontWeight: 700, color: t.text }}>{profile.city}, {profile.state}</span>
-            </div>
-          )}
+        <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', marginBottom: 6 }}>
+          <h1 style={{ margin: 0, fontSize: activeTab === 'home' ? 28 : 20, fontWeight: 700, letterSpacing: '0.06em', lineHeight: 1.1, color: t.accent, fontFamily: "'Playfair Display',serif" }}>
+            {tabLabels[activeTab]}
+          </h1>
         </div>
+        <svg style={{ display: 'block', position: 'relative', zIndex: 1 }} width="100%" viewBox="0 0 1440 28" preserveAspectRatio="none">
+          <path d="M0,10 C200,28 400,0 600,14 C800,28 1000,4 1200,18 C1320,26 1400,10 1440,14 L1440,28 L0,28 Z" fill={t.headerWave} opacity="0.9" />
+        </svg>
+      </header>
 
-        {/* General Section */}
-        <h3 style={{
-          margin: '0 0 16px', fontSize: 14, fontWeight: 700,
-          color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.08em'
-        }}>
-          General
-        </h3>
-        <div style={{
-          background: t.card, border: `2px solid ${t.border}`,
-          borderRadius: 16, overflow: 'hidden', marginBottom: 24
-        }}>
-          <button style={{
-            width: '100%', padding: '18px 20px', background: 'none',
-            border: 'none', borderBottom: `1px solid ${t.border}`,
-            cursor: 'pointer', display: 'flex', alignItems: 'center',
-            justifyContent: 'space-between', transition: 'background 0.2s'
-          }}>
-            <span style={{ fontSize: 15, fontWeight: 600, color: t.text }}>Survey Data</span>
-            <ChevronRight size={20} color={t.textSub} />
-          </button>
-          <button style={{
-            width: '100%', padding: '18px 20px', background: 'none',
-            border: 'none', borderBottom: `1px solid ${t.border}`,
-            cursor: 'pointer', display: 'flex', alignItems: 'center',
-            justifyContent: 'space-between', transition: 'background 0.2s'
-          }}>
-            <span style={{ fontSize: 15, fontWeight: 600, color: t.text }}>Your Requests</span>
-            <ChevronRight size={20} color={t.textSub} />
-          </button>
-          <button style={{
-            width: '100%', padding: '18px 20px', background: 'none',
-            border: 'none', borderBottom: `1px solid ${t.border}`,
-            cursor: 'pointer', display: 'flex', alignItems: 'center',
-            justifyContent: 'space-between', transition: 'background 0.2s'
-          }}>
-            <span style={{ fontSize: 15, fontWeight: 600, color: t.text }}>Khidmat Guzar List</span>
-            <ChevronRight size={20} color={t.textSub} />
-          </button>
-          <button style={{
-            width: '100%', padding: '18px 20px', background: 'none',
-            border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center',
-            justifyContent: 'space-between', transition: 'background 0.2s'
-          }}>
-            <span style={{ fontSize: 15, fontWeight: 600, color: t.text }}>About us</span>
-            <ChevronRight size={20} color={t.textSub} />
-          </button>
-        </div>
+      {/* Pages — keep your original page components */}
+      {activeTab === 'home'     && <HomePage setActiveTab={setActiveTab} />}
+      {activeTab === 'feedback' && <FeedbackPage />}
+      {activeTab === 'post'     && <PostPage />}
+      {activeTab === 'profile'  && <ProfilePage theme={theme} setTheme={setTheme} />}
 
-        {/* Support Section */}
-        <h3 style={{
-          margin: '0 0 16px', fontSize: 14, fontWeight: 700,
-          color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.08em'
-        }}>
-          Support
-        </h3>
-        <div style={{
-          background: t.card, border: `2px solid ${t.border}`,
-          borderRadius: 16, overflow: 'hidden', marginBottom: 24
-        }}>
-          <button style={{
-            width: '100%', padding: '18px 20px', background: 'none',
-            border: 'none', borderBottom: `1px solid ${t.border}`,
-            cursor: 'pointer', display: 'flex', alignItems: 'center',
-            justifyContent: 'space-between', transition: 'background 0.2s'
-          }}>
-            <span style={{ fontSize: 15, fontWeight: 600, color: t.text }}>Contact us</span>
-            <ChevronRight size={20} color={t.textSub} />
-          </button>
-          <button style={{
-            width: '100%', padding: '18px 20px', background: 'none',
-            border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center',
-            justifyContent: 'space-between', transition: 'background 0.2s'
-          }}>
-            <span style={{ fontSize: 15, fontWeight: 600, color: t.text }}>Support ticket</span>
-            <ChevronRight size={20} color={t.textSub} />
-          </button>
-        </div>
-
-        {/* Logout Button */}
-        <button onClick={handleLogout}
-          style={{
-            width: '100%', padding: 18, fontSize: 15, fontWeight: 800,
-            textTransform: 'uppercase', letterSpacing: '0.08em',
-            color: '#fff', background: 'linear-gradient(135deg, #ef4444, #dc2626)',
-            border: 'none', borderRadius: 14, cursor: 'pointer',
-            boxShadow: '0 6px 24px rgba(239,68,68,0.3)',
-            transition: 'all 0.3s', display: 'flex', alignItems: 'center',
-            justifyContent: 'center', gap: 10
-          }}>
-          <LogOut size={20} />
-          Log Out
-        </button>
-      </div>
-      )
-}
-
-      /* ─── MAIN APP ─────────────────────────────────────────────────────────────────── */
-      export default function App() {
-  const [session, setSession] = useState(undefined)
-      const [activeTab, setActiveTab] = useState('home')
-      const [themeId, setThemeId] = useState(getSavedThemeId())
-const theme = THEMES[themeId]
-  // Toast state for global feedback
-  const [toastInfo, setToastInfo] = useState(null)
-  const showToast = (msg, type = 'success') => {
-    setToastInfo({msg, type})
-    setTimeout(() => setToastInfo(null), 4000)
-  }
-
-  useEffect(() => {
-        saveThemeId(themeId)
-      }, [themeId])
-
-  useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
-    const {data: {subscription} } = supabase.auth.onAuthStateChange((_event, session) => setSession(session))
-    return () => subscription.unsubscribe()
-  }, [])
-
-  const signOut = async () => {
-        await supabase.auth.signOut()
-      }
-
-      const tabs = [
-      {id: 'home', label: 'Home', Icon: Home },
-      {id: 'survey', label: 'Survey', Icon: ClipboardList },
-      {id: 'thali', label: 'Post', Icon: FileText },
-      {id: 'profile', label: 'Profile', Icon: User },
-      ]
-
-      const pageTitles = {
-        home: {en: 'Al-Mawaid', sub: 'Weekly Menu & Feedback' },
-      survey: {en: 'Weekly Survey', sub: 'Share your feedback' },
-      thali: {en: 'Posts', sub: 'Latest Updates' },
-      profile: {en: 'My Profile', sub: 'Member details' },
-  }
-      const title = pageTitles[activeTab]
-
-      if (session === undefined) {
-    return (
-      <div style={{
-        minHeight: '100vh', background: theme.bgGrad,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: "'Inter', -apple-system, sans-serif"
-      }}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18 }}>
-          <div className="spin" style={{
-            width: 44, height: 44,
-            border: `3px solid ${theme.spinnerBorder}`,
-            borderTop: `3px solid ${theme.spinnerTop}`, borderRadius: '50%'
-          }} />
-          <p style={{ margin: 0, fontSize: 14, color: theme.textSub, opacity: 0.6, fontWeight: 600 }}>Loading…</p>
-        </div>
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin .85s linear infinite}body{margin:0;font-family:'Inter',-apple-system,sans-serif}`}</style>
-      </div>
-      )
-  }
-
-      if (!session) return <LoginPage themeId={themeId} setThemeId={setThemeId} />
-
-      return (
-      <ThemeCtx.Provider value={{ ...theme, theme, setThemeId }}>
-        <AuthCtx.Provider value={authValue}>
-            {/* Toast handling */}
-            {(() => {
-              const [toastInfo, setToastInfo] = useState(null)
-              const showToast = (msg, type = 'success') => {
-                setToastInfo({msg, type})
-                setTimeout(() => setToastInfo(null), 4000)
-              }
-              // Expose showToast via a custom attribute on AuthCtx for children to consume
-              const authValue = { user: session.user, signOut, showToast }
-              return (
-                <AuthCtx.Provider value={authValue}>
-                  {/* Toast UI */}
-                  {toastInfo && <Toast {...toastInfo} />}
-                </AuthCtx.Provider>
-              )
-            })() }
-          <div style={{
-            fontFamily: "'Inter', -apple-system, sans-serif",
-            minHeight: '100vh', background: theme.bg, color: theme.text,
-            display: 'flex', flexDirection: 'column',
-            transition: 'background 0.4s ease, color 0.4s ease'
-          }}>
-
-            {/* Theme Switcher only on Profile */}
-            {activeTab === 'profile' && <ThemeSwitcher themeId={themeId} setThemeId={setThemeId} theme={theme} />}
-
-            {/* HEADER */}
-            <header style={{
-              position: 'relative', overflow: 'hidden',
-              background: theme.bgGrad, padding: '24px 20px 0',
-              transition: 'background 0.4s ease'
-            }}>
-              <GeoBg t={theme} />
-
-              <div style={{
-                position: 'relative', zIndex: 1, display: 'flex',
-                justifyContent: 'space-between', alignItems: 'center', marginBottom: 16
-              }}>
-                <div />
-
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  color: theme.textSub, opacity: 0.8
-                }}>
-                  <img src="/logo.png" alt="" style={{ width: 28, height: 28, objectFit: 'contain' }} />
-                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em' }}>
-                    {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                  </span>
-                </div>
+      {/* Bottom Nav */}
+      <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 30, display: 'flex', justifyContent: 'space-around', alignItems: 'center', padding: '8px 4px 18px', background: t.navBg, borderTop: `1px solid ${t.navBorder}`, boxShadow: '0 -8px 30px rgba(0,0,0,0.20)' }}>
+        {tabs.map(({ id, label, Icon }) => {
+          const active = activeTab === id
+          return (
+            <button key={id} onClick={() => setActiveTab(id)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '2px 14px', position: 'relative', WebkitTapHighlightColor: 'transparent' }}>
+              {active && <div style={{ position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)', width: 28, height: 2.5, borderRadius: 6, background: t.accent }} />}
+              <div style={{ width: 36, height: 36, borderRadius: '50%', transition: 'all 0.25s', background: active ? t.accentBg : 'transparent', border: active ? `1px solid ${t.accentBorder}` : '1px solid transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon size={16} color={active ? t.accent : t.textSub} strokeWidth={active ? 2.2 : 1.5} style={{ opacity: active ? 1 : 0.5 }} />
               </div>
+              <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.06em', color: active ? t.accent : t.textSub, opacity: active ? 1 : 0.45, fontFamily: "'DM Sans',sans-serif" }}>{label}</span>
+            </button>
+          )
+        })}
+      </nav>
 
-              {activeTab === 'home' && (
-                <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', marginBottom: 10 }}>
-                  <p style={{
-                    fontFamily: "'Amiri', serif", fontSize: 20, letterSpacing: '0.08em',
-                    color: theme.accent, margin: 0, fontWeight: 700
-                  }}>
-                    بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ
-                  </p>
-                </div>
-              )}
-
-              <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', marginBottom: 14 }}>
-                {activeTab === 'home' && (
-                  <p style={{
-                    fontSize: 11, letterSpacing: '0.28em', textTransform: 'uppercase',
-                    color: theme.textSub, opacity: 0.5, margin: '0 0 4px', fontWeight: 700
-                  }}>Welcome to</p>
-                )}
-                <h1 style={{
-                  margin: 0, fontSize: activeTab === 'home' ? 38 : 28,
-                  fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.03em',
-                  lineHeight: 1.1, color: theme.accent, textShadow: `0 0 24px ${theme.accentBg}`
-                }}>
-                  {title.en}
-                </h1>
-                <p style={{
-                  margin: '4px 0 0', fontSize: 12, letterSpacing: '0.18em',
-                  textTransform: 'uppercase', color: theme.textSub, opacity: 0.5, fontWeight: 700
-                }}>{title.sub}</p>
-              </div>
-
-              <svg style={{ display: 'block', position: 'relative', zIndex: 1 }}
-                width="100%" viewBox="0 0 1440 48" preserveAspectRatio="none">
-                <path d="M0,16 C200,48 400,0 600,24 C800,48 1000,6 1200,28 C1320,42 1400,16 1440,22 L1440,48 L0,48 Z"
-                  fill={theme.bg} />
-              </svg>
-            </header>
-
-            {activeTab === 'home' && <HomePage />}
-            {activeTab === 'survey' && <SurveyPage />}
-            {activeTab === 'thali' && <ThaliRequestsPage />}
-            {activeTab === 'profile' && <ProfilePage />}
-
-            {/* Bottom nav */}
-            <nav style={{
-              position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 1000,
-              display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-              padding: '12px 10px 24px', background: theme.navBg || theme.card,
-              borderTop: `2px solid ${theme.navBorder || theme.border}`,
-              boxShadow: '0 -8px 36px rgba(0,0,0,0.12)',
-              transition: 'background 0.4s ease'
-            }}>
-              {tabs.map(({ id, label, Icon }) => {
-                const active = activeTab === id
-                return (
-                  <button key={id} onClick={() => setActiveTab(id)}
-                    style={{
-                      background: 'none', border: 'none', cursor: 'pointer',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center',
-                      gap: 4, padding: '8px 16px', position: 'relative',
-                      WebkitTapHighlightColor: 'transparent'
-                    }}>
-                    {active && (
-                      <div style={{
-                        position: 'absolute', top: -14, left: '50%', transform: 'translateX(-50%)',
-                        width: 36, height: 4, borderRadius: 8, background: theme.accent,
-                        boxShadow: `0 0 14px ${theme.accentBg}`
-                      }} />
-                    )}
-                    <Icon size={22} color={active ? theme.accent : theme.textSub} strokeWidth={active ? 2.5 : 2} />
-                    <span style={{
-                      fontSize: 10, fontWeight: active ? 800 : 600, letterSpacing: '0.02em',
-                      color: active ? theme.accent : theme.textSub, opacity: active ? 1 : 0.7
-                    }}>
-                      {label}
-                    </span>
-                  </button>
-                )
-              })}
-            </nav>
-
-
-            <style>{`
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Amiri:wght@400;700&display=swap');
-            @keyframes spin { to { transform: rotate(360deg); } }
-            .spin { animation: spin 0.85s linear infinite; }
-            @keyframes fadeInDown {
-              from { opacity:0; transform:translateY(-10px) }
-              to   { opacity:1; transform:translateY(0) }
-            }
-            @keyframes fadeInUp {
-              from { opacity:0; transform:translateY(10px) }
-              to   { opacity:1; transform:translateY(0) }
-            }
-            @keyframes fadeIn {
-              from { opacity:0 }
-              to   { opacity:1 }
-            }
-            * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
-{toastInfo && <Toast {...toastInfo} />}
-            body { margin: 0; font-family: 'Inter', -apple-system, sans-serif; }
-          `}</style>
-          </div>
-        </AuthCtx.Provider>
-      </ThemeCtx.Provider>
-      )
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=DM+Sans:wght@400;500;600;700;800&family=Amiri:wght@400;700&display=swap');
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spin { animation: spin 0.8s linear infinite; }
+        * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+        body { margin: 0; }
+        ::-webkit-scrollbar { display: none; }
+        input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.5); cursor: pointer; }
+        textarea::placeholder, input::placeholder { opacity: 0.45; }
+      `}</style>
+    </div>
+  )
 }

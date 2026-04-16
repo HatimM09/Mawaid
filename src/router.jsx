@@ -1,0 +1,40 @@
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import App from './App';
+import AdminLayout from './admin/AdminLayout';
+import AdminRoute from './admin/AdminRoute';
+import Dashboard from './admin/Dashboard';
+import UsersPage from './admin/UsersPage';
+// placeholders for other admin pages (you can add them later)
+import SurveysPage from './admin/SurveysPage';
+import FeedbackAdminPage from './admin/FeedbackAdminPage';
+import RequestsAdminPage from './admin/RequestsAdminPage';
+import QueriesAdminPage from './admin/QueriesAdminPage';
+import StaffPage from './admin/StaffPage';
+import SettingsPage from './admin/SettingsPage';
+
+export default function MainRouter() {
+  return (
+    <Router>
+      <Routes>
+        {/* Public app */}
+        <Route path='/*' element={<App />} />
+        {/* Admin area – guarded */}
+        <Route element={<AdminRoute />}> {/* all children require admin */}
+          <Route path='/admin' element={<AdminLayout />}> 
+            <Route index element={<Dashboard />} />
+            <Route path='users' element={<UsersPage />} />
+            <Route path='surveys' element={<SurveysPage />} />
+            <Route path='feedback' element={<FeedbackAdminPage />} />
+            <Route path='requests' element={<RequestsAdminPage />} />
+            <Route path='queries' element={<QueriesAdminPage />} />
+            <Route path='staff' element={<StaffPage />} />
+            <Route path='settings' element={<SettingsPage />} />
+          </Route>
+        </Route>
+        {/* Fallback */}
+        <Route path='*' element={<Navigate to='/' replace />} />
+      </Routes>
+    </Router>
+  );
+}
