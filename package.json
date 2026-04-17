@@ -23,7 +23,6 @@
     "recharts": "^2.15.4"
   },
   "devDependencies": {
-    "@esbuild/win32-x64": "^0.28.0",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@vitejs/plugin-react": "^4.7.0",
