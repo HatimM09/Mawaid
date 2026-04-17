@@ -14,13 +14,20 @@ export default function AdminRoute() {
       if (!session) return setStatus('denied')
 
       // Check role in staff table
-      const { data: staffRow } = await supabase
-        .from('staff')
-        .select('role')
-        .eq('user_id', session.user.id)
-        .single()
+      let role = ''
 
-      const role = staffRow?.role || ''
+      // Check staff table if it exists
+      try {
+        const { data: staffRow } = await supabase
+          .from('staff')
+          .select('role')
+          .eq('user_id', session.user.id)
+          .single()
+        role = staffRow?.role || ''
+      } catch (err) {
+        // If staff table doesn't exist, fall back to portal flag for demo
+        console.warn('[AdminRoute] staff table not found, using sessionStorage fallback')
+      }
 
       // Also accept the sessionStorage flag set by the login page
       const portalRole = sessionStorage.getItem('al_mawaid_portal') || ''

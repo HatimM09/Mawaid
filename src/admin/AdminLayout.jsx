@@ -38,8 +38,13 @@ export default function AdminLayout() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) return
+      // Fallback to email if the staff table doesn't exist yet or has no row
+      const fallback = session.user.email || 'Admin'
+      setAdminName(fallback)
       supabase.from('staff').select('name').eq('user_id', session.user.id).single()
-        .then(({ data }) => { if (data?.name) setAdminName(data.name) })
+        .then(({ data, error }) => {
+          if (!error && data?.name) setAdminName(data.name)
+        })
     })
   }, [])
 
