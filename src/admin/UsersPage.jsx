@@ -3,8 +3,12 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { supabase } from './supabaseClient'
 import { Search, RefreshCw, UserPlus, Edit2, Trash2, X, Shield, Phone, MapPin, UserCheck } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Input, Grid, SectionHeader, fmtDate, Alert } from './ui'
+import { useOutletContext } from 'react-router-dom'
 
 export default function UsersPage() {
+  const context = useOutletContext() || { role: 'khidmat' }
+  const { role } = context
+  const isAdmin = role === 'admin'
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -13,24 +17,43 @@ export default function UsersPage() {
   const [editForm, setEditForm] = useState(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [limit] = useState(30)
+  const [page, setPage] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
+  const [fetchingMore, setFetchingMore] = useState(false)
 
-  const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true)
+  const load = useCallback(async (isInitial = false) => {
+    if (isInitial) {
+      setLoading(true)
+      setPage(0)
+      setHasMore(true)
+    } else {
+      setFetchingMore(true)
+    }
+
+    const currentPage = isInitial ? 0 : page
     const { data, error } = await supabase
       .from('user_stats')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
+      .range(currentPage * limit, (currentPage + 1) * limit - 1)
     
-    if (error) setError('Failed to load users')
-    else setUsers(data || [])
+    if (error) {
+      setError('Failed to load users')
+    } else {
+      if (isInitial) setUsers(data || [])
+      else setUsers(prev => [...prev, ...(data || [])])
+      
+      if ((data || []).length < limit) setHasMore(false)
+      if (!isInitial) setPage(p => p + 1)
+    }
     setLoading(false)
-  }, [])
+    setFetchingMore(false)
+  }, [limit, page])
 
   useEffect(() => { 
-    load()
-    const interval = setInterval(() => load(true), 60000) // Auto-refresh every minute
-    return () => clearInterval(interval)
-  }, [load])
+    load(true)
+  }, [])
 
   const handleSave = async (e) => {
     e.preventDefault()
@@ -100,30 +123,38 @@ export default function UsersPage() {
     <div style={{ fontSize: 12, color: T.textSub, maxWidth: 180 }}>{u.address || '—'}</div>,
     <div style={{ fontSize: 12, color: T.textSub }}>{fmtDate(u.created_at)}</div>,
     <div style={{ display: 'flex', gap: 8 }}>
-      <Btn size="sm" variant="outline" onClick={() => setEditForm(u)} title="Edit"><Edit2 size={13} /></Btn>
-      <Btn size="sm" variant="danger" onClick={() => handleDelete(u)} title="Delete"><Trash2 size={13} /></Btn>
+      {isAdmin ? (
+        <>
+          <Btn size="sm" variant="outline" onClick={() => setEditForm(u)} title="Edit"><Edit2 size={13} /></Btn>
+          <Btn size="sm" variant="danger" onClick={() => handleDelete(u)} title="Delete"><Trash2 size={13} /></Btn>
+        </>
+      ) : (
+        <span style={{ fontSize: 11, color: T.textSub, opacity: 0.5 }}>View Only</span>
+      )}
     </div>,
   ])
 
   return (
     <PageWrap>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 }}>
-        <PageTitle sub="Full management of member profiles and database status">Members Database</PageTitle>
-        <Btn onClick={() => { setEditForm({ name: '', email: '', thali_number: '', phone: '', address: '' }); setIsAdding(true); }}>
-          <UserPlus size={16} /> Add Member
-        </Btn>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>
+        <PageTitle sub="Full management of thali user profiles and database status">Thali Users Database</PageTitle>
+        {isAdmin && (
+          <Btn onClick={() => { setEditForm({ name: '', email: '', thali_number: '', phone: '', address: '' }); setIsAdding(true); }}>
+            <UserPlus size={16} /> <span className="desktop-only">Add Thali User</span><span className="mobile-only" style={{ display: 'none' }}>Add</span>
+          </Btn>
+        )}
       </div>
 
       <Grid cols={3} style={{ marginBottom: 24 }}>
-        <AdminCard style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 11, color: T.textSub, textTransform: 'uppercase', marginBottom: 4 }}>Total Members</div>
+        <AdminCard className="stagger-item" style={{ textAlign: 'center', animationDelay: '0.05s' }}>
+          <div style={{ fontSize: 11, color: T.textSub, textTransform: 'uppercase', marginBottom: 4 }}>Total Thali Users</div>
           <div style={{ fontSize: 24, fontWeight: 800, color: T.accent }}>{stats.total}</div>
         </AdminCard>
-        <AdminCard style={{ textAlign: 'center' }}>
+        <AdminCard className="stagger-item" style={{ textAlign: 'center', animationDelay: '0.1s' }}>
           <div style={{ fontSize: 11, color: T.textSub, textTransform: 'uppercase', marginBottom: 4 }}>Complete Profiles</div>
           <div style={{ fontSize: 24, fontWeight: 800, color: T.success }}>{stats.active}</div>
         </AdminCard>
-        <AdminCard style={{ textAlign: 'center' }}>
+        <AdminCard className="stagger-item" style={{ textAlign: 'center', animationDelay: '0.15s' }}>
           <div style={{ fontSize: 11, color: T.textSub, textTransform: 'uppercase', marginBottom: 4 }}>Incomplete</div>
           <div style={{ fontSize: 24, fontWeight: 800, color: T.danger }}>{stats.missingInfo}</div>
         </AdminCard>
@@ -148,13 +179,28 @@ export default function UsersPage() {
       </div>
 
       {loading && users.length === 0 ? <Spinner /> : (
-        <AdminCard style={{ padding: 0, overflow: 'hidden' }}>
-          <Table
-            headers={['Member Identity', 'Thali #', 'Contact', 'Address', 'Joined On', 'Actions']}
-            rows={rows}
-            emptyMsg="No members found matching your search."
-          />
-        </AdminCard>
+        <>
+          <AdminCard style={{ padding: 0, overflow: 'hidden' }}>
+            <Table
+              headers={['User Identity', 'Thali #', 'Contact', 'Address', 'Joined On', 'Actions']}
+              rows={rows}
+              emptyMsg="No thali users found matching your search."
+            />
+          </AdminCard>
+          
+          {hasMore && (
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 24, paddingBottom: 40 }}>
+              <Btn 
+                variant="outline" 
+                onClick={() => load(false)} 
+                disabled={fetchingMore}
+                style={{ minWidth: 160 }}
+              >
+                {fetchingMore ? <RefreshCw size={15} className="spin" /> : 'Load More Thali Users'}
+              </Btn>
+            </div>
+          )}
+        </>
       )}
 
       {/* Edit/Add Modal */}
@@ -172,7 +218,7 @@ export default function UsersPage() {
               <X size={20} />
             </button>
             <h2 style={{ color: T.accent, marginTop: 0, marginBottom: 8, fontSize: 20 }}>
-              {isAdding ? 'Add New Member' : 'Edit Member Details'}
+              {isAdding ? 'Add New Thali User' : 'Edit Thali User Details'}
             </h2>
             <p style={{ color: T.textSub, fontSize: 13, marginBottom: 24 }}> Ensure all information is accurate for food delivery.</p>
             
@@ -191,7 +237,7 @@ export default function UsersPage() {
 
               <div style={{ marginTop: 12, display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
                 <Btn variant="ghost" type="button" onClick={() => setEditForm(null)}>Cancel</Btn>
-                <Btn type="submit" disabled={loading}>{isAdding ? 'Create Member' : 'Save Changes'}</Btn>
+                <Btn type="submit" disabled={loading}>{isAdding ? 'Create Thali User' : 'Save Changes'}</Btn>
               </div>
             </form>
           </AdminCard>

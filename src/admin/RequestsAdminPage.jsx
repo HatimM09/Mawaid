@@ -1,13 +1,16 @@
-// src/admin/RequestsAdminPage.jsx
 import React, { useState, useEffect } from 'react'
+import { useOutletContext } from 'react-router-dom'
 import { supabase } from './supabaseClient'
-import { RefreshCw, Search, CheckCircle, Clock, XCircle } from 'lucide-react'
+import { RefreshCw, Search, CheckCircle, Clock, XCircle, ShieldAlert } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, fmtDate, fmtDateTime } from './ui'
 
 const STATUS_COLORS = { pending: '#e09855', approved: '#5eba82', rejected: '#e05555' }
 const STATUS_ICONS  = { pending: <Clock size={13} />, approved: <CheckCircle size={13} />, rejected: <XCircle size={13} /> }
 
 export default function RequestsAdminPage() {
+  const context = useOutletContext() || { role: 'khidmat' }
+  const { role } = context
+  const isAdmin = role === 'admin'
   const [loading, setLoading]   = useState(true)
   const [requests, setRequests] = useState([])
   const [users, setUsers]       = useState({})
@@ -64,15 +67,21 @@ export default function RequestsAdminPage() {
       </div>,
       fmtDateTime(r.created_at),
       <div style={{ display: 'flex', gap: 6 }}>
-        {status !== 'approved' && (
-          <Btn size="sm" variant="outline" onClick={() => updateStatus(r.id, 'approved')}>
-            Approve
-          </Btn>
-        )}
-        {status !== 'rejected' && (
-          <Btn size="sm" variant="danger" onClick={() => updateStatus(r.id, 'rejected')}>
-            Reject
-          </Btn>
+        {isAdmin ? (
+          <>
+            {status !== 'approved' && (
+              <Btn size="sm" variant="outline" onClick={() => updateStatus(r.id, 'approved')}>
+                Approve
+              </Btn>
+            )}
+            {status !== 'rejected' && (
+              <Btn size="sm" variant="danger" onClick={() => updateStatus(r.id, 'rejected')}>
+                Reject
+              </Btn>
+            )}
+          </>
+        ) : (
+          <span style={{ fontSize: 11, color: T.textSub, opacity: 0.5 }}>View Only</span>
         )}
       </div>,
     ]
@@ -85,7 +94,10 @@ export default function RequestsAdminPage() {
 
   return (
     <PageWrap>
-      <PageTitle sub={`${requests.length} total requests`}>Thali Requests</PageTitle>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <PageTitle sub={`${requests.length} total requests`}>Thali Requests</PageTitle>
+        {!isAdmin && <Badge color="var(--accent-orange)"><ShieldAlert size={12} style={{ marginRight: 6 }} /> Read-Only Mode (Khidmat)</Badge>}
+      </div>
 
       {/* Quick counts */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
@@ -93,12 +105,13 @@ export default function RequestsAdminPage() {
           { label: 'Pending',  count: pendingCount,  color: '#e09855' },
           { label: 'Approved', count: approvedCount, color: '#5eba82' },
           { label: 'Rejected', count: rejectedCount, color: '#e05555' },
-        ].map(({ label, count, color }) => (
-          <div key={label} style={{
+        ].map(({ label, count, color }, idx) => (
+          <div key={label} className="stagger-item" style={{
             flex: 1, minWidth: 140,
             background: T.card, border: `1px solid ${color}28`,
             borderRadius: 14, padding: '16px 20px',
             display: 'flex', alignItems: 'center', gap: 14,
+            animationDelay: `${idx * 0.1}s`
           }}>
             <div style={{ width: 10, height: 10, borderRadius: '50%', background: color }} />
             <div>
@@ -113,7 +126,7 @@ export default function RequestsAdminPage() {
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200, position: 'relative' }}>
           <Search size={14} color={T.textSub} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search member…"
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search thali user…"
             style={{ width: '100%', boxSizing: 'border-box', padding: '11px 14px 11px 36px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit' }}
           />
         </div>
@@ -137,7 +150,7 @@ export default function RequestsAdminPage() {
       {loading ? <Spinner /> : (
         <AdminCard style={{ padding: 0 }}>
           <Table
-            headers={['Member', 'Type', 'Details', 'Date', 'Status', 'Submitted', 'Actions']}
+            headers={['Thali User', 'Type', 'Details', 'Date', 'Status', 'Submitted', 'Actions']}
             rows={rows}
             emptyMsg="No requests found."
           />

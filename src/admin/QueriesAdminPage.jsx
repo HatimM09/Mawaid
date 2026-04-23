@@ -1,12 +1,14 @@
-// src/admin/QueriesAdminPage.jsx
 import React, { useState, useEffect } from 'react'
+import { useOutletContext } from 'react-router-dom'
 import { supabase } from './supabaseClient'
-import { RefreshCw, Search, Send, ChevronDown, ChevronUp } from 'lucide-react'
+import { RefreshCw, Search, Send, ChevronDown, ChevronUp, ShieldAlert } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner, fmtDateTime } from './ui'
 
 const STATUS_COLORS = { open: '#e09855', resolved: '#5eba82', closed: '#9aabb8' }
 
 export default function QueriesAdminPage() {
+  const { role } = useOutletContext()
+  const isAdmin = role === 'admin'
   const [loading, setLoading]   = useState(true)
   const [queries, setQueries]   = useState([])
   const [users, setUsers]       = useState({})
@@ -21,7 +23,7 @@ export default function QueriesAdminPage() {
   const load = async () => {
     setLoading(true)
     const [{ data: q }, { data: us }] = await Promise.all([
-      supabase.from('user_queries').select('*').order('created_at', { ascending: false }),
+      supabase.from('queries').select('*').order('created_at', { ascending: false }),
       supabase.from('user_stats').select('user_id,name,email,thali_number'),
     ])
     const uMap = {}
@@ -32,14 +34,14 @@ export default function QueriesAdminPage() {
   }
 
   const updateStatus = async (id, status) => {
-    await supabase.from('user_queries').update({ status }).eq('id', id)
+    await supabase.from('queries').update({ status }).eq('id', id)
     setQueries(prev => prev.map(q => q.id === id ? { ...q, status } : q))
   }
 
   const sendReply = async (q) => {
     if (!reply.trim()) return
     setSending(true)
-    const { error } = await supabase.from('user_queries').update({
+    const { error } = await supabase.from('queries').update({
       admin_reply: reply.trim(),
       status: 'resolved',
       replied_at: new Date().toISOString(),
@@ -55,7 +57,7 @@ export default function QueriesAdminPage() {
   const filtered = queries.filter(q => {
     const u = users[q.user_id] || {}
     const s = search.toLowerCase()
-    const matchSearch = !s || (u.name||'').toLowerCase().includes(s) || (q.message||'').toLowerCase().includes(s)
+    const matchSearch = !s || (u.name||'').toLowerCase().includes(s) || (q.comment||'').toLowerCase().includes(s)
     const matchStatus = statusFilter === 'all' || q.status === statusFilter
     return matchSearch && matchStatus
   })
@@ -65,7 +67,10 @@ export default function QueriesAdminPage() {
 
   return (
     <PageWrap>
-      <PageTitle sub={`${queries.length} total queries`}>User Queries</PageTitle>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+        <PageTitle sub={`${queries.length} total queries`}>User Queries</PageTitle>
+        {!isAdmin && <Badge color="var(--accent-orange)"><ShieldAlert size={12} style={{ marginRight: 6 }} /> Read-Only Mode (Khidmat)</Badge>}
+      </div>
 
       {/* Quick counts */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
@@ -87,7 +92,7 @@ export default function QueriesAdminPage() {
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200, position: 'relative' }}>
           <Search size={14} color={T.textSub} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search member or message…"
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search thali user or comment…"
             style={{ width: '100%', boxSizing: 'border-box', padding: '11px 14px 11px 36px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit' }}
           />
         </div>
@@ -130,7 +135,7 @@ export default function QueriesAdminPage() {
                     {q.subject && (
                       <div style={{ fontWeight: 600, color: T.accent, fontSize: 13, marginBottom: 4 }}>{q.subject}</div>
                     )}
-                    <div style={{ color: T.textSub, fontSize: 13, lineHeight: 1.6 }}>{q.message}</div>
+                    <div style={{ color: T.textSub, fontSize: 13, lineHeight: 1.6 }}>{q.comment}</div>
 
                     {q.admin_reply && (
                       <div style={{
@@ -142,10 +147,12 @@ export default function QueriesAdminPage() {
                       </div>
                     )}
                   </div>
-                  <button onClick={() => { setExpanded(isExpanded ? null : q.id); setReply('') }}
-                    style={{ background: 'none', border: 'none', color: T.textSub, cursor: 'pointer', padding: 4, display: 'flex' }}>
-                    {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                  </button>
+                  {isAdmin && (
+                    <button onClick={() => { setExpanded(isExpanded ? null : q.id); setReply('') }}
+                      style={{ background: 'none', border: 'none', color: T.textSub, cursor: 'pointer', padding: 4, display: 'flex' }}>
+                      {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                    </button>
+                  )}
                 </div>
 
                 {isExpanded && (

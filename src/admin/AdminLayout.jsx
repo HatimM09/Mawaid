@@ -1,49 +1,65 @@
 // src/admin/AdminLayout.jsx
 import React, { useState, useEffect } from 'react'
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, ClipboardList, Star, FileText,
-  MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight
+  MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight, ChevronLeft, Search, Bell, Zap, Command, Sparkles, AlertCircle, History, Package, Send
 } from 'lucide-react'
+import { T, updateSystemTheme } from './ui'
 import { supabase } from './supabaseClient'
 
 const NAV = [
-  { to: '/admin',           label: 'Dashboard',  Icon: LayoutDashboard, end: true },
-  { to: '/admin/users',     label: 'Users',      Icon: Users },
-  { to: '/admin/surveys',   label: 'Surveys',    Icon: ClipboardList },
-  { to: '/admin/feedback',  label: 'Feedback',   Icon: Star },
-  { to: '/admin/requests',  label: 'Requests',   Icon: FileText },
-  { to: '/admin/queries',   label: 'Queries',    Icon: MessageSquare },
-  { to: '/admin/staff',     label: 'Staff',      Icon: Shield },
-  { to: '/admin/settings',  label: 'Settings',   Icon: Settings },
+  { to: '/admin', label: 'Dashboard', Icon: LayoutDashboard, color: '#D4AF37', end: true },
+  { to: '/admin/users', label: 'Thali Users', Icon: Users, color: '#D4AF37' },
+  { to: '/admin/requests', label: 'Thali Requests', Icon: FileText, color: '#D4AF37' },
+  { to: '/admin/surveys', label: 'Surveys', Icon: ClipboardList, color: '#D4AF37' },
+  { to: '/admin/inventory', label: 'Inventory', Icon: Package, color: '#D4AF37' },
+  { to: '/admin/queries', label: 'Queries', Icon: '?' },
+  { to: '/admin/staff', label: 'Staff', Icon: Shield, color: '#D4AF37' },
+  { to: '/admin/notifications', label: 'Broadcast', Icon: Send, color: '#D4AF37' },
+  { to: '/admin/feedback', label: 'Reports', Icon: Star, color: '#D4AF37' },
+  { to: '/admin/settings', label: 'Settings', Icon: Settings, color: '#D4AF37' },
 ]
-
-const T = {
-  bg:         '#0b0f1a',
-  sidebar:    '#0e1422',
-  card:       '#141d2e',
-  border:     'rgba(196,156,90,0.14)',
-  accent:     '#c49c5a',
-  accentGrad: 'linear-gradient(135deg,#d4aa6a,#a87c40)',
-  accentBg:   'rgba(196,156,90,0.10)',
-  text:       '#f0ead8',
-  textSub:    '#9aabb8',
-}
 
 export default function AdminLayout() {
   const [sideOpen, setSideOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const [adminName, setAdminName] = useState('Admin')
+  const [role, setRole] = useState('khidmat')
   const navigate = useNavigate()
+  const location = useLocation()
+
+  const [showPalette, setShowPalette] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setShowPalette(true)
+      }
+      if (e.key === 'Escape') {
+        setShowPalette(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('almawaid_theme') || 'midnight'
+    updateSystemTheme(savedTheme)
+  }, [])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) return
-      // Fallback to email if the staff table doesn't exist yet or has no row
       const fallback = session.user.email || 'Admin'
       setAdminName(fallback)
-      supabase.from('staff').select('name').eq('user_id', session.user.id).single()
+      supabase.from('staff').select('name, role').eq('user_id', session.user.id).maybeSingle()
         .then(({ data, error }) => {
           if (!error && data?.name) setAdminName(data.name)
+          if (!error && data?.role) setRole(data.role)
         })
     })
   }, [])
@@ -55,119 +71,326 @@ export default function AdminLayout() {
     window.location.reload()
   }
 
-  const SidebarContent = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Logo */}
-      <div style={{ padding: '28px 24px 20px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 12, background: T.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>🍽️</div>
-        <div>
-          <div style={{ color: T.accent, fontWeight: 700, fontSize: 16, letterSpacing: '0.04em', lineHeight: 1.2 }}>Al-Mawaid</div>
-          <div style={{ color: T.textSub, fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 2 }}>Admin Portal</div>
+  const getActiveLabel = () => {
+    const active = NAV.find(n => location.pathname === n.to || (n.to !== '/admin' && location.pathname.startsWith(n.to)))
+    return active ? active.label : 'Dashboard'
+  }
+
+  const filteredNav = NAV.filter(n => n.label.toLowerCase().includes(searchQuery.toLowerCase()))
+
+  const SidebarContent = ({ isMobile }) => (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: isMobile ? '32px 24px' : '24px 16px' }}>
+      {/* Brand */}
+      <div style={{ padding: '0 12px 32px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #8B6B23, #B8860B)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 0 15px rgba(184, 134, 11, 0.4)', flexShrink: 0,
+          border: '1px solid rgba(212, 175, 55, 0.3)'
+        }}>
+          <img src="/al-mawaid.png" alt="" style={{ width: 20, height: 20, objectFit: 'contain' }} />
         </div>
+        {(!collapsed || isMobile) && (
+          <div style={{ fontWeight: 800, fontSize: 13, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
+            <span style={{ color: 'var(--text-primary)' }}>AL-MAWAID</span>
+            <span style={{ color: 'var(--text-tertiary)', marginLeft: 6 }}>{role.toUpperCase()}</span>
+          </div>
+        )}
       </div>
 
-      {/* Admin identity */}
-      <div style={{ padding: '14px 24px', borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ width: 32, height: 32, borderRadius: '50%', background: T.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
-          {adminName.charAt(0).toUpperCase()}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ color: T.text, fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{adminName}</div>
-          <div style={{ color: T.textSub, fontSize: 10, marginTop: 1 }}>Administrator</div>
-        </div>
+      <div style={{ color: 'var(--text-tertiary)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', padding: '0 12px 16px' }}>
+        {(!collapsed || isMobile) ? 'Command Center' : '•••'}
       </div>
 
-      {/* Nav */}
-      <nav style={{ flex: 1, padding: '16px 12px', overflowY: 'auto' }}>
-        <div style={{ color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', padding: '4px 12px 12px' }}>Navigation</div>
-        {NAV.map(({ to, label, Icon, end }) => (
+      <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {NAV.map(({ to, label, Icon, color, end }) => (
           <NavLink key={to} to={to} end={end}
             style={({ isActive }) => ({
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '11px 12px', borderRadius: 12, marginBottom: 4,
+              display: 'flex', alignItems: 'center', gap: 16,
+              padding: '12px 14px', borderRadius: 16,
               textDecoration: 'none',
-              background: isActive ? T.accentBg : 'transparent',
-              border: `1px solid ${isActive ? 'rgba(196,156,90,0.28)' : 'transparent'}`,
-              color: isActive ? T.accent : T.textSub,
-              fontWeight: isActive ? 700 : 500, fontSize: 14, transition: 'all 0.2s',
+              background: isActive ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
+              color: isActive ? 'var(--text-primary)' : 'var(--text-tertiary)',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              position: 'relative',
+              overflow: 'hidden'
             })}
             onClick={() => setSideOpen(false)}
           >
             {({ isActive }) => (
               <>
-                <Icon size={17} strokeWidth={isActive ? 2.2 : 1.7} />
-                <span style={{ flex: 1 }}>{label}</span>
-                {isActive && <ChevronRight size={14} />}
+                <div style={{
+                  width: 38, height: 38, borderRadius: 12,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: isActive ? `rgba(${color === 'var(--accent-cyan)' ? '0, 242, 255' : color === 'var(--accent-purple)' ? '157, 80, 187' : '255, 153, 102'}, 0.1)` : 'transparent',
+                  color: isActive ? color : 'var(--text-tertiary)',
+                  boxShadow: isActive ? `0 0 20px rgba(${color === 'var(--accent-cyan)' ? '0, 242, 255' : '157, 80, 187'}, 0.2)` : 'none',
+                  transition: 'all 0.3s'
+                }}>
+                  {typeof Icon === 'string' ? <span style={{ fontSize: 18, fontWeight: 800 }}>{Icon}</span> : <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />}
+                </div>
+                {(!collapsed || isMobile) && <span style={{ fontWeight: 600, fontSize: 14 }}>{label}</span>}
+                {isActive && <div style={{ position: 'absolute', left: 0, top: '25%', bottom: '25%', width: 3, background: color, borderRadius: '0 4px 4px 0' }} />}
               </>
             )}
           </NavLink>
         ))}
       </nav>
 
-      {/* Logout */}
-      <div style={{ padding: '16px 12px', borderTop: `1px solid ${T.border}` }}>
-        <button onClick={handleLogout}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '11px 12px', borderRadius: 12, border: 'none', background: 'rgba(220,60,60,0.1)', color: '#e05555', fontSize: 14, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}>
-          <LogOut size={17} />Logout
+      <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border-light)', paddingTop: 24, paddingBottom: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <button onClick={() => { navigate('/admin/settings'); setSideOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 14px', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}>
+          <Settings size={20} />
+          {(!collapsed || isMobile) && <span style={{ fontSize: 14, fontWeight: 600 }}>Settings</span>}
+        </button>
+        <button onClick={() => { if (window.confirm('Are you sure you want to logout?')) handleLogout() }}
+          style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 14px', background: 'transparent', border: 'none', color: '#ff5c5c', cursor: 'pointer', transition: '0.2s', marginBottom: 12 }}>
+          <LogOut size={20} />
+          {(!collapsed || isMobile) && <span style={{ fontSize: 14, fontWeight: 600 }}>Logout</span>}
         </button>
       </div>
     </div>
   )
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: T.bg, fontFamily: "'DM Sans','Segoe UI',sans-serif", color: T.text }}>
-      {/* Desktop Sidebar */}
-      <aside className="admin-sidebar" style={{ width: 240, flexShrink: 0, background: T.sidebar, borderRight: `1px solid ${T.border}` }}>
-        <SidebarContent />
-      </aside>
+    <div className="admin-root" style={{ 
+      display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', 
+      background: 'var(--bg-deep)',
+      position: 'relative'
+    }}>
+      <div style={{
+        position: 'absolute', inset: 0, zIndex: 0,
+        background: 'var(--bg-grad)',
+      }} />
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=DM+Sans:wght@400;500;700;900&display=swap');
+        .admin-main { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; padding: 0; position: relative; z-index: 1; }
+        .admin-header { height: 70px; display: flex; align-items: center; padding: 0 30px; background: rgba(20, 16, 8, 0.6); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(212, 175, 55, 0.3); z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+        .global-bottom-nav { 
+          position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+          width: 90%; maxWidth: 800px; height: 70px;
+          background: rgba(20, 16, 8, 0.85); backdrop-filter: blur(25px);
+          border: 1px solid rgba(212, 175, 55, 0.4); border-radius: 24px;
+          display: flex; justify-content: space-around; align-items: center;
+          padding: 0 20px; z-index: 2000;
+          box-shadow: 0 10px 40px rgba(0,0,0,0.6), 0 0 25px rgba(212, 175, 55, 0.2);
+        }
+        .nav-item {
+          display: flex; flexDirection: column; align-items: center; gap: 4px;
+          text-decoration: none; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          color: rgba(255, 248, 225, 0.7); padding: 8px 12px; border-radius: 16px;
+        }
+        .nav-item.active { color: #D4AF37; background: rgba(212, 175, 55, 0.1); text-shadow: 0 0 10px rgba(212, 175, 55, 0.5); }
+        .nav-item:hover { color: #FFF8E1; background: rgba(255,255,255,0.05); }
 
-      {/* Mobile Drawer */}
-      {sideOpen && (
-        <>
-          <div onClick={() => setSideOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', zIndex: 40 }} />
-          <aside style={{ position: 'fixed', top: 0, left: 0, bottom: 0, width: 260, background: T.sidebar, borderRight: `1px solid ${T.border}`, zIndex: 50, display: 'flex', flexDirection: 'column' }}>
-            <button onClick={() => setSideOpen(false)} style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', color: T.textSub, cursor: 'pointer', padding: 4 }}>
-              <X size={20} />
-            </button>
-            <SidebarContent />
+        .glass {
+          background: rgba(15, 12, 8, 0.75);
+          backdrop-filter: blur(28px) saturate(1.3);
+          -webkit-backdrop-filter: blur(28px) saturate(1.3);
+          border: 1px solid rgba(212, 175, 55, 0.15);
+          box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+        }
+
+        .glow-text {
+          color: #FFF8E1;
+          text-shadow: 0 0 15px rgba(212, 175, 55, 0.6);
+          font-family: 'Cinzel', serif;
+        }
+
+        .more-menu-container {
+          position: fixed; bottom: 100px; right: 5%; width: 260px;
+          background: rgba(15, 12, 8, 0.95); backdrop-filter: blur(30px);
+          border: 1px solid rgba(212, 175, 55, 0.3); border-radius: 24px;
+          padding: 16px; z-index: 2100; box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+          animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+          from { transform: translateY(20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+
+        @media (max-width: 1024px) {
+          .admin-right-sidebar { display: none; }
+          .global-bottom-nav { width: 95%; bottom: 10px; height: 64px; }
+        }
+      `}</style>
+
+      {/* Main Content Area */}
+      <div className="admin-main">
+        {/* Top Navbar */}
+        <header className="admin-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #8B6B23, #B8860B)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 0 15px rgba(184, 134, 11, 0.4)',
+              border: '1px solid rgba(212, 175, 55, 0.3)'
+            }}>
+              <img src="/al-mawaid.png" alt="" style={{ width: 20, height: 20, objectFit: 'contain' }} />
+            </div>
+            <div className="admin-nav-breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255, 248, 225, 0.6)', fontSize: 13, fontWeight: 600 }}>
+              <span className="glow-text" style={{ letterSpacing: '0.05em' }}>AL-MAWAID</span>
+              <ChevronRight size={14} />
+              <span style={{ color: '#FFF8E1' }}>{getActiveLabel()}</span>
+            </div>
+          </div>
+
+          <div style={{ flex: 1 }} />
+
+          {/* Glowing Search */}
+          <div className="admin-search" style={{
+            position: 'relative', width: 300,
+            background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(212, 175, 55, 0.2)',
+            borderRadius: 14, display: 'flex', alignItems: 'center', padding: '0 12px',
+            height: 40, marginRight: 20
+          }}>
+            <Search size={16} color="var(--text-tertiary)" />
+            <input
+              readOnly
+              onClick={() => setShowPalette(true)}
+              placeholder="Search command (CMD+K)"
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', outline: 'none', paddingLeft: 10, fontSize: 13, flex: 1, fontWeight: 600 }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '4px 4px 4px 12px', background: 'rgba(25, 20, 10, 0.6)', borderRadius: 18, border: '1px solid rgba(212, 175, 55, 0.25)' }}>
+              <div className="desktop-only" style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#FFF8E1' }}>Admin Portal</div>
+                <div style={{ fontSize: 10, color: 'rgba(212, 175, 55, 0.6)' }}>{adminName.toLowerCase()}</div>
+              </div>
+              <div style={{ width: 36, height: 36, borderRadius: 14, background: 'linear-gradient(135deg, #B8860B, #8B6B23)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#D4AF37', fontWeight: 800, fontSize: 13, border: '1px solid rgba(212, 175, 55, 0.3)' }}>
+                {adminName.charAt(0).toUpperCase()}
+              </div>
+            </div>
+            <button onClick={() => { if (window.confirm('Are you sure you want to logout?')) handleLogout() }} style={{ background: 'none', border: 'none', color: '#ff5c5c', cursor: 'pointer' }}><LogOut size={20} /></button>
+          </div>
+        </header>
+
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+          {/* Dynamic content */}
+          <main key={location.pathname} className="smooth-appear scroll-container" style={{ flex: 1, padding: '24px', paddingBottom: 120 }}>
+            <Outlet context={{ role }} />
+          </main>
+
+          {/* Right Sidebar - AI Insights (Optional/Desktop) */}
+          <aside className="admin-right-sidebar" style={{
+            width: 320, height: 'calc(100% - 40px)', margin: '0 24px 24px 0',
+            borderRadius: 24, background: 'rgba(19, 23, 32, 0.2)', backdropFilter: 'var(--blur-md)',
+            border: '1px solid var(--border-glass)', flexShrink: 0, padding: 24
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>AI Insights</h3>
+              <Sparkles size={18} color="var(--accent-gold)" />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div className="glass" style={{ padding: 16, borderRadius: 20 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>Inventory Prediction</div>
+                <div style={{ height: 60, display: 'flex', alignItems: 'flex-end', gap: 2, marginBottom: 8 }}>
+                  {[30, 45, 35, 60, 55, 75, 65, 85, 70, 90, 80].map((h, i) => (
+                    <div key={i} style={{ flex: 1, height: `${h}%`, background: 'linear-gradient(to top, rgba(0, 229, 255, 0.1), var(--accent-cyan))', borderRadius: 2 }} />
+                  ))}
+                </div>
+              </div>
+
+              <div className="glass" style={{ padding: 16, borderRadius: 20 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 }}>Operational Overview</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <History size={16} color="var(--accent-gold)" />
+                    <div style={{ flex: 1, fontSize: 12, fontWeight: 700 }}>Peak Hours Today</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>10 am - 1 pm</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </aside>
+        </div>
+
+        {/* Global Floating Bottom Nav */}
+        <nav className="global-bottom-nav">
+          {NAV.slice(0, 4).map(({ to, label, Icon, end }) => (
+            <NavLink key={to} to={to} end={end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+              {typeof Icon === 'string' ? <span style={{ fontSize: 20, fontWeight: 800 }}>{Icon}</span> : <Icon size={22} />}
+              <span style={{ fontSize: 10, fontWeight: 700 }}>{label}</span>
+            </NavLink>
+          ))}
+          
+          <div style={{ position: 'relative' }}>
+            <button 
+              onClick={() => setSideOpen(!sideOpen)}
+              className={`nav-item ${sideOpen ? 'active' : ''}`}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+            >
+              <Menu size={22} />
+              <span style={{ fontSize: 10, fontWeight: 700 }}>More</span>
+            </button>
+
+            {sideOpen && (
+              <div className="more-menu-container">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, padding: '0 4px' }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Administration</span>
+                  <X size={16} onClick={() => setSideOpen(false)} style={{ cursor: 'pointer' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {NAV.slice(4).map(({ to, label, Icon }) => (
+                    <NavLink 
+                      key={to} to={to} 
+                      onClick={() => setSideOpen(false)}
+                      className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                      style={{ flexDirection: 'row', gap: 12, justifyContent: 'flex-start', padding: '10px 16px' }}
+                    >
+                      {typeof Icon === 'string' ? <span style={{ fontSize: 18, fontWeight: 800, width: 24, textAlign: 'center' }}>{Icon}</span> : <Icon size={18} />}
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{label}</span>
+                    </NavLink>
+                  ))}
+                  <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '8px 0' }} />
+                  <button onClick={handleLogout} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: 'transparent', border: 'none', color: '#ff5c5c', cursor: 'pointer', width: '100%' }}>
+                    <LogOut size={18} />
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>Logout</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </nav>
+      </div>
+
+      {/* Command Palette */}
+      {showPalette && (
+        <>
+          <div onClick={() => setShowPalette(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)', zIndex: 3000 }} />
+          <div style={{ position: 'fixed', top: '15%', left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: 600, background: '#12151d', borderRadius: 24, zIndex: 3001, boxShadow: '0 0 40px rgba(0,0,0,0.5)', overflow: 'hidden', border: '1px solid var(--border-glass)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid var(--border-light)' }}>
+              <Search size={20} color="var(--accent-cyan)" />
+              <input
+                autoFocus
+                placeholder="Type a command or search..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ background: 'transparent', border: 'none', color: '#fff', outline: 'none', paddingLeft: 16, fontSize: 16, flex: 1 }}
+              />
+            </div>
+            <div style={{ padding: 12, maxHeight: 400, overflowY: 'auto' }}>
+              {filteredNav.map(n => (
+                <div key={n.to} onClick={() => { navigate(n.to); setShowPalette(false); }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, cursor: 'pointer', transition: 'all 0.2s', background: location.pathname === n.to ? 'rgba(255,255,255,0.05)' : 'transparent' }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,0.03)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: location.pathname === n.to ? 'var(--accent-gold)' : 'var(--text-tertiary)' }}>
+                    {typeof n.Icon === 'string' ? n.Icon : <n.Icon size={18} />}
+                  </div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{n.label}</div>
+                  <div style={{ flex: 1 }} />
+                  <ChevronRight size={14} color="var(--text-tertiary)" />
+                </div>
+              ))}
+            </div>
+          </div>
         </>
       )}
 
-      {/* Main */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Top Bar */}
-        <header style={{ height: 56, flexShrink: 0, background: T.sidebar, borderBottom: `1px solid ${T.border}`, display: 'flex', alignItems: 'center', padding: '0 20px', gap: 16 }}>
-          <button onClick={() => setSideOpen(true)} className="admin-hamburger"
-            style={{ background: 'none', border: 'none', color: T.textSub, cursor: 'pointer', padding: 4, display: 'flex' }}>
-            <Menu size={22} />
-          </button>
-          <span style={{ color: T.accent, fontWeight: 700, fontSize: 15, letterSpacing: '0.04em' }}>Al-Mawaid Admin</span>
-          <div style={{ flex: 1 }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, color: T.textSub }}>{adminName}</span>
-            <div style={{ width: 32, height: 32, borderRadius: '50%', background: T.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff' }}>
-              {adminName.charAt(0).toUpperCase()}
-            </div>
-          </div>
-        </header>
-        <main style={{ flex: 1, overflowY: 'auto', background: T.bg }}>
-          <Outlet />
-        </main>
-      </div>
-
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
-        .admin-sidebar { display: flex !important; flex-direction: column; }
-        .admin-hamburger { display: none !important; }
-        @media (max-width: 767px) {
-          .admin-sidebar { display: none !important; }
-          .admin-hamburger { display: flex !important; }
-        }
-        * { box-sizing: border-box; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(196,156,90,0.2); border-radius: 10px; }
+        main::-webkit-scrollbar { width: 4px; }
+        main::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
       `}</style>
     </div>
   )

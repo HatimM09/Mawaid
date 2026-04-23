@@ -44,6 +44,7 @@ export default function StaffPage() {
     khidmat_guzar: '#c49c5a',
     admin: '#5e9ce0',
     supervisor: '#9b8de0',
+    inventory_manager: '#f59e0b',
     cook: '#5eba82',
   }
 
@@ -93,6 +94,7 @@ export default function StaffPage() {
                   <option value="khidmat_guzar">Khidmat Guzar</option>
                   <option value="cook">Cook</option>
                   <option value="supervisor">Supervisor</option>
+                  <option value="inventory_manager">Inventory Manager</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>

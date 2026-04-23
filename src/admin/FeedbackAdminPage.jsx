@@ -123,7 +123,7 @@ export default function FeedbackAdminPage() {
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200, position: 'relative' }}>
           <Search size={14} color={T.textSub} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search member…"
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search thali user…"
             style={{ width: '100%', boxSizing: 'border-box', padding: '11px 14px 11px 36px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit' }}
           />
         </div>
@@ -138,7 +138,7 @@ export default function FeedbackAdminPage() {
       {loading ? <Spinner /> : (
         <AdminCard style={{ padding: 0 }}>
           <Table
-            headers={['Member', 'Day', 'Lunch', 'Dinner', 'Comment', 'Submitted']}
+            headers={['Thali User', 'Day', 'Lunch', 'Dinner', 'Comment', 'Submitted']}
             rows={rows}
             emptyMsg="No feedback found."
           />
