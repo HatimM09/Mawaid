@@ -30,7 +30,7 @@ const ModalOverlay = ({ onClose, children }) => (
     style={{
       position: 'fixed', inset: 0, zIndex: 2000,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)', padding: 20
+      background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(16px) saturate(1.5)', padding: 20
     }}
   >
     <AdminCard style={{ width: '100%', maxWidth: 440, position: 'relative' }}>
@@ -175,12 +175,20 @@ export default function InventoryPage({ role: roleProp }) {
           <input
             value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search items by name..."
-            style={{ width: '100%', padding: '14px 16px 14px 48px', borderRadius: 16, background: 'rgba(25, 20, 10, 0.4)', border: '1px solid rgba(212, 175, 55, 0.25)', color: T.text, outline: 'none' }}
+            style={{ 
+              width: '100%', padding: '14px 16px 14px 48px', borderRadius: 16, 
+              background: 'rgba(15, 12, 8, 0.3)', border: '1px solid var(--border-glass)', 
+              color: T.text, outline: 'none', backdropFilter: 'blur(10px)'
+            }}
           />
         </div>
         <select
           value={catFilter} onChange={e => setCatFilter(e.target.value)}
-          style={{ padding: '0 16px', borderRadius: 16, background: 'rgba(25, 20, 10, 0.4)', border: '1px solid rgba(212, 175, 55, 0.25)', color: T.text, outline: 'none', height: 48, minWidth: 160 }}
+          style={{ 
+            padding: '0 16px', borderRadius: 16, background: 'rgba(15, 12, 8, 0.3)', 
+            border: '1px solid var(--border-glass)', color: T.text, outline: 'none', 
+            height: 48, minWidth: 160, backdropFilter: 'blur(10px)' 
+          }}
         >
           <option value="all">All Categories</option>
           {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}

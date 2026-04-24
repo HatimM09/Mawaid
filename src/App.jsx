@@ -21,17 +21,18 @@ import InventoryManagerPortal from './admin/InventoryManagerPortal'
 const THEMES = {
   midnight: {
     id: 'midnight', name: 'Royal Gold', icon: '👑',
-    bg: '#0f0c08', bgGrad: 'radial-gradient(circle at 50% -20%, #2a2010 0%, #0f0c08 80%)',
-    card: 'rgba(25, 20, 10, 0.72)', cardActive: 'linear-gradient(135deg, rgba(40, 30, 15, 0.8), rgba(20, 15, 10, 0.9))',
-    border: 'rgba(212, 175, 55, 0.2)', borderActive: 'rgba(212, 175, 55, 0.45)',
-    accent: '#D4AF37', accentGrad: 'linear-gradient(135deg, #B8860B, #D4AF37)',
-    accentBg: 'rgba(212, 175, 55, 0.10)', accentBorder: 'rgba(212, 175, 55, 0.32)',
+    bg: '#0f0c08', bgGrad: 'radial-gradient(circle at 50% 0%, #1a150a 0%, #0f0c08 100%)',
+    card: 'rgba(25, 20, 10, 0.45)', cardActive: 'rgba(35, 28, 15, 0.55)',
+    border: 'rgba(212, 175, 55, 0.3)', borderActive: 'rgba(255, 215, 0, 0.6)',
+    accent: '#D4AF37', accentGrad: 'linear-gradient(135deg, #B8860B, #D4AF37, #FFD700, #B8860B)',
+    accentBg: 'rgba(212, 175, 55, 0.08)', accentBorder: 'rgba(212, 175, 55, 0.4)',
     text: '#FFF8E1', textSub: 'rgba(255, 248, 225, 0.6)', textBody: '#F0EAD2',
-    navBg: 'rgba(15, 12, 8, 0.97)', navBorder: 'rgba(212, 175, 55, 0.25)',
-    geo: 'rgba(212, 175, 55, 0.05)', spinnerBorder: 'rgba(212, 175, 55, 0.2)', spinnerTop: '#D4AF37',
-    inputBg: 'rgba(25, 20, 10, 0.4)', inputBorder: 'rgba(212, 175, 55, 0.25)',
-    loginCard: 'rgba(20, 16, 8, 0.92)', headerWave: '#0f0c08',
-    successBg: 'rgba(94, 186, 130, 0.12)', successBorder: 'rgba(94, 186, 130, 0.3)', successText: '#5eba82',
+    navBg: 'rgba(10, 8, 5, 0.98)', navBorder: 'rgba(212, 175, 55, 0.3)',
+    geo: 'rgba(212, 175, 55, 0.04)', spinnerBorder: 'rgba(212, 175, 55, 0.2)', spinnerTop: '#D4AF37',
+    inputBg: 'rgba(15, 12, 8, 0.6)', inputBorder: 'rgba(212, 175, 55, 0.2)',
+    loginCard: 'rgba(15, 12, 8, 0.2)', headerWave: '#0f0c08',
+    successBg: 'rgba(94, 186, 130, 0.1)', successBorder: 'rgba(94, 186, 130, 0.3)', successText: '#5eba82',
+    goldBar: 'linear-gradient(to right, #8B6B23 0%, #D4AF37 45%, #FFD700 50%, #D4AF37 55%, #8B6B23 100%)'
   },
   ivory: {
     id: 'ivory', name: 'Ivory Dune', icon: '🏺',
@@ -176,10 +177,25 @@ const SectionLabel = ({ children }) => {
   return <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', color: t.textSub, textTransform: 'uppercase', marginBottom: 12, fontFamily: "'DM Sans',sans-serif", opacity: .7 }}>{children}</div>
 }
 
-const Card = ({ children, active, style: extra = {} }) => {
+function Card({ children, style = {}, active, organic }) {
   const t = useTheme()
+  const organicStyle = organic ? {
+    borderRadius: '40px 100px 40px 100px',
+    background: 'linear-gradient(145deg, rgba(35,28,15,0.6), rgba(15,12,8,0.4))',
+  } : {
+    borderRadius: 24,
+  }
+
   return (
-    <div style={{ padding: '18px 18px', borderRadius: 16, background: active ? t.cardActive : t.card, border: `1px solid ${active ? t.borderActive : t.border}`, boxShadow: active ? `0 6px 24px ${t.accentBg}` : '0 2px 8px rgba(0,0,0,0.08)', ...extra }}>
+    <div style={{
+      ...organicStyle,
+      padding: '20px 24px',
+      background: active ? t.cardActive : t.card,
+      border: `1.5px solid ${active ? t.borderActive : t.border}`,
+      backdropFilter: 'blur(30px) saturate(1.8)',
+      boxShadow: '0 15px 35px rgba(0,0,0,0.4), inset 0 1px 1px rgba(255,255,255,0.05)',
+      ...style
+    }}>
       {children}
     </div>
   )
@@ -265,8 +281,8 @@ const GlobalStyles = () => {
 // LOGIN PAGE
 // ══════════════════════════════════════════════════════════════
 const LOGIN_ROLES = [
-  { id: 'member', label: 'Thali User', icon: '👤' },
-  { id: 'khidmat', label: 'Khidmat Guzar', icon: 'logo' },
+  { id: 'member', label: 'Khidmat Guzar', icon: '👤' },
+  { id: 'khidmat', label: 'Al Mawaid Team', icon: 'logo' },
   { id: 'inventory_manager', label: 'Inventory', icon: '📦' },
   { id: 'admin', label: 'Admin', icon: '🛡️' },
 ]
@@ -336,7 +352,7 @@ function LoginPage({ onRoleLogin }) {
         await supabase.auth.signOut(); throw new Error('You do not have admin privileges.')
       }
       if (role === 'khidmat' && !['khidmat_guzar', 'supervisor', 'khidmat', 'admin'].includes(dbRole)) {
-        await supabase.auth.signOut(); throw new Error('You are not registered as a Khidmat Guzar.')
+        await supabase.auth.signOut(); throw new Error('You are not registered as part of the Al Mawaid Team.')
       }
       onRoleLogin(dbRole === 'admin' ? 'admin' : dbRole, session)
     } catch (err) { setError(err.message) }
@@ -396,15 +412,15 @@ function LoginPage({ onRoleLogin }) {
             }}>✦</div>
           ))}
 
-          {/* Card interior — Royal Glassmorphism */}
+          {/* Card interior — Ultra Transparent Crystal */}
           <div style={{
             borderRadius: 26,
-            background: 'rgba(15, 12, 8, 0.28)',
-            backdropFilter: 'blur(60px) saturate(2.2)',
-            WebkitBackdropFilter: 'blur(60px) saturate(2.2)',
+            background: 'transparent',
+            backdropFilter: 'blur(40px) saturate(1.8)',
+            WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
             padding: '24px 32px 28px',
-            border: '1px solid rgba(212,175,55,0.3)',
-            boxShadow: '0 25px 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.1)',
+            border: '1px solid rgba(212,175,55,0.4)',
+            boxShadow: '0 25px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1)',
           }}>
             {/* Logo + Title */}
             <div style={{ textAlign: 'center', marginBottom: 14 }}>
@@ -426,10 +442,10 @@ function LoginPage({ onRoleLogin }) {
             {/* Role tabs */}
             <div style={{
               display: 'flex', gap: 3, marginBottom: 10,
-              background: 'rgba(25,20,10,0.12)',
+              background: 'transparent',
               borderRadius: 14, padding: 4,
-              border: '1px solid rgba(212,175,55,0.1)',
-              backdropFilter: 'blur(30px) saturate(1.5)',
+              border: '1px solid rgba(212,175,55,0.2)',
+              backdropFilter: 'blur(25px) saturate(1.5)',
               boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
             }}>
               {LOGIN_ROLES.map(r => {
@@ -465,8 +481,8 @@ function LoginPage({ onRoleLogin }) {
               fontFamily: "'DM Sans',sans-serif", letterSpacing: '0.04em',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
             }}>
-              {role === 'member' && <><span>👤</span> Thali User — member portal</>}
-              {role === 'khidmat' && <><img src="/al-mawaid.png" alt="" style={{ width: 14, height: 14, objectFit: 'contain' }} /> Khidmat Guzar — service portal</>}
+              {role === 'member' && <><span>👤</span> Khidmat Guzar — member portal</>}
+              {role === 'khidmat' && <><img src="/al-mawaid.png" alt="" style={{ width: 14, height: 14, objectFit: 'contain' }} /> Al Mawaid Team — service portal</>}
               {role === 'inventory_manager' && <><span>📦</span> Inventory Manager — stock portal</>}
               {role === 'admin' && <><span>🛡️</span> Admin — full management portal</>}
             </div>
@@ -926,8 +942,10 @@ function ThaliUserApp() {
 // ══════════════════════════════════════════════════════════════
 function HomePage({ setActiveTab }) {
   const t = useTheme()
-  const weeklyMenu = useWeeklyMenu() || {}
+  const weeklyMenu = useWeeklyMenu()
   const { user } = useAuth()
+
+  if (!weeklyMenu) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
   const [showSurvey, setShowSurvey] = useState(false)
   const [profileData, setProfileData] = useState({ name: '', thali_number: '', avatar_url: '' })
   const [statsLoading, setStatsLoading] = useState(true)
@@ -945,10 +963,7 @@ function HomePage({ setActiveTab }) {
   const [dinnerStars, setDinnerStars] = useState(0)
   const [lunchComment, setLunchComment] = useState('')
   const [dinnerComment, setDinnerComment] = useState('')
-  const [hoveredLunch, setHoveredLunch] = useState(0)
-  const [hoveredDinner, setHoveredDinner] = useState(0)
   const STAR_EMOJIS = { 1: '😡', 2: '😟', 3: '😐', 4: '😊', 5: '😍' }
-  const STAR_LABELS = { 1: 'Terrible', 2: 'Poor', 3: 'Okay', 4: 'Good', 5: 'Excellent!' }
 
   useEffect(() => { loadData() }, [user])
 
@@ -965,22 +980,6 @@ function HomePage({ setActiveTab }) {
       }
     } catch { }
     setStatsLoading(false)
-    loadTodayFeedback()
-  }
-
-  const loadTodayFeedback = async () => {
-    try {
-      const { data } = await supabase.from('daily_feedback').select('*').eq('user_id', user.id).eq('day', todayKey)
-        .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-        .order('created_at', { ascending: false }).limit(1).maybeSingle()
-      if (data) {
-        setFeedbackSubmitted({ lunch: !!data.lunch_stars, dinner: !!data.dinner_stars })
-        if (data.lunch_stars) setLunchStars(data.lunch_stars)
-        if (data.dinner_stars) setDinnerStars(data.dinner_stars)
-        if (data.lunch_comment) setLunchComment(data.lunch_comment)
-        if (data.dinner_comment) setDinnerComment(data.dinner_comment)
-      }
-    } catch { }
   }
 
   const handleSubmitCombined = async () => {
@@ -991,7 +990,7 @@ function HomePage({ setActiveTab }) {
         user_id: user.id, day: todayKey,
         lunch_stars: lunchStars, lunch_emoji: lunchStars ? STAR_EMOJIS[lunchStars] : null,
         dinner_stars: dinnerStars, dinner_emoji: dinnerStars ? STAR_EMOJIS[dinnerStars] : null,
-        comment: lunchComment.trim(), // Unified comment field
+        comment: lunchComment.trim(),
         created_at: new Date().toISOString()
       }], { onConflict: 'user_id,day' })
       if (dbErr) throw dbErr
@@ -1073,85 +1072,60 @@ function HomePage({ setActiveTab }) {
         </div>
       </Card>
 
-      {/* Payment Section */}
+      {/* Payment Section - Fluid Organic Shape */}
       {statsLoading ? (
-        <Card className="stagger-item" style={{ marginBottom: 18, display: 'flex', justifyContent: 'center', padding: '30px 0' }}><Spinner fullPage={false} /></Card>
+        <Card organic style={{ marginBottom: 24, display: 'flex', justifyContent: 'center', padding: '40px 0' }}><Spinner fullPage={false} /></Card>
       ) : !paymentReceipt ? (
-        <Card className="stagger-item" style={{ marginBottom: 18 }}>
+        <Card organic style={{ 
+          marginBottom: 24, 
+          background: 'linear-gradient(135deg, rgba(35,28,15,0.7), rgba(10,8,5,0.5))',
+          position: 'relative',
+          overflow: 'hidden'
+        }}>
+          {/* Wave Accent */}
+          <div style={{ position: 'absolute', top: -40, right: -40, width: 120, height: 120, background: t.accentGrad, borderRadius: '50%', filter: 'blur(60px)', opacity: 0.15 }} />
+          
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <div style={{ flex: 1, minWidth: 220 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>UPI Payment</div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: t.accent, marginTop: 4, fontFamily: "'Playfair Display',serif" }}>Pay ₹{fixedPaymentAmount}</div>
-              <div style={{ marginTop: 8, padding: '10px 12px', borderRadius: 10, background: t.inputBg, border: `1px solid ${t.border}` }}>
-                <div style={{ fontSize: 11, color: t.textSub, fontFamily: "'DM Sans',sans-serif", lineHeight: 1.6 }}>Pay securely using Cashfree Payments Gateway.</div>
-              </div>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.2em', textTransform: 'uppercase', color: t.accent, fontFamily: "'DM Sans',sans-serif", opacity: 0.8 }}>UPI PAYMENT</div>
+              <div style={{ fontSize: 32, fontWeight: 700, color: t.accent, marginTop: 4, fontFamily: "'Playfair Display',serif" }}>Pay ₹{fixedPaymentAmount}</div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, flexShrink: 0 }}>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flexShrink: 0 }}>
+              <div style={{ padding: '12px 16px', borderRadius: 16, background: 'rgba(0,0,0,0.3)', border: `1px solid ${t.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <img src="https://upload.wikimedia.org/wikipedia/commons/e/e1/UPI-Logo-vector.svg" alt="UPI" style={{ height: 12, filter: 'invert(1) grayscale(1)' }} />
+                <div style={{ height: 12, width: 1, background: t.border }} />
+                <div style={{ fontSize: 10, color: t.textSub, fontWeight: 700 }}>Secure Gateway</div>
+              </div>
+              
               {!paymentLoading
-                ? <button onClick={handleCashfreePayment} style={{ minWidth: 190, padding: '13px 18px', border: 'none', borderRadius: 14, background: t.accentGrad, color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: `0 10px 24px ${t.accentBg}`, fontFamily: "'DM Sans',sans-serif" }}>
+                ? <button onClick={handleCashfreePayment} style={{ 
+                    minWidth: 200, padding: '14px 20px', border: 'none', borderRadius: 12, 
+                    background: t.goldBar, color: '#000', fontSize: 13, fontWeight: 900, 
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                    gap: 8, boxShadow: `0 8px 24px rgba(212,175,55,0.3)`, fontFamily: "'DM Sans',sans-serif",
+                    textTransform: 'uppercase', letterSpacing: '0.05em'
+                  }}>
                   <Wallet size={16} /> Secure Pay with Cashfree
                 </button>
-                : <div style={{ minWidth: 190, padding: '13px 18px', border: `1px solid ${t.border}`, borderRadius: 14, background: t.card, color: t.accent, fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: "'DM Sans',sans-serif" }}>Processing...</div>
+                : <div style={{ minWidth: 200, padding: '14px 20px', border: `1px solid ${t.border}`, borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: t.accent, fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: "'DM Sans',sans-serif" }}>Processing...</div>
               }
             </div>
           </div>
           {paymentError && <ErrorBanner msg={paymentError} />}
         </Card>
       ) : (
-        <Card active className="stagger-item" style={{ marginBottom: 18, background: 'rgba(94,186,130,0.06)', border: `1px solid ${t.successBorder}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'linear-gradient(135deg,#5eba82,#3d9a60)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 8px 20px rgba(94,186,130,0.25)' }}><Check size={20} /></div>
+        <Card active organic style={{ marginBottom: 24, background: 'rgba(94,186,130,0.06)', border: `1px solid ${t.successBorder}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 50, height: 50, borderRadius: '50%', background: 'linear-gradient(135deg,#5eba82,#3d9a60)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 10px 24px rgba(94,186,130,0.3)' }}><Check size={24} strokeWidth={3} /></div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: t.successText, letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: "'DM Sans',sans-serif" }}>Payment Confirmed</div>
-              <div style={{ fontSize: 15, fontWeight: 800, color: t.text, marginTop: 2, fontFamily: "'Playfair Display',serif" }}>₹{paymentReceipt.amount} Paid Successfully</div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: t.successText, letterSpacing: '0.15em', textTransform: 'uppercase', fontFamily: "'DM Sans',sans-serif" }}>Transaction Complete</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: t.text, marginTop: 2, fontFamily: "'Playfair Display',serif" }}>₹{paymentReceipt.amount} Received</div>
             </div>
           </div>
         </Card>
       )}
 
-      {/* Survey filling button */}
-      <button onClick={() => setShowSurvey(true)} disabled={!surveyOpen}
-        style={{ width: '100%', padding: '16px 20px', borderRadius: 16, border: 'none', marginBottom: 18, background: surveyOpen ? t.accentGrad : t.border, color: '#fff', fontSize: 16, fontWeight: 800, cursor: surveyOpen ? 'pointer' : 'not-allowed', opacity: surveyOpen ? 1 : .55, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: surveyOpen ? `0 10px 28px ${t.accentBg}` : 'none', fontFamily: "'Playfair Display',serif", letterSpacing: '0.02em' }}>
-        <ClipboardList size={20} /> Fill Weekly Survey Now
-      </button>
-
-      {/* Integrated Daily Feedback & Menu */}
-      <SectionLabel>Today's Experience</SectionLabel>
-      <Card active={!feedbackSubmitted.lunch || !feedbackSubmitted.dinner} style={{ marginBottom: 24, padding: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif" }}>Daily Meal Feedback</div>
-          {(feedbackSubmitted.lunch || feedbackSubmitted.dinner) && <Badge color={t.successBg}>Submitted ✅</Badge>}
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
-          {['lunch', 'dinner'].map(meal => {
-            const isLunch = meal === 'lunch'
-            const stars = isLunch ? lunchStars : dinnerStars
-            const setStars = isLunch ? setLunchStars : setDinnerStars
-            const hovered = isLunch ? hoveredLunch : hoveredDinner
-            const setHovered = isLunch ? setHoveredLunch : setHoveredDinner
-            const menuItems = weeklyMenu[todayKey]?.[meal] || []
-
-            return (
-              <div key={meal} style={{ background: 'rgba(25, 20, 10, 0.4)', borderRadius: 16, padding: 16, border: `1px solid ${t.border}` }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                  {isLunch ? <Sun size={14} color={t.accent} /> : <Moon size={14} color={t.accent} />}
-                  <div style={{ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{meal}</div>
-                </div>
-
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 12 }}>
-                  {menuItems.map(d => (
-                    <span key={d} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 6, background: t.accentBg, color: t.accent, border: `1px solid ${t.accentBorder}` }}>{d}</span>
-                  ))}
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  {[1, 2, 3, 4, 5].map(n => (
-                    <button key={n} onClick={() => setStars(n)} onMouseEnter={() => setHovered(n)} onMouseLeave={() => setHovered(0)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2 }}>
-                      <Star size={18} fill={n <= (hovered || stars) ? t.accent : 'none'} color={n <= (hovered || stars) ? t.accent : t.border} strokeWidth={1.5} />
-                    </button>
-                  ))}
                 </div>
               </div>
             )
@@ -1191,8 +1165,10 @@ function HomePage({ setActiveTab }) {
 
 function WeeklyMenuPage() {
   const t = useTheme()
-  const weeklyMenu = useWeeklyMenu() || {}
+  const weeklyMenu = useWeeklyMenu()
   const todayKey = getTodayKey()
+
+  if (!weeklyMenu) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
 
   return (
     <main style={{ flex: 1, padding: '16px 16px 100px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
@@ -2496,6 +2472,56 @@ export default function App() {
     sessionStorage.removeItem('al_mawaid_portal')
     sessionStorage.removeItem('al_mawaid_mock_user')
   }, [])
+
+  // --- Real-time Notifications Logic ---
+  useEffect(() => {
+    const user = session?.user || mockUser
+    if (!user) return
+
+    // 1. Request Notification Permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+
+    // 2. Subscribe to New Notices
+    const channel = supabase
+      .channel('public:notices')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notices' },
+        (payload) => {
+          const newNotice = payload.new
+          // Check if notice is for everyone or specifically for this user
+          if (!newNotice.target_user_id || newNotice.target_user_id === user.id) {
+            showBrowserNotification(newNotice)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [session, mockUser])
+
+  const showBrowserNotification = (notice) => {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return
+
+    const options = {
+      body: notice.body,
+      icon: '/al-mawaid.png',
+      badge: '/al-mawaid.png',
+      vibrate: [200, 100, 200],
+      tag: 'almawaid-notice-' + notice.id,
+      renotify: true
+    }
+
+    const n = new Notification(notice.title || 'New Message from Al-Mawaid', options)
+    n.onclick = () => {
+      window.focus()
+      n.close()
+    }
+  }
 
   const handleRoleLogin = useCallback((role, sess) => {
     sessionStorage.setItem('al_mawaid_portal', role)
