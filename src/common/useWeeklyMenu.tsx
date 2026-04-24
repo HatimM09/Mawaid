@@ -4,17 +4,31 @@ import { supabase } from '../admin/supabaseClient';
 export const useWeeklyMenu = () => {
   const [menu, setMenu] = useState<any>(null);
 
+  const formatMenu = (rows: any[]) => {
+    const formatted: any = {};
+    rows.forEach(row => {
+      const dayKey = row.day_name.toLowerCase();
+      formatted[dayKey] = {
+        en: row.day_name,
+        ar: row.day_ar,
+        lunch: row.lunch ? row.lunch.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+        dinner: row.dinner ? row.dinner.split(',').map((s: string) => s.trim()).filter(Boolean) : []
+      };
+    });
+    return formatted;
+  };
+
+  const load = async () => {
+    const { data, error } = await supabase
+      .from('weekly_menu')
+      .select('*');
+    if (!error && data) {
+      setMenu(formatMenu(data));
+    }
+  };
+
   // Initial load
   useEffect(() => {
-    const load = async () => {
-      const { data, error } = await supabase
-        .from('weekly_menu')
-        .select('*')
-        .order('week_start', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (!error && data) setMenu(data.menu_json);
-    };
     load();
   }, []);
 
@@ -24,9 +38,9 @@ export const useWeeklyMenu = () => {
       .channel('public:weekly_menu')
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'weekly_menu' },
-        (payload) => {
-          setMenu((payload.new as any).menu_json);
+        { event: '*', schema: 'public', table: 'weekly_menu' },
+        () => {
+          load();
         },
       )
       .subscribe();

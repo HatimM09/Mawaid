@@ -15,6 +15,7 @@ import {
 import { supabase } from './admin/supabaseClient'
 import { useWeeklyMenu } from './common/useWeeklyMenu'
 import { AuthCtx, ThemeCtx, useAuth, useTheme } from './admin/context'
+import { updateSystemTheme } from './admin/ui'
 import KhidmatPortal from './admin/KhidmatPortal'
 import InventoryManagerPortal from './admin/InventoryManagerPortal'
 const THEMES = {
@@ -184,6 +185,47 @@ const Card = ({ children, active, style: extra = {} }) => {
   )
 }
 
+const Btn = ({ children, onClick, disabled, style: extra = {}, variant = 'primary' }) => {
+  const t = useTheme()
+  const baseStyle = {
+    padding: '12px 20px', borderRadius: 14, border: 'none',
+    fontWeight: 700, cursor: disabled ? 'not-allowed' : 'pointer',
+    fontFamily: "'DM Sans', sans-serif", transition: 'all 0.3s ease',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+    width: 'fit-content', opacity: disabled ? 0.5 : 1
+  }
+  const variants = {
+    primary: { background: t.accentGrad, color: '#000', boxShadow: `0 4px 15px ${t.accentBg}` },
+    outline: { background: 'transparent', color: t.accent, border: `1px solid ${t.border}` },
+    ghost: { background: 'transparent', color: t.textSub }
+  }
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{ ...baseStyle, ...variants[variant], ...extra }}
+      onMouseEnter={e => { if (!disabled) e.currentTarget.style.filter = 'brightness(1.1)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+      onMouseLeave={e => { if (!disabled) e.currentTarget.style.filter = 'none'; e.currentTarget.style.transform = 'translateY(0)' }}
+    >
+      {children}
+    </button>
+  )
+}
+
+const Badge = ({ children, color, style = {} }) => (
+  <div style={{
+    display: 'inline-flex', alignItems: 'center', padding: '4px 10px',
+    borderRadius: 8, fontSize: 10, fontWeight: 800, textTransform: 'uppercase',
+    letterSpacing: '0.08em', background: `${color}15` || 'rgba(212, 175, 55, 0.1)',
+    color: color || '#D4AF37', border: `1px solid ${color}30` || 'rgba(212, 175, 55, 0.25)',
+    fontFamily: "'DM Sans', sans-serif", ...style
+  }}>
+    {children}
+  </div>
+)
+
+
+
 const BackHeader = ({ title, onBack }) => {
   const t = useTheme()
   return (
@@ -199,23 +241,25 @@ const EmptyState = ({ msg }) => {
   return <div style={{ textAlign: 'center', padding: 48, color: t.textSub, fontSize: 15, fontFamily: "'DM Sans',sans-serif" }}>{msg}</div>
 }
 
-const GlobalStyles = () => (
-  <style>{`
-    @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=DM+Sans:wght@400;500;600;700;800&family=Amiri:wght@400;700&display=swap');
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .spin { animation: spin 0.8s linear infinite; }
-    * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
-    /* Standard Responsive Styles */
-    body { background: #000; }
-    
-    /* Modern Scrollbar */
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(196,156,90,0.2); border-radius: 10px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(196,156,90,0.4); }
+const GlobalStyles = () => {
+  const t = useTheme()
+  return (
+    <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=DM+Sans:wght@400;500;600;700;800&family=Amiri:wght@400;700&display=swap');
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .spin { animation: spin 0.8s linear infinite; }
+      * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+      body { background: ${t.bg}; color: ${t.text}; margin: 0; transition: background 0.3s ease; }
+      
+      /* Modern Scrollbar */
+      ::-webkit-scrollbar { width: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: ${t.borderActive}; border-radius: 10px; }
+      ::-webkit-scrollbar-thumb:hover { background: ${t.accent}; }
 
-  `}</style>
-)
+    `}</style>
+  )
+}
 
 // ══════════════════════════════════════════════════════════════
 // LOGIN PAGE
@@ -307,27 +351,21 @@ function LoginPage({ onRoleLogin }) {
     }}>
       {/* Mosque background back with light blur */}
       <img
-        src="/mosque_bg.webp"
+        src="https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80&w=2070&auto=format&fit=crop"
         alt=""
         aria-hidden="true"
-        onError={e => {
-          if (!e.target.dataset.fallback) {
-            e.target.dataset.fallback = '1'
-            e.target.src = 'https://images.unsplash.com/photo-1519817914152-22d216bb9170?w=1920&q=80'
-          }
-        }}
         style={{
           position: 'absolute', inset: 0, width: '100%', height: '100%',
           objectFit: 'cover', objectPosition: 'center',
-          filter: 'blur(8px) brightness(0.6)',
-          transform: 'scale(1.05)',
+          filter: 'blur(4px) brightness(0.65)',
+          animation: 'kenburns 40s infinite alternate ease-in-out',
           zIndex: 0,
         }}
       />
       <div style={{
         position: 'absolute', inset: 0, zIndex: 1,
-        background: 'linear-gradient(180deg, rgba(20,15,5,0.45) 0%, rgba(30,25,10,0.35) 50%, rgba(15,10,5,0.50) 100%)',
-        backdropFilter: 'saturate(1.2)',
+        background: 'linear-gradient(180deg, rgba(20,15,5,0.4) 0%, rgba(30,25,10,0.2) 50%, rgba(15,10,5,0.45) 100%)',
+        backdropFilter: 'saturate(1.3)',
       }} />
 
       {/* Main card with ornate border */}
@@ -361,12 +399,12 @@ function LoginPage({ onRoleLogin }) {
           {/* Card interior — Royal Glassmorphism */}
           <div style={{
             borderRadius: 26,
-            background: 'rgba(15, 12, 8, 0.88)',
-            backdropFilter: 'blur(32px) saturate(1.4)',
-            WebkitBackdropFilter: 'blur(32px) saturate(1.4)',
+            background: 'rgba(15, 12, 8, 0.65)',
+            backdropFilter: 'blur(40px) saturate(1.8)',
+            WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
             padding: '24px 32px 28px',
-            border: '1px solid rgba(212,175,55,0.18)',
-            boxShadow: '0 12px 60px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.06)',
+            border: '1px solid rgba(212,175,55,0.25)',
+            boxShadow: '0 25px 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.1)',
           }}>
             {/* Logo + Title */}
             <div style={{ textAlign: 'center', marginBottom: 14 }}>
@@ -521,6 +559,10 @@ function LoginPage({ onRoleLogin }) {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&display=swap');
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes kenburns {
+          0% { transform: scale(1); }
+          100% { transform: scale(1.15) translate(10px, 5px); }
+        }
         .spin { animation: spin 0.8s linear infinite; }
         body { margin: 0; }
         input::placeholder { color: rgba(212,175,55,0.35); }
@@ -786,6 +828,10 @@ function ThaliUserApp() {
   const [activeTab, setActiveTab] = useState('home')
   const [theme, setTheme] = useState(() => localStorage.getItem('almawaid_theme') || 'midnight')
   const t = THEMES[theme] || THEMES.midnight
+
+  useEffect(() => {
+    updateSystemTheme(theme)
+  }, [theme])
 
   const handleSetTheme = (id) => { setTheme(id); localStorage.setItem('almawaid_theme', id) }
 

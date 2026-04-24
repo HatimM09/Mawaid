@@ -6,56 +6,108 @@ export const T = {
   bg: 'var(--bg-deep)',
   bgGrad: 'var(--bg-grad)',
   card: 'var(--bg-surface)',
-  cardGlass: 'rgba(25, 20, 10, 0.72)',
-  cardHover: 'rgba(212, 175, 55, 0.08)',
-  border: 'rgba(212, 175, 55, 0.2)',
-  borderGlass: 'rgba(212, 175, 55, 0.25)',
-  borderHover: 'rgba(212, 175, 55, 0.45)',
-  accent: '#D4AF37',
-  accentGrad: 'linear-gradient(135deg, #B8860B, #D4AF37)',
-  accentBg: 'rgba(212, 175, 55, 0.1)',
-  accentBorder: 'rgba(212, 175, 55, 0.3)',
+  cardGlass: 'var(--bg-card-glass)',
+  cardHover: 'var(--bg-card-hover)',
+  border: 'var(--border-light)',
+  borderGlass: 'var(--border-glass)',
+  borderActive: 'var(--border-active)',
+  accent: 'var(--accent-primary)',
+  accentGrad: 'var(--accent-grad)',
+  accentBg: 'var(--accent-bg)',
+  accentBorder: 'var(--accent-border)',
   text: 'var(--text-primary)',
   textSub: 'var(--text-tertiary)',
-  inputBg: 'rgba(25, 20, 10, 0.4)',
-  inputBorder: 'rgba(212, 175, 55, 0.25)',
-  success: '#5eba82',
-  successBg: 'rgba(94, 186, 130, 0.12)',
-  danger: '#e05555',
-  dangerBg: 'rgba(224, 85, 85, 0.1)',
-  warn: '#d4882a',
-  warnBg: 'rgba(212, 136, 42, 0.1)',
-  glow: '0 0 15px rgba(212, 175, 55, 0.3)'
+  inputBg: 'var(--input-bg)',
+  inputBorder: 'var(--input-border)',
+  success: 'var(--success-color)',
+  successBg: 'var(--success-bg)',
+  danger: 'var(--danger-color)',
+  dangerBg: 'var(--danger-bg)',
+  warn: 'var(--warn-color)',
+  warnBg: 'var(--warn-bg)',
+  glow: '0 0 15px var(--accent-bg)'
 }
 
 export const updateSystemTheme = (themeId) => {
   const root = document.documentElement;
   if (themeId === 'midnight') {
+    // Royal Gold / Midnight
     root.style.setProperty('--bg-deep', '#0f0c08');
     root.style.setProperty('--bg-surface', '#1a160e');
+    root.style.setProperty('--bg-card', 'rgba(25, 20, 10, 0.72)');
+    root.style.setProperty('--bg-card-hover', 'rgba(212, 175, 55, 0.08)');
     root.style.setProperty('--bg-grad', 'radial-gradient(circle at 50% -20%, #2a2010 0%, #0f0c08 80%)');
     root.style.setProperty('--text-primary', '#FFF8E1');
     root.style.setProperty('--text-tertiary', 'rgba(255, 248, 225, 0.6)');
+    root.style.setProperty('--accent-primary', '#D4AF37');
     root.style.setProperty('--accent-cyan', '#D4AF37');
+    root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #B8860B, #D4AF37)');
+    root.style.setProperty('--accent-bg', 'rgba(212, 175, 55, 0.1)');
+    root.style.setProperty('--accent-border', 'rgba(212, 175, 55, 0.3)');
+    root.style.setProperty('--border-light', 'rgba(212, 175, 55, 0.15)');
     root.style.setProperty('--border-glass', 'rgba(212, 175, 55, 0.2)');
+    root.style.setProperty('--border-active', 'rgba(212, 175, 55, 0.45)');
+    root.style.setProperty('--input-bg', 'rgba(25, 20, 10, 0.4)');
+    root.style.setProperty('--input-border', 'rgba(212, 175, 55, 0.25)');
+    root.style.setProperty('--success-color', '#5eba82');
+    root.style.setProperty('--success-bg', 'rgba(94, 186, 130, 0.12)');
+    root.style.setProperty('--danger-color', '#e05555');
+    root.style.setProperty('--danger-bg', 'rgba(224, 85, 85, 0.1)');
+    root.style.setProperty('--warn-color', '#d4882a');
+    root.style.setProperty('--warn-bg', 'rgba(212, 136, 42, 0.1)');
   } else if (themeId === 'ivory') {
+    // Ivory Dune
     root.style.setProperty('--bg-deep', '#faf6ef');
     root.style.setProperty('--bg-surface', '#ffffff');
+    root.style.setProperty('--bg-card', 'rgba(255, 255, 255, 0.8)');
+    root.style.setProperty('--bg-card-hover', 'rgba(156, 90, 42, 0.05)');
     root.style.setProperty('--bg-grad', 'linear-gradient(160deg,#faf6ef 0%,#f3ece0 60%,#faf6ef 100%)');
     root.style.setProperty('--text-primary', '#2a1a0e');
     root.style.setProperty('--text-tertiary', 'rgba(42, 26, 14, 0.6)');
+    root.style.setProperty('--accent-primary', '#9c5a2a');
     root.style.setProperty('--accent-cyan', '#9c5a2a');
-    root.style.setProperty('--border-glass', 'rgba(156, 90, 42, 0.2)');
+    root.style.setProperty('--accent-grad', 'linear-gradient(135deg,#b8672f,#874a20)');
+    root.style.setProperty('--accent-bg', 'rgba(156, 90, 42, 0.08)');
+    root.style.setProperty('--accent-border', 'rgba(156, 90, 42, 0.28)');
+    root.style.setProperty('--border-light', 'rgba(160, 100, 60, 0.14)');
+    root.style.setProperty('--border-glass', 'rgba(156, 90, 42, 0.15)');
+    root.style.setProperty('--border-active', 'rgba(185, 105, 55, 0.4)');
+    root.style.setProperty('--input-bg', 'rgba(156, 90, 42, 0.04)');
+    root.style.setProperty('--input-border', 'rgba(156, 90, 42, 0.2)');
+    root.style.setProperty('--success-color', '#3a7a50');
+    root.style.setProperty('--success-bg', 'rgba(60, 140, 80, 0.08)');
+    root.style.setProperty('--danger-color', '#b91c1c');
+    root.style.setProperty('--danger-bg', 'rgba(185, 28, 28, 0.05)');
+    root.style.setProperty('--warn-color', '#b45309');
+    root.style.setProperty('--warn-bg', 'rgba(180, 83, 9, 0.05)');
   } else if (themeId === 'forest') {
-    root.style.setProperty('--bg-deep', '#13110a');
-    root.style.setProperty('--bg-surface', '#1e1c14');
-    root.style.setProperty('--bg-grad', 'linear-gradient(160deg,#13110a 0%,#1e1c14 60%,#13110a 100%)');
-    root.style.setProperty('--text-primary', '#f5f0e8');
-    root.style.setProperty('--text-tertiary', 'rgba(245, 240, 232, 0.6)');
+    // Forest Qalam
+    root.style.setProperty('--bg-deep', '#0a130e');
+    root.style.setProperty('--bg-surface', '#111e14');
+    root.style.setProperty('--bg-card', 'rgba(17, 30, 20, 0.8)');
+    root.style.setProperty('--bg-card-hover', 'rgba(184, 158, 80, 0.05)');
+    root.style.setProperty('--bg-grad', 'linear-gradient(160deg,#0a130e 0%,#0f1f15 60%,#091108 100%)');
+    root.style.setProperty('--text-primary', '#e8f0e2');
+    root.style.setProperty('--text-tertiary', 'rgba(122, 171, 130, 0.7)');
+    root.style.setProperty('--accent-primary', '#b89e50');
     root.style.setProperty('--accent-cyan', '#b89e50');
-    root.style.setProperty('--border-glass', 'rgba(184, 158, 80, 0.2)');
+    root.style.setProperty('--accent-grad', 'linear-gradient(135deg,#cab060,#9a7e38)');
+    root.style.setProperty('--accent-bg', 'rgba(184, 158, 80, 0.1)');
+    root.style.setProperty('--accent-border', 'rgba(184, 158, 80, 0.3)');
+    root.style.setProperty('--border-light', 'rgba(120, 180, 100, 0.13)');
+    root.style.setProperty('--border-glass', 'rgba(184, 158, 80, 0.15)');
+    root.style.setProperty('--border-active', 'rgba(184, 158, 80, 0.42)');
+    root.style.setProperty('--input-bg', 'rgba(120, 180, 100, 0.05)');
+    root.style.setProperty('--input-border', 'rgba(184, 158, 80, 0.22)');
+    root.style.setProperty('--success-color', '#60c078');
+    root.style.setProperty('--success-bg', 'rgba(80, 180, 100, 0.12)');
+    root.style.setProperty('--danger-color', '#ef4444');
+    root.style.setProperty('--danger-bg', 'rgba(239, 68, 68, 0.1)');
+    root.style.setProperty('--warn-color', '#f59e0b');
+    root.style.setProperty('--warn-bg', 'rgba(245, 158, 11, 0.1)');
   }
 }
+
 
 export const PageWrap = ({ children }) => (
   <div style={{ padding: '0 12px 100px', maxWidth: '1600px', margin: '0 auto' }}>
@@ -79,19 +131,20 @@ export const PageTitle = ({ children, sub }) => (
 
 export const AdminCard = ({ children, style: extra = {}, glass = true }) => (
   <div className="admin-card" style={{
-    background: glass ? 'rgba(15, 12, 8, 0.75)' : 'var(--bg-surface)',
+    background: glass ? T.cardGlass : T.card,
     backdropFilter: glass ? 'blur(28px) saturate(1.3)' : 'none',
     WebkitBackdropFilter: glass ? 'blur(28px) saturate(1.3)' : 'none',
-    border: '1px solid rgba(212, 175, 55, 0.15)',
+    border: `1px solid ${T.borderActive}`,
     borderRadius: 24, padding: 'clamp(16px, 4vw, 24px)',
     boxShadow: '0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06)',
     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    color: 'var(--text-primary)',
+    color: T.text,
     ...extra,
   }}>
     {children}
   </div>
 )
+
 
 export const SlideDrawer = ({ isOpen, onClose, title, children, width = 480 }) => (
   <>

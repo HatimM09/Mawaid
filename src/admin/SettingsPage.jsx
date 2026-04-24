@@ -28,14 +28,25 @@ export default function SettingsPage() {
 
   const load = async () => {
     setLoading(true)
-    const { data } = await supabase.from('app_settings').select('*')
-    if (data) {
-      data.forEach(row => {
-        if (row.key === 'weekly_menu')   setMenu(JSON.parse(row.value) || DEFAULT_MENU)
+    // Load general settings
+    const { data: settings } = await supabase.from('app_settings').select('*')
+    if (settings) {
+      settings.forEach(row => {
         if (row.key === 'upi_id')        setUpiId(row.value)
         if (row.key === 'upi_amount')    setUpiAmt(row.value)
         if (row.key === 'survey_msg')    setSurveyMsg(row.value)
       })
+    }
+    // Load weekly menu from dedicated table
+    const { data: menuData } = await supabase.from('weekly_menu').select('*')
+    if (menuData && menuData.length > 0) {
+      const formatted = {}
+      menuData.forEach(row => {
+        formatted[row.day_name] = { lunch: row.lunch, dinner: row.dinner, ar: row.day_ar }
+      })
+      setMenu(formatted)
+    } else {
+      setMenu(DEFAULT_MENU)
     }
     setLoading(false)
   }
@@ -44,15 +55,26 @@ export default function SettingsPage() {
     e.preventDefault()
     setSaving(true)
     setMsg({ text: '', type: 'success' })
-    const rows = [
-      { key: 'weekly_menu',  value: JSON.stringify(menu) },
+
+    // 1. Save general settings
+    const settingsRows = [
       { key: 'upi_id',       value: upiId },
       { key: 'upi_amount',   value: upiAmt },
       { key: 'survey_msg',   value: surveyMsg },
     ]
-    const { error } = await supabase.from('app_settings')
-      .upsert(rows, { onConflict: 'key' })
+    const { error: settingsError } = await supabase.from('app_settings').upsert(settingsRows, { onConflict: 'key' })
+
+    // 2. Save weekly menu
+    const menuRows = Object.entries(menu).map(([day, val]) => ({
+      day_name: day,
+      day_ar: val.ar || '',
+      lunch: val.lunch,
+      dinner: val.dinner
+    }))
+    const { error: menuError } = await supabase.from('weekly_menu').upsert(menuRows, { onConflict: 'day_name' })
+
     setSaving(false)
+    const error = settingsError || menuError
     setMsg(error
       ? { text: error.message, type: 'error' }
       : { text: 'Settings saved successfully!', type: 'success' }

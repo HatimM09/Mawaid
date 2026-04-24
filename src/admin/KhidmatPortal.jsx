@@ -17,6 +17,7 @@ import { T as SharedT, updateSystemTheme } from './ui'
 import UsersPage from './UsersPage'
 import InventoryPage from './InventoryPage'
 import RequestsAdminPage from './RequestsAdminPage'
+import DailySurveyTracking from './DailySurveyTracking'
 
 // Shared UI Elements
 const Spinner = ({ fullPage = true }) => {
@@ -230,6 +231,8 @@ export default function KhidmatPortal({ signOut, user }) {
             <InventoryPage />
           ) : activeTab === 'requests' ? (
             <RequestsAdminPage />
+          ) : activeTab === 'survey' ? (
+            <DailySurveyTracking />
           ) : (
             <div style={{ padding: 40, textAlign: 'center' }}>
               <h2 style={{ color: T.accent }}>{activeTab.toUpperCase()} Section</h2>
@@ -244,6 +247,7 @@ export default function KhidmatPortal({ signOut, user }) {
           <SidebarIcon icon={<Home size={22} />} active={activeTab === 'home'} onClick={() => setActiveTab('home')} />
           <SidebarIcon icon={<Users size={22} />} active={activeTab === 'users'} onClick={() => setActiveTab('users')} />
           <SidebarIcon icon={<Package size={22} />} active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} />
+          <SidebarIcon icon={<Calendar size={22} />} active={activeTab === 'survey'} onClick={() => setActiveTab('survey')} />
           <SidebarIcon icon={<Utensils size={22} />} active={activeTab === 'requests'} onClick={() => setActiveTab('requests')} />
           <SidebarIcon icon={<LogOut size={22} color={T.danger} />} onClick={() => { if(window.confirm('Sign out?')) signOut() }} />
         </nav>

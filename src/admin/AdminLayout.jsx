@@ -164,29 +164,29 @@ export default function AdminLayout() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=DM+Sans:wght@400;500;700;900&display=swap');
         .admin-main { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; padding: 0; position: relative; z-index: 1; }
-        .admin-header { height: 70px; display: flex; align-items: center; padding: 0 30px; background: rgba(20, 16, 8, 0.6); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(212, 175, 55, 0.3); z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+        .admin-header { height: 70px; display: flex; align-items: center; padding: 0 30px; background: var(--bg-card); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-glass); z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
         .global-bottom-nav { 
           position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
           width: 90%; maxWidth: 800px; height: 70px;
-          background: rgba(20, 16, 8, 0.85); backdrop-filter: blur(25px);
-          border: 1px solid rgba(212, 175, 55, 0.4); border-radius: 24px;
+          background: var(--bg-card); backdrop-filter: blur(25px);
+          border: 1px solid var(--border-glass); border-radius: 24px;
           display: flex; justify-content: space-around; align-items: center;
           padding: 0 20px; z-index: 2000;
-          box-shadow: 0 10px 40px rgba(0,0,0,0.6), 0 0 25px rgba(212, 175, 55, 0.2);
+          box-shadow: 0 10px 40px rgba(0,0,0,0.6), 0 0 25px var(--accent-bg);
         }
         .nav-item {
           display: flex; flexDirection: column; align-items: center; gap: 4px;
           text-decoration: none; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          color: rgba(255, 248, 225, 0.7); padding: 8px 12px; border-radius: 16px;
+          color: var(--text-tertiary); padding: 8px 12px; border-radius: 16px;
         }
-        .nav-item.active { color: #D4AF37; background: rgba(212, 175, 55, 0.1); text-shadow: 0 0 10px rgba(212, 175, 55, 0.5); }
-        .nav-item:hover { color: #FFF8E1; background: rgba(255,255,255,0.05); }
+        .nav-item.active { color: var(--accent-primary); background: var(--accent-bg); text-shadow: 0 0 10px var(--accent-bg); }
+        .nav-item:hover { color: var(--text-primary); background: rgba(255,255,255,0.05); }
 
         .glass {
-          background: rgba(15, 12, 8, 0.75);
+          background: var(--bg-card);
           backdrop-filter: blur(28px) saturate(1.3);
           -webkit-backdrop-filter: blur(28px) saturate(1.3);
-          border: 1px solid rgba(212, 175, 55, 0.15);
+          border: 1px solid var(--border-glass);
           box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
         }
 

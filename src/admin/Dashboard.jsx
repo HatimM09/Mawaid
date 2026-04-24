@@ -46,7 +46,7 @@ export default function Dashboard() {
   }, [loadAll])
 
   const loadStats = async () => {
-    const [u, s, f, r, q, allUsers, allSubmissions] = await Promise.all([
+    const [u, s, f, r, q, allUsers, allSubmissions, allInventory] = await Promise.all([
       supabase.from('user_stats').select('id', { count: 'exact', head: true }),
       supabase.from('survey_submissions_flat').select('user_id', { count: 'exact', head: true }),
       supabase.from('daily_feedback').select('id', { count: 'exact', head: true }),
