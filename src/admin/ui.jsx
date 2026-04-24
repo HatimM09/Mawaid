@@ -131,12 +131,12 @@ export const PageTitle = ({ children, sub }) => (
 
 export const AdminCard = ({ children, style: extra = {}, glass = true }) => (
   <div className="admin-card" style={{
-    background: glass ? T.cardGlass : T.card,
-    backdropFilter: glass ? 'blur(28px) saturate(1.3)' : 'none',
-    WebkitBackdropFilter: glass ? 'blur(28px) saturate(1.3)' : 'none',
+    background: glass ? 'rgba(15, 12, 8, 0.45)' : T.card,
+    backdropFilter: glass ? 'blur(40px) saturate(1.8)' : 'none',
+    WebkitBackdropFilter: glass ? 'blur(40px) saturate(1.8)' : 'none',
     border: `1px solid ${T.borderActive}`,
     borderRadius: 24, padding: 'clamp(16px, 4vw, 24px)',
-    boxShadow: '0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06)',
+    boxShadow: '0 12px 48px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08)',
     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
     color: T.text,
     ...extra,

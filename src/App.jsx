@@ -349,23 +349,23 @@ function LoginPage({ onRoleLogin }) {
       padding: 20, position: 'relative', overflow: 'hidden', fontFamily: "'DM Sans',sans-serif",
       background: '#0f0c08'
     }}>
-      {/* Mosque background back with light blur */}
+      {/* Wheat background with blur */}
       <img
-        src="https://images.unsplash.com/photo-1542751371-adc38448a05e?q=80&w=2070&auto=format&fit=crop"
+        src="/wheat_bg.png"
         alt=""
         aria-hidden="true"
         style={{
           position: 'absolute', inset: 0, width: '100%', height: '100%',
           objectFit: 'cover', objectPosition: 'center',
-          filter: 'blur(4px) brightness(0.65)',
-          animation: 'kenburns 40s infinite alternate ease-in-out',
+          filter: 'blur(5px) brightness(0.6)',
+          animation: 'kenburns 30s infinite alternate ease-in-out',
           zIndex: 0,
         }}
       />
       <div style={{
         position: 'absolute', inset: 0, zIndex: 1,
-        background: 'linear-gradient(180deg, rgba(20,15,5,0.4) 0%, rgba(30,25,10,0.2) 50%, rgba(15,10,5,0.45) 100%)',
-        backdropFilter: 'saturate(1.3)',
+        background: 'radial-gradient(circle at 50% 50%, rgba(30,25,10,0.1) 0%, rgba(15,12,8,0.5) 100%)',
+        backdropFilter: 'saturate(1.2)',
       }} />
 
       {/* Main card with ornate border */}
@@ -399,11 +399,11 @@ function LoginPage({ onRoleLogin }) {
           {/* Card interior — Royal Glassmorphism */}
           <div style={{
             borderRadius: 26,
-            background: 'rgba(15, 12, 8, 0.65)',
-            backdropFilter: 'blur(40px) saturate(1.8)',
-            WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
+            background: 'rgba(15, 12, 8, 0.45)',
+            backdropFilter: 'blur(50px) saturate(2)',
+            WebkitBackdropFilter: 'blur(50px) saturate(2)',
             padding: '24px 32px 28px',
-            border: '1px solid rgba(212,175,55,0.25)',
+            border: '1px solid rgba(212,175,55,0.3)',
             boxShadow: '0 25px 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.1)',
           }}>
             {/* Logo + Title */}
@@ -426,10 +426,11 @@ function LoginPage({ onRoleLogin }) {
             {/* Role tabs */}
             <div style={{
               display: 'flex', gap: 3, marginBottom: 10,
-              background: 'rgba(25,20,10,0.7)',
+              background: 'rgba(25,20,10,0.3)',
               borderRadius: 14, padding: 4,
-              border: '1px solid rgba(212,175,55,0.2)',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+              border: '1px solid rgba(212,175,55,0.15)',
+              backdropFilter: 'blur(20px) saturate(1.5)',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
             }}>
               {LOGIN_ROLES.map(r => {
                 const active = role === r.id
@@ -457,9 +458,9 @@ function LoginPage({ onRoleLogin }) {
             {/* Role descriptor bar */}
             <div style={{
               marginBottom: 12, padding: '8px 14px', borderRadius: 10,
-              background: 'rgba(25,20,10,0.65)',
-              border: '1px solid rgba(212,175,55,0.25)',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
+              background: 'rgba(212,175,55,0.05)',
+              border: '1px solid rgba(212,175,55,0.15)',
+              backdropFilter: 'blur(5px)',
               fontSize: 11, color: 'rgba(240,234,210,0.85)', textAlign: 'center',
               fontFamily: "'DM Sans',sans-serif", letterSpacing: '0.04em',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
@@ -566,12 +567,24 @@ function LoginPage({ onRoleLogin }) {
         .spin { animation: spin 0.8s linear infinite; }
         body { margin: 0; }
         input::placeholder { color: rgba(212,175,55,0.35); }
+        .login-btn {
+          width: 100%; padding: 15px 20px; borderRadius: 12; border: 1px solid rgba(212,175,55,0.6) !important; marginTop: 10px;
+          background: rgba(212,175,55,0.05) !important;
+          backdrop-filter: blur(15px);
+          color: #FFF8E1;
+          fontSize: 15px; fontWeight: 800; cursor: pointer;
+          boxShadow: 0 0 20px rgba(212,175,55,0.15);
+          transition: all 0.3s ease; fontFamily: "'Cinzel','DM Sans',sans-serif";
+          letterSpacing: 0.08em; display: flex; alignItems: center; justifyContent: center; gap: 8px;
+        }
         .login-btn:hover:not(:disabled) {
-          box-shadow: 0 0 24px rgba(212,175,55,0.6), 0 8px 28px rgba(184,134,11,0.3) !important;
+          background: rgba(212,175,55,0.15) !important;
+          border-color: #D4AF37 !important;
+          box-shadow: 0 0 30px rgba(212,175,55,0.3), 0 8px 32px rgba(0,0,0,0.5) !important;
           transform: translateY(-1px);
-          filter: brightness(1.08);
         }
         .login-btn:active:not(:disabled) { transform: translateY(0); }
+        .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
       `}</style>
     </div>
   )
