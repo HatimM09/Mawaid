@@ -1,10 +1,4 @@
 {
   "version": 2,
-  "cleanUrls": true,
-  "framework": "vite",
-  "rewrites": [
-    { "source": "/sw.js", "destination": "/sw.js" },
-    { "source": "/manifest.json", "destination": "/manifest.json" },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
+  "framework": "vite"
 }

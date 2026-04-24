@@ -5,7 +5,7 @@ const ASSETS_TO_CACHE = [
   '/manifest.json',
   '/logo.png',
   '/al-mawaid.png',
-  '/mosque_bg.webp'
+  '/wheat_bg.png'
 ];
 
 self.addEventListener('install', (event) => {
