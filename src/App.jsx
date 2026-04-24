@@ -357,7 +357,7 @@ function LoginPage({ onRoleLogin }) {
         style={{
           position: 'absolute', inset: 0, width: '100%', height: '100%',
           objectFit: 'cover', objectPosition: 'center',
-          filter: 'blur(5px) brightness(0.6)',
+          filter: 'blur(3px) brightness(0.7)',
           animation: 'kenburns 30s infinite alternate ease-in-out',
           zIndex: 0,
         }}
@@ -399,9 +399,9 @@ function LoginPage({ onRoleLogin }) {
           {/* Card interior — Royal Glassmorphism */}
           <div style={{
             borderRadius: 26,
-            background: 'rgba(15, 12, 8, 0.45)',
-            backdropFilter: 'blur(50px) saturate(2)',
-            WebkitBackdropFilter: 'blur(50px) saturate(2)',
+            background: 'rgba(15, 12, 8, 0.28)',
+            backdropFilter: 'blur(60px) saturate(2.2)',
+            WebkitBackdropFilter: 'blur(60px) saturate(2.2)',
             padding: '24px 32px 28px',
             border: '1px solid rgba(212,175,55,0.3)',
             boxShadow: '0 25px 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.1)',
@@ -426,10 +426,10 @@ function LoginPage({ onRoleLogin }) {
             {/* Role tabs */}
             <div style={{
               display: 'flex', gap: 3, marginBottom: 10,
-              background: 'rgba(25,20,10,0.3)',
+              background: 'rgba(25,20,10,0.12)',
               borderRadius: 14, padding: 4,
-              border: '1px solid rgba(212,175,55,0.15)',
-              backdropFilter: 'blur(20px) saturate(1.5)',
+              border: '1px solid rgba(212,175,55,0.1)',
+              backdropFilter: 'blur(30px) saturate(1.5)',
               boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
             }}>
               {LOGIN_ROLES.map(r => {
