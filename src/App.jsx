@@ -945,7 +945,6 @@ function HomePage({ setActiveTab }) {
   const weeklyMenu = useWeeklyMenu()
   const { user } = useAuth()
 
-  if (!weeklyMenu) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
   const [showSurvey, setShowSurvey] = useState(false)
   const [profileData, setProfileData] = useState({ name: '', thali_number: '', avatar_url: '' })
   const [statsLoading, setStatsLoading] = useState(true)
@@ -963,7 +962,7 @@ function HomePage({ setActiveTab }) {
   const [dinnerStars, setDinnerStars] = useState(0)
   const [lunchComment, setLunchComment] = useState('')
   const [dinnerComment, setDinnerComment] = useState('')
-  const STAR_EMOJIS = { 1: '😡', 2: '😟', 3: '😐', 4: '😊', 5: '😍' }
+  const STAR_LABELS = { 1: 'Poor', 2: 'Fair', 3: 'Good', 4: 'Great', 5: 'Excellent' }
 
   useEffect(() => { loadData() }, [user])
 
@@ -988,8 +987,8 @@ function HomePage({ setActiveTab }) {
     try {
       const { error: dbErr } = await supabase.from('daily_feedback').upsert([{
         user_id: user.id, day: todayKey,
-        lunch_stars: lunchStars, lunch_emoji: lunchStars ? STAR_EMOJIS[lunchStars] : null,
-        dinner_stars: dinnerStars, dinner_emoji: dinnerStars ? STAR_EMOJIS[dinnerStars] : null,
+        lunch_stars: lunchStars, lunch_emoji: lunchStars ? STAR_LABELS[lunchStars] : null,
+        dinner_stars: dinnerStars, dinner_emoji: dinnerStars ? STAR_LABELS[dinnerStars] : null,
         comment: lunchComment.trim(),
         created_at: new Date().toISOString()
       }], { onConflict: 'user_id,day' })
@@ -1061,51 +1060,53 @@ function HomePage({ setActiveTab }) {
     }
   }
 
+  if (!weeklyMenu) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
+
   return (
     <main style={{ flex: 1, padding: '16px 16px 96px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       {/* Profile strip */}
-      <Card active style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 18, padding: '12px 16px' }}>
-        <Avatar avatarUrl={profileData?.avatar_url} name={profileData?.name} size={48} />
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{profileData?.name || 'Thali User'}</div>
-          <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>Thali #{profileData?.thali_number || '—'}</div>
+      <Card active style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, padding: '14px 16px', borderRadius: 18, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: -20, left: -20, width: 80, height: 80, background: t.accentGrad, borderRadius: '50%', filter: 'blur(40px)', opacity: 0.08 }} />
+        <Avatar avatarUrl={profileData?.avatar_url} name={profileData?.name} size={46} />
+        <div style={{ flex: 1, position: 'relative', zIndex: 1 }}>
+          <div style={{ fontSize: 17, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>{profileData?.name || 'Thali User'}</div>
+          <div style={{ fontSize: 11, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 2 }}>Thali #{profileData?.thali_number || '—'}</div>
         </div>
       </Card>
 
-      {/* Payment Section - Fluid Organic Shape */}
+      {/* Payment Section */}
       {statsLoading ? (
-        <Card organic style={{ marginBottom: 24, display: 'flex', justifyContent: 'center', padding: '40px 0' }}><Spinner fullPage={false} /></Card>
+        <Card organic style={{ marginBottom: 20, display: 'flex', justifyContent: 'center', padding: '40px 0', borderRadius: 20 }}><Spinner fullPage={false} /></Card>
       ) : !paymentReceipt ? (
-        <Card organic style={{ 
-          marginBottom: 24, 
+        <Card organic style={{
+          marginBottom: 20, borderRadius: 20,
           background: 'linear-gradient(135deg, rgba(35,28,15,0.7), rgba(10,8,5,0.5))',
-          position: 'relative',
-          overflow: 'hidden'
+          position: 'relative', overflow: 'hidden'
         }}>
-          {/* Wave Accent */}
           <div style={{ position: 'absolute', top: -40, right: -40, width: 120, height: 120, background: t.accentGrad, borderRadius: '50%', filter: 'blur(60px)', opacity: 0.15 }} />
-          
+          <div style={{ position: 'absolute', bottom: -30, left: -30, width: 80, height: 80, background: t.accentGrad, borderRadius: '50%', filter: 'blur(40px)', opacity: 0.08 }} />
+
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <div style={{ flex: 1, minWidth: 220 }}>
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.2em', textTransform: 'uppercase', color: t.accent, fontFamily: "'DM Sans',sans-serif", opacity: 0.8 }}>UPI PAYMENT</div>
               <div style={{ fontSize: 32, fontWeight: 700, color: t.accent, marginTop: 4, fontFamily: "'Playfair Display',serif" }}>Pay ₹{fixedPaymentAmount}</div>
             </div>
-            
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flexShrink: 0 }}>
               <div style={{ padding: '12px 16px', borderRadius: 16, background: 'rgba(0,0,0,0.3)', border: `1px solid ${t.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
                 <img src="https://upload.wikimedia.org/wikipedia/commons/e/e1/UPI-Logo-vector.svg" alt="UPI" style={{ height: 12, filter: 'invert(1) grayscale(1)' }} />
                 <div style={{ height: 12, width: 1, background: t.border }} />
                 <div style={{ fontSize: 10, color: t.textSub, fontWeight: 700 }}>Secure Gateway</div>
               </div>
-              
+
               {!paymentLoading
-                ? <button onClick={handleCashfreePayment} style={{ 
-                    minWidth: 200, padding: '14px 20px', border: 'none', borderRadius: 12, 
-                    background: t.goldBar, color: '#000', fontSize: 13, fontWeight: 900, 
-                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                    gap: 8, boxShadow: `0 8px 24px rgba(212,175,55,0.3)`, fontFamily: "'DM Sans',sans-serif",
-                    textTransform: 'uppercase', letterSpacing: '0.05em'
-                  }}>
+                ? <button onClick={handleCashfreePayment} style={{
+                  minWidth: 200, padding: '14px 20px', border: 'none', borderRadius: 12,
+                  background: t.goldBar, color: '#000', fontSize: 13, fontWeight: 900,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  gap: 8, boxShadow: `0 8px 24px rgba(212,175,55,0.3)`, fontFamily: "'DM Sans',sans-serif",
+                  textTransform: 'uppercase', letterSpacing: '0.05em'
+                }}>
                   <Wallet size={16} /> Secure Pay with Cashfree
                 </button>
                 : <div style={{ minWidth: 200, padding: '14px 20px', border: `1px solid ${t.border}`, borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: t.accent, fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: "'DM Sans',sans-serif" }}>Processing...</div>
@@ -1115,46 +1116,64 @@ function HomePage({ setActiveTab }) {
           {paymentError && <ErrorBanner msg={paymentError} />}
         </Card>
       ) : (
-        <Card active organic style={{ marginBottom: 24, background: 'rgba(94,186,130,0.06)', border: `1px solid ${t.successBorder}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <div style={{ width: 50, height: 50, borderRadius: '50%', background: 'linear-gradient(135deg,#5eba82,#3d9a60)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 10px 24px rgba(94,186,130,0.3)' }}><Check size={24} strokeWidth={3} /></div>
+        <Card active organic style={{ marginBottom: 20, borderRadius: 20, background: 'rgba(94,186,130,0.06)', border: `1px solid ${t.successBorder}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 14, background: 'linear-gradient(135deg,#5eba82,#3d9a60)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 10px 24px rgba(94,186,130,0.3)' }}><Check size={22} strokeWidth={3} /></div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: t.successText, letterSpacing: '0.15em', textTransform: 'uppercase', fontFamily: "'DM Sans',sans-serif" }}>Transaction Complete</div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: t.text, marginTop: 2, fontFamily: "'Playfair Display',serif" }}>₹{paymentReceipt.amount} Received</div>
+              <div style={{ fontSize: 9, fontWeight: 800, color: t.successText, letterSpacing: '0.15em', textTransform: 'uppercase', fontFamily: "'DM Sans',sans-serif" }}>Transaction Complete</div>
+              <div style={{ fontSize: 19, fontWeight: 800, color: t.text, marginTop: 2, fontFamily: "'Playfair Display',serif" }}>₹{paymentReceipt.amount} Received</div>
             </div>
           </div>
         </Card>
       )}
 
+
+      {/* Daily Feedback Section */}
+      <Card organic style={{ marginBottom: 24, position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: -30, right: -30, width: 100, height: 100, background: t.accentGrad, borderRadius: '50%', filter: 'blur(50px)', opacity: 0.08 }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Star size={16} color="#fff" fill="#fff" /></div>
+          <div style={{ fontSize: 17, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif" }}>Daily Feedback</div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+          {['lunch', 'dinner'].map(meal => {
+            const stars = meal === 'lunch' ? lunchStars : dinnerStars
+            const setStars = meal === 'lunch' ? setLunchStars : setDinnerStars
+            const submitted = feedbackSubmitted[meal]
+            return (
+              <div key={meal} style={{ background: t.inputBg, padding: 14, borderRadius: 14, border: `1px solid ${stars > 0 ? t.accentBorder : t.border}`, transition: 'border-color 0.3s' }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif" }}>
+                  {meal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}
                 </div>
+                {submitted ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: t.successText, fontWeight: 600 }}><Check size={14} /> Rated!</div>
+                ) : (
+                  <div>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                      {[1, 2, 3, 4, 5].map(num => (
+                        <button key={num} onClick={() => setStars(num)} style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', transition: 'transform 0.2s', transform: stars >= num ? 'scale(1.15)' : 'scale(1)' }}>
+                          <Star size={22} color={t.accent} fill={stars >= num ? t.accent : 'none'} strokeWidth={1.5} style={{ transition: 'fill 0.2s, color 0.2s' }} />
+                        </button>
+                      ))}
+                    </div>
+                    {stars > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: t.accent, opacity: 0.7, fontFamily: "'DM Sans',sans-serif" }}>{STAR_LABELS[stars]}</div>}
+                  </div>
+                )}
               </div>
             )
           })}
         </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: t.textSub, marginBottom: 8, textTransform: 'uppercase' }}>Your Comments</label>
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: 'block', fontSize: 10, fontWeight: 800, color: t.textSub, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Your Comments</label>
           <textarea
             value={lunchComment}
-            onChange={e => {
-              setLunchComment(e.target.value)
-              setDinnerComment(e.target.value)
-            }}
+            onChange={e => { setLunchComment(e.target.value); setDinnerComment(e.target.value) }}
             placeholder="Tell us what you liked or how we can improve..."
-            style={{
-              width: '100%', padding: '14px', borderRadius: 14, background: t.inputBg,
-              border: `1px solid ${t.border}`, color: t.text, fontSize: 14,
-              resize: 'none', outline: 'none', fontFamily: 'inherit', minHeight: 80
-            }}
+            style={{ width: '100%', padding: '12px 14px', borderRadius: 12, background: t.inputBg, border: `1px solid ${t.border}`, color: t.text, fontSize: 13, resize: 'none', outline: 'none', fontFamily: "'DM Sans',sans-serif", minHeight: 70, boxSizing: 'border-box' }}
           />
         </div>
-
-        <Btn
-          onClick={handleSubmitCombined}
-          disabled={submittingFeedback || (!lunchStars && !dinnerStars)}
-          style={{ width: '100%', height: 50, fontSize: 15 }}
-        >
-          {submittingFeedback ? 'Saving Feedback...' : 'Submit Daily Feedback'}
+        <Btn onClick={handleSubmitCombined} disabled={submittingFeedback || (!lunchStars && !dinnerStars)} style={{ width: '100%', height: 48, fontSize: 14 }}>
+          {submittingFeedback ? 'Saving...' : 'Submit Feedback'}
         </Btn>
       </Card>
 
@@ -1167,52 +1186,102 @@ function WeeklyMenuPage() {
   const t = useTheme()
   const weeklyMenu = useWeeklyMenu()
   const todayKey = getTodayKey()
+  const [expandedDay, setExpandedDay] = useState(todayKey)
 
   if (!weeklyMenu) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
 
   return (
     <main style={{ flex: 1, padding: '16px 16px 100px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
-      <div style={{ marginBottom: 18, padding: '16px 18px', borderRadius: 16, background: t.cardActive, border: `1px solid ${t.borderActive}`, textAlign: 'center' }}>
-        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', color: t.textSub, marginBottom: 5, fontFamily: "'DM Sans',sans-serif" }}>AL-MAWAID</div>
-        <div style={{ fontSize: 24, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif" }}>This Week's Menu</div>
+      {/* Header Card */}
+      <div style={{ marginBottom: 20, padding: '20px 20px 18px', borderRadius: 18, background: t.cardActive, border: `1px solid ${t.borderActive}`, textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: -40, left: '50%', transform: 'translateX(-50%)', width: 180, height: 100, background: t.accentGrad, borderRadius: '50%', filter: 'blur(60px)', opacity: 0.12 }} />
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 6 }}>
+            <Utensils size={14} color={t.accent} />
+            <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.22em', color: t.textSub, fontFamily: "'DM Sans',sans-serif", textTransform: 'uppercase' }}>Al-Mawaid Weekly</div>
+          </div>
+          <div style={{ fontSize: 26, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>This Week's Menu</div>
+        </div>
       </div>
 
+      {/* Day pills navigation */}
+      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', marginBottom: 18, paddingBottom: 4, scrollbarWidth: 'none' }}>
+        {DAYS.map(day => {
+          const isToday = day === todayKey
+          const isActive = day === expandedDay
+          return (
+            <button key={day} onClick={() => setExpandedDay(expandedDay === day ? null : day)}
+              style={{ flexShrink: 0, padding: '8px 16px', borderRadius: 24, border: `1.5px solid ${isActive ? t.accent : t.border}`, background: isActive ? t.accentBg : 'transparent', color: isActive ? t.accent : t.textSub, fontWeight: 800, fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", letterSpacing: '0.04em', position: 'relative', transition: 'all 0.25s' }}>
+              {isToday && <div style={{ position: 'absolute', top: -2, right: -2, width: 7, height: 7, borderRadius: '50%', background: t.accent, border: `2px solid ${t.bg}` }} />}
+              {(weeklyMenu[day]?.en || day).slice(0, 3).toUpperCase()}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Day Cards */}
       {DAYS.map((day) => {
         const menu = weeklyMenu[day] || { en: '', ar: '', lunch: [], dinner: [] }
         const isToday = day === todayKey
+        const isExpanded = day === expandedDay
         return (
-          <Card key={day} active={isToday} style={{ marginBottom: 15, position: 'relative', overflow: 'hidden' }}>
-            {isToday && <div style={{ position: 'absolute', top: 0, left: 0, width: 4, height: '100%', background: t.accent }} />}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div style={{ fontSize: 18, fontWeight: 800, color: isToday ? t.accent : t.text, fontFamily: "'Playfair Display',serif" }}>{day.toUpperCase()}</div>
-              {isToday && <span style={{ fontSize: 10, fontWeight: 800, background: t.accent, color: '#000', padding: '2px 8px', borderRadius: 10 }}>TODAY</span>}
+          <div key={day} onClick={() => setExpandedDay(isExpanded ? null : day)}
+            style={{ marginBottom: 12, borderRadius: 16, border: `1px solid ${isToday ? t.accentBorder : isExpanded ? t.borderActive : t.border}`, background: isExpanded ? t.cardActive : t.card, overflow: 'hidden', cursor: 'pointer', transition: 'all 0.3s ease', position: 'relative' }}>
+            {isToday && <div style={{ position: 'absolute', top: 0, left: 0, width: 3, height: '100%', background: t.accentGrad }} />}
+
+            {/* Day Header — always visible */}
+            <div style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: isToday ? t.accent : t.text, fontFamily: "'Playfair Display',serif" }}>{day.charAt(0).toUpperCase() + day.slice(1)}</div>
+                {isToday && <span style={{ fontSize: 9, fontWeight: 800, background: t.accentGrad, color: '#000', padding: '2px 10px', borderRadius: 20, letterSpacing: '0.1em' }}>TODAY</span>}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ fontSize: 10, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{menu.lunch.length + menu.dinner.length} dishes</div>
+                {isExpanded ? <ChevronUp size={14} color={t.accent} /> : <ChevronDown size={14} color={t.textSub} />}
+              </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div style={{ background: t.inputBg, padding: 12, borderRadius: 12, border: `1px solid ${t.border}` }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: t.accent, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}><Sun size={12} /> LUNCH</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                  {menu.lunch.length > 0 ? menu.lunch.map(d => (
-                    <span key={d} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: t.card, color: t.text, border: `1px solid ${t.border}` }}>{d}</span>
-                  )) : <span style={{ fontSize: 11, color: t.textSub }}>No menu</span>}
+            {/* Expanded Content */}
+            {isExpanded && (
+              <div style={{ padding: '0 16px 16px', borderTop: `1px solid ${t.border}` }} onClick={e => e.stopPropagation()}>
+                {/* Day name in Arabic */}
+                {(menu.en || menu.ar) && (
+                  <div style={{ textAlign: 'center', padding: '10px 0 14px' }}>
+                    <div style={{ fontSize: 14, color: t.accent, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>{menu.en}</div>
+                    {menu.ar && <div style={{ fontSize: 13, color: t.textSub, fontFamily: "'Amiri',serif", marginTop: 2 }}>{menu.ar}</div>}
+                  </div>
+                )}
+
+                {/* Lunch */}
+                <div style={{ marginBottom: 14, padding: 14, borderRadius: 14, background: t.inputBg, border: `1px solid ${t.border}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                    <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg, #f59e0b, #d97706)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Sun size={13} color="#fff" /></div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: t.accent, letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif" }}>LUNCH</div>
+                    <div style={{ fontSize: 10, color: t.textSub, marginLeft: 'auto' }}>{menu.lunch.length} items</div>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {menu.lunch.length > 0 ? menu.lunch.map(d => (
+                      <span key={d} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, background: t.card, color: t.text, border: `1px solid ${t.border}`, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>{d}</span>
+                    )) : <span style={{ fontSize: 12, color: t.textSub, fontStyle: 'italic' }}>No menu set</span>}
+                  </div>
                 </div>
-              </div>
-              <div style={{ background: t.inputBg, padding: 12, borderRadius: 12, border: `1px solid ${t.border}` }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: t.accent, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}><Moon size={12} /> DINNER</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                  {menu.dinner.length > 0 ? menu.dinner.map(d => (
-                    <span key={d} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: t.card, color: t.text, border: `1px solid ${t.border}` }}>{d}</span>
-                  )) : <span style={{ fontSize: 11, color: t.textSub }}>No menu</span>}
+
+                {/* Dinner */}
+                <div style={{ padding: 14, borderRadius: 14, background: t.inputBg, border: `1px solid ${t.border}` }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                    <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg, #6366f1, #4338ca)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Moon size={13} color="#fff" /></div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: t.accent, letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif" }}>DINNER</div>
+                    <div style={{ fontSize: 10, color: t.textSub, marginLeft: 'auto' }}>{menu.dinner.length} items</div>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {menu.dinner.length > 0 ? menu.dinner.map(d => (
+                      <span key={d} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, background: t.card, color: t.text, border: `1px solid ${t.border}`, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>{d}</span>
+                    )) : <span style={{ fontSize: 12, color: t.textSub, fontStyle: 'italic' }}>No menu set</span>}
+                  </div>
                 </div>
-              </div>
-            </div>
-            {(menu.en || menu.ar) && (
-              <div style={{ marginTop: 10, textAlign: 'center', opacity: 0.8 }}>
-                <div style={{ fontSize: 13, color: t.accent, fontWeight: 600 }}>{menu.en}</div>
-                <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'Amiri',serif" }}>{menu.ar}</div>
               </div>
             )}
-          </Card>
+          </div>
         )
       })}
     </main>
