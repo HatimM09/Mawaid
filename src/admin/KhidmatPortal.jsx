@@ -11,7 +11,6 @@ import { supabase } from './supabaseClient'
 import { AuthCtx, ThemeCtx, useAuth, useTheme } from './context'
 import { T as SharedT, updateSystemTheme } from './ui'
 import UsersPage from './UsersPage'
-import InventoryPage from './InventoryPage'
 import RequestsAdminPage from './RequestsAdminPage'
 import DailySurveyTracking from './DailySurveyTracking'
 
@@ -175,8 +174,6 @@ export default function KhidmatPortal({ signOut, user }) {
           </div>
         ) : activeTab === 'users' ? (
           <UsersPage />
-        ) : activeTab === 'inventory' ? (
-          <InventoryPage />
         ) : activeTab === 'requests' ? (
           <RequestsAdminPage />
         ) : activeTab === 'survey' ? (
@@ -197,7 +194,6 @@ export default function KhidmatPortal({ signOut, user }) {
         {[
           { id: 'home', icon: Home },
           { id: 'users', icon: Users },
-          { id: 'inventory', icon: Package },
           { id: 'survey', icon: Calendar },
           { id: 'requests', icon: Utensils },
         ].map(({ id, icon: Icon }) => {

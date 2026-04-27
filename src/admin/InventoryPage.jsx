@@ -42,7 +42,8 @@ const ModalOverlay = ({ onClose, children }) => (
 export default function InventoryPage({ role: roleProp }) {
   const context = useOutletContext()
   const role = roleProp || context?.role || 'khidmat'
-  const isAdmin = role === 'admin' || role === 'inventory_manager'
+  const canManageItems = role === 'admin'
+  const canEditStock = role === 'admin' || role === 'inventory_manager'
   const [loading, setLoading] = useState(true)
   const [products, setProducts] = useState([])
   const [auditLog, setAuditLog] = useState([])
@@ -130,13 +131,13 @@ export default function InventoryPage({ role: roleProp }) {
         {p.stock} <span style={{ fontSize: 11, fontWeight: 500, color: T.textSub }}>{p.unit}</span>
       </div>,
       <Badge color={isLow ? T.danger : T.success}>{isLow ? 'Low Stock' : 'Good'}</Badge>,
-      <div style={{ display: 'flex', gap: 6 }}>
-        <Btn variant="outline" size="sm" onClick={() => setShowTx({ product: p, type: 'in' })} style={{ color: T.success }}>
-          <ArrowUpRight size={14} /> {isAdmin ? 'In' : 'Refill'}
+      <div style={{ display: 'flex', gap: 10 }}>
+        <Btn variant="outline" onClick={() => setShowTx({ product: p, type: 'in' })} style={{ color: T.success, padding: '8px 16px', fontSize: 14 }}>
+          <ArrowUpRight size={18} style={{ marginRight: 4 }} /> {canEditStock ? 'In' : 'Refill'}
         </Btn>
-        {isAdmin && (
-          <Btn variant="outline" size="sm" onClick={() => setShowTx({ product: p, type: 'out' })} style={{ color: T.danger }}>
-            <ArrowDownRight size={14} /> Out
+        {canEditStock && (
+          <Btn variant="outline" onClick={() => setShowTx({ product: p, type: 'out' })} style={{ color: T.danger, padding: '8px 16px', fontSize: 14 }}>
+            <ArrowDownRight size={18} style={{ marginRight: 4 }} /> Out
           </Btn>
         )}
       </div>
@@ -159,7 +160,7 @@ export default function InventoryPage({ role: roleProp }) {
           <Btn variant="outline" onClick={() => setActiveTab(activeTab === 'stock' ? 'log' : 'stock')}>
             {activeTab === 'stock' ? <><History size={16} /> View Audit Log</> : <><Package size={16} /> View Stock</>}
           </Btn>
-          {isAdmin && <Btn onClick={() => setShowAdd(true)}><Plus size={16} /> Add New Item</Btn>}
+          {canManageItems && <Btn onClick={() => setShowAdd(true)}><Plus size={16} /> Add New Item</Btn>}
         </div>
       </div>
 
@@ -251,7 +252,7 @@ export default function InventoryPage({ role: roleProp }) {
             <Input label={`Quantity (${showTx.product.unit})`} type="number" autoFocus value={txQty} onChange={e => setTxQty(e.target.value)} />
             <Input label="Transaction Note" placeholder="Supplier, Batch, Reason..." value={txNote} onChange={e => setTxNote(e.target.value)} />
             <Btn
-              style={{ width: '100%', marginTop: 8, background: showTx.type === 'in' ? T.success : T.danger, color: '#fff' }}
+              style={{ width: '100%', marginTop: 16, height: 60, fontSize: 18, fontWeight: 800, background: showTx.type === 'in' ? T.success : T.danger, color: '#fff' }}
               onClick={handleTransaction}
             >
               Confirm {showTx.type.toUpperCase()}
