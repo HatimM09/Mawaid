@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { supabase } from './admin/supabaseClient'
 import { useWeeklyMenu } from './common/useWeeklyMenu'
+import { requestFCMToken, onForegroundMessage } from './lib/firebase'
 import { AuthCtx, ThemeCtx, useAuth, useTheme } from './admin/context'
 import { updateSystemTheme } from './admin/ui'
 import KhidmatPortal from './admin/KhidmatPortal'
@@ -1963,17 +1964,40 @@ export default function App() {
     sessionStorage.removeItem('al_mawaid_mock_user')
   }, [])
 
-  // --- Real-time Notifications Logic ---
+  // --- Push Notifications Logic (Firebase FCM + Supabase Realtime fallback) ---
   useEffect(() => {
     const user = session?.user || mockUser
     if (!user) return
 
-    // 1. Request Notification Permission
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission()
-    }
+    // 1. Set up Firebase Cloud Messaging — request token & save to DB
+    let fcmUnsubscribe = () => {}
+    const setupFCM = async () => {
+      try {
+        const token = await requestFCMToken()
+        if (token) {
+          // Save FCM token to user_stats for server-side push delivery
+          await supabase
+            .from('user_stats')
+            .update({ fcm_token: token })
+            .eq('user_id', user.id)
+          console.log('FCM token saved to database')
+        }
+      } catch (err) {
+        console.warn('FCM setup skipped:', err.message)
+      }
 
-    // 2. Subscribe to New Notices
+      // Listen for foreground messages (app is open)
+      fcmUnsubscribe = onForegroundMessage((payload) => {
+        console.log('Foreground push message:', payload)
+        const { title, body } = payload.notification || {}
+        if (title) {
+          showBrowserNotification({ title, body, id: Date.now() })
+        }
+      })
+    }
+    setupFCM()
+
+    // 2. Supabase Realtime fallback — in-app notifications when tab is open
     const channel = supabase
       .channel('public:notices')
       .on(
@@ -1991,6 +2015,7 @@ export default function App() {
 
     return () => {
       supabase.removeChannel(channel)
+      fcmUnsubscribe()
     }
   }, [session, mockUser])
 

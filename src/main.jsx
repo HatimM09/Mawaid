@@ -11,10 +11,18 @@ createRoot(document.getElementById('root')).render(
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
+    // PWA caching service worker
     navigator.serviceWorker.register('/sw.js').then(reg => {
-      console.log('SW Registered!', reg);
+      console.log('PWA SW Registered!', reg);
     }).catch(err => {
-      console.log('SW registration failed: ', err);
+      console.log('PWA SW registration failed: ', err);
+    });
+
+    // Firebase Cloud Messaging service worker (for background push notifications)
+    navigator.serviceWorker.register('/firebase-messaging-sw.js').then(reg => {
+      console.log('Firebase Messaging SW registered!', reg);
+    }).catch(err => {
+      console.log('Firebase Messaging SW registration failed:', err);
     });
   });
 }
