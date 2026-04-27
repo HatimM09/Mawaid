@@ -16,6 +16,18 @@
 
 <body>
   <div id="root"></div>
+  <script>
+    // Nuclear option: Unregister all service workers to fix stuck "Failed to fetch" loops
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(registrations => {
+        for (let registration of registrations) {
+          if (registration.active && registration.active.scriptURL.includes('sw.js')) {
+            registration.unregister().then(() => console.log('Stuck SW unregistered'));
+          }
+        }
+      });
+    }
+  </script>
   <script type="module" src="/src/main.jsx"></script>
 </body>
 
