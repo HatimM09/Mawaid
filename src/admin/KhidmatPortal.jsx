@@ -79,16 +79,41 @@ export default function KhidmatPortal({ signOut, user }) {
 
   const [requestsList, setRequestsList] = useState([])
   const [queriesList, setQueriesList] = useState([])
+  const [weeklyMenu, setWeeklyMenu] = useState([])
   const [loadingItems, setLoadingItems] = useState(false)
+  const [surveyData, setSurveyData] = useState({
+    lunch: 'yes', lunch_pct: 100,
+    dinner: 'yes', dinner_pct: 100
+  })
 
   useEffect(() => { loadHomeData() }, [])
   const loadHomeData = async () => {
     setLoadingItems(true)
-    const [{ data: req }, { data: queries }] = await Promise.all([
+    const [{ data: req }, { data: queries }, { data: menu }] = await Promise.all([
       supabase.from('thali_requests').select('*').order('created_at', { ascending: false }).limit(5),
-      supabase.from('queries').select('*').order('created_at', { ascending: false }).limit(5)
+      supabase.from('queries').select('*').order('created_at', { ascending: false }).limit(5),
+      supabase.from('weekly_menu').select('*').order('week_start', { ascending: false }).limit(1)
     ])
-    setRequestsList(req || []); setQueriesList(queries || []); setLoadingItems(false)
+    setRequestsList(req || []); 
+    setQueriesList(queries || []);
+    if (menu?.[0]?.menu_json) {
+      const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+      setWeeklyMenu(days.map(d => ({ name: d, ...menu[0].menu_json[d] })))
+    }
+    setLoadingItems(false)
+  }
+
+  const handleSurveySubmit = async () => {
+    const { error } = await supabase.from('daily_kitchen_audit').insert({
+      staff_id: user.id,
+      day: new Date().toLocaleDateString('en-US', { weekday: 'long' }),
+      lunch_served: surveyData.lunch === 'yes',
+      lunch_consumption: surveyData.lunch_pct,
+      dinner_served: surveyData.dinner === 'yes',
+      dinner_consumption: surveyData.dinner_pct,
+      recorded_at: new Date().toISOString()
+    })
+    if (!error) alert('✅ Survey Submitted Successfully')
   }
 
   if (loading) return <Spinner />
@@ -129,46 +154,89 @@ export default function KhidmatPortal({ signOut, user }) {
                 <div style={{ fontSize: 18, fontWeight: 800, color: '#D4AF37', fontFamily: "'Playfair Display',serif" }}>{staffInfo.name}</div>
                 <div style={{ fontSize: 12, color: 'rgba(255,248,225,0.6)' }}>{staffInfo.role}</div>
               </div>
-              <div style={{ fontSize: 11, color: 'rgba(255,248,225,0.4)', textAlign: 'right' }}>
-                {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-              </div>
+              <button 
+                onClick={() => setActiveTab('notices')}
+                style={{ background: 'rgba(212,175,55,0.1)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: 12, padding: 10, cursor: 'pointer', color: '#D4AF37' }}>
+                <Bell size={20} />
+              </button>
             </Card>
 
-            {/* Quick Stats / Actions */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-               <Card title="Requests" count={requestsList.length} icon={<Utensils size={18} color="#D4AF37" />} style={{ borderRadius: '40px 40px 10px 40px' }}>
-                  <div style={{ fontSize: 12, color: 'rgba(255,248,225,0.5)', lineHeight: 1.6 }}>Manage thali resume, stop, and extra food requests.</div>
-               </Card>
-               <Card title="Queries" count={queriesList.length} icon={<MessageCircle size={18} color="#D4AF37" />} style={{ borderRadius: '40px 40px 40px 10px' }}>
-                  <div style={{ fontSize: 12, color: 'rgba(255,248,225,0.5)', lineHeight: 1.6 }}>Respond to user queries and support tickets.</div>
-               </Card>
-            </div>
-
-            {/* Main Action Button */}
-            <button style={{ 
-                width: '100%', height: 54, border: 'none', borderRadius: 14, 
-                background: T.goldBar, color: '#000', fontSize: 13, fontWeight: 900, 
-                cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.1em',
-                boxShadow: '0 12px 30px rgba(139,107,35,0.4)'
-              }} onClick={() => setActiveTab('survey')}>
-              View Daily Survey Analytics
-            </button>
-
-            {/* Recent Activity Section */}
-            <div style={{ marginTop: 8 }}>
-               <div style={{ fontSize: 10, fontWeight: 800, color: 'rgba(212,175,55,0.6)', letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 16, marginLeft: 10 }}>RECENT ACTIVITY</div>
-               <Card organic style={{ padding: '10px 0' }}>
-                  {requestsList.slice(0,3).map((r, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 24px', borderBottom: i < 2 ? '1px solid rgba(212,175,55,0.1)' : 'none' }}>
-                      <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(212,175,55,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Clock size={16} color="#D4AF37" /></div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: 700 }}>{r.request_type} Request</div>
-                        <div style={{ fontSize: 11, color: 'rgba(255,248,225,0.5)' }}>Thali #{r.thali_no || '—'}</div>
+            {/* Main Action - Daily Kitchen Survey */}
+            <Card organic title="Daily Kitchen Survey" icon={<ClipboardList size={20} color="#D4AF37" />}>
+               <p style={{ fontSize: 12, color: 'rgba(255,248,225,0.5)', marginTop: -10, marginBottom: 20 }}>Record meal status and consumption for today's kitchen audit.</p>
+               
+               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                 {/* Lunch Section */}
+                 <div style={{ padding: 16, borderRadius: 20, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(212,175,55,0.1)' }}>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: '#D4AF37' }}>LUNCH STATUS</div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button 
+                          onClick={() => setSurveyData({...surveyData, lunch: 'yes'})}
+                          style={{ padding: '6px 12px', borderRadius: 8, background: surveyData.lunch === 'yes' ? 'rgba(94, 186, 130, 0.2)' : 'transparent', color: surveyData.lunch === 'yes' ? '#5eba82' : 'rgba(255,248,225,0.4)', border: `1px solid ${surveyData.lunch === 'yes' ? '#5eba82' : 'rgba(255,248,225,0.1)'}`, fontSize: 11, fontWeight: 800 }}>YES</button>
+                        <button 
+                          onClick={() => setSurveyData({...surveyData, lunch: 'no'})}
+                          style={{ padding: '6px 12px', borderRadius: 8, background: surveyData.lunch === 'no' ? 'rgba(224, 85, 85, 0.2)' : 'transparent', color: surveyData.lunch === 'no' ? '#e05555' : 'rgba(255,248,225,0.4)', border: `1px solid ${surveyData.lunch === 'no' ? '#e05555' : 'rgba(255,248,225,0.1)'}`, fontSize: 11, fontWeight: 800 }}>NO</button>
                       </div>
-                      <div style={{ fontSize: 10, fontWeight: 800, color: '#D4AF37', textTransform: 'uppercase' }}>{r.status}</div>
-                    </div>
-                  ))}
-               </Card>
+                   </div>
+                   <div style={{ fontSize: 10, color: 'rgba(255,248,225,0.4)', marginBottom: 8, letterSpacing: 1 }}>CONSUMPTION %</div>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+                      {[0, 25, 50, 100].map(p => (
+                        <button key={p} 
+                          onClick={() => setSurveyData({...surveyData, lunch_pct: p})}
+                          style={{ flex: 1, padding: '8px 0', borderRadius: 10, border: `1px solid ${surveyData.lunch_pct === p ? '#D4AF37' : 'rgba(212,175,55,0.1)'}`, background: surveyData.lunch_pct === p ? 'rgba(212,175,55,0.1)' : 'transparent', color: surveyData.lunch_pct === p ? '#D4AF37' : 'rgba(255,248,225,0.4)', fontSize: 11, fontWeight: 700 }}>{p}%</button>
+                      ))}
+                   </div>
+                 </div>
+
+                 {/* Dinner Section */}
+                 <div style={{ padding: 16, borderRadius: 20, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(212,175,55,0.1)' }}>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: '#D4AF37' }}>DINNER STATUS</div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button 
+                          onClick={() => setSurveyData({...surveyData, dinner: 'yes'})}
+                          style={{ padding: '6px 12px', borderRadius: 8, background: surveyData.dinner === 'yes' ? 'rgba(94, 186, 130, 0.2)' : 'transparent', color: surveyData.dinner === 'yes' ? '#5eba82' : 'rgba(255,248,225,0.4)', border: `1px solid ${surveyData.dinner === 'yes' ? '#5eba82' : 'rgba(255,248,225,0.1)'}`, fontSize: 11, fontWeight: 800 }}>YES</button>
+                        <button 
+                          onClick={() => setSurveyData({...surveyData, dinner: 'no'})}
+                          style={{ padding: '6px 12px', borderRadius: 8, background: surveyData.dinner === 'no' ? 'rgba(224, 85, 85, 0.2)' : 'transparent', color: surveyData.dinner === 'no' ? '#e05555' : 'rgba(255,248,225,0.4)', border: `1px solid ${surveyData.dinner === 'no' ? '#e05555' : 'rgba(255,248,225,0.1)'}`, fontSize: 11, fontWeight: 800 }}>NO</button>
+                      </div>
+                   </div>
+                   <div style={{ fontSize: 10, color: 'rgba(255,248,225,0.4)', marginBottom: 8, letterSpacing: 1 }}>CONSUMPTION %</div>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+                      {[0, 25, 50, 100].map(p => (
+                        <button key={p} 
+                          onClick={() => setSurveyData({...surveyData, dinner_pct: p})}
+                          style={{ flex: 1, padding: '8px 0', borderRadius: 10, border: `1px solid ${surveyData.dinner_pct === p ? '#D4AF37' : 'rgba(212,175,55,0.1)'}`, background: surveyData.dinner_pct === p ? 'rgba(212,175,55,0.1)' : 'transparent', color: surveyData.dinner_pct === p ? '#D4AF37' : 'rgba(255,248,225,0.4)', fontSize: 11, fontWeight: 700 }}>{p}%</button>
+                      ))}
+                   </div>
+                 </div>
+
+                 <div style={{ display: 'flex', gap: 12 }}>
+                   <button onClick={() => alert('Survey Skipped')} style={{ flex: 1, height: 44, borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: 'rgba(255,248,225,0.5)', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Skip Today</button>
+                   <button onClick={handleSurveySubmit} style={{ flex: 2, height: 44, borderRadius: 12, background: T.goldBar, color: '#000', border: 'none', fontSize: 12, fontWeight: 900, textTransform: 'uppercase', cursor: 'pointer' }}>Submit Survey</button>
+                 </div>
+               </div>
+            </Card>
+
+            {/* Weekly Menu Preview */}
+            <div style={{ marginTop: 8 }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, padding: '0 10px' }}>
+                 <div style={{ fontSize: 10, fontWeight: 800, color: 'rgba(212,175,55,0.6)', letterSpacing: '0.2em', textTransform: 'uppercase' }}>WHOLE WEEK MENU</div>
+                 <div onClick={() => setActiveTab('survey')} style={{ fontSize: 10, color: '#D4AF37', fontWeight: 700, cursor: 'pointer' }}>VIEW ALL</div>
+               </div>
+               <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 10 }}>
+                 {weeklyMenu.map(day => (
+                   <div key={day.name} style={{ minWidth: 160, padding: 16, borderRadius: 24, background: 'rgba(212,175,55,0.05)', border: '1px solid rgba(212,175,55,0.1)', backdropFilter: 'blur(10px)' }}>
+                     <div style={{ fontSize: 13, fontWeight: 900, color: '#D4AF37', marginBottom: 10, borderBottom: '1px solid rgba(212,175,55,0.2)', paddingBottom: 4 }}>{day.name}</div>
+                     <div style={{ fontSize: 11, fontWeight: 700, color: '#FFF8E1', opacity: 0.8, marginBottom: 4 }}>LUNCH</div>
+                     <div style={{ fontSize: 10, color: 'rgba(255,248,225,0.5)', lineHeight: 1.4, marginBottom: 10 }}>{day.lunch_1 || '—'}</div>
+                     <div style={{ fontSize: 11, fontWeight: 700, color: '#5eba82', opacity: 0.8, marginBottom: 4 }}>DINNER</div>
+                     <div style={{ fontSize: 10, color: 'rgba(255,248,225,0.5)', lineHeight: 1.4 }}>{day.dinner_1 || '—'}</div>
+                   </div>
+                 ))}
+                 {weeklyMenu.length === 0 && <div style={{ fontSize: 12, color: 'rgba(255,248,225,0.3)', padding: 20 }}>Loading menu...</div>}
+               </div>
             </div>
 
           </div>
@@ -180,6 +248,8 @@ export default function KhidmatPortal({ signOut, user }) {
           <DailySurveyTracking />
         ) : activeTab === 'feedback' ? (
           <FeedbackPortalView />
+        ) : activeTab === 'notices' ? (
+          <NoticesPortalView />
         ) : null}
       </main>
 
@@ -302,6 +372,58 @@ function FeedbackPortalView() {
             </Card>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+function NoticesPortalView() {
+  const [notices, setNotices] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.from('notices').select('*').order('created_at', { ascending: false }).limit(20)
+      .then(({ data }) => {
+        setNotices(data || [])
+        setLoading(false)
+      })
+
+    const channel = supabase.channel('public:notices')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notices' }, (payload) => {
+        setNotices(prev => [payload.new, ...prev])
+        // Trigger browser notification
+        if (Notification.permission === 'granted') {
+          new Notification(payload.new.title, { body: payload.new.body, icon: '/logo.png' })
+        }
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [])
+
+  if (loading) return <Spinner fullPage={false} />
+
+  return (
+    <div style={{ animation: 'fadeIn 0.5s ease' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {notices.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: 'rgba(255,248,225,0.4)' }}>
+            <Bell size={40} style={{ marginBottom: 12, opacity: 0.3 }} />
+            <div style={{ fontSize: 14 }}>No recent notices</div>
+          </div>
+        ) : notices.map((n, i) => (
+          <Card key={n.id} style={{ padding: 20, borderLeft: `4px solid ${n.tone || '#D4AF37'}` }}>
+             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: n.tone || '#D4AF37', textTransform: 'uppercase' }}>{n.sender_name || 'Admin'}</div>
+                <div style={{ fontSize: 10, color: 'rgba(255,248,225,0.4)' }}>{new Date(n.created_at).toLocaleDateString()}</div>
+             </div>
+             <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 8, color: '#fff' }}>{n.title}</div>
+             <div style={{ fontSize: 13, color: 'rgba(255,248,225,0.7)', lineHeight: 1.5 }}>{n.body}</div>
+             {n.media && n.media[0] && (
+               <img src={n.media[0]} style={{ width: '100%', borderRadius: 12, marginTop: 12, border: '1px solid rgba(255,255,255,0.1)' }} alt="notice" />
+             )}
+          </Card>
+        ))}
       </div>
     </div>
   )
