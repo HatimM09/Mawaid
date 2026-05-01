@@ -1,9 +1,11 @@
-// supabase/functions/send-push/index.ts
+// @ts-ignore
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+// @ts-ignore
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// @ts-ignore
 import webpush from "https://esm.sh/web-push@3.6.6";
 
-serve(async (req) => {
+serve(async (req: Request) => {
   // CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", {
@@ -25,12 +27,16 @@ serve(async (req) => {
     }
 
     // Init Supabase
+    // @ts-ignore: Deno is available in Supabase Edge Functions
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    // @ts-ignore
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     // Setup Web Push
+    // @ts-ignore
     const publicKey = Deno.env.get("VAPID_PUBLIC_KEY")!;
+    // @ts-ignore
     const privateKey = Deno.env.get("VAPID_PRIVATE_KEY")!;
     webpush.setVapidDetails("mailto:admin@almawaid.com", publicKey, privateKey);
 
@@ -49,14 +55,14 @@ serve(async (req) => {
 
     // Send notifications
     const results = await Promise.allSettled(
-      subs.map(async (s) => {
+      subs.map(async (s: any) => {
         try {
           await webpush.sendNotification(
             s.subscription,
             JSON.stringify({ title, body: msgBody, url: "/" })
           );
           return { ok: true, user_id: s.user_id };
-        } catch (err) {
+        } catch (err: any) {
           console.error(`Failed for ${s.user_id}:`, err);
           // Clean up expired subscriptions
           if (err.statusCode === 404 || err.statusCode === 410) {
@@ -67,13 +73,13 @@ serve(async (req) => {
       })
     );
 
-    const succeeded = results.filter((r) => r.status === "fulfilled" && r.value.ok).length;
+    const succeeded = results.filter((r: any) => r.status === "fulfilled" && r.value?.ok).length;
 
     return new Response(
       JSON.stringify({ total: subs.length, succeeded, failed: subs.length - succeeded }),
       { headers: { "Content-Type": "application/json" } }
     );
-  } catch (err) {
+  } catch (err: any) {
     console.error("Error:", err);
     return new Response(JSON.stringify({ error: err.message }), { status: 500 });
   }
