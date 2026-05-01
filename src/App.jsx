@@ -2063,14 +2063,20 @@ export default function App() {
         const permission = await Notification.requestPermission()
         if (permission !== 'granted') return
 
-        // Subscribe
+        // 1. Check for existing subscription
+        let subscription = await reg.pushManager.getSubscription()
+        
+        // 2. If it exists but keys changed, unsubscribe first
         const vapidKey = import.meta.env.VITE_VAPID_KEY;
-        if (!vapidKey) {
-          console.warn('⚠️ Missing VITE_VAPID_KEY in environment.');
-          return;
+        if (!vapidKey) return console.warn('⚠️ Missing VITE_VAPID_KEY');
+
+        if (subscription) {
+          // If we have an old subscription, we clear it to avoid "Failed to fetch" errors with new keys
+          await subscription.unsubscribe();
         }
 
-        const subscription = await reg.pushManager.subscribe({
+        // 3. Create fresh subscription
+        subscription = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(vapidKey)
         })
@@ -2078,7 +2084,7 @@ export default function App() {
         // Save to Supabase
         await supabase.from('push_subscriptions').upsert({
           user_id: user.id,
-          subscription: subscription
+          subscription: subscription.toJSON() // Important: convert to JSON
         }, { onConflict: 'user_id, subscription' })
 
         console.log('🚀 Push Subscription Active')
