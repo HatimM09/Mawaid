@@ -86,6 +86,8 @@ self.addEventListener('push', (event) => {
     icon: '/logo.png',
     badge: '/logo.png',
     vibrate: [100, 50, 100],
+    tag: 'almawaid-notice', // Overwrites previous notice to avoid clutter
+    renotify: true,
     data: {
       url: data.url || '/'
     }

@@ -162,62 +162,7 @@ export default function KhidmatPortal({ signOut, user }) {
             </Card>
 
             {/* Main Action - Daily Kitchen Survey */}
-            <Card organic title="Daily Kitchen Survey" icon={<ClipboardList size={20} color="#D4AF37" />}>
-               <p style={{ fontSize: 12, color: 'rgba(255,248,225,0.5)', marginTop: -10, marginBottom: 20 }}>Record meal status and consumption for today's kitchen audit.</p>
-               
-               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                 {/* Lunch Section */}
-                 <div style={{ padding: 16, borderRadius: 20, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(212,175,55,0.1)' }}>
-                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                      <div style={{ fontSize: 14, fontWeight: 800, color: '#D4AF37' }}>LUNCH STATUS</div>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button 
-                          onClick={() => setSurveyData({...surveyData, lunch: 'yes'})}
-                          style={{ padding: '6px 12px', borderRadius: 8, background: surveyData.lunch === 'yes' ? 'rgba(94, 186, 130, 0.2)' : 'transparent', color: surveyData.lunch === 'yes' ? '#5eba82' : 'rgba(255,248,225,0.4)', border: `1px solid ${surveyData.lunch === 'yes' ? '#5eba82' : 'rgba(255,248,225,0.1)'}`, fontSize: 11, fontWeight: 800 }}>YES</button>
-                        <button 
-                          onClick={() => setSurveyData({...surveyData, lunch: 'no'})}
-                          style={{ padding: '6px 12px', borderRadius: 8, background: surveyData.lunch === 'no' ? 'rgba(224, 85, 85, 0.2)' : 'transparent', color: surveyData.lunch === 'no' ? '#e05555' : 'rgba(255,248,225,0.4)', border: `1px solid ${surveyData.lunch === 'no' ? '#e05555' : 'rgba(255,248,225,0.1)'}`, fontSize: 11, fontWeight: 800 }}>NO</button>
-                      </div>
-                   </div>
-                   <div style={{ fontSize: 10, color: 'rgba(255,248,225,0.4)', marginBottom: 8, letterSpacing: 1 }}>CONSUMPTION %</div>
-                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
-                      {[0, 25, 50, 100].map(p => (
-                        <button key={p} 
-                          onClick={() => setSurveyData({...surveyData, lunch_pct: p})}
-                          style={{ flex: 1, padding: '8px 0', borderRadius: 10, border: `1px solid ${surveyData.lunch_pct === p ? '#D4AF37' : 'rgba(212,175,55,0.1)'}`, background: surveyData.lunch_pct === p ? 'rgba(212,175,55,0.1)' : 'transparent', color: surveyData.lunch_pct === p ? '#D4AF37' : 'rgba(255,248,225,0.4)', fontSize: 11, fontWeight: 700 }}>{p}%</button>
-                      ))}
-                   </div>
-                 </div>
-
-                 {/* Dinner Section */}
-                 <div style={{ padding: 16, borderRadius: 20, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(212,175,55,0.1)' }}>
-                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                      <div style={{ fontSize: 14, fontWeight: 800, color: '#D4AF37' }}>DINNER STATUS</div>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button 
-                          onClick={() => setSurveyData({...surveyData, dinner: 'yes'})}
-                          style={{ padding: '6px 12px', borderRadius: 8, background: surveyData.dinner === 'yes' ? 'rgba(94, 186, 130, 0.2)' : 'transparent', color: surveyData.dinner === 'yes' ? '#5eba82' : 'rgba(255,248,225,0.4)', border: `1px solid ${surveyData.dinner === 'yes' ? '#5eba82' : 'rgba(255,248,225,0.1)'}`, fontSize: 11, fontWeight: 800 }}>YES</button>
-                        <button 
-                          onClick={() => setSurveyData({...surveyData, dinner: 'no'})}
-                          style={{ padding: '6px 12px', borderRadius: 8, background: surveyData.dinner === 'no' ? 'rgba(224, 85, 85, 0.2)' : 'transparent', color: surveyData.dinner === 'no' ? '#e05555' : 'rgba(255,248,225,0.4)', border: `1px solid ${surveyData.dinner === 'no' ? '#e05555' : 'rgba(255,248,225,0.1)'}`, fontSize: 11, fontWeight: 800 }}>NO</button>
-                      </div>
-                   </div>
-                   <div style={{ fontSize: 10, color: 'rgba(255,248,225,0.4)', marginBottom: 8, letterSpacing: 1 }}>CONSUMPTION %</div>
-                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
-                      {[0, 25, 50, 100].map(p => (
-                        <button key={p} 
-                          onClick={() => setSurveyData({...surveyData, dinner_pct: p})}
-                          style={{ flex: 1, padding: '8px 0', borderRadius: 10, border: `1px solid ${surveyData.dinner_pct === p ? '#D4AF37' : 'rgba(212,175,55,0.1)'}`, background: surveyData.dinner_pct === p ? 'rgba(212,175,55,0.1)' : 'transparent', color: surveyData.dinner_pct === p ? '#D4AF37' : 'rgba(255,248,225,0.4)', fontSize: 11, fontWeight: 700 }}>{p}%</button>
-                      ))}
-                   </div>
-                 </div>
-
-                 <div style={{ display: 'flex', gap: 12 }}>
-                   <button onClick={() => alert('Survey Skipped')} style={{ flex: 1, height: 44, borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: 'rgba(255,248,225,0.5)', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Skip Today</button>
-                   <button onClick={handleSurveySubmit} style={{ flex: 2, height: 44, borderRadius: 12, background: T.goldBar, color: '#000', border: 'none', fontSize: 12, fontWeight: 900, textTransform: 'uppercase', cursor: 'pointer' }}>Submit Survey</button>
-                 </div>
-               </div>
-            </Card>
+            <DailySurveyPanel surveyData={surveyData} setSurveyData={setSurveyData} onSubmit={handleSurveySubmit} />
 
             {/* Weekly Menu Preview */}
             <div style={{ marginTop: 8 }}>
@@ -250,6 +195,10 @@ export default function KhidmatPortal({ signOut, user }) {
           <FeedbackPortalView />
         ) : activeTab === 'notices' ? (
           <NoticesPortalView />
+        ) : activeTab === 'survey_fill' ? (
+          <div style={{ animation: 'fadeIn 0.5s ease' }}>
+            <DailySurveyPanel surveyData={surveyData} setSurveyData={setSurveyData} onSubmit={handleSurveySubmit} />
+          </div>
         ) : null}
       </main>
 
@@ -264,19 +213,20 @@ export default function KhidmatPortal({ signOut, user }) {
         boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 30px rgba(212,175,55,0.15)'
       }}>
         {[
-          { id: 'home', icon: Home },
-          { id: 'users', icon: Users },
-          { id: 'survey', icon: Calendar },
-          { id: 'feedback', icon: Star },
-          { id: 'requests', icon: Utensils },
-        ].map(({ id, icon: Icon }) => {
+          { id: 'home', icon: Home, label: 'Home' },
+          { id: 'users', icon: Users, label: 'Users' },
+          { id: 'survey_fill', icon: ClipboardList, label: 'Survey' },
+          { id: 'survey', icon: Calendar, label: 'Stats' },
+          { id: 'feedback', icon: Star, label: 'Rating' },
+        ].map(({ id, icon: Icon, label }) => {
           const active = activeTab === id
           return (
             <button key={id} onClick={() => setActiveTab(id)} style={{ 
               background: 'none', border: 'none', cursor: 'pointer',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
               color: active ? '#D4AF37' : 'rgba(255,248,225,0.4)',
-              transition: 'all 0.3s'
+              transition: 'all 0.3s',
+              minWidth: 50
             }}>
               <div style={{ 
                 width: 44, height: 44, borderRadius: '50%', 
@@ -287,6 +237,7 @@ export default function KhidmatPortal({ signOut, user }) {
               }}>
                 <Icon size={20} strokeWidth={active ? 2.5 : 1.5} />
               </div>
+              <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
             </button>
           )
         })}
@@ -426,6 +377,69 @@ function NoticesPortalView() {
         ))}
       </div>
     </div>
+  )
+}
+
+function DailySurveyPanel({ surveyData, setSurveyData, onSubmit }) {
+  const T = { goldBar: 'linear-gradient(to right, #8B6B23 0%, #D4AF37 45%, #FFD700 50%, #D4AF37 55%, #8B6B23 100%)' }
+  
+  return (
+    <Card organic title="Daily Kitchen Survey" icon={<ClipboardList size={20} color="#D4AF37" />}>
+       <p style={{ fontSize: 12, color: 'rgba(255,248,225,0.5)', marginTop: -10, marginBottom: 20 }}>Record meal status and consumption for today's kitchen audit.</p>
+       
+       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+         {/* Lunch Section */}
+         <div style={{ padding: 16, borderRadius: 20, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(212,175,55,0.1)' }}>
+           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: '#D4AF37' }}>LUNCH STATUS</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button 
+                  onClick={() => setSurveyData({...surveyData, lunch: 'yes'})}
+                  style={{ padding: '6px 12px', borderRadius: 8, background: surveyData.lunch === 'yes' ? 'rgba(94, 186, 130, 0.2)' : 'transparent', color: surveyData.lunch === 'yes' ? '#5eba82' : 'rgba(255,248,225,0.4)', border: `1px solid ${surveyData.lunch === 'yes' ? '#5eba82' : 'rgba(255,248,225,0.1)'}`, fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>YES</button>
+                <button 
+                  onClick={() => setSurveyData({...surveyData, lunch: 'no'})}
+                  style={{ padding: '6px 12px', borderRadius: 8, background: surveyData.lunch === 'no' ? 'rgba(224, 85, 85, 0.2)' : 'transparent', color: surveyData.lunch === 'no' ? '#e05555' : 'rgba(255,248,225,0.4)', border: `1px solid ${surveyData.lunch === 'no' ? '#e05555' : 'rgba(255,248,225,0.1)'}`, fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>NO</button>
+              </div>
+           </div>
+           <div style={{ fontSize: 10, color: 'rgba(255,248,225,0.4)', marginBottom: 8, letterSpacing: 1 }}>CONSUMPTION %</div>
+           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+              {[0, 25, 50, 100].map(p => (
+                <button key={p} 
+                  onClick={() => setSurveyData({...surveyData, lunch_pct: p})}
+                  style={{ flex: 1, padding: '8px 0', borderRadius: 10, border: `1px solid ${surveyData.lunch_pct === p ? '#D4AF37' : 'rgba(212,175,55,0.1)'}`, background: surveyData.lunch_pct === p ? 'rgba(212,175,55,0.1)' : 'transparent', color: surveyData.lunch_pct === p ? '#D4AF37' : 'rgba(255,248,225,0.4)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>{p}%</button>
+              ))}
+           </div>
+         </div>
+
+         {/* Dinner Section */}
+         <div style={{ padding: 16, borderRadius: 20, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(212,175,55,0.1)' }}>
+           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: '#D4AF37' }}>DINNER STATUS</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button 
+                  onClick={() => setSurveyData({...surveyData, dinner: 'yes'})}
+                  style={{ padding: '6px 12px', borderRadius: 8, background: surveyData.dinner === 'yes' ? 'rgba(94, 186, 130, 0.2)' : 'transparent', color: surveyData.dinner === 'yes' ? '#5eba82' : 'rgba(255,248,225,0.4)', border: `1px solid ${surveyData.dinner === 'yes' ? '#5eba82' : 'rgba(255,248,225,0.1)'}`, fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>YES</button>
+                <button 
+                  onClick={() => setSurveyData({...surveyData, dinner: 'no'})}
+                  style={{ padding: '6px 12px', borderRadius: 8, background: surveyData.dinner === 'no' ? 'rgba(224, 85, 85, 0.2)' : 'transparent', color: surveyData.dinner === 'no' ? '#e05555' : 'rgba(255,248,225,0.4)', border: `1px solid ${surveyData.dinner === 'no' ? '#e05555' : 'rgba(255,248,225,0.1)'}`, fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>NO</button>
+              </div>
+           </div>
+           <div style={{ fontSize: 10, color: 'rgba(255,248,225,0.4)', marginBottom: 8, letterSpacing: 1 }}>CONSUMPTION %</div>
+           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
+              {[0, 25, 50, 100].map(p => (
+                <button key={p} 
+                  onClick={() => setSurveyData({...surveyData, dinner_pct: p})}
+                  style={{ flex: 1, padding: '8px 0', borderRadius: 10, border: `1px solid ${surveyData.dinner_pct === p ? '#D4AF37' : 'rgba(212,175,55,0.1)'}`, background: surveyData.dinner_pct === p ? 'rgba(212,175,55,0.1)' : 'transparent', color: surveyData.dinner_pct === p ? '#D4AF37' : 'rgba(255,248,225,0.4)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>{p}%</button>
+              ))}
+           </div>
+         </div>
+
+         <div style={{ display: 'flex', gap: 12 }}>
+           <button onClick={() => alert('Survey Skipped')} style={{ flex: 1, height: 44, borderRadius: 12, background: 'rgba(255,255,255,0.05)', color: 'rgba(255,248,225,0.5)', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Skip Today</button>
+           <button onClick={onSubmit} style={{ flex: 2, height: 44, borderRadius: 12, background: T.goldBar, color: '#000', border: 'none', fontSize: 12, fontWeight: 900, textTransform: 'uppercase', cursor: 'pointer' }}>Submit Survey</button>
+         </div>
+       </div>
+    </Card>
   )
 }
 
