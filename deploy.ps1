@@ -1,5 +1,10 @@
-# Vercel Deployment Script
-# This script will deploy the project to Vercel and set up the necessary environment variables.
+# Al-Mawaid Auto-Deploy & Sync
+# This script will push to GitHub and then deploy to Vercel.
+
+Write-Host "Syncing with GitHub..." -ForegroundColor Cyan
+git add .
+git commit -m "deploy: automatic sync before vercel push"
+git push origin main
 
 Write-Host "Checking for Vercel CLI..."
 if (!(Get-Command vercel -ErrorAction SilentlyContinue)) {
