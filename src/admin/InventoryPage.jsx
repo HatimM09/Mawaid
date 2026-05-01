@@ -15,13 +15,20 @@ import {
 } from './ui'
 
 const CATEGORIES = [
-  { id: 1, name: 'Pulses', icon: '🌾' },
-  { id: 2, name: 'Grains', icon: '🌽' },
-  { id: 3, name: 'Spices', icon: '🌶️' },
-  { id: 4, name: 'Oils & Fats', icon: '🫙' },
+  { id: 1, name: 'Pulses & Lentils', icon: '🌾' },
+  { id: 2, name: 'Grains & Rice', icon: '🌽' },
+  { id: 3, name: 'Spices & Condiments', icon: '🌶️' },
+  { id: 4, name: 'Oils, Ghee & Fats', icon: '🫙' },
   { id: 5, name: 'Meat & Poultry', icon: '🍖' },
-  { id: 6, name: 'Vegetables', icon: '🥦' },
-  { id: 7, name: 'Miscellaneous', icon: '📦' },
+  { id: 6, name: 'Vegetables & Fruits', icon: '🥦' },
+  { id: 7, name: 'Dairy & Eggs', icon: '🥛' },
+  { id: 8, name: 'Dry Fruits & Nuts', icon: '🥜' },
+  { id: 9, name: 'Cleaning & Hygiene', icon: '🧼' },
+  { id: 10, name: 'Packaging & Disposable', icon: '🥡' },
+  { id: 11, name: 'Miscellaneous & Groceries', icon: '📦' },
+  { id: 12, name: 'Syrup & Juices', icon: '🍹' },
+  { id: 13, name: 'Sauces & Dressings', icon: '🥫' },
+  { id: 14, name: 'Crockery', icon: '🍽️' },
 ]
 
 const ModalOverlay = ({ onClose, children }) => (
@@ -42,12 +49,18 @@ const ModalOverlay = ({ onClose, children }) => (
 export default function InventoryPage({ role: roleProp }) {
   const context = useOutletContext()
   const role = roleProp || context?.role || 'khidmat'
-  const canManageItems = role === 'admin'
-  const canEditStock = role === 'admin' || role === 'inventory_manager'
+  const canManageItems = role === 'admin' // Only admin can create new items
+  const canEditStock = role === 'admin' || role === 'inventory_manager' || role === 'Inventory'
   const [loading, setLoading] = useState(true)
   const [products, setProducts] = useState([])
   const [auditLog, setAuditLog] = useState([])
   const [activeTab, setActiveTab] = useState('stock')
+  
+  // Control tab from props if needed
+  useEffect(() => {
+    if (roleProp === 'log') setActiveTab('log')
+    else if (roleProp === 'stock') setActiveTab('stock')
+  }, [roleProp])
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('all')
 
@@ -55,11 +68,36 @@ export default function InventoryPage({ role: roleProp }) {
   const [showTx, setShowTx] = useState(null)
   const [txQty, setTxQty] = useState('')
   const [txNote, setTxNote] = useState('')
+  const [viewMode, setViewMode] = useState('grid') // Default to grid for 'dynamic' feel
   const [newProduct, setNewProduct] = useState({
-    name: '', category_id: 1, unit: 'kg', stock: 0, low_stock_threshold: 10
+    name: '', category_id: 1, subcategory: '', unit: 'kg', stock: 0, low_stock_threshold: 10
   })
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => {
+    fetchData()
+    
+    // Set up real-time subscription with status logging
+    const channel = supabase
+      .channel('inventory_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, (payload) => {
+        console.log('🔄 Realtime Inventory Change:', payload)
+        fetchData()
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'inventory_log' }, (payload) => {
+        console.log('🔄 Realtime Log Added:', payload)
+        fetchData()
+      })
+      .subscribe((status) => {
+        console.log('📡 Realtime Connection Status:', status)
+        if (status === 'SUBSCRIBED') console.log('✅ Successfully connected to Realtime!')
+        if (status === 'CHANNEL_ERROR') console.error('❌ Realtime connection failed. Check RLS policies.')
+      })
+
+    return () => {
+      console.log('🔌 Cleaning up Realtime channel...')
+      supabase.removeChannel(channel)
+    }
+  }, [])
 
   const fetchData = async () => {
     setLoading(true)
@@ -67,13 +105,8 @@ export default function InventoryPage({ role: roleProp }) {
     if (!error && data) {
       setProducts(data)
     } else {
-      setProducts([
-        { id: 101, name: 'Basmati Rice', category_id: 2, stock: 120, unit: 'kg', low_stock_threshold: 25 },
-        { id: 102, name: 'Sunflower Oil', category_id: 4, stock: 45, unit: 'L', low_stock_threshold: 15 },
-        { id: 103, name: 'Chana Dal', category_id: 1, stock: 8, unit: 'kg', low_stock_threshold: 12 },
-        { id: 104, name: 'Sugar', category_id: 7, stock: 60, unit: 'kg', low_stock_threshold: 10 },
-        { id: 105, name: 'Red Chili Powder', category_id: 3, stock: 3, unit: 'kg', low_stock_threshold: 5 },
-      ])
+      setProducts([])
+      if (error) console.error("Inventory error:", error)
     }
     const { data: logs } = await supabase.from('inventory_log').select('*').order('created_at', { ascending: false }).limit(50)
     setAuditLog(logs || [])
@@ -85,25 +118,37 @@ export default function InventoryPage({ role: roleProp }) {
     if (!qty || qty <= 0) return alert('Please enter a valid quantity')
     const p = showTx.product
     const newStock = showTx.type === 'in' ? p.stock + qty : Math.max(0, p.stock - qty)
-    setProducts(prev => prev.map(item => item.id === p.id ? { ...item, stock: newStock } : item))
     const logEntry = {
       product_id: p.id, product_name: p.name, type: showTx.type,
-      qty, new_stock: newStock, note: txNote, created_at: new Date().toISOString()
+      qty, new_stock: newStock, note: txNote
     }
-    setAuditLog(prev => [logEntry, ...prev])
     setShowTx(null); setTxQty(''); setTxNote('')
-    await supabase.from('inventory').update({ stock: newStock }).eq('id', p.id)
-    await supabase.from('inventory_log').insert([logEntry])
+    
+    // Update Supabase (Realtime will handle the state update)
+    const { error: updErr } = await supabase.from('inventory').update({ stock: newStock }).eq('id', p.id)
+    const { error: logErr } = await supabase.from('inventory_log').insert([logEntry])
+    
+    if (updErr || logErr) {
+      alert('Transaction failed. Please try again.')
+      fetchData()
+    }
   }
 
   const handleAddProduct = async () => {
     if (!newProduct.name.trim()) return alert('Name is required')
-    const id = Math.max(0, ...products.map(p => p.id)) + 1
-    const item = { ...newProduct, id }
-    setProducts(prev => [...prev, item])
+    
+    // Don't set ID manually, let Supabase handle it
+    const itemToInsert = { ...newProduct }
+    delete itemToInsert.id // ensure no ID is sent
+    
     setShowAdd(false)
-    setNewProduct({ name: '', category_id: 1, unit: 'kg', stock: 0, low_stock_threshold: 10 })
-    await supabase.from('inventory').insert([item])
+    setNewProduct({ name: '', category_id: 1, subcategory: '', unit: 'kg', stock: 0, low_stock_threshold: 10 })
+    
+    const { error } = await supabase.from('inventory').insert([itemToInsert])
+    if (error) {
+      alert('Failed to add item: ' + error.message)
+    }
+    // Realtime will trigger fetchData()
   }
 
   const filtered = products.filter(p => {
@@ -124,21 +169,49 @@ export default function InventoryPage({ role: roleProp }) {
         </div>
         <div>
           <div style={{ fontWeight: 700, color: T.text }}>{p.name}</div>
-          <div style={{ fontSize: 11, color: T.textSub }}>{cat?.name}</div>
+          <div style={{ fontSize: 11, color: T.textSub }}>{cat?.name} {p.subcategory ? `> ${p.subcategory}` : ''}</div>
         </div>
       </div>,
       <div style={{ fontWeight: 800, fontSize: 16, color: isLow ? T.danger : T.text }}>
         {p.stock} <span style={{ fontSize: 11, fontWeight: 500, color: T.textSub }}>{p.unit}</span>
+        <div style={{ fontSize: 9, fontWeight: 600, color: T.textSub, marginTop: 2 }}>Min: {p.low_stock_threshold} {p.unit}</div>
       </div>,
-      <Badge color={isLow ? T.danger : T.success}>{isLow ? 'Low Stock' : 'Good'}</Badge>,
-      <div style={{ display: 'flex', gap: 10 }}>
-        <Btn variant="outline" onClick={() => setShowTx({ product: p, type: 'in' })} style={{ color: T.success, padding: '8px 16px', fontSize: 14 }}>
-          <ArrowUpRight size={18} style={{ marginRight: 4 }} /> {canEditStock ? 'In' : 'Refill'}
-        </Btn>
+      <Badge color={isLow ? T.warn : T.success}>{isLow ? 'Refill Soon' : 'Good Stock'}</Badge>,
+      <div style={{ 
+        display: 'flex', 
+        background: 'rgba(0,0,0,0.2)', 
+        borderRadius: 12, 
+        padding: 4, 
+        gap: 4,
+        border: '1px solid var(--border-glass)'
+      }}>
+        <button 
+          onClick={() => setShowTx({ product: p, type: 'in' })}
+          className="stock-btn stock-in"
+          style={{ 
+            flex: 1,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+            fontSize: 13, fontWeight: 700, color: '#fff',
+            background: 'transparent', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+          }}
+        >
+          <ArrowUpRight size={16} /> <span>{canEditStock ? 'In' : 'Add'}</span>
+        </button>
         {canEditStock && (
-          <Btn variant="outline" onClick={() => setShowTx({ product: p, type: 'out' })} style={{ color: T.danger, padding: '8px 16px', fontSize: 14 }}>
-            <ArrowDownRight size={18} style={{ marginRight: 4 }} /> Out
-          </Btn>
+          <button 
+            onClick={() => setShowTx({ product: p, type: 'out' })}
+            className="stock-btn stock-out"
+            style={{ 
+              flex: 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+              fontSize: 13, fontWeight: 700, color: '#fff',
+              background: 'transparent', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+            }}
+          >
+            <ArrowDownRight size={16} /> <span>Out</span>
+          </button>
         )}
       </div>
     ]
@@ -157,17 +230,36 @@ export default function InventoryPage({ role: roleProp }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
         <PageTitle sub="Real-time kitchen supplies and stock management">Kitchen Inventory</PageTitle>
         <div style={{ display: 'flex', gap: 12 }}>
+          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 4, border: '1px solid var(--border-glass)' }}>
+            <button 
+              onClick={() => setViewMode('grid')}
+              style={{ padding: '8px 12px', borderRadius: 8, border: 'none', background: viewMode === 'grid' ? T.accent : 'transparent', color: viewMode === 'grid' ? '#000' : T.textSub, cursor: 'pointer', fontWeight: 800, fontSize: 11 }}
+            >
+              GRID
+            </button>
+            <button 
+              onClick={() => setViewMode('table')}
+              style={{ padding: '8px 12px', borderRadius: 8, border: 'none', background: viewMode === 'table' ? T.accent : 'transparent', color: viewMode === 'table' ? '#000' : T.textSub, cursor: 'pointer', fontWeight: 800, fontSize: 11 }}
+            >
+              LIST
+            </button>
+          </div>
           <Btn variant="outline" onClick={() => setActiveTab(activeTab === 'stock' ? 'log' : 'stock')}>
             {activeTab === 'stock' ? <><History size={16} /> View Audit Log</> : <><Package size={16} /> View Stock</>}
           </Btn>
+          {role === 'admin' && (
+            <Btn variant="outline" onClick={() => window.open('/inventory-manager', '_blank')} style={{ borderColor: T.accent, color: T.accent }}>
+              <ArrowUpRight size={16} /> Mobile Portal
+            </Btn>
+          )}
           {canManageItems && <Btn onClick={() => setShowAdd(true)}><Plus size={16} /> Add New Item</Btn>}
         </div>
       </div>
 
       <Grid cols={3} style={{ marginBottom: 32 }}>
+        <StatCard icon={<Package />} label="Stock Status" value="Good" color={T.success} />
         <StatCard icon={<Package />} label="Total Items" value={products.length} />
-        <StatCard icon={<AlertTriangle />} label="Low Stock Areas" value={lowStock.length} color={lowStock.length > 0 ? T.danger : T.success} />
-        <StatCard icon={<ArrowUpRight />} label="Total Stock Value" value="Good" sub="Based on current levels" />
+        <StatCard icon={<ArrowUpRight />} label="Supply Health" value="Active" color={T.success} />
       </Grid>
 
       <div style={{ display: 'flex', gap: 16, marginBottom: 24, flexWrap: 'wrap', zIndex: 1, position: 'relative' }}>
@@ -197,13 +289,64 @@ export default function InventoryPage({ role: roleProp }) {
         <Btn variant="outline" onClick={fetchData} style={{ height: 48, width: 48, padding: 0 }}><RefreshCw size={18} /></Btn>
       </div>
 
-      <AdminCard style={{ padding: 0, overflow: 'hidden' }}>
-        {activeTab === 'stock' ? (
-          <Table headers={['Item Detail', 'Current Stock', 'Status', 'Actions']} rows={stockRows} emptyMsg="No inventory items found." />
+      {activeTab === 'stock' ? (
+        viewMode === 'grid' ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 20, marginBottom: 40 }}>
+            {filtered.map(p => {
+              const cat = CATEGORIES.find(c => c.id === p.category_id)
+              const isLow = p.stock <= p.low_stock_threshold
+              return (
+                <AdminCard key={p.id} style={{ 
+                  padding: 24, display: 'flex', flexDirection: 'column', gap: 20, 
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', 
+                  border: isLow ? `1px solid ${T.warn}40` : `1px solid ${T.borderActive}`,
+                  boxShadow: isLow ? `0 12px 32px ${T.warn}15` : '0 12px 48px rgba(0,0,0,0.45)'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ 
+                      width: 52, height: 52, borderRadius: 16, 
+                      background: 'rgba(212, 175, 55, 0.08)', 
+                      border: `1px solid ${T.borderActive}`, 
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26 
+                    }}>
+                      {cat?.icon || '📦'}
+                    </div>
+                    <Badge color={isLow ? T.warn : T.success}>{isLow ? 'Refill' : 'Good Stock'}</Badge>
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: 18, color: T.text, marginBottom: 2 }}>{p.name}</div>
+                    <div style={{ fontSize: 12, color: T.textSub }}>{cat?.name}</div>
+                  </div>
+                  <div style={{ background: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 12, border: '1px solid var(--border-glass)' }}>
+                    <div style={{ fontSize: 10, color: T.textSub, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Current Stock</div>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: isLow ? T.danger : T.primary }}>
+                      {p.stock} <span style={{ fontSize: 14, fontWeight: 500, color: T.textSub }}>{p.unit}</span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', background: 'rgba(0,0,0,0.2)', borderRadius: 12, padding: 4, gap: 4, border: '1px solid var(--border-glass)', marginTop: 'auto' }}>
+                    <button onClick={() => setShowTx({ product: p, type: 'in' })} className="stock-btn stock-in" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: '#fff', background: 'transparent' }}>
+                      <ArrowUpRight size={16} /> In
+                    </button>
+                    {canEditStock && (
+                      <button onClick={() => setShowTx({ product: p, type: 'out' })} className="stock-btn stock-out" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: '#fff', background: 'transparent' }}>
+                        <ArrowDownRight size={16} /> Out
+                      </button>
+                    )}
+                  </div>
+                </AdminCard>
+              )
+            })}
+          </div>
         ) : (
+          <AdminCard style={{ padding: 0, overflow: 'hidden' }}>
+            <Table headers={['Item Detail', 'Current Stock', 'Status', 'Actions']} rows={stockRows} emptyMsg="No inventory items found." />
+          </AdminCard>
+        )
+      ) : (
+        <AdminCard style={{ padding: 0, overflow: 'hidden' }}>
           <Table headers={['Item', 'Type', 'Qty', 'Notes', 'Date & Time']} rows={logRows} emptyMsg="No transaction history yet." />
-        )}
-      </AdminCard>
+        </AdminCard>
+      )}
 
       {/* Add Item Modal — inline to avoid import issues */}
       {showAdd && (
@@ -215,18 +358,22 @@ export default function InventoryPage({ role: roleProp }) {
             </button>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <Input label="Item Name" placeholder="e.g. Basmati Rice" value={newProduct.name} onChange={e => setNewProduct({ ...newProduct, name: e.target.value })} />
-            <Select label="Category" value={newProduct.category_id} onChange={e => setNewProduct({ ...newProduct, category_id: e.target.value })}>
-              {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-            </Select>
-            <div style={{ display: 'flex', gap: 16 }}>
-              <Select label="Unit" value={newProduct.unit} onChange={e => setNewProduct({ ...newProduct, unit: e.target.value })}>
-                <option value="kg">kg</option>
-                <option value="L">L</option>
-                <option value="pcs">pcs</option>
-                <option value="bag">bag</option>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <Input label="Item Name" placeholder="e.g. Basmati Rice" value={newProduct.name} onChange={e => setNewProduct({ ...newProduct, name: e.target.value })} />
+              <Select label="Category" value={newProduct.category_id} onChange={e => setNewProduct({ ...newProduct, category_id: parseInt(e.target.value) })}>
+                {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
               </Select>
-              <Input label="Min Threshold" type="number" value={newProduct.low_stock_threshold} onChange={e => setNewProduct({ ...newProduct, low_stock_threshold: parseFloat(e.target.value) })} />
+            </div>
+            <Input label="Subcategory" placeholder="e.g. Basmati, Long Grain, Grade A" value={newProduct.subcategory} onChange={e => setNewProduct({ ...newProduct, subcategory: e.target.value })} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <Select label="Unit (kg/pcs)" value={newProduct.unit} onChange={e => setNewProduct({ ...newProduct, unit: e.target.value })}>
+                <option value="kg">kg</option>
+                <option value="pcs">pcs</option>
+                <option value="L">Litre</option>
+                <option value="bag">bag</option>
+                <option value="box">box</option>
+              </Select>
+              <Input label="Min Quantity" type="number" value={newProduct.low_stock_threshold} onChange={e => setNewProduct({ ...newProduct, low_stock_threshold: parseFloat(e.target.value) })} />
             </div>
             <Btn style={{ width: '100%', marginTop: 8 }} onClick={handleAddProduct}>Create Inventory Item</Btn>
           </div>
@@ -264,6 +411,25 @@ export default function InventoryPage({ role: roleProp }) {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         select { -webkit-appearance: none; cursor: pointer; }
+        .stock-btn:hover { background: rgba(255,255,255,0.05) !important; transform: translateY(-1px); }
+        .stock-in:hover { color: #10b981 !important; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2); }
+        .stock-out:hover { color: #ef4444 !important; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2); }
+        .stock-btn:active { transform: translateY(0) scale(0.98); }
+        @media (max-width: 1200px) {
+          div[style*="gridTemplateColumns: 1fr 1fr 1fr 1fr"] {
+            grid-template-columns: 1fr 1fr 1fr !important;
+          }
+        }
+        @media (max-width: 900px) {
+          div[style*="gridTemplateColumns: 1fr 1fr 1fr 1fr"] {
+            grid-template-columns: 1fr 1fr !important;
+          }
+        }
+        @media (max-width: 600px) {
+          div[style*="gridTemplateColumns: 1fr 1fr 1fr 1fr"] {
+            grid-template-columns: 1fr !important;
+          }
+        }
       `}</style>
     </PageWrap>
   )

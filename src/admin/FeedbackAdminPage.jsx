@@ -27,19 +27,26 @@ export default function FeedbackAdminPage() {
   const [dayFilter, setDayFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [avgData, setAvgData] = useState([])
+  const [menu, setMenu] = useState({})
   const [totals, setTotals] = useState({ count: 0, avgLunch: 0, avgDinner: 0 })
 
   useEffect(() => { load() }, [])
 
   const load = async () => {
     setLoading(true)
-    const [{ data: fb }, { data: us }] = await Promise.all([
+    const [{ data: fb }, { data: us }, { data: mn }] = await Promise.all([
       supabase.from('daily_feedback').select('*').order('created_at', { ascending: false }),
       supabase.from('user_stats').select('user_id,name,email,thali_number'),
+      supabase.from('weekly_menu').select('*').order('week_start', { ascending: false }).limit(1)
     ])
     const uMap = {}
     ;(us || []).forEach(u => { uMap[u.user_id] = u })
     setUsers(uMap)
+    
+    if (mn?.[0]?.menu_json) {
+      setMenu(mn[0].menu_json)
+    }
+
     const data = fb || []
     setFeedbacks(data)
     buildStats(data)
@@ -79,15 +86,25 @@ export default function FeedbackAdminPage() {
 
   const rows = filtered.map(r => {
     const u = users[r.user_id] || {}
+    const dayMenu = menu[r.day] || {}
+    const lunchDishes = [dayMenu.lunch_1, dayMenu.lunch_2, dayMenu.lunch_3].filter(Boolean).join(', ')
+    const dinnerDishes = [dayMenu.dinner_1, dayMenu.dinner_2, dayMenu.dinner_3].filter(Boolean).join(', ')
+
     return [
       <div>
         <div style={{ fontWeight: 600, color: T.text, fontSize: 13 }}>{u.name || '—'}</div>
         <div style={{ color: T.textSub, fontSize: 11 }}>#{u.thali_number || '—'}</div>
       </div>,
       <Badge color="#c49c5a">{r.day}</Badge>,
-      r.lunch_stars  ? <Stars n={r.lunch_stars}  /> : <span style={{ color: T.textSub, fontSize: 12 }}>—</span>,
-      r.dinner_stars ? <Stars n={r.dinner_stars} /> : <span style={{ color: T.textSub, fontSize: 12 }}>—</span>,
-      r.comment ? <span style={{ color: T.textSub, fontSize: 12, maxWidth: 200, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.comment}</span> : '—',
+      <div style={{ minWidth: 100 }}>
+        <Stars n={r.lunch_stars}  />
+        <div style={{ fontSize: 9, color: T.textSub, marginTop: 4, fontStyle: 'italic' }}>{lunchDishes || '—'}</div>
+      </div>,
+      <div style={{ minWidth: 100 }}>
+        <Stars n={r.dinner_stars} />
+        <div style={{ fontSize: 9, color: T.textSub, marginTop: 4, fontStyle: 'italic' }}>{dinnerDishes || '—'}</div>
+      </div>,
+      r.comment ? <span style={{ color: T.textSub, fontSize: 12, maxWidth: 150, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.comment}</span> : '—',
       fmtDateTime(r.created_at),
     ]
   })
@@ -138,7 +155,7 @@ export default function FeedbackAdminPage() {
       {loading ? <Spinner /> : (
         <AdminCard style={{ padding: 0 }}>
           <Table
-            headers={['Thali User', 'Day', 'Lunch', 'Dinner', 'Comment', 'Submitted']}
+            headers={['Thali User', 'Day', 'Lunch (Menu)', 'Dinner (Menu)', 'Comment', 'Submitted']}
             rows={rows}
             emptyMsg="No feedback found."
           />

@@ -14,7 +14,6 @@ import {
 } from 'lucide-react'
 import { supabase } from './admin/supabaseClient'
 import { useWeeklyMenu } from './common/useWeeklyMenu'
-import { requestFCMToken, onForegroundMessage } from './lib/firebase'
 import { AuthCtx, ThemeCtx, useAuth, useTheme } from './admin/context'
 import { updateSystemTheme } from './admin/ui'
 import KhidmatPortal from './admin/KhidmatPortal'
@@ -184,7 +183,7 @@ function Card({ children, style = {}, active, organic }) {
     borderRadius: '40px 100px 40px 100px',
     background: 'linear-gradient(145deg, rgba(35,28,15,0.6), rgba(15,12,8,0.4))',
   } : {
-    borderRadius: 24,
+    borderRadius: 32,
   }
 
   return (
@@ -363,7 +362,7 @@ function LoginPage({ onRoleLogin }) {
   return (
     <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 20, position: 'relative', overflow: 'hidden', fontFamily: "'DM Sans',sans-serif",
+      padding: 20, position: 'relative', overflowY: 'auto', overflowX: 'hidden', fontFamily: "'DM Sans',sans-serif",
       background: '#0f0c08'
     }}>
       {/* Wheat background with blur */}
@@ -374,54 +373,55 @@ function LoginPage({ onRoleLogin }) {
         style={{
           position: 'absolute', inset: 0, width: '100%', height: '100%',
           objectFit: 'cover', objectPosition: 'center',
-          filter: 'blur(3px) brightness(0.7)',
-          animation: 'kenburns 30s infinite alternate ease-in-out',
+          filter: 'blur(2px) brightness(0.6)',
+          animation: 'kenburns 40s infinite alternate ease-in-out',
           zIndex: 0,
         }}
       />
       <div style={{
         position: 'absolute', inset: 0, zIndex: 1,
-        background: 'radial-gradient(circle at 50% 50%, rgba(30,25,10,0.1) 0%, rgba(15,12,8,0.5) 100%)',
-        backdropFilter: 'saturate(1.2)',
+        background: 'radial-gradient(circle at 50% 50%, rgba(15,12,8,0.1) 0%, rgba(15,12,8,0.4) 100%)',
+        backdropFilter: 'saturate(1.1)',
       }} />
 
       {/* Main card with ornate border */}
-      <div style={{ position: 'relative', zIndex: 2, width: '100%', maxWidth: 440, padding: 10 }}>
+      <div style={{ position: 'relative', zIndex: 2, width: '100%', maxWidth: 440, padding: 10, backdropFilter: 'blur(15px)', WebkitBackdropFilter: 'blur(15px)' }}>
 
         {/* Ornate golden border frame */}
         <div style={{
           position: 'relative',
           borderRadius: 28,
-          padding: 3,
-          background: 'linear-gradient(135deg, #8B6B23 0%, #D4AF37 30%, #B8860B 50%, #D4AF37 70%, #8B6B23 100%)',
-          boxShadow: '0 0 0 1px rgba(184,134,11,0.4), 0 40px 100px rgba(0,0,0,0.85), 0 0 50px rgba(184,134,11,0.15), inset 0 1px 0 rgba(255,255,255,0.1)',
+          padding: 1.5,
+          background: 'linear-gradient(135deg, rgba(139,107,35,0.4) 0%, rgba(212,175,55,0.1) 50%, rgba(139,107,35,0.4) 100%)',
+          boxShadow: '0 40px 100px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1)',
         }}>
-          {/* Corner ornaments */}
+          {/* Corner ornaments - removed for a cleaner glass look if preferred, or kept subtle */}
           {['0 0', '100% 0', '0 100%', '100% 100%'].map((pos, i) => (
             <div key={i} style={{
               position: 'absolute',
-              left: pos.includes('100% ') ? 'auto' : -8,
-              right: pos.includes('100% ') ? -8 : 'auto',
-              top: pos.includes('100%') ? 'auto' : -8,
+              left: pos.includes('100% ') ? 'auto' : -6,
+              right: pos.includes('100% ') ? -6 : 'auto',
+              top: pos.includes('100%') ? 'auto' : -6,
               bottom: pos.includes('100%') ? -8 : 'auto',
-              width: 36, height: 36, zIndex: 2,
-              background: 'linear-gradient(135deg, #8B6B23, #D4AF37)',
+              width: 24, height: 24, zIndex: 10,
+              background: 'linear-gradient(135deg, rgba(139,107,35,0.8), rgba(212,175,55,0.6))',
               borderRadius: '50%',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 4px 16px rgba(139,107,35,0.7)',
-              fontSize: 15, color: '#fff',
+              boxShadow: '0 4px 12px rgba(139,107,35,0.4)',
+              fontSize: 10, color: '#fff',
+              border: '1px solid rgba(255,255,255,0.2)'
             }}>✦</div>
           ))}
 
-          {/* Card interior — Ultra Transparent Crystal */}
+          {/* Card interior — Enhanced Glassmorphism */}
           <div style={{
             borderRadius: 26,
-            background: 'transparent',
-            backdropFilter: 'blur(40px) saturate(1.8)',
-            WebkitBackdropFilter: 'blur(40px) saturate(1.8)',
-            padding: '24px 32px 28px',
-            border: '1px solid rgba(212,175,55,0.4)',
-            boxShadow: '0 25px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1)',
+            background: 'rgba(15, 12, 8, 0.25)',
+            backdropFilter: 'blur(25px) saturate(1.6)',
+            WebkitBackdropFilter: 'blur(25px) saturate(1.6)',
+            padding: '32px 32px 36px',
+            border: '1px solid rgba(212,175,55,0.25)',
+            boxShadow: '0 25px 80px rgba(0,0,0,0.4), inset 0 1px 1px rgba(255,255,255,0.1)',
           }}>
             {/* Logo + Title */}
             <div style={{ textAlign: 'center', marginBottom: 14 }}>
@@ -433,10 +433,10 @@ function LoginPage({ onRoleLogin }) {
                 <img src="/al-mawaid.png" alt="Al-Mawaid" style={{ width: 66, height: 66, objectFit: 'contain' }} />
               </div>
               <h1 style={{
-                margin: '0 0 0px', fontSize: 28, fontWeight: 700,
+                margin: '0 0 0px', fontSize: 32, fontWeight: 700,
                 background: 'linear-gradient(135deg, #D4AF37 0%, #F0EAD2 40%, #D4AF37 80%, #C5A059 100%)',
                 WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                letterSpacing: '0.08em', fontFamily: "'Cinzel','Playfair Display',serif"
+                letterSpacing: '0.1em', fontFamily: "'Cinzel','Playfair Display',serif"
               }}>Al-Mawaid</h1>
             </div>
 
@@ -474,13 +474,14 @@ function LoginPage({ onRoleLogin }) {
 
             {/* Role descriptor bar */}
             <div style={{
-              marginBottom: 12, padding: '8px 14px', borderRadius: 10,
-              background: 'rgba(212,175,55,0.05)',
-              border: '1px solid rgba(212,175,55,0.15)',
-              backdropFilter: 'blur(5px)',
-              fontSize: 11, color: 'rgba(240,234,210,0.85)', textAlign: 'center',
+              marginBottom: 16, padding: '10px 14px', borderRadius: 12,
+              background: 'rgba(255, 255, 255, 0.02)',
+              border: '1px solid rgba(212,175,55,0.12)',
+              backdropFilter: 'blur(12px)',
+              fontSize: 12, color: 'rgba(240,234,210,0.8)', textAlign: 'center',
               fontFamily: "'DM Sans',sans-serif", letterSpacing: '0.04em',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.02)'
             }}>
               {role === 'member' && <><span>👤</span> Khidmat Guzar — member portal</>}
               {role === 'khidmat' && <><img src="/al-mawaid.png" alt="" style={{ width: 14, height: 14, objectFit: 'contain' }} /> Al Mawaid Team — service portal</>}
@@ -504,10 +505,10 @@ function LoginPage({ onRoleLogin }) {
                     placeholder="your@email.com"
                     style={{
                       width: '100%', padding: '14px 16px 14px 44px', borderRadius: 12, boxSizing: 'border-box',
-                      background: 'rgba(25, 20, 10, 0.45)', border: '1px solid rgba(212,175,55,0.25)',
+                      background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(212,175,55,0.2)',
                       color: '#FFF8E1', fontSize: 15, outline: 'none',
                       fontFamily: "'DM Sans',sans-serif", transition: 'all 0.25s',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+                      boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.05)',
                     }}
                     onFocus={e => { e.target.style.borderColor = '#D4AF37'; e.target.style.boxShadow = '0 0 0 3px rgba(212, 175, 55, 0.2)'; }}
                     onBlur={e => { e.target.style.borderColor = 'rgba(212,175,55,0.25)'; e.target.style.boxShadow = '0 4px 12px rgba(0,0,0,0.4)'; }}
@@ -531,11 +532,11 @@ function LoginPage({ onRoleLogin }) {
                       placeholder="••••••••"
                       style={{
                         width: '100%', padding: '14px 48px 14px 44px', borderRadius: 12, boxSizing: 'border-box',
-                        background: 'rgba(25, 20, 10, 0.45)', border: '1px solid rgba(212,175,55,0.25)',
-                        color: '#FFF8E1', fontSize: 15, outline: 'none',
-                        fontFamily: "'DM Sans',sans-serif", transition: 'all 0.25s',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-                      }}
+                      background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(212,175,55,0.2)',
+                      color: '#FFF8E1', fontSize: 15, outline: 'none',
+                      fontFamily: "'DM Sans',sans-serif", transition: 'all 0.25s',
+                      boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.05)',
+                    }}
                       onFocus={e => { e.target.style.borderColor = '#D4AF37'; e.target.style.boxShadow = '0 0 0 3px rgba(212, 175, 55, 0.2)'; }}
                       onBlur={e => { e.target.style.borderColor = 'rgba(212,175,55,0.25)'; e.target.style.boxShadow = '0 4px 12px rgba(0,0,0,0.4)'; }}
                     />
@@ -585,14 +586,14 @@ function LoginPage({ onRoleLogin }) {
         body { margin: 0; }
         input::placeholder { color: rgba(212,175,55,0.35); }
         .login-btn {
-          width: 100%; padding: 15px 20px; borderRadius: 12; border: 1px solid rgba(212,175,55,0.6) !important; marginTop: 10px;
-          background: rgba(212,175,55,0.05) !important;
-          backdrop-filter: blur(15px);
+          width: 100%; padding: 15px 20px; borderRadius: 12; border: 1px solid rgba(212,175,55,0.4) !important; marginTop: 15px;
+          background: rgba(212,175,55,0.08) !important;
+          backdrop-filter: blur(10px);
           color: #FFF8E1;
-          fontSize: 15px; fontWeight: 800; cursor: pointer;
-          boxShadow: 0 0 20px rgba(212,175,55,0.15);
+          fontSize: 16px; fontWeight: 800; cursor: pointer;
+          boxShadow: 0 4px 15px rgba(0,0,0,0.2);
           transition: all 0.3s ease; fontFamily: "'Cinzel','DM Sans',sans-serif";
-          letterSpacing: 0.08em; display: flex; alignItems: center; justifyContent: center; gap: 8px;
+          letterSpacing: 0.1em; display: flex; alignItems: center; justifyContent: center; gap: 10px;
         }
         .login-btn:hover:not(:disabled) {
           background: rgba(212,175,55,0.15) !important;
@@ -739,7 +740,7 @@ function SurveyModal({ startDay, onClose }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.82)', padding: 16, backdropFilter: 'blur(12px)', overflowY: 'auto' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: t.card, borderRadius: 20, padding: 22, maxWidth: 500, width: '100%', border: `1px solid ${t.borderActive}`, boxShadow: '0 28px 70px rgba(0,0,0,0.55)', maxHeight: '92vh', overflowY: 'auto' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: t.card, borderRadius: 32, padding: 22, maxWidth: 500, width: '100%', border: `1px solid ${t.borderActive}`, boxShadow: '0 28px 70px rgba(0,0,0,0.55)', maxHeight: '92vh', overflowY: 'auto' }}>
         {/* Progress bar */}
         <div style={{ height: 3, background: t.inputBg, borderRadius: 2, marginBottom: 16, overflow: 'hidden' }}>
           <div style={{ height: '100%', width: `${progress}%`, background: t.accentGrad, borderRadius: 2, transition: 'width 0.4s ease' }} />
@@ -916,7 +917,7 @@ function ThaliUserApp() {
           justifyContent: 'space-around', alignItems: 'center', padding: '8px 4px 18px',
           background: t.navBg, borderTop: `1px solid ${t.navBorder}`,
           boxShadow: '0 -8px 30px rgba(0,0,0,0.20)',
-          borderRadius: '24px 24px 0 0'
+          borderRadius: '32px 32px 0 0'
         }}>
           {tabs.map(({ id, label, Icon }) => {
             const active = activeTab === id
@@ -1191,100 +1192,184 @@ function WeeklyMenuPage() {
 
   if (!weeklyMenu) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
 
+  const jumpToDay = (day) => {
+    setExpandedDay(day)
+    const el = document.getElementById(`day-card-${day}`)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
   return (
     <main style={{ flex: 1, padding: '16px 16px 100px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
-      {/* Header Card */}
-      <div style={{ marginBottom: 20, padding: '20px 20px 18px', borderRadius: 18, background: t.cardActive, border: `1px solid ${t.borderActive}`, textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: -40, left: '50%', transform: 'translateX(-50%)', width: 180, height: 100, background: t.accentGrad, borderRadius: '50%', filter: 'blur(60px)', opacity: 0.12 }} />
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 6 }}>
-            <Utensils size={14} color={t.accent} />
-            <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.22em', color: t.textSub, fontFamily: "'DM Sans',sans-serif", textTransform: 'uppercase' }}>Al-Mawaid Weekly</div>
+      {/* Dynamic Header with Dropdown */}
+      <div style={{ 
+        marginBottom: 24, padding: '24px', borderRadius: 32, 
+        background: t.cardActive, border: `1.5px solid ${t.borderActive}`,
+        position: 'relative', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.3)' 
+      }}>
+        <div style={{ position: 'absolute', top: -40, right: -20, width: 140, height: 140, background: t.accentGrad, borderRadius: '50%', filter: 'blur(50px)', opacity: 0.15 }} />
+        
+        <div style={{ position: 'relative', zIndex: 2 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 14, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 16px rgba(0,0,0,0.2)' }}>
+              <Utensils size={20} color="#fff" />
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.2em', color: t.accent, textTransform: 'uppercase', fontFamily: "'DM Sans',sans-serif" }}>Culinary Journey</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: '#fff', fontFamily: "'Playfair Display',serif" }}>Weekly Menu</div>
+            </div>
           </div>
-          <div style={{ fontSize: 26, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>This Week's Menu</div>
+
+          <div style={{ position: 'relative' }}>
+            <select 
+              value={expandedDay || ''} 
+              onChange={(e) => jumpToDay(e.target.value)}
+              style={{
+                width: '100%', padding: '14px 20px', borderRadius: 18, 
+                background: 'rgba(255,255,255,0.05)', border: `1px solid ${t.border}`,
+                color: t.accent, fontSize: 15, fontWeight: 700, outline: 'none',
+                appearance: 'none', cursor: 'pointer', fontFamily: "'DM Sans',sans-serif",
+                boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.05)'
+              }}
+            >
+              <option value="" disabled>Select a day to view...</option>
+              {DAYS.map(day => (
+                <option key={day} value={day}>
+                  {day === todayKey ? '⭐ ' : ''}{day.charAt(0).toUpperCase() + day.slice(1)} — {weeklyMenu[day]?.en || 'Menu TBD'}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={18} color={t.accent} style={{ position: 'absolute', right: 18, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', opacity: 0.7 }} />
+          </div>
         </div>
       </div>
 
-      {/* Day pills navigation */}
-      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', marginBottom: 18, paddingBottom: 4, scrollbarWidth: 'none' }}>
-        {DAYS.map(day => {
+      {/* Grid of Days */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {DAYS.map((day) => {
+          const menu = weeklyMenu[day] || { en: '', ar: '', lunch: [], dinner: [] }
           const isToday = day === todayKey
-          const isActive = day === expandedDay
+          const isExpanded = day === expandedDay
+          
           return (
-            <button key={day} onClick={() => setExpandedDay(expandedDay === day ? null : day)}
-              style={{ flexShrink: 0, padding: '8px 16px', borderRadius: 24, border: `1.5px solid ${isActive ? t.accent : t.border}`, background: isActive ? t.accentBg : 'transparent', color: isActive ? t.accent : t.textSub, fontWeight: 800, fontSize: 11, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", letterSpacing: '0.04em', position: 'relative', transition: 'all 0.25s' }}>
-              {isToday && <div style={{ position: 'absolute', top: -2, right: -2, width: 7, height: 7, borderRadius: '50%', background: t.accent, border: `2px solid ${t.bg}` }} />}
-              {(weeklyMenu[day]?.en || day).slice(0, 3).toUpperCase()}
-            </button>
+            <div 
+              key={day} 
+              id={`day-card-${day}`}
+              onClick={() => setExpandedDay(isExpanded ? null : day)}
+              style={{ 
+                borderRadius: 28, 
+                background: isExpanded ? 'rgba(255, 215, 0, 0.05)' : t.card,
+                border: `1.5px solid ${isToday ? t.accent : isExpanded ? t.borderActive : t.border}`,
+                padding: '20px',
+                cursor: 'pointer',
+                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                position: 'relative',
+                overflow: 'hidden',
+                boxShadow: isExpanded ? '0 15px 45px rgba(0,0,0,0.4)' : '0 4px 12px rgba(0,0,0,0.1)'
+              }}
+            >
+              {isToday && (
+                <div style={{ 
+                  position: 'absolute', top: 12, right: 12, 
+                  background: t.accentGrad, color: '#000', padding: '4px 12px', 
+                  borderRadius: 100, fontSize: 10, fontWeight: 900, letterSpacing: '0.1em',
+                  boxShadow: '0 4px 10px rgba(184,134,11,0.4)'
+                }}>TODAY</div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <div style={{ 
+                    width: 50, height: 50, borderRadius: 16, 
+                    background: isExpanded ? t.accentGrad : 'rgba(255,255,255,0.03)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 20, fontWeight: 800, color: isExpanded ? '#000' : t.accent,
+                    border: `1px solid ${isExpanded ? 'transparent' : t.border}`,
+                    transition: 'all 0.3s'
+                  }}>
+                    {day.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: isExpanded ? t.accent : '#fff', fontFamily: "'Playfair Display',serif" }}>
+                      {day.charAt(0).toUpperCase() + day.slice(1)}
+                    </div>
+                    <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 2, opacity: 0.7 }}>
+                      {menu.en || 'Special Menu Coming Soon'}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.4s' }}>
+                  <ChevronDown size={20} color={isExpanded ? t.accent : t.textSub} />
+                </div>
+              </div>
+
+              {/* Collapsible Content */}
+              <div style={{ 
+                maxHeight: isExpanded ? '1000px' : '0px', 
+                opacity: isExpanded ? 1 : 0,
+                overflow: 'hidden',
+                transition: 'all 0.5s ease-in-out',
+                marginTop: isExpanded ? 24 : 0
+              }}>
+                {menu.ar && (
+                  <div style={{ 
+                    textAlign: 'center', marginBottom: 20, padding: '12px', 
+                    borderRadius: 20, background: 'rgba(212,175,55,0.05)',
+                    fontFamily: "'Amiri',serif", fontSize: 18, color: t.accent
+                  }}>{menu.ar}</div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
+                  {/* Lunch Card */}
+                  <div style={{ 
+                    padding: '16px', borderRadius: 24, 
+                    background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)',
+                    boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.02)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 10, background: 'linear-gradient(135deg, #FF9500, #FFCC00)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Sun size={16} color="#fff" />
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.1em', color: '#fff' }}>LUNCH FEAST</span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {menu.lunch.length > 0 ? menu.lunch.map(dish => (
+                        <div key={dish} style={{ 
+                          padding: '8px 16px', borderRadius: 14, 
+                          background: 'rgba(255,255,255,0.03)', border: `1px solid ${t.border}`,
+                          fontSize: 13, fontWeight: 600, color: t.textBody
+                        }}>{dish}</div>
+                      )) : <div style={{ fontSize: 12, color: t.textSub, fontStyle: 'italic' }}>Preparation in progress...</div>}
+                    </div>
+                  </div>
+
+                  {/* Dinner Card */}
+                  <div style={{ 
+                    padding: '16px', borderRadius: 24, 
+                    background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)',
+                    boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.02)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 10, background: 'linear-gradient(135deg, #5856D6, #AF52DE)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Moon size={16} color="#fff" />
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.1em', color: '#fff' }}>DINNER DELIGHT</span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {menu.dinner.length > 0 ? menu.dinner.map(dish => (
+                        <div key={dish} style={{ 
+                          padding: '8px 16px', borderRadius: 14, 
+                          background: 'rgba(255,255,255,0.03)', border: `1px solid ${t.border}`,
+                          fontSize: 13, fontWeight: 600, color: t.textBody
+                        }}>{dish}</div>
+                      )) : <div style={{ fontSize: 12, color: t.textSub, fontStyle: 'italic' }}>Stay tuned for the menu...</div>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           )
         })}
       </div>
-
-      {/* Day Cards */}
-      {DAYS.map((day) => {
-        const menu = weeklyMenu[day] || { en: '', ar: '', lunch: [], dinner: [] }
-        const isToday = day === todayKey
-        const isExpanded = day === expandedDay
-        return (
-          <div key={day} onClick={() => setExpandedDay(isExpanded ? null : day)}
-            style={{ marginBottom: 12, borderRadius: 16, border: `1px solid ${isToday ? t.accentBorder : isExpanded ? t.borderActive : t.border}`, background: isExpanded ? t.cardActive : t.card, overflow: 'hidden', cursor: 'pointer', transition: 'all 0.3s ease', position: 'relative' }}>
-            {isToday && <div style={{ position: 'absolute', top: 0, left: 0, width: 3, height: '100%', background: t.accentGrad }} />}
-
-            {/* Day Header — always visible */}
-            <div style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ fontSize: 16, fontWeight: 800, color: isToday ? t.accent : t.text, fontFamily: "'Playfair Display',serif" }}>{day.charAt(0).toUpperCase() + day.slice(1)}</div>
-                {isToday && <span style={{ fontSize: 9, fontWeight: 800, background: t.accentGrad, color: '#000', padding: '2px 10px', borderRadius: 20, letterSpacing: '0.1em' }}>TODAY</span>}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ fontSize: 10, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{menu.lunch.length + menu.dinner.length} dishes</div>
-                {isExpanded ? <ChevronUp size={14} color={t.accent} /> : <ChevronDown size={14} color={t.textSub} />}
-              </div>
-            </div>
-
-            {/* Expanded Content */}
-            {isExpanded && (
-              <div style={{ padding: '0 16px 16px', borderTop: `1px solid ${t.border}` }} onClick={e => e.stopPropagation()}>
-                {/* Day name in Arabic */}
-                {(menu.en || menu.ar) && (
-                  <div style={{ textAlign: 'center', padding: '10px 0 14px' }}>
-                    <div style={{ fontSize: 14, color: t.accent, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>{menu.en}</div>
-                    {menu.ar && <div style={{ fontSize: 13, color: t.textSub, fontFamily: "'Amiri',serif", marginTop: 2 }}>{menu.ar}</div>}
-                  </div>
-                )}
-
-                {/* Lunch */}
-                <div style={{ marginBottom: 14, padding: 14, borderRadius: 14, background: t.inputBg, border: `1px solid ${t.border}` }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                    <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg, #f59e0b, #d97706)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Sun size={13} color="#fff" /></div>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: t.accent, letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif" }}>LUNCH</div>
-                    <div style={{ fontSize: 10, color: t.textSub, marginLeft: 'auto' }}>{menu.lunch.length} items</div>
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {menu.lunch.length > 0 ? menu.lunch.map(d => (
-                      <span key={d} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, background: t.card, color: t.text, border: `1px solid ${t.border}`, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>{d}</span>
-                    )) : <span style={{ fontSize: 12, color: t.textSub, fontStyle: 'italic' }}>No menu set</span>}
-                  </div>
-                </div>
-
-                {/* Dinner */}
-                <div style={{ padding: 14, borderRadius: 14, background: t.inputBg, border: `1px solid ${t.border}` }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                    <div style={{ width: 26, height: 26, borderRadius: 8, background: 'linear-gradient(135deg, #6366f1, #4338ca)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Moon size={13} color="#fff" /></div>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: t.accent, letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif" }}>DINNER</div>
-                    <div style={{ fontSize: 10, color: t.textSub, marginLeft: 'auto' }}>{menu.dinner.length} items</div>
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {menu.dinner.length > 0 ? menu.dinner.map(d => (
-                      <span key={d} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 20, background: t.card, color: t.text, border: `1px solid ${t.border}`, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>{d}</span>
-                    )) : <span style={{ fontSize: 12, color: t.textSub, fontStyle: 'italic' }}>No menu set</span>}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )
-      })}
     </main>
   )
 }
@@ -1806,7 +1891,7 @@ function SupportTicketsPage({ onBack }) {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const issueTypes = [{ id: 'general', label: 'General' }, { id: 'thali-related', label: 'Thali Related Issues' }, { id: 'thali-delivery', label: 'Thali Delivery Issues' }]
-  const inputStyle = { width: '100%', padding: '11px 13px', borderRadius: 11, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }
+  const inputStyle = { width: '100%', padding: '11px 13px', borderRadius: 16, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }
   const statusColor = s => s === 'open' ? '#d4882a' : s === 'resolved' ? '#5eba82' : '#7aabb8'
 
   useEffect(() => { loadTickets() }, [])
@@ -1964,60 +2049,68 @@ export default function App() {
     sessionStorage.removeItem('al_mawaid_mock_user')
   }, [])
 
-  // --- Push Notifications Logic (Firebase FCM + Supabase Realtime fallback) ---
+  // --- True Push Notifications (Closed App) ---
   useEffect(() => {
     const user = session?.user || mockUser
     if (!user) return
 
-    // 1. Set up Firebase Cloud Messaging — request token & save to DB
-    let fcmUnsubscribe = () => {}
-    const setupFCM = async () => {
+    const setupPush = async () => {
       try {
-        const token = await requestFCMToken()
-        if (token) {
-          // Save FCM token to user_stats for server-side push delivery
-          await supabase
-            .from('user_stats')
-            .update({ fcm_token: token })
-            .eq('user_id', user.id)
-          console.log('FCM token saved to database')
-        }
+        if (!('serviceWorker' in navigator)) return
+        const reg = await navigator.serviceWorker.ready
+        
+        // Request Permission
+        const permission = await Notification.requestPermission()
+        if (permission !== 'granted') return
+
+        // Subscribe
+        const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY
+        const subscription = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey)
+        })
+
+        // Save to Supabase
+        await supabase.from('push_subscriptions').upsert({
+          user_id: user.id,
+          subscription: subscription
+        }, { onConflict: 'user_id, subscription' })
+
+        console.log('🚀 Push Subscription Active')
       } catch (err) {
-        console.warn('FCM setup skipped:', err.message)
+        console.error('❌ Push Setup Failed:', err)
       }
-
-      // Listen for foreground messages (app is open)
-      fcmUnsubscribe = onForegroundMessage((payload) => {
-        console.log('Foreground push message:', payload)
-        const { title, body } = payload.notification || {}
-        if (title) {
-          showBrowserNotification({ title, body, id: Date.now() })
-        }
-      })
     }
-    setupFCM()
 
-    // 2. Supabase Realtime fallback — in-app notifications when tab is open
+    setupPush()
+
+    // Existing Realtime logic (In-App)
     const channel = supabase
       .channel('public:notices')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notices' },
         (payload) => {
-          const newNotice = payload.new
-          // Check if notice is for everyone or specifically for this user
-          if (!newNotice.target_user_id || newNotice.target_user_id === user.id) {
-            showBrowserNotification(newNotice)
+          if (!payload.new.target_user_id || payload.new.target_user_id === user.id) {
+            showBrowserNotification(payload.new)
           }
         }
       )
       .subscribe()
 
-    return () => {
-      supabase.removeChannel(channel)
-      fcmUnsubscribe()
-    }
+    return () => { supabase.removeChannel(channel) }
   }, [session, mockUser])
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4)
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+    const rawData = window.atob(base64)
+    const outputArray = new Uint8Array(rawData.length)
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i)
+    }
+    return outputArray
+  }
 
   const showBrowserNotification = (notice) => {
     if (!('Notification' in window) || Notification.permission !== 'granted') return

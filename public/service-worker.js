@@ -71,3 +71,34 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
+// PUSH NOTIFICATION HANDLING
+self.addEventListener('push', (event) => {
+  let data = { title: 'Al-Mawaid', body: 'New Update' };
+  try {
+    if (event.data) data = event.data.json();
+  } catch (e) {
+    data = { title: 'Al-Mawaid', body: event.data.text() };
+  }
+
+  const options = {
+    body: data.body,
+    icon: '/logo.png',
+    badge: '/logo.png',
+    vibrate: [100, 50, 100],
+    data: {
+      url: data.url || '/'
+    }
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, options)
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.openWindow(event.notification.data.url)
+  );
+});

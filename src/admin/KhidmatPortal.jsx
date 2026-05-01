@@ -178,6 +178,8 @@ export default function KhidmatPortal({ signOut, user }) {
           <RequestsAdminPage />
         ) : activeTab === 'survey' ? (
           <DailySurveyTracking />
+        ) : activeTab === 'feedback' ? (
+          <FeedbackPortalView />
         ) : null}
       </main>
 
@@ -195,6 +197,7 @@ export default function KhidmatPortal({ signOut, user }) {
           { id: 'home', icon: Home },
           { id: 'users', icon: Users },
           { id: 'survey', icon: Calendar },
+          { id: 'feedback', icon: Star },
           { id: 'requests', icon: Utensils },
         ].map(({ id, icon: Icon }) => {
           const active = activeTab === id
@@ -217,10 +220,97 @@ export default function KhidmatPortal({ signOut, user }) {
             </button>
           )
         })}
-        <button onClick={() => { if(window.confirm('Sign out?')) signOut() }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 12, color: '#e05555', opacity: 0.8 }}>
+        <button onClick={signOut} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 12, color: '#e05555', opacity: 0.8 }}>
           <LogOut size={20} />
         </button>
       </nav>
     </div>
+  )
+}
+
+function FeedbackPortalView() {
+  const [feedbacks, setFeedbacks] = useState([])
+  const [menu, setMenu] = useState({})
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from('daily_feedback').select('*').order('created_at', { ascending: false }).limit(20),
+      supabase.from('weekly_menu').select('*').order('week_start', { ascending: false }).limit(1)
+    ]).then(([{ data: fb }, { data: mn }]) => {
+      setFeedbacks(fb || [])
+      if (mn?.[0]?.menu_json) setMenu(mn[0].menu_json)
+      setLoading(false)
+    })
+  }, [])
+
+  if (loading) return <Spinner fullPage={false} />
+
+  const avg = (type) => {
+    const vals = feedbacks.map(f => f[type]).filter(Boolean)
+    return vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1) : '—'
+  }
+
+  return (
+    <div style={{ animation: 'fadeIn 0.5s ease' }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
+        <div style={{ flex: 1, padding: 16, borderRadius: 20, background: 'rgba(212,175,55,0.1)', border: '1px solid rgba(212,175,55,0.2)', textAlign: 'center' }}>
+          <div style={{ fontSize: 20, fontWeight: 900, color: '#D4AF37' }}>{avg('lunch_stars')}★</div>
+          <div style={{ fontSize: 10, color: 'rgba(255,248,225,0.5)', fontWeight: 700, textTransform: 'uppercase' }}>Avg Lunch</div>
+        </div>
+        <div style={{ flex: 1, padding: 16, borderRadius: 20, background: 'rgba(94, 186, 130, 0.1)', border: '1px solid rgba(94, 186, 130, 0.2)', textAlign: 'center' }}>
+          <div style={{ fontSize: 20, fontWeight: 900, color: '#5eba82' }}>{avg('dinner_stars')}★</div>
+          <div style={{ fontSize: 10, color: 'rgba(255,248,225,0.5)', fontWeight: 700, textTransform: 'uppercase' }}>Avg Dinner</div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {feedbacks.map((fb, i) => {
+          const dayMenu = menu[fb.day] || {}
+          const lunchDishes = [dayMenu.lunch_1, dayMenu.lunch_2, dayMenu.lunch_3].filter(Boolean).join(', ')
+          const dinnerDishes = [dayMenu.dinner_1, dayMenu.dinner_2, dayMenu.dinner_3].filter(Boolean).join(', ')
+          return (
+            <Card key={fb.id} style={{ padding: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <Badge color="#D4AF37">{fb.day.toUpperCase()}</Badge>
+                <div style={{ fontSize: 10, color: 'rgba(255,248,225,0.4)' }}>{new Date(fb.created_at).toLocaleDateString()}</div>
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ padding: '10px 14px', borderRadius: 14, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: '#D4AF37' }}>LUNCH</span>
+                    <span style={{ fontSize: 12, fontWeight: 900, color: '#D4AF37' }}>{fb.lunch_stars}★</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,248,225,0.5)', fontStyle: 'italic' }}>{lunchDishes || 'No menu found'}</div>
+                </div>
+
+                <div style={{ padding: '10px 14px', borderRadius: 14, background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: '#5eba82' }}>DINNER</span>
+                    <span style={{ fontSize: 12, fontWeight: 900, color: '#5eba82' }}>{fb.dinner_stars}★</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,248,225,0.5)', fontStyle: 'italic' }}>{dinnerDishes || 'No menu found'}</div>
+                </div>
+              </div>
+
+              {fb.comment && (
+                <div style={{ marginTop: 14, padding: 12, borderRadius: 12, background: 'rgba(212,175,55,0.05)', borderLeft: '3px solid #D4AF37', fontSize: 13, color: 'rgba(255,248,225,0.8)', fontStyle: 'italic' }}>
+                  "{fb.comment}"
+                </div>
+              )}
+            </Card>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function Badge({ children, color = '#D4AF37' }) {
+  return (
+    <span style={{ padding: '4px 10px', borderRadius: 20, background: `${color}15`, border: `1px solid ${color}30`, color, fontSize: 10, fontWeight: 900, letterSpacing: '0.05em' }}>
+      {children}
+    </span>
   )
 }

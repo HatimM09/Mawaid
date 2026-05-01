@@ -43,6 +43,21 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadAll()
+    
+    // Subscribe to realtime inventory changes
+    const channel = supabase
+      .channel('admin_dashboard_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => {
+        loadStats()
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'inventory_log' }, () => {
+        loadStats()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [loadAll])
 
   const loadStats = async () => {
@@ -80,6 +95,15 @@ export default function Dashboard() {
     const submittedIds = new Set(submissions.map(row => row.user_id))
     const missing = (allUsers.data || []).filter(user => !submittedIds.has(user.user_id))
     setMissingSurveys(missing)
+
+    // Update trend based on real data
+    if (inventory.length > 0) {
+      const topItems = inventory.sort((a, b) => b.stock - a.stock).slice(0, 7)
+      setInventoryTrend(topItems.map(item => ({ 
+        name: (item.name || 'Item').substring(0, 5), 
+        count: item.stock || 0 
+      })))
+    }
   }
 
   const loadFeedbackByDay = async () => {

@@ -17,12 +17,5 @@ if ('serviceWorker' in navigator) {
     }).catch(err => {
       console.log('PWA SW registration failed: ', err);
     });
-
-    // Firebase Cloud Messaging service worker (for background push notifications)
-    navigator.serviceWorker.register('/firebase-messaging-sw.js').then(reg => {
-      console.log('Firebase Messaging SW registered!', reg);
-    }).catch(err => {
-      console.log('Firebase Messaging SW registration failed:', err);
-    });
   });
 }

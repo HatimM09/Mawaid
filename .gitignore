@@ -6,3 +6,17 @@ dist
 *.log
 
 .vercel
+.netlify
+
+# System files
+Thumbs.db
+desktop.ini
+
+# IDE files
+.vscode
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

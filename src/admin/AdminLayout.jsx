@@ -269,7 +269,7 @@ export default function AdminLayout() {
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           {/* Dynamic content */}
-          <main key={location.pathname} className="smooth-appear scroll-container" style={{ flex: 1, padding: '24px', paddingBottom: 120 }}>
+          <main key={location.pathname} className="smooth-appear scroll-container" style={{ flex: 1, padding: '24px', paddingBottom: 120, overflowY: 'auto', overflowX: 'hidden' }}>
             <Outlet context={{ role }} />
           </main>
 

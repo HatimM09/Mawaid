@@ -43,7 +43,7 @@ const PortalCard = ({ title, value, icon, color = '#D4AF37', sub, organic }) => 
 
 export default function InventoryManagerPortal({ signOut, user }) {
   const [activeTab, setActiveTab] = useState('dashboard')
-  const [staffInfo, setStaffInfo] = useState({ name: 'Inventory Manager', role: 'Inventory' })
+  const [staffInfo, setStaffInfo] = useState({ name: 'Inventory Manager', role: 'inventory_manager' })
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({ totalItems: 0, lowStock: 0, recentTx: 0 })
 
@@ -61,6 +61,17 @@ export default function InventoryManagerPortal({ signOut, user }) {
       setLoading(false)
     }
     loadStats()
+
+    // Realtime stats updates
+    const channel = supabase
+      .channel('portal_stats_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => loadStats())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'inventory_log' }, () => loadStats())
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [user])
 
   const loadStats = async () => {
@@ -68,7 +79,12 @@ export default function InventoryManagerPortal({ signOut, user }) {
     const { data: logs } = await supabase.from('inventory_log').select('*').limit(10).order('created_at', { ascending: false })
     if (inv) {
       const low = inv.filter(i => i.stock <= (i.low_stock_threshold || 10)).length
-      setStats({ totalItems: inv.length, lowStock: low, recentTx: logs?.length || 0 })
+      setStats({ 
+        totalItems: inv.length, 
+        lowStock: low, 
+        recentTx: logs?.length || 0,
+        recentLogs: logs || [] 
+      })
     }
   }
 
@@ -99,7 +115,7 @@ export default function InventoryManagerPortal({ signOut, user }) {
             
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20 }}>
               <PortalCard title="Inventory Items" value={stats.totalItems} icon={<Package size={22} />} organic />
-              <PortalCard title="Low Stock Alerts" value={stats.lowStock} icon={<AlertTriangle size={22} />} color={stats.lowStock > 0 ? '#e05555' : '#5eba82'} sub="CRITICAL" organic />
+              <PortalCard title="Stock Status" value="Good" icon={<Package size={22} />} color="#5eba82" sub="STABLE" organic />
             </div>
 
             <button style={{ 
@@ -114,26 +130,49 @@ export default function InventoryManagerPortal({ signOut, user }) {
             <div style={{ 
               background: 'linear-gradient(145deg, rgba(35,28,15,0.6), rgba(15,12,8,0.4))',
               border: `1.5px solid rgba(212,175,55,0.2)`,
-              borderRadius: '20px 60px 20px 60px', padding: 24, 
+              borderRadius: '24px 24px 40px 40px', padding: 24, 
               backdropFilter: 'blur(30px) saturate(1.8)',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              boxShadow: '0 15px 35px rgba(0,0,0,0.4)', cursor: 'pointer'
-            }} onClick={() => setActiveTab('inventory')}>
-               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(212,175,55,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                     <History size={20} color="#D4AF37" />
-                  </div>
-                  <div>
-                     <div style={{ fontSize: 15, fontWeight: 800, color: '#FFF8E1' }}>View Recent Logs</div>
-                     <div style={{ fontSize: 11, color: 'rgba(255,248,225,0.5)' }}>Check last {stats.recentTx} stock movements.</div>
-                  </div>
+              boxShadow: '0 15px 35px rgba(0,0,0,0.4)'
+            }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                  <div style={{ fontSize: 13, fontWeight: 900, color: '#D4AF37', letterSpacing: '0.1em' }}>RECENT ACTIVITY</div>
+                  <button onClick={() => setActiveTab('inventory')} style={{ background: 'none', border: 'none', color: 'rgba(255,248,225,0.5)', fontSize: 11, cursor: 'pointer', fontWeight: 700 }}>VIEW ALL</button>
                </div>
-               <ChevronRight size={20} color="#D4AF37" />
+               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {stats.recentLogs?.length > 0 ? stats.recentLogs.map(log => (
+                    <div key={log.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{ 
+                            width: 32, height: 32, borderRadius: 10, 
+                            background: log.type === 'in' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center'
+                          }}>
+                             {log.type === 'in' ? <ArrowUpRight size={16} color="#10b981" /> : <ArrowDownRight size={16} color="#ef4444" />}
+                          </div>
+                          <div>
+                             <div style={{ fontSize: 13, fontWeight: 700, color: '#FFF8E1' }}>{log.product_name}</div>
+                             <div style={{ fontSize: 10, color: 'rgba(255,248,225,0.4)' }}>{new Date(log.created_at).toLocaleTimeString()} • {log.note || 'No note'}</div>
+                          </div>
+                       </div>
+                       <div style={{ fontSize: 14, fontWeight: 900, color: log.type === 'in' ? '#10b981' : '#ef4444' }}>
+                          {log.type === 'in' ? '+' : '-'}{log.qty}
+                       </div>
+                    </div>
+                  )) : (
+                    <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 12, color: 'rgba(255,248,225,0.3)' }}>No recent activity</div>
+                  )}
+               </div>
             </div>
 
           </div>
+        ) : activeTab === 'inventory' ? (
+          <div style={{ animation: 'fadeIn 0.5s ease' }}>
+            <InventoryPage role={staffInfo.role} initialTab="stock" />
+          </div>
         ) : (
-          <InventoryPage role={staffInfo.role} />
+          <div style={{ animation: 'fadeIn 0.5s ease' }}>
+            <InventoryPage role={staffInfo.role} initialTab="log" />
+          </div>
         )}
       </main>
 
@@ -147,8 +186,9 @@ export default function InventoryManagerPortal({ signOut, user }) {
         boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 30px rgba(212,175,55,0.15)'
       }}>
         {[
-          { id: 'dashboard', icon: Home, label: 'Dashboard' },
+          { id: 'dashboard', icon: Home, label: 'Home' },
           { id: 'inventory', icon: Package, label: 'Stock' },
+          { id: 'logs', icon: History, label: 'Logs' },
         ].map(({ id, icon: Icon, label }) => {
           const active = activeTab === id
           return (
@@ -169,7 +209,7 @@ export default function InventoryManagerPortal({ signOut, user }) {
             </button>
           )
         })}
-        <button onClick={() => { if(window.confirm('Sign out?')) signOut() }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 12, color: '#e05555', opacity: 0.8 }}>
+        <button onClick={signOut} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 12, color: '#e05555', opacity: 0.8 }}>
           <LogOut size={20} />
         </button>
       </nav>
