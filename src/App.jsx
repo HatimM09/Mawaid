@@ -2064,9 +2064,9 @@ export default function App() {
         if (permission !== 'granted') return
 
         // Subscribe
-        const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+        const vapidKey = import.meta.env.VITE_VAPID_KEY;
         if (!vapidKey) {
-          console.warn('⚠️ Missing VITE_FIREBASE_VAPID_KEY in environment.');
+          console.warn('⚠️ Missing VITE_VAPID_KEY in environment.');
           return;
         }
 
