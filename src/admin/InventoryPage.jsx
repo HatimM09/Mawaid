@@ -319,7 +319,7 @@ export default function InventoryPage({ role: roleProp }) {
                   </div>
                   <div style={{ background: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 12, border: '1px solid var(--border-glass)' }}>
                     <div style={{ fontSize: 10, color: T.textSub, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Current Stock</div>
-                    <div style={{ fontSize: 24, fontWeight: 900, color: isLow ? T.danger : T.primary }}>
+                    <div style={{ fontSize: 24, fontWeight: 900, color: isLow ? T.danger : T.accent }}>
                       {p.stock} <span style={{ fontSize: 14, fontWeight: 500, color: T.textSub }}>{p.unit}</span>
                     </div>
                   </div>

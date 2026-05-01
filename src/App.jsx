@@ -2064,7 +2064,12 @@ export default function App() {
         if (permission !== 'granted') return
 
         // Subscribe
-        const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY
+        const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+        if (!vapidKey) {
+          console.warn('⚠️ Missing VITE_FIREBASE_VAPID_KEY in environment.');
+          return;
+        }
+
         const subscription = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(vapidKey)
