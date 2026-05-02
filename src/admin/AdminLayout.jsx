@@ -12,7 +12,6 @@ const NAV = [
   { to: '/admin', label: 'Dashboard', Icon: LayoutDashboard, color: '#D4AF37', end: true },
   { to: '/admin/users', label: 'Thali Users', Icon: Users, color: '#D4AF37' },
   { to: '/admin/requests', label: 'Thali Requests', Icon: FileText, color: '#D4AF37' },
-  { to: '/admin/surveys', label: 'Surveys', Icon: ClipboardList, color: '#D4AF37' },
   { to: '/admin/inventory', label: 'Inventory', Icon: Package, color: '#D4AF37' },
   { to: '/admin/queries', label: 'Queries', Icon: '?' },
   { to: '/admin/staff', label: 'Staff', Icon: Shield, color: '#D4AF37' },
@@ -272,40 +271,6 @@ export default function AdminLayout() {
           <main key={location.pathname} className="smooth-appear scroll-container" style={{ flex: 1, padding: '24px', paddingBottom: 120, overflowY: 'auto', overflowX: 'hidden' }}>
             <Outlet context={{ role }} />
           </main>
-
-          {/* Right Sidebar - AI Insights (Optional/Desktop) */}
-          <aside className="admin-right-sidebar" style={{
-            width: 320, height: 'calc(100% - 40px)', margin: '0 24px 24px 0',
-            borderRadius: 24, background: 'rgba(19, 23, 32, 0.2)', backdropFilter: 'var(--blur-md)',
-            border: '1px solid var(--border-glass)', flexShrink: 0, padding: 24
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-              <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>AI Insights</h3>
-              <Sparkles size={18} color="var(--accent-gold)" />
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-              <div className="glass" style={{ padding: 16, borderRadius: 20 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>Inventory Prediction</div>
-                <div style={{ height: 60, display: 'flex', alignItems: 'flex-end', gap: 2, marginBottom: 8 }}>
-                  {[30, 45, 35, 60, 55, 75, 65, 85, 70, 90, 80].map((h, i) => (
-                    <div key={i} style={{ flex: 1, height: `${h}%`, background: 'linear-gradient(to top, rgba(0, 229, 255, 0.1), var(--accent-cyan))', borderRadius: 2 }} />
-                  ))}
-                </div>
-              </div>
-
-              <div className="glass" style={{ padding: 16, borderRadius: 20 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 16 }}>Operational Overview</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <History size={16} color="var(--accent-gold)" />
-                    <div style={{ flex: 1, fontSize: 12, fontWeight: 700 }}>Peak Hours Today</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>10 am - 1 pm</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </aside>
         </div>
 
         {/* Global Floating Bottom Nav */}

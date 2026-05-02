@@ -151,6 +151,35 @@ export default function InventoryPage({ role: roleProp }) {
     // Realtime will trigger fetchData()
   }
 
+  const handleExportCSV = () => {
+    const headers = ['Product', 'Type', 'Quantity', 'Note', 'Date']
+    const rows = auditLog.map(l => [
+      l.product_name, 
+      l.type.toUpperCase(), 
+      l.qty, 
+      l.note || '', 
+      new Date(l.created_at).toLocaleString('en-GB')
+    ])
+    const csvContent = [headers, ...rows].map(e => e.join(',')).join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `inventory_report_${new Date().toISOString().split('T')[0]}.csv`
+    link.click()
+  }
+
+  const handleResetAllStock = async () => {
+    if (!window.confirm('⚠️ Are you sure you want to reset ALL stock levels to zero? This cannot be undone.')) return
+    setLoading(true)
+    const { error } = await supabase.from('inventory').update({ stock: 0 }).neq('id', -1)
+    if (error) alert('Error: ' + error.message)
+    else {
+      alert('✅ All stock levels reset to zero.')
+      fetchData()
+    }
+  }
+
   const filtered = products.filter(p => {
     const matchSearch = p.name.toLowerCase().includes(search.toLowerCase())
     const matchCat = catFilter === 'all' || p.category_id === parseInt(catFilter)
@@ -227,36 +256,26 @@ export default function InventoryPage({ role: roleProp }) {
 
   return (
     <PageWrap>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
-        <PageTitle sub="Real-time kitchen supplies and stock management">Kitchen Inventory</PageTitle>
-        <div style={{ display: 'flex', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
+        <PageTitle sub="Real-time supplies and stock management">Inventory</PageTitle>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 4, border: '1px solid var(--border-glass)' }}>
-            <button 
-              onClick={() => setViewMode('grid')}
-              style={{ padding: '8px 12px', borderRadius: 8, border: 'none', background: viewMode === 'grid' ? T.accent : 'transparent', color: viewMode === 'grid' ? '#000' : T.textSub, cursor: 'pointer', fontWeight: 800, fontSize: 11 }}
-            >
-              GRID
-            </button>
-            <button 
-              onClick={() => setViewMode('table')}
-              style={{ padding: '8px 12px', borderRadius: 8, border: 'none', background: viewMode === 'table' ? T.accent : 'transparent', color: viewMode === 'table' ? '#000' : T.textSub, cursor: 'pointer', fontWeight: 800, fontSize: 11 }}
-            >
-              LIST
-            </button>
+            <button onClick={() => setViewMode('grid')} style={{ padding: '8px 10px', borderRadius: 8, border: 'none', background: viewMode === 'grid' ? T.accent : 'transparent', color: viewMode === 'grid' ? '#000' : T.textSub, cursor: 'pointer', fontWeight: 800, fontSize: 10 }}>GRID</button>
+            <button onClick={() => setViewMode('table')} style={{ padding: '8px 10px', borderRadius: 8, border: 'none', background: viewMode === 'table' ? T.accent : 'transparent', color: viewMode === 'table' ? '#000' : T.textSub, cursor: 'pointer', fontWeight: 800, fontSize: 10 }}>LIST</button>
           </div>
-          <Btn variant="outline" onClick={() => setActiveTab(activeTab === 'stock' ? 'log' : 'stock')}>
-            {activeTab === 'stock' ? <><History size={16} /> View Audit Log</> : <><Package size={16} /> View Stock</>}
+          <Btn size="sm" variant="outline" onClick={() => setActiveTab(activeTab === 'stock' ? 'log' : 'stock')}>
+            {activeTab === 'stock' ? <History size={14} /> : <Package size={14} />}
           </Btn>
-          {role === 'admin' && (
-            <Btn variant="outline" onClick={() => window.open('/inventory-manager', '_blank')} style={{ borderColor: T.accent, color: T.accent }}>
-              <ArrowUpRight size={16} /> Mobile Portal
+          {canManageItems && (
+            <Btn size="sm" variant="outline" onClick={handleResetAllStock} style={{ borderColor: T.danger, color: T.danger }}>
+              Reset
             </Btn>
           )}
-          {canManageItems && <Btn onClick={() => setShowAdd(true)}><Plus size={16} /> Add New Item</Btn>}
+          {canManageItems && <Btn size="sm" onClick={() => setShowAdd(true)}><Plus size={14} /></Btn>}
         </div>
       </div>
 
-      <Grid cols={3} style={{ marginBottom: 32 }}>
+      <Grid cols={3} style={{ marginBottom: 24 }}>
         <StatCard icon={<Package />} label="Stock Status" value="Good" color={T.success} />
         <StatCard icon={<Package />} label="Total Items" value={products.length} />
         <StatCard icon={<ArrowUpRight />} label="Supply Health" value="Active" color={T.success} />
@@ -291,7 +310,7 @@ export default function InventoryPage({ role: roleProp }) {
 
       {activeTab === 'stock' ? (
         viewMode === 'grid' ? (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 20, marginBottom: 40 }}>
+          <Grid cols={4} style={{ marginBottom: 40 }}>
             {filtered.map(p => {
               const cat = CATEGORIES.find(c => c.id === p.category_id)
               const isLow = p.stock <= p.low_stock_threshold
@@ -336,16 +355,39 @@ export default function InventoryPage({ role: roleProp }) {
                 </AdminCard>
               )
             })}
-          </div>
+          </Grid>
         ) : (
           <AdminCard style={{ padding: 0, overflow: 'hidden' }}>
             <Table headers={['Item Detail', 'Current Stock', 'Status', 'Actions']} rows={stockRows} emptyMsg="No inventory items found." />
           </AdminCard>
-        )
-      ) : (
-        <AdminCard style={{ padding: 0, overflow: 'hidden' }}>
-          <Table headers={['Item', 'Type', 'Qty', 'Notes', 'Date & Time']} rows={logRows} emptyMsg="No transaction history yet." />
-        </AdminCard>
+        ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: T.accent }}>Audit Logs & Reports</h3>
+            <Btn size="sm" variant="outline" onClick={handleExportCSV}>Export CSV Report</Btn>
+          </div>
+          
+          <Grid cols={2}>
+            <StatCard 
+              icon={<ArrowUpRight />} 
+              label="Total Stock In (Period)" 
+              value={auditLog.filter(l => l.type === 'in').reduce((acc, curr) => acc + (curr.qty || 0), 0).toFixed(1)} 
+              color={T.success} 
+              sub="Total added to inventory"
+            />
+            <StatCard 
+              icon={<ArrowDownRight />} 
+              label="Total Stock Out (Period)" 
+              value={auditLog.filter(l => l.type === 'out').reduce((acc, curr) => acc + (curr.qty || 0), 0).toFixed(1)} 
+              color={T.danger} 
+              sub="Total consumed/removed"
+            />
+          </Grid>
+
+          <AdminCard style={{ padding: 0, overflow: 'hidden' }}>
+            <Table headers={['Item', 'Type', 'Qty', 'Notes', 'Date & Time']} rows={logRows} emptyMsg="No transaction history yet." />
+          </AdminCard>
+        </div>
       )}
 
       {/* Add Item Modal — inline to avoid import issues */}
@@ -426,9 +468,8 @@ export default function InventoryPage({ role: roleProp }) {
           }
         }
         @media (max-width: 600px) {
-          div[style*="gridTemplateColumns: 1fr 1fr 1fr 1fr"] {
-            grid-template-columns: 1fr !important;
-          }
+          .stock-btn span { display: none; }
+          .stock-btn { padding: 10px 5px !important; }
         }
       `}</style>
     </PageWrap>

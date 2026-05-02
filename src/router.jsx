@@ -24,7 +24,6 @@ export default function MainRouter() {
           <Route path='/admin' element={<AdminLayout />}> 
             <Route index element={<Dashboard />} />
             <Route path='users' element={<UsersPage />} />
-            <Route path='surveys' element={<SurveysPage />} />
             <Route path='feedback' element={<FeedbackAdminPage />} />
             <Route path='requests' element={<RequestsAdminPage />} />
             <Route path='queries' element={<QueriesAdminPage />} />

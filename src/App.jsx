@@ -48,6 +48,20 @@ const THEMES = {
     loginCard: 'rgba(255,255,255,0.96)', headerWave: '#faf6ef',
     successBg: 'rgba(60,140,80,0.08)', successBorder: 'rgba(60,140,80,0.28)', successText: '#3a7a50',
   },
+  majesty: {
+    id: 'majesty', name: 'Royal Purple', icon: '👑',
+    bg: '#0f051a', bgGrad: 'radial-gradient(circle at 50% -20%, #2e0b4e 0%, #0f051a 80%)',
+    card: '#1a0b2e', cardActive: 'linear-gradient(135deg,#2e0b4e,#1a0b2e)',
+    border: 'rgba(212,175,55,0.18)', borderActive: 'rgba(212,175,55,0.5)',
+    accent: '#D4AF37', accentGrad: 'linear-gradient(135deg,#D4AF37,#FFD700)',
+    accentBg: 'rgba(212,175,55,0.12)', accentBorder: 'rgba(212,175,55,0.35)',
+    text: '#f5e6ff', textSub: 'rgba(245, 230, 255, 0.6)', textBody: '#e6ccff',
+    navBg: 'rgba(15,5,26,0.97)', navBorder: 'rgba(212,175,55,0.2)',
+    geo: 'rgba(157,80,187,0.1)', spinnerBorder: 'rgba(212,175,55,0.2)', spinnerTop: '#D4AF37',
+    inputBg: 'rgba(26,11,46,0.5)', inputBorder: 'rgba(212,175,55,0.3)',
+    loginCard: 'rgba(26,11,46,0.92)', headerWave: '#0f051a',
+    successBg: 'rgba(110,240,161,0.12)', successBorder: 'rgba(110,240,161,0.3)', successText: '#6ef0a1',
+  },
   forest: {
     id: 'forest', name: 'Forest Qalam', icon: '🌿',
     bg: '#0a130e', bgGrad: 'linear-gradient(160deg,#0a130e 0%,#0f1f15 60%,#091108 100%)',
@@ -853,10 +867,216 @@ function SurveyModal({ startDay, onClose }) {
 }
 
 // ══════════════════════════════════════════════════════════════
+// DAILY SURVEY MODAL (NEW)
+// ══════════════════════════════════════════════════════════════
+function DailySurveyModal({ onClose }) {
+  const t = useTheme()
+  const { user } = useAuth()
+  const weeklyMenu = useWeeklyMenu() || {}
+  const [step, setStep] = useState(1) // 1: Lunch Yes/No, 2: Lunch Dishes, 3: Dinner Yes/No, 4: Roti (if any), 5: Dinner Dishes
+  const [lunchStatus, setLunchStatus] = useState(null) // true/false
+  const [dinnerStatus, setDinnerStatus] = useState(null) // true/false
+  const [rotiStatus, setRotiStatus] = useState(null) // true/false
+  const [responses, setResponses] = useState({})
+  const [loading, setLoading] = useState(false)
+  const [userData, setUserData] = useState({ thali_no: '', email: user.email })
+  
+  const today = getTodayKey()
+  const menu = weeklyMenu[today] || { lunch: [], dinner: [] }
+  const dayKey = today.substring(0, 3).toLowerCase()
+
+  useEffect(() => {
+    supabase.from('user_stats').select('thali_number, email').eq('user_id', user.id).single()
+      .then(({ data }) => { if (data) setUserData({ thali_no: data.thali_number || '', email: data.email || user.email }) })
+  }, [user.id])
+
+  const dinnerDishes = menu.dinner || []
+  const rotiItems = dinnerDishes.filter(d => isRotiItem(d))
+  const otherDinnerDishes = dinnerDishes.filter(d => !isRotiItem(d))
+
+  const handleNext = async () => {
+    if (step === 1) {
+      if (lunchStatus === null) return
+      setStep(lunchStatus ? 2 : 3)
+    } else if (step === 2) {
+      if (Object.keys(responses).filter(k => menu.lunch.includes(k)).length < menu.lunch.length) return
+      setStep(3)
+    } else if (step === 3) {
+      if (dinnerStatus === null) return
+      if (!dinnerStatus) {
+        await submitSurvey(false, false)
+      } else {
+        setStep(rotiItems.length > 0 ? 4 : 5)
+      }
+    } else if (step === 4) {
+      if (rotiStatus === null) return
+      setStep(5)
+    } else if (step === 5) {
+      const dinnerDishesToCheck = otherDinnerDishes
+      if (Object.keys(responses).filter(k => dinnerDishesToCheck.includes(k)).length < dinnerDishesToCheck.length) return
+      await submitSurvey(true, true)
+    }
+  }
+
+  const submitSurvey = async (isDinnerApplied, isDinnerActuallyYes) => {
+    setLoading(true)
+    try {
+      const updateObj = {
+        user_id: user.id,
+        thali_no: userData.thali_no,
+        email: userData.email,
+        [`${dayKey}_l_status`]: lunchStatus ? 'Applied' : 'Skipped',
+        [`${dayKey}_d_status`]: dinnerStatus ? 'Applied' : 'Skipped',
+        updated_at: new Date().toISOString()
+      }
+
+      // Add Lunch Dishes
+      if (lunchStatus) {
+        menu.lunch.forEach((dish, idx) => {
+          const colName = `${dayKey}_l_dish_${idx + 1}`
+          const val = responses[dish]
+          updateObj[colName] = typeof val === 'number' ? `${val}%` : val === 'yes' ? 'Yes' : 'No'
+        })
+      }
+
+      // Add Dinner Dishes
+      if (dinnerStatus) {
+        // Handle Roti
+        rotiItems.forEach((dish, idx) => {
+          const colName = `${dayKey}_d_dish_${idx + 1}` // Roti is usually first in our logic but let's map correctly
+          // In the database, we need to know WHICH dish_N is roti. 
+          // For simplicity, we map based on menu order.
+          const menuIdx = dinnerDishes.indexOf(dish)
+          const realColName = `${dayKey}_d_dish_${menuIdx + 1}`
+          updateObj[realColName] = rotiStatus ? 'Yes' : 'No'
+        })
+        // Handle Others
+        otherDinnerDishes.forEach((dish) => {
+          const menuIdx = dinnerDishes.indexOf(dish)
+          const realColName = `${dayKey}_d_dish_${menuIdx + 1}`
+          const val = responses[dish]
+          updateObj[realColName] = typeof val === 'number' ? `${val}%` : val === 'yes' ? 'Yes' : 'No'
+        })
+      }
+
+      const { error } = await supabase.from('survey_submissions_flat').upsert([updateObj])
+      if (error) throw error
+      alert('🎉 Daily Survey submitted! Shukran.')
+      onClose()
+    } catch (err) {
+      alert('Error: ' + err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.85)', padding: 'clamp(12px, 3vw, 24px)', backdropFilter: 'blur(15px)' }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: t.card, borderRadius: 32, padding: 'clamp(18px, 4vw, 32px)', maxWidth: 500, width: '100%', border: `1.5px solid ${t.borderActive}`, boxShadow: '0 30px 80px rgba(0,0,0,0.6)', maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ClipboardList size={22} color="#fff" />
+            </div>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif" }}>Daily Food Survey</div>
+              <div style={{ fontSize: 11, color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{today} • {userData.thali_no ? `Thali #${userData.thali_no}` : 'Loading...'}</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 5 }}><X size={20} color={t.textSub} /></button>
+        </div>
+
+        <div style={{ minHeight: 200 }}>
+          {step === 1 && (
+            <div className="stagger-item">
+              <SectionLabel>Part 1: Lunch</SectionLabel>
+              <p style={{ fontSize: 16, fontWeight: 600, color: t.text, marginBottom: 20 }}>Did you have lunch today?</p>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button onClick={() => setLunchStatus(true)} style={{ flex: 1, padding: '16px', borderRadius: 16, border: `2px solid ${lunchStatus === true ? t.accent : t.border}`, background: lunchStatus === true ? t.accentBg : 'transparent', color: lunchStatus === true ? t.accent : t.textSub, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>✅ Yes</button>
+                <button onClick={() => setLunchStatus(false)} style={{ flex: 1, padding: '16px', borderRadius: 16, border: `2px solid ${lunchStatus === false ? '#e05555' : t.border}`, background: lunchStatus === false ? 'rgba(224,85,85,0.1)' : 'transparent', color: lunchStatus === false ? '#e05555' : t.textSub, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>❌ No</button>
+              </div>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="stagger-item">
+              <SectionLabel>Lunch Portions</SectionLabel>
+              <div style={{ maxHeight: '40vh', overflowY: 'auto', paddingRight: 5 }}>
+                {menu.lunch.map(dish => (
+                  <div key={dish} style={{ marginBottom: 18, padding: 14, background: t.inputBg, borderRadius: 16, border: `1px solid ${t.border}` }}>
+                    <p style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700, color: t.text }}>{dish}</p>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {[0, 25, 50, 100].map(pct => (
+                        <button key={pct} onClick={() => setResponses(prev => ({ ...prev, [dish]: pct }))}
+                          style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: `1.5px solid ${responses[dish] === pct ? t.accent : t.border}`, background: responses[dish] === pct ? t.accentBg : 'transparent', color: responses[dish] === pct ? t.accent : t.textSub, fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>{pct}%</button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="stagger-item">
+              <SectionLabel>Part 2: Dinner</SectionLabel>
+              <p style={{ fontSize: 16, fontWeight: 600, color: t.text, marginBottom: 20 }}>Will you have dinner tonight?</p>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button onClick={() => setDinnerStatus(true)} style={{ flex: 1, padding: '16px', borderRadius: 16, border: `2px solid ${dinnerStatus === true ? t.accent : t.border}`, background: dinnerStatus === true ? t.accentBg : 'transparent', color: dinnerStatus === true ? t.accent : t.textSub, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>✅ Yes</button>
+                <button onClick={() => setDinnerStatus(false)} style={{ flex: 1, padding: '16px', borderRadius: 16, border: `2px solid ${dinnerStatus === false ? '#e05555' : t.border}`, background: dinnerStatus === false ? 'rgba(224,85,85,0.1)' : 'transparent', color: dinnerStatus === false ? '#e05555' : t.textSub, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>❌ No</button>
+              </div>
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="stagger-item">
+              <SectionLabel>Dinner: Roti</SectionLabel>
+              <p style={{ fontSize: 15, fontWeight: 600, color: t.text, marginBottom: 10 }}>We have {rotiItems.join(', ')} tonight.</p>
+              <p style={{ fontSize: 16, fontWeight: 700, color: t.accent, marginBottom: 20 }}>Did you eat Roti?</p>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button onClick={() => setRotiStatus(true)} style={{ flex: 1, padding: '16px', borderRadius: 16, border: `2px solid ${rotiStatus === true ? t.accent : t.border}`, background: rotiStatus === true ? t.accentBg : 'transparent', color: rotiStatus === true ? t.accent : t.textSub, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>✅ Yes</button>
+                <button onClick={() => setRotiStatus(false)} style={{ flex: 1, padding: '16px', borderRadius: 16, border: `2px solid ${rotiStatus === false ? '#e05555' : t.border}`, background: rotiStatus === false ? 'rgba(224,85,85,0.1)' : 'transparent', color: rotiStatus === false ? '#e05555' : t.textSub, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>❌ No</button>
+              </div>
+            </div>
+          )}
+
+          {step === 5 && (
+            <div className="stagger-item">
+              <SectionLabel>Dinner Portions</SectionLabel>
+              <div style={{ maxHeight: '40vh', overflowY: 'auto', paddingRight: 5 }}>
+                {otherDinnerDishes.map(dish => (
+                  <div key={dish} style={{ marginBottom: 18, padding: 14, background: t.inputBg, borderRadius: 16, border: `1px solid ${t.border}` }}>
+                    <p style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700, color: t.text }}>{dish}</p>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {[0, 25, 50, 100].map(pct => (
+                        <button key={pct} onClick={() => setResponses(prev => ({ ...prev, [dish]: pct }))}
+                          style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: `1.5px solid ${responses[dish] === pct ? t.accent : t.border}`, background: responses[dish] === pct ? t.accentBg : 'transparent', color: responses[dish] === pct ? t.accent : t.textSub, fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>{pct}%</button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginTop: 24, display: 'flex', gap: 10 }}>
+          {step > 1 && <button onClick={() => setStep(prev => prev === 5 && rotiItems.length === 0 ? 3 : prev - 1)} style={{ flex: 1, padding: 14, borderRadius: 14, border: `1px solid ${t.border}`, background: 'transparent', color: t.textSub, fontWeight: 700, cursor: 'pointer' }}>Back</button>}
+          <button onClick={handleNext} disabled={loading} style={{ flex: 2, padding: 14, borderRadius: 14, border: 'none', background: t.accentGrad, color: '#000', fontWeight: 900, cursor: 'pointer', boxShadow: `0 8px 20px ${t.accentBg}` }}>
+            {loading ? 'Submitting...' : (step === 3 && !dinnerStatus) || step === 5 ? 'Submit Survey ✓' : 'Continue →'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════
 // THALI USER APP
 // ══════════════════════════════════════════════════════════════
 function ThaliUserApp() {
   const [activeTab, setActiveTab] = useState('home')
+  const [showDailySurvey, setShowDailySurvey] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('almawaid_theme') || 'midnight')
   const t = THEMES[theme] || THEMES.midnight
 
@@ -872,17 +1092,18 @@ function ThaliUserApp() {
   const tabs = [
     { id: 'home', label: 'Home', Icon: Home },
     { id: 'menu', label: 'Menu', Icon: Utensils },
+    { id: 'survey', label: 'Survey', Icon: ClipboardList },
     { id: 'post', label: 'Requests', Icon: LogoIcon },
     { id: 'profile', label: 'Profile', Icon: User },
   ]
-  const tabLabels = { home: 'AL-MAWAID', menu: 'WEEKLY MENU', post: 'REQUESTS', profile: 'PROFILE' }
+  const tabLabels = { home: 'AL-MAWAID', menu: 'WEEKLY MENU', survey: 'DAILY SURVEY', post: 'REQUESTS', profile: 'PROFILE' }
 
   return (
     <ThemeCtx.Provider value={t}>
       <div style={{ fontFamily: "'DM Sans','Segoe UI',-apple-system,sans-serif", minHeight: '100vh', background: t.bgGrad, color: t.text, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }}>
         <header style={{ position: 'relative', overflow: 'hidden', background: t.bgGrad, padding: '14px 0 0', flexShrink: 0 }}>
           <GeoBg t={t} />
-          <div style={{ position: 'relative', zIndex: 1, maxWidth: 800, margin: '0 auto', padding: '0 18px' }}>
+          <div style={{ position: 'relative', zIndex: 1, maxWidth: 1200, margin: '0 auto', padding: '0 clamp(16px, 4vw, 32px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <img src="/al-mawaid.png" alt="" style={{ width: 24, height: 24, objectFit: 'contain', filter: 'drop-shadow(0 2px 6px rgba(196,156,90,0.5))' }} />
@@ -908,13 +1129,27 @@ function ThaliUserApp() {
 
         {activeTab === 'home' && <HomePage setActiveTab={setActiveTab} />}
         {activeTab === 'menu' && <WeeklyMenuPage />}
+        {activeTab === 'survey' && (
+           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+             <Card active organic style={{ textAlign: 'center', padding: 40 }}>
+                <div style={{ width: 60, height: 60, borderRadius: '50%', background: t.accentGrad, margin: '0 auto 20px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <ClipboardList size={30} color="#fff" />
+                </div>
+                <h2 style={{ fontFamily: "'Playfair Display',serif", color: t.accent, marginBottom: 10 }}>Daily Feedback Survey</h2>
+                <p style={{ color: t.textSub, fontSize: 14, marginBottom: 24 }}>Please share your feedback for today's meals to help us improve.</p>
+                <Btn onClick={() => setShowDailySurvey(true)} style={{ width: '100%' }}>Start Today's Survey</Btn>
+             </Card>
+           </div>
+        )}
         {activeTab === 'post' && <PostPage />}
         {activeTab === 'profile' && <ProfilePage theme={theme} setTheme={handleSetTheme} />}
 
+        {showDailySurvey && <DailySurveyModal onClose={() => { setShowDailySurvey(false); setActiveTab('home') }} />}
+
         <nav className="mobile-bottom-nav" style={{
           position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-          width: '100%', maxWidth: 800, zIndex: 30, display: 'flex',
-          justifyContent: 'space-around', alignItems: 'center', padding: '8px 4px 18px',
+          width: '100%', maxWidth: 1200, zIndex: 30, display: 'flex',
+          justifyContent: 'space-around', alignItems: 'center', padding: 'clamp(6px, 1.5vw, 12px) 4px clamp(12px, 3vw, 22px)',
           background: t.navBg, borderTop: `1px solid ${t.navBorder}`,
           boxShadow: '0 -8px 30px rgba(0,0,0,0.20)',
           borderRadius: '32px 32px 0 0'

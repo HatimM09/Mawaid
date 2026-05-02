@@ -109,13 +109,13 @@ export default function InventoryManagerPortal({ signOut, user }) {
          <div style={{ fontSize: 9, letterSpacing: '0.3em', textTransform: 'uppercase', color: 'rgba(212,175,55,0.5)', marginTop: 4 }}>Inventory Control Portal</div>
       </header>
 
-      <main style={{ maxWidth: 800, margin: '0 auto', padding: '20px 16px 120px' }}>
+      <main style={{ maxWidth: 1200, margin: '0 auto', padding: '20px clamp(16px, 4vw, 32px) 120px' }}>
         {activeTab === 'dashboard' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20 }}>
-              <PortalCard title="Inventory Items" value={stats.totalItems} icon={<Package size={22} />} organic />
-              <PortalCard title="Stock Status" value="Good" icon={<Package size={22} />} color="#5eba82" sub="STABLE" organic />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
+              <PortalCard title="Inventory Items" value={stats.totalItems} icon={<Package size={20} />} organic />
+              <PortalCard title="Stock Status" value="Good" icon={<Package size={20} />} color="#5eba82" sub="STABLE" organic />
             </div>
 
             <button style={{ 
@@ -178,13 +178,16 @@ export default function InventoryManagerPortal({ signOut, user }) {
 
       <nav style={{ 
         position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
-        width: '92%', maxWidth: 400, height: 74,
+        width: '92%', maxWidth: 500, height: 74,
         background: 'rgba(15,12,8,0.92)', backdropFilter: 'blur(30px)',
         border: '1.5px solid rgba(212,175,55,0.4)', borderRadius: 100,
-        display: 'flex', justifyContent: 'space-around', alignItems: 'center',
+        display: 'flex', justifyContent: 'center', alignItems: 'center',
         padding: '0 20px', zIndex: 1000,
-        boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 30px rgba(212,175,55,0.15)'
+        boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 30px rgba(212,175,55,0.15)',
+        overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none'
       }}>
+        <style>{`.inventory-nav::-webkit-scrollbar { display: none; }`}</style>
+        <div className="inventory-nav" style={{ display: 'flex', alignItems: 'center', gap: 20, flexShrink: 0 }}>
         {[
           { id: 'dashboard', icon: Home, label: 'Home' },
           { id: 'inventory', icon: Package, label: 'Stock' },
@@ -209,6 +212,7 @@ export default function InventoryManagerPortal({ signOut, user }) {
             </button>
           )
         })}
+        </div>
         <button onClick={signOut} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 12, color: '#e05555', opacity: 0.8 }}>
           <LogOut size={20} />
         </button>

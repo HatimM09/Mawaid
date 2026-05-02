@@ -105,12 +105,43 @@ export const updateSystemTheme = (themeId) => {
     root.style.setProperty('--danger-bg', 'rgba(239, 68, 68, 0.1)');
     root.style.setProperty('--warn-color', '#f59e0b');
     root.style.setProperty('--warn-bg', 'rgba(245, 158, 11, 0.1)');
+  } else if (themeId === 'majesty') {
+    // Royal Purple / Gold
+    root.style.setProperty('--bg-deep', '#0f051a');
+    root.style.setProperty('--bg-surface', '#1a0b2e');
+    root.style.setProperty('--bg-card', 'rgba(26, 11, 46, 0.75)');
+    root.style.setProperty('--bg-card-hover', 'rgba(212, 175, 55, 0.1)');
+    root.style.setProperty('--bg-grad', 'radial-gradient(circle at 50% -20%, #2e0b4e 0%, #0f051a 80%)');
+    root.style.setProperty('--text-primary', '#f5e6ff');
+    root.style.setProperty('--text-tertiary', 'rgba(245, 230, 255, 0.6)');
+    root.style.setProperty('--accent-primary', '#D4AF37');
+    root.style.setProperty('--accent-cyan', '#D4AF37');
+    root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #D4AF37, #FFD700)');
+    root.style.setProperty('--accent-bg', 'rgba(212, 175, 55, 0.12)');
+    root.style.setProperty('--accent-border', 'rgba(212, 175, 55, 0.35)');
+    root.style.setProperty('--border-light', 'rgba(212, 175, 55, 0.18)');
+    root.style.setProperty('--border-glass', 'rgba(157, 80, 187, 0.25)');
+    root.style.setProperty('--border-active', 'rgba(212, 175, 55, 0.5)');
+    root.style.setProperty('--input-bg', 'rgba(26, 11, 46, 0.5)');
+    root.style.setProperty('--input-border', 'rgba(212, 175, 55, 0.3)');
+    root.style.setProperty('--success-color', '#6ef0a1');
+    root.style.setProperty('--success-bg', 'rgba(110, 240, 161, 0.12)');
+    root.style.setProperty('--danger-color', '#ff5c5c');
+    root.style.setProperty('--danger-bg', 'rgba(255, 92, 92, 0.1)');
+    root.style.setProperty('--warn-color', '#ffb347');
+    root.style.setProperty('--warn-bg', 'rgba(255, 179, 71, 0.1)');
   }
 }
 
 
 export const PageWrap = ({ children }) => (
-  <div style={{ padding: '0 12px 100px', maxWidth: '1600px', margin: '0 auto' }}>
+  <div style={{ 
+    padding: '0 clamp(10px, 3vw, 40px) 120px', 
+    maxWidth: '1400px', 
+    margin: '0 auto',
+    width: '100%',
+    boxSizing: 'border-box'
+  }}>
     <style>{`
       @media (max-width: 768px) {
         .admin-page-wrap { padding-bottom: 80px !important; }
@@ -383,19 +414,22 @@ export const Modal = ({ isOpen, onClose, title, children, maxWidth = 440 }) => {
   )
 }
 
-export const Grid = ({ cols = 4, children, style: extra = {} }) => (
+export const Grid = ({ cols = 4, children, style: extra = {}, gap = 20 }) => (
   <div className="admin-grid" style={{
     display: 'grid',
     gridTemplateColumns: `repeat(${cols}, 1fr)`,
-    gap: 20,
+    gap: `clamp(12px, 2vw, ${gap}px)`,
     ...extra
   }}>
     <style>{`
-      @media (max-width: 1024px) {
-        .admin-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 16px !important; }
+      @media (max-width: 1400px) {
+        .admin-grid { grid-template-columns: repeat(min(3, ${cols}), 1fr) !important; }
       }
-      @media (max-width: 600px) {
-        .admin-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
+      @media (max-width: 1024px) {
+        .admin-grid { grid-template-columns: repeat(min(2, ${cols}), 1fr) !important; }
+      }
+      @media (max-width: 640px) {
+        .admin-grid { grid-template-columns: 1fr !important; }
       }
     `}</style>
     {children}
