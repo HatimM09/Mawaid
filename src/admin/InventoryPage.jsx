@@ -360,7 +360,8 @@ export default function InventoryPage({ role: roleProp }) {
           <AdminCard style={{ padding: 0, overflow: 'hidden' }}>
             <Table headers={['Item Detail', 'Current Stock', 'Status', 'Actions']} rows={stockRows} emptyMsg="No inventory items found." />
           </AdminCard>
-        ) : (
+        )
+      ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: T.accent }}>Audit Logs & Reports</h3>
