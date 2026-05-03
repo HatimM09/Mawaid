@@ -29,6 +29,14 @@ export default function Dashboard() {
   ])
   const navigate = useNavigate()
 
+  const getWeekDate = () => {
+    const now = new Date()
+    const day = now.getDay()
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1)
+    const monday = new Date(now.setDate(diff))
+    return monday.toISOString().split('T')[0]
+  }
+
   const loadAll = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     else setRefreshing(true)
@@ -61,14 +69,15 @@ export default function Dashboard() {
   }, [loadAll])
 
   const loadStats = async () => {
+    const currentWeekId = getWeekDate()
     const [u, s, f, r, q, allUsers, allSubmissions, allInventory] = await Promise.all([
       supabase.from('user_stats').select('id', { count: 'exact', head: true }),
-      supabase.from('survey_submissions_flat').select('user_id', { count: 'exact', head: true }),
+      supabase.from('survey_submissions_flat').select('user_id', { count: 'exact', head: true }).eq('week_id', currentWeekId),
       supabase.from('daily_feedback').select('id', { count: 'exact', head: true }),
       supabase.from('thali_requests').select('id', { count: 'exact', head: true }),
       supabase.from('queries').select('id', { count: 'exact', head: true }),
       supabase.from('user_stats').select('user_id, name, thali_number'),
-      supabase.from('survey_submissions_flat').select('*'),
+      supabase.from('survey_submissions_flat').select('*').eq('week_id', currentWeekId),
       supabase.from('inventory').select('id, stock, low_stock_threshold'),
     ])
 

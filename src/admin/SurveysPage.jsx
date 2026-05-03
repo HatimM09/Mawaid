@@ -27,11 +27,20 @@ export default function SurveysPage() {
   const [search, setSearch] = useState('')
   const [chartData, setChartData] = useState([])
 
+  const getWeekDate = () => {
+    const now = new Date()
+    const day = now.getDay()
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1)
+    const monday = new Date(now.setDate(diff))
+    return monday.toISOString().split('T')[0]
+  }
+
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
+      const currentWeekId = getWeekDate()
       const [{ data: flat }, { data: us }] = await Promise.all([
-        supabase.from('survey_submissions_flat').select('*').order('updated_at', { ascending: false }),
+        supabase.from('survey_submissions_flat').select('*').eq('week_id', currentWeekId).order('updated_at', { ascending: false }),
         supabase.from('user_stats').select('user_id,name,email,thali_number'),
       ])
       

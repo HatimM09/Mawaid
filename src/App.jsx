@@ -635,17 +635,24 @@ function SurveyModal({ startDay, onClose }) {
         if (u) setUserData({ thali_no: u.thali_number || '', email: u.email || user.email })
       }
 
-      const { data } = await supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id).single()
+      // 1. Fetch LATEST submission (template)
+      const { data } = await supabase.from('survey_submissions_flat')
+        .select('*').eq('user_id', user.id).order('week_id', { ascending: false }).limit(1).maybeSingle()
+
       if (data) {
+        const currentWeekId = getWeekDate()
+        const isFromOldWeek = data.week_id !== currentWeekId
+        
         const dayKey = currentDay.substring(0, 3).toLowerCase()
         const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
         const status = data[`${dayKey}_${mealKey}_status`]
-        const editCount = (data.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0
+        // If it's an old week, we reset the edit count for the new week
+        const editCount = isFromOldWeek ? 0 : (data.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0
 
-        setExistingResponse({ ...data, edit_count: editCount })
+        setExistingResponse({ ...data, edit_count: editCount, is_template: isFromOldWeek })
+        
         if (status) {
           setWantsFood(status === 'Applied')
-
           const activeDishes = menu[currentMeal] || []
           const dishRes = {}
           activeDishes.forEach((dish, idx) => {
@@ -661,7 +668,8 @@ function SurveyModal({ startDay, onClose }) {
       } else {
         setExistingResponse(null); setWantsFood(null); setResponses({})
       }
-    } catch {
+    } catch (err) {
+      console.error('Error loading survey template:', err)
       setExistingResponse(null); setWantsFood(null); setResponses({})
     }
   }
@@ -682,8 +690,10 @@ function SurveyModal({ startDay, onClose }) {
         const currentEdits = existingResponse?.edit_metadata || {}
         const newEditCount = (currentEdits[`${dayKey}_${mealKey}`] || 0) + (existingResponse ? 1 : 0)
 
+        const currentWeekId = getWeekDate()
         const updateObj = {
           user_id: user.id,
+          week_id: currentWeekId,
           thali_no: userData.thali_no,
           email: userData.email,
           [`${dayKey}_${mealKey}_status`]: wantsFood ? 'Applied' : 'Skipped',
@@ -719,6 +729,17 @@ function SurveyModal({ startDay, onClose }) {
     } else if (currentDayIndex < DAYS.length - 1) {
       setCurrentDay(DAYS[currentDayIndex + 1]); setCurrentMeal('lunch'); setWantsFood(null); setResponses({})
     } else {
+      // 4. Survey Complete - Delete old week data if this was a template-based submission
+      if (existingResponse?.is_template) {
+        try {
+          await supabase.from('survey_submissions_flat')
+            .delete()
+            .eq('user_id', user.id)
+            .eq('week_id', existingResponse.week_id)
+        } catch (delErr) {
+          console.warn('Could not clean up old survey:', delErr)
+        }
+      }
       alert('🎉 Survey complete! Shukran Jazeelan.')
       onClose()
     }
@@ -923,8 +944,10 @@ function DailySurveyModal({ onClose }) {
   const submitSurvey = async (isDinnerApplied, isDinnerActuallyYes) => {
     setLoading(true)
     try {
+      const currentWeekId = getWeekDate()
       const updateObj = {
         user_id: user.id,
+        week_id: currentWeekId,
         thali_no: userData.thali_no,
         email: userData.email,
         [`${dayKey}_l_status`]: lunchStatus ? 'Applied' : 'Skipped',
@@ -932,6 +955,7 @@ function DailySurveyModal({ onClose }) {
         updated_at: new Date().toISOString()
       }
 
+      // ... [dishes mapping skipped for brevity in Instruction, but keeping it in implementation]
       // Add Lunch Dishes
       if (lunchStatus) {
         menu.lunch.forEach((dish, idx) => {
@@ -943,16 +967,11 @@ function DailySurveyModal({ onClose }) {
 
       // Add Dinner Dishes
       if (dinnerStatus) {
-        // Handle Roti
         rotiItems.forEach((dish, idx) => {
-          const colName = `${dayKey}_d_dish_${idx + 1}` // Roti is usually first in our logic but let's map correctly
-          // In the database, we need to know WHICH dish_N is roti. 
-          // For simplicity, we map based on menu order.
           const menuIdx = dinnerDishes.indexOf(dish)
           const realColName = `${dayKey}_d_dish_${menuIdx + 1}`
           updateObj[realColName] = rotiStatus ? 'Yes' : 'No'
         })
-        // Handle Others
         otherDinnerDishes.forEach((dish) => {
           const menuIdx = dinnerDishes.indexOf(dish)
           const realColName = `${dayKey}_d_dish_${menuIdx + 1}`
@@ -963,6 +982,14 @@ function DailySurveyModal({ onClose }) {
 
       const { error } = await supabase.from('survey_submissions_flat').upsert([updateObj])
       if (error) throw error
+
+      // Clean up old week if it exists
+      const { data: latest } = await supabase.from('survey_submissions_flat')
+        .select('week_id').eq('user_id', user.id).neq('week_id', currentWeekId).order('week_id', { ascending: false }).limit(1).maybeSingle()
+      if (latest) {
+        await supabase.from('survey_submissions_flat').delete().eq('user_id', user.id).eq('week_id', latest.week_id)
+      }
+
       alert('🎉 Daily Survey submitted! Shukran.')
       onClose()
     } catch (err) {
@@ -2189,30 +2216,37 @@ export default function App() {
 
         // 1. Check for existing subscription
         let subscription = await reg.pushManager.getSubscription()
-        
-        // 2. If it exists but keys changed, unsubscribe first
         const vapidKey = import.meta.env.VITE_VAPID_KEY;
         if (!vapidKey) return console.warn('⚠️ Missing VITE_VAPID_KEY');
 
-        if (subscription) {
-          // If we have an old subscription, we clear it to avoid "Failed to fetch" errors with new keys
-          await subscription.unsubscribe();
+        // 2. Only subscribe if we don't have one
+        if (!subscription) {
+          subscription = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidKey)
+          })
+          console.log('✨ Fresh Push Subscription Created')
         }
 
-        // 3. Create fresh subscription
-        subscription = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(vapidKey)
-        })
-
-        // Save to Supabase
-        await supabase.from('push_subscriptions').upsert({
+        // 3. Always update Supabase to ensure the subscription is linked to the CURRENT user
+        const { error: upsertErr } = await supabase.from('push_subscriptions').upsert({
           user_id: user.id,
-          subscription: subscription.toJSON() // Important: convert to JSON
+          subscription: subscription.toJSON()
         }, { onConflict: 'user_id, subscription' })
 
-        console.log('🚀 Push Subscription Active')
+        if (upsertErr) throw upsertErr
+        console.log('🚀 Push Subscription Sync Successful')
       } catch (err) {
+        // If it's a "Registration failed" error, it might be due to mismatched keys from a previous build
+        // We'll try a nuclear reset ONLY if it fails
+        if (err.name === 'AbortError' || err.name === 'InvalidStateError') {
+          console.warn('⚠️ Push setup failed, attempting reset...')
+          try {
+            const reg = await navigator.serviceWorker.ready
+            const sub = await reg.pushManager.getSubscription()
+            if (sub) await sub.unsubscribe()
+          } catch (resetErr) { console.error('Push reset failed:', resetErr) }
+        }
         console.error('❌ Push Setup Failed:', err)
       }
     }

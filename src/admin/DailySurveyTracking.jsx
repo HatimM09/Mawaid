@@ -28,13 +28,22 @@ export default function DailySurveyTracking() {
   const [selectedUser, setSelectedUser] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
 
+  const getWeekDate = () => {
+    const now = new Date()
+    const day = now.getDay()
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1)
+    const monday = new Date(now.setDate(diff))
+    return monday.toISOString().split('T')[0]
+  }
+
   const load = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true)
     else setRefreshing(true)
     
     try {
+      const currentWeekId = getWeekDate()
       const [{ data: flat }, { data: us }] = await Promise.all([
-        supabase.from('survey_submissions_flat').select('*'),
+        supabase.from('survey_submissions_flat').select('*').eq('week_id', currentWeekId),
         supabase.from('user_stats').select('user_id, name, thali_number, email')
       ])
       
