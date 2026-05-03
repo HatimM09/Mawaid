@@ -20,17 +20,17 @@ import KhidmatPortal from './admin/KhidmatPortal'
 import InventoryManagerPortal from './admin/InventoryManagerPortal'
 const THEMES = {
   dark: {
-    id: 'dark', name: 'Dark Mode', icon: '🌙',
-    bg: '#0c0c14', bgGrad: 'radial-gradient(ellipse at 50% 0%, #1a1a2e 0%, #0c0c14 70%)',
-    card: 'rgba(255, 255, 255, 0.04)', cardActive: 'rgba(139, 92, 246, 0.06)',
-    border: 'rgba(139, 92, 246, 0.15)', borderActive: 'rgba(139, 92, 246, 0.5)',
-    accent: '#a78bfa', accentGrad: 'linear-gradient(135deg, #a78bfa, #7c3aed)',
-    accentBg: 'rgba(139, 92, 246, 0.1)', accentBorder: 'rgba(139, 92, 246, 0.35)',
-    text: '#f0f0f5', textSub: 'rgba(240, 240, 245, 0.5)', textBody: '#d4d4e0',
-    navBg: 'rgba(12, 12, 20, 0.97)', navBorder: 'rgba(139, 92, 246, 0.2)',
-    geo: 'rgba(139, 92, 246, 0.04)', spinnerBorder: 'rgba(139, 92, 246, 0.2)', spinnerTop: '#a78bfa',
-    inputBg: 'rgba(255, 255, 255, 0.05)', inputBorder: 'rgba(139, 92, 246, 0.2)',
-    loginCard: 'rgba(12, 12, 20, 0.85)', headerWave: '#0c0c14',
+    id: 'dark', name: 'Deep Topaz', icon: '🌾',
+    bg: '#8B6B38', bgGrad: 'radial-gradient(ellipse at 50% 0%, #8B6B38 0%, #4A3A2C 70%)',
+    card: 'rgba(74, 58, 44, 0.45)', cardActive: 'rgba(224, 160, 60, 0.08)',
+    border: 'rgba(224, 160, 60, 0.2)', borderActive: 'rgba(224, 160, 60, 0.55)',
+    accent: '#E0A03C', accentGrad: 'linear-gradient(135deg, #E0A03C, #B8860B)',
+    accentBg: 'rgba(224, 160, 60, 0.12)', accentBorder: 'rgba(224, 160, 60, 0.4)',
+    text: '#FFF8E7', textSub: 'rgba(255, 248, 231, 0.55)', textBody: '#E8DCC8',
+    navBg: 'rgba(74, 58, 44, 0.98)', navBorder: 'rgba(224, 160, 60, 0.25)',
+    geo: 'rgba(224, 160, 60, 0.05)', spinnerBorder: 'rgba(224, 160, 60, 0.2)', spinnerTop: '#E0A03C',
+    inputBg: 'rgba(74, 58, 44, 0.5)', inputBorder: 'rgba(224, 160, 60, 0.25)',
+    loginCard: 'rgba(74, 58, 44, 0.94)', headerWave: '#4A3A2C',
     successBg: 'rgba(16, 185, 129, 0.1)', successBorder: 'rgba(16, 185, 129, 0.3)', successText: '#34d399',
   },
   purple: {
@@ -432,10 +432,11 @@ function LoginPage({ onRoleLogin }) {
                 <img src="/al-mawaid.png" alt="Al-Mawaid" style={{ width: 66, height: 66, objectFit: 'contain' }} />
               </div>
               <h1 style={{
-                margin: '0 0 0px', fontSize: 32, fontWeight: 700,
-                background: 'linear-gradient(135deg, #D4AF37 0%, #F0EAD2 40%, #D4AF37 80%, #C5A059 100%)',
+                margin: '0 0 0px', fontSize: 38, fontWeight: 900,
+                background: 'linear-gradient(135deg, #E0A03C 0%, #FFF8E7 40%, #E0A03C 80%, #B8860B 100%)',
                 WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                letterSpacing: '0.1em', fontFamily: "'Cinzel','Playfair Display',serif"
+                letterSpacing: '0.12em', fontFamily: "'Cinzel','Playfair Display',serif",
+                textShadow: '0 10px 20px rgba(0,0,0,0.3)'
               }}>Al-Mawaid</h1>
             </div>
 
@@ -493,24 +494,24 @@ function LoginPage({ onRoleLogin }) {
               {/* Email */}
               <div style={{ marginBottom: 14 }}>
                 <label style={{
-                  display: 'block', fontSize: 10, fontWeight: 700,
-                  color: 'rgba(212,175,55,0.9)', marginBottom: 8,
-                  letterSpacing: '0.14em', fontFamily: "'DM Sans',sans-serif"
+                  display: 'block', fontSize: 11, fontWeight: 900,
+                  color: '#E0A03C', marginBottom: 10,
+                  letterSpacing: '0.16em', fontFamily: "'DM Sans',sans-serif"
                 }}>EMAIL</label>
                 <div style={{ position: 'relative' }}>
-                  <Mail size={16} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: 'rgba(212,175,55,0.7)' }} />
+                  <Mail size={16} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: 'rgba(224, 160, 60, 0.5)' }} />
                   <input
                     type="email" value={email} onChange={e => setEmail(e.target.value)} required
                     placeholder="your@email.com"
                     style={{
                       width: '100%', padding: '14px 16px 14px 44px', borderRadius: 12, boxSizing: 'border-box',
-                      background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(212,175,55,0.2)',
-                      color: '#FFF8E1', fontSize: 15, outline: 'none',
+                      background: 'rgba(0, 0, 0, 0.15)', border: '1px solid rgba(224, 160, 60, 0.2)',
+                      color: '#FFF8E7', fontSize: 15, outline: 'none',
                       fontFamily: "'DM Sans',sans-serif", transition: 'all 0.25s',
-                      boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.05)',
+                      boxShadow: 'inset 0 4px 10px rgba(0,0,0,0.3)',
                     }}
-                    onFocus={e => { e.target.style.borderColor = '#D4AF37'; e.target.style.boxShadow = '0 0 0 3px rgba(212, 175, 55, 0.2)'; }}
-                    onBlur={e => { e.target.style.borderColor = 'rgba(212,175,55,0.25)'; e.target.style.boxShadow = '0 4px 12px rgba(0,0,0,0.4)'; }}
+                    onFocus={e => { e.target.style.borderColor = '#E0A03C'; e.target.style.background = 'rgba(0,0,0,0.2)'; }}
+                    onBlur={e => { e.target.style.borderColor = 'rgba(224, 160, 60, 0.25)'; e.target.style.background = 'rgba(0,0,0,0.15)'; }}
                   />
                 </div>
               </div>
@@ -519,25 +520,25 @@ function LoginPage({ onRoleLogin }) {
               {role !== 'inventory_manager' && (
                 <div style={{ marginBottom: 10 }}>
                   <label style={{
-                    display: 'block', fontSize: 10, fontWeight: 700,
-                    color: 'rgba(212,175,55,0.9)', marginBottom: 8,
-                    letterSpacing: '0.14em', fontFamily: "'DM Sans',sans-serif"
+                    display: 'block', fontSize: 11, fontWeight: 900,
+                    color: '#E0A03C', marginBottom: 10,
+                    letterSpacing: '0.16em', fontFamily: "'DM Sans',sans-serif"
                   }}>PASSWORD</label>
                   <div style={{ position: 'relative' }}>
-                    <Lock size={16} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: 'rgba(212,175,55,0.7)' }} />
+                    <Lock size={16} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: 'rgba(224, 160, 60, 0.5)' }} />
                     <input
                       type={showPass ? 'text' : 'password'} value={password}
                       onChange={e => setPassword(e.target.value)} required
                       placeholder="••••••••"
                       style={{
                         width: '100%', padding: '14px 48px 14px 44px', borderRadius: 12, boxSizing: 'border-box',
-                      background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(212,175,55,0.2)',
-                      color: '#FFF8E1', fontSize: 15, outline: 'none',
-                      fontFamily: "'DM Sans',sans-serif", transition: 'all 0.25s',
-                      boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.05)',
-                    }}
-                      onFocus={e => { e.target.style.borderColor = '#D4AF37'; e.target.style.boxShadow = '0 0 0 3px rgba(212, 175, 55, 0.2)'; }}
-                      onBlur={e => { e.target.style.borderColor = 'rgba(212,175,55,0.25)'; e.target.style.boxShadow = '0 4px 12px rgba(0,0,0,0.4)'; }}
+                        background: 'rgba(0, 0, 0, 0.15)', border: '1px solid rgba(224, 160, 60, 0.2)',
+                        color: '#FFF8E7', fontSize: 15, outline: 'none',
+                        fontFamily: "'DM Sans',sans-serif", transition: 'all 0.25s',
+                        boxShadow: 'inset 0 4px 10px rgba(0,0,0,0.3)',
+                      }}
+                      onFocus={e => { e.target.style.borderColor = '#E0A03C'; e.target.style.background = 'rgba(0,0,0,0.2)'; }}
+                      onBlur={e => { e.target.style.borderColor = 'rgba(224, 160, 60, 0.25)'; e.target.style.background = 'rgba(0,0,0,0.15)'; }}
                     />
                     <button type="button" onClick={() => setShowPass(s => !s)} style={{
                       position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
@@ -559,15 +560,15 @@ function LoginPage({ onRoleLogin }) {
                 style={{
                   width: '100%', padding: '15px 20px', borderRadius: 12, border: 'none', marginTop: 10,
                   background: loading
-                    ? 'rgba(184,134,11,0.2)'
-                    : 'linear-gradient(135deg, #8B6B23 0%, #D4AF37 35%, #FFD700 65%, #B8860B 100%)',
-                  color: loading ? 'rgba(255,255,255,0.35)' : '#FFF8E1',
-                  fontSize: 15, fontWeight: 800, cursor: loading ? 'not-allowed' : 'pointer',
-                  boxShadow: loading ? 'none' : '0 6px 20px rgba(139,107,35,0.4), 0 0 15px rgba(212,175,55,0.2)',
+                    ? 'rgba(224,160,60,0.2)'
+                    : 'linear-gradient(135deg, #B8860B 0%, #E0A03C 40%, #FFF8E7 60%, #E0A03C 100%)',
+                  color: loading ? 'rgba(255,248,231,0.35)' : '#4A3A2C',
+                  fontSize: 16, fontWeight: 900, cursor: loading ? 'not-allowed' : 'pointer',
+                  boxShadow: loading ? 'none' : '0 10px 30px rgba(0,0,0,0.4), 0 0 20px rgba(224,160,60,0.2)',
                   transition: 'all 0.3s ease', fontFamily: "'Cinzel','DM Sans',sans-serif",
-                  letterSpacing: '0.08em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  letterSpacing: '0.12em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                 }}>
-                {loading ? 'Please wait…' : 'Sign In'}
+                {loading ? 'Processing…' : 'SIGN IN'}
               </button>
             </form>
           </div>
@@ -694,7 +695,7 @@ function SurveyModal({ startDay, onClose }) {
         const updateObj = {
           user_id: user.id,
           week_id: currentWeekId,
-          thali_no: userData.thali_no,
+          thali_number: userData.thali_no,
           email: userData.email,
           [`${dayKey}_${mealKey}_status`]: wantsFood ? 'Applied' : 'Skipped',
           edit_metadata: { ...currentEdits, [`${dayKey}_${mealKey}`]: newEditCount },
@@ -948,7 +949,7 @@ function DailySurveyModal({ onClose }) {
       const updateObj = {
         user_id: user.id,
         week_id: currentWeekId,
-        thali_no: userData.thali_no,
+        thali_number: userData.thali_no,
         email: userData.email,
         [`${dayKey}_l_status`]: lunchStatus ? 'Applied' : 'Skipped',
         [`${dayKey}_d_status`]: dinnerStatus ? 'Applied' : 'Skipped',
@@ -1181,12 +1182,27 @@ function ThaliUserApp() {
                 }
                 setActiveTab(id)
               }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '2px 14px', position: 'relative', WebkitTapHighlightColor: 'transparent' }}>
-                {active && <div style={{ position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)', width: 28, height: 2.5, borderRadius: 6, background: t.accent }} />}
-                <div style={{ width: 36, height: 36, borderRadius: '50%', transition: 'all 0.25s', background: active ? t.accentBg : 'transparent', border: active ? `1px solid ${t.accentBorder}` : '1px solid transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon size={16} color={active ? t.accent : t.textSub} strokeWidth={active ? 2.2 : 1.5} style={{ opacity: active ? 1 : .5 }} />
+                style={{ 
+                  background: 'none', border: 'none', cursor: 'pointer', 
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', 
+                  gap: 4, padding: '2px 18px', position: 'relative', 
+                  WebkitTapHighlightColor: 'transparent', transition: 'all 0.2s' 
+                }}>
+                {active && <div style={{ position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)', width: 32, height: 3, borderRadius: 6, background: t.accent, boxShadow: `0 0 10px ${t.accent}` }} />}
+                <div style={{ 
+                  width: 32, height: 32, borderRadius: 10, transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', 
+                  background: active ? t.accentBg : 'transparent', 
+                  border: active ? `1.5px solid ${t.accentBorder}` : '1.5px solid transparent', 
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transform: active ? 'scale(1.1) translateY(-2px)' : 'scale(1)'
+                }}>
+                  <Icon size={18} color={active ? t.accent : '#FFF8E7'} strokeWidth={active ? 2.5 : 1.5} style={{ opacity: active ? 1 : .35 }} />
                 </div>
-                <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.06em', color: active ? t.accent : t.textSub, opacity: active ? 1 : .45, fontFamily: "'DM Sans',sans-serif" }}>{label}</span>
+                <span style={{ 
+                  fontSize: 7.5, fontWeight: 900, letterSpacing: '0.08em', 
+                  color: active ? t.accent : '#FFF8E7', opacity: active ? 1 : .3, 
+                  fontFamily: "'DM Sans',sans-serif", textTransform: 'uppercase' 
+                }}>{label}</span>
               </button>
             )
           })}
@@ -1236,9 +1252,9 @@ function HomePage({ setActiveTab }) {
     try {
       const { error: dbErr } = await supabase.from('daily_feedback').upsert([{
         user_id: user.id, day: todayKey,
-        lunch_stars: lunchStars, lunch_emoji: lunchStars ? STAR_LABELS[lunchStars] : null,
-        dinner_stars: dinnerStars, dinner_emoji: dinnerStars ? STAR_LABELS[dinnerStars] : null,
-        comment: lunchComment.trim(),
+        lunch_stars: lunchStars || null, lunch_emoji: lunchStars ? STAR_LABELS[lunchStars] : null,
+        dinner_stars: dinnerStars || null, dinner_emoji: dinnerStars ? STAR_LABELS[dinnerStars] : null,
+        comment: (lunchComment || dinnerComment).trim(),
         created_at: new Date().toISOString()
       }], { onConflict: 'user_id,day' })
       if (dbErr) throw dbErr

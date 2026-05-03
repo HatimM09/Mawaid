@@ -376,13 +376,22 @@ function NoThaliTracker() {
     setLoading(true)
     try {
       const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-      const dayKey = days[new Date().getDay()].substring(0, 3)
+      const todayIdx = new Date().getDay()
+      
+      // If Sunday, there are no recorded thali skips in the flat table (mon-sat only)
+      if (todayIdx === 0) {
+        setSkips([])
+        setLoading(false)
+        return
+      }
+
+      const dayKey = days[todayIdx].substring(0, 3)
       const mealKey = meal === 'lunch' ? 'l' : 'd'
       const statusCol = `${dayKey}_${mealKey}_status`
 
       const { data, error } = await supabase
         .from('survey_submissions_flat')
-        .select('user_id, thali_no, email')
+        .select('user_id, thali_number, email')
         .eq(statusCol, 'Skipped')
 
       if (error) throw error
@@ -422,7 +431,7 @@ function NoThaliTracker() {
           {skips.map(s => (
             <div key={s.user_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderRadius: 14, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-light)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(224,85,85,0.1)', color: '#e05555', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 900 }}>{s.thali_no || '#?'}</div>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(224,85,85,0.1)', color: '#e05555', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 900 }}>{s.thali_number || '#?'}</div>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>{s.name}</div>
               </div>
               <Badge color="#e05555">SKIPPED</Badge>
