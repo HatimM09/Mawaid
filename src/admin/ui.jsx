@@ -30,106 +30,78 @@ export const T = {
 
 export const updateSystemTheme = (themeId) => {
   const root = document.documentElement;
-  if (themeId === 'midnight') {
-    // Royal Gold / Midnight
-    root.style.setProperty('--bg-deep', '#0f0c08');
-    root.style.setProperty('--bg-surface', '#1a160e');
-    root.style.setProperty('--bg-card', 'rgba(25, 20, 10, 0.72)');
-    root.style.setProperty('--bg-card-hover', 'rgba(212, 175, 55, 0.08)');
-    root.style.setProperty('--bg-grad', 'radial-gradient(circle at 50% -20%, #2a2010 0%, #0f0c08 80%)');
-    root.style.setProperty('--text-primary', '#FFF8E1');
-    root.style.setProperty('--text-tertiary', 'rgba(255, 248, 225, 0.6)');
-    root.style.setProperty('--accent-primary', '#D4AF37');
-    root.style.setProperty('--accent-cyan', '#D4AF37');
-    root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #B8860B, #D4AF37)');
-    root.style.setProperty('--accent-bg', 'rgba(212, 175, 55, 0.1)');
-    root.style.setProperty('--accent-border', 'rgba(212, 175, 55, 0.3)');
-    root.style.setProperty('--border-light', 'rgba(212, 175, 55, 0.15)');
-    root.style.setProperty('--border-glass', 'rgba(212, 175, 55, 0.2)');
-    root.style.setProperty('--border-active', 'rgba(212, 175, 55, 0.45)');
-    root.style.setProperty('--input-bg', 'rgba(25, 20, 10, 0.4)');
-    root.style.setProperty('--input-border', 'rgba(212, 175, 55, 0.25)');
-    root.style.setProperty('--success-color', '#5eba82');
-    root.style.setProperty('--success-bg', 'rgba(94, 186, 130, 0.12)');
-    root.style.setProperty('--danger-color', '#e05555');
-    root.style.setProperty('--danger-bg', 'rgba(224, 85, 85, 0.1)');
-    root.style.setProperty('--warn-color', '#d4882a');
-    root.style.setProperty('--warn-bg', 'rgba(212, 136, 42, 0.1)');
-  } else if (themeId === 'ivory') {
-    // Ivory Dune
-    root.style.setProperty('--bg-deep', '#faf6ef');
-    root.style.setProperty('--bg-surface', '#ffffff');
-    root.style.setProperty('--bg-card', 'rgba(255, 255, 255, 0.8)');
-    root.style.setProperty('--bg-card-hover', 'rgba(156, 90, 42, 0.05)');
-    root.style.setProperty('--bg-grad', 'linear-gradient(160deg,#faf6ef 0%,#f3ece0 60%,#faf6ef 100%)');
-    root.style.setProperty('--text-primary', '#2a1a0e');
-    root.style.setProperty('--text-tertiary', 'rgba(42, 26, 14, 0.6)');
-    root.style.setProperty('--accent-primary', '#9c5a2a');
-    root.style.setProperty('--accent-cyan', '#9c5a2a');
-    root.style.setProperty('--accent-grad', 'linear-gradient(135deg,#b8672f,#874a20)');
-    root.style.setProperty('--accent-bg', 'rgba(156, 90, 42, 0.08)');
-    root.style.setProperty('--accent-border', 'rgba(156, 90, 42, 0.28)');
-    root.style.setProperty('--border-light', 'rgba(160, 100, 60, 0.14)');
-    root.style.setProperty('--border-glass', 'rgba(156, 90, 42, 0.15)');
-    root.style.setProperty('--border-active', 'rgba(185, 105, 55, 0.4)');
-    root.style.setProperty('--input-bg', 'rgba(156, 90, 42, 0.04)');
-    root.style.setProperty('--input-border', 'rgba(156, 90, 42, 0.2)');
-    root.style.setProperty('--success-color', '#3a7a50');
-    root.style.setProperty('--success-bg', 'rgba(60, 140, 80, 0.08)');
-    root.style.setProperty('--danger-color', '#b91c1c');
-    root.style.setProperty('--danger-bg', 'rgba(185, 28, 28, 0.05)');
-    root.style.setProperty('--warn-color', '#b45309');
-    root.style.setProperty('--warn-bg', 'rgba(180, 83, 9, 0.05)');
-  } else if (themeId === 'forest') {
-    // Forest Qalam
-    root.style.setProperty('--bg-deep', '#0a130e');
-    root.style.setProperty('--bg-surface', '#111e14');
-    root.style.setProperty('--bg-card', 'rgba(17, 30, 20, 0.8)');
-    root.style.setProperty('--bg-card-hover', 'rgba(184, 158, 80, 0.05)');
-    root.style.setProperty('--bg-grad', 'linear-gradient(160deg,#0a130e 0%,#0f1f15 60%,#091108 100%)');
-    root.style.setProperty('--text-primary', '#e8f0e2');
-    root.style.setProperty('--text-tertiary', 'rgba(122, 171, 130, 0.7)');
-    root.style.setProperty('--accent-primary', '#b89e50');
-    root.style.setProperty('--accent-cyan', '#b89e50');
-    root.style.setProperty('--accent-grad', 'linear-gradient(135deg,#cab060,#9a7e38)');
-    root.style.setProperty('--accent-bg', 'rgba(184, 158, 80, 0.1)');
-    root.style.setProperty('--accent-border', 'rgba(184, 158, 80, 0.3)');
-    root.style.setProperty('--border-light', 'rgba(120, 180, 100, 0.13)');
-    root.style.setProperty('--border-glass', 'rgba(184, 158, 80, 0.15)');
-    root.style.setProperty('--border-active', 'rgba(184, 158, 80, 0.42)');
-    root.style.setProperty('--input-bg', 'rgba(120, 180, 100, 0.05)');
-    root.style.setProperty('--input-border', 'rgba(184, 158, 80, 0.22)');
-    root.style.setProperty('--success-color', '#60c078');
-    root.style.setProperty('--success-bg', 'rgba(80, 180, 100, 0.12)');
+  if (themeId === 'dark') {
+    // Dark Mode (violet accent)
+    root.style.setProperty('--bg-deep', '#0c0c14');
+    root.style.setProperty('--bg-surface', 'rgba(255, 255, 255, 0.04)');
+    root.style.setProperty('--bg-card', 'rgba(255, 255, 255, 0.04)');
+    root.style.setProperty('--bg-card-hover', 'rgba(139, 92, 246, 0.06)');
+    root.style.setProperty('--bg-grad', 'radial-gradient(ellipse at 50% 0%, #1a1a2e 0%, #0c0c14 70%)');
+    root.style.setProperty('--text-primary', '#f0f0f5');
+    root.style.setProperty('--text-tertiary', 'rgba(240, 240, 245, 0.5)');
+    root.style.setProperty('--accent-primary', '#a78bfa');
+    root.style.setProperty('--accent-cyan', '#a78bfa');
+    root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #a78bfa, #7c3aed)');
+    root.style.setProperty('--accent-bg', 'rgba(139, 92, 246, 0.1)');
+    root.style.setProperty('--accent-border', 'rgba(139, 92, 246, 0.35)');
+    root.style.setProperty('--border-light', 'rgba(139, 92, 246, 0.15)');
+    root.style.setProperty('--border-active', 'rgba(139, 92, 246, 0.5)');
+    root.style.setProperty('--input-bg', 'rgba(255, 255, 255, 0.05)');
+    root.style.setProperty('--input-border', 'rgba(139, 92, 246, 0.2)');
+    root.style.setProperty('--success-color', '#34d399');
+    root.style.setProperty('--success-bg', 'rgba(16, 185, 129, 0.1)');
     root.style.setProperty('--danger-color', '#ef4444');
     root.style.setProperty('--danger-bg', 'rgba(239, 68, 68, 0.1)');
     root.style.setProperty('--warn-color', '#f59e0b');
     root.style.setProperty('--warn-bg', 'rgba(245, 158, 11, 0.1)');
-  } else if (themeId === 'majesty') {
-    // Royal Purple / Gold
-    root.style.setProperty('--bg-deep', '#0f051a');
-    root.style.setProperty('--bg-surface', '#1a0b2e');
-    root.style.setProperty('--bg-card', 'rgba(26, 11, 46, 0.75)');
-    root.style.setProperty('--bg-card-hover', 'rgba(212, 175, 55, 0.1)');
-    root.style.setProperty('--bg-grad', 'radial-gradient(circle at 50% -20%, #2e0b4e 0%, #0f051a 80%)');
-    root.style.setProperty('--text-primary', '#f5e6ff');
-    root.style.setProperty('--text-tertiary', 'rgba(245, 230, 255, 0.6)');
-    root.style.setProperty('--accent-primary', '#D4AF37');
-    root.style.setProperty('--accent-cyan', '#D4AF37');
-    root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #D4AF37, #FFD700)');
-    root.style.setProperty('--accent-bg', 'rgba(212, 175, 55, 0.12)');
-    root.style.setProperty('--accent-border', 'rgba(212, 175, 55, 0.35)');
-    root.style.setProperty('--border-light', 'rgba(212, 175, 55, 0.18)');
-    root.style.setProperty('--border-glass', 'rgba(157, 80, 187, 0.25)');
+  } else if (themeId === 'purple') {
+    // Light Purple
+    root.style.setProperty('--bg-deep', '#f5f0ff');
+    root.style.setProperty('--bg-surface', '#ffffff');
+    root.style.setProperty('--bg-card', '#ffffff');
+    root.style.setProperty('--bg-card-hover', '#faf5ff');
+    root.style.setProperty('--bg-grad', 'linear-gradient(135deg, #f5f0ff 0%, #ede4ff 50%, #e8dff5 100%)');
+    root.style.setProperty('--text-primary', '#1e1b4b');
+    root.style.setProperty('--text-tertiary', '#6b6394');
+    root.style.setProperty('--accent-primary', '#7c3aed');
+    root.style.setProperty('--accent-cyan', '#7c3aed');
+    root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #8b5cf6, #6d28d9)');
+    root.style.setProperty('--accent-bg', 'rgba(124, 58, 237, 0.08)');
+    root.style.setProperty('--accent-border', 'rgba(124, 58, 237, 0.3)');
+    root.style.setProperty('--border-light', '#e0d4f5');
+    root.style.setProperty('--border-active', '#7c3aed');
+    root.style.setProperty('--input-bg', '#ffffff');
+    root.style.setProperty('--input-border', '#d4c4ed');
+    root.style.setProperty('--success-color', '#047857');
+    root.style.setProperty('--success-bg', '#ecfdf5');
+    root.style.setProperty('--danger-color', '#b91c1c');
+    root.style.setProperty('--danger-bg', '#fee2e2');
+    root.style.setProperty('--warn-color', '#b45309');
+    root.style.setProperty('--warn-bg', '#fef3c7');
+  } else if (themeId === 'royal') {
+    // Royal Gold & Black
+    root.style.setProperty('--bg-deep', '#050505');
+    root.style.setProperty('--bg-surface', 'rgba(212, 175, 55, 0.04)');
+    root.style.setProperty('--bg-card', 'rgba(212, 175, 55, 0.04)');
+    root.style.setProperty('--bg-card-hover', 'rgba(212, 175, 55, 0.08)');
+    root.style.setProperty('--bg-grad', 'radial-gradient(ellipse at 30% 0%, #1a1308 0%, #050505 60%)');
+    root.style.setProperty('--text-primary', '#FAF3E0');
+    root.style.setProperty('--text-tertiary', 'rgba(250, 243, 224, 0.55)');
+    root.style.setProperty('--accent-primary', '#F0C239');
+    root.style.setProperty('--accent-cyan', '#F0C239');
+    root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #F0C239 0%, #D4A017 50%, #B8860B 100%)');
+    root.style.setProperty('--accent-bg', 'rgba(240, 194, 57, 0.08)');
+    root.style.setProperty('--accent-border', 'rgba(240, 194, 57, 0.35)');
+    root.style.setProperty('--border-light', 'rgba(212, 175, 55, 0.15)');
     root.style.setProperty('--border-active', 'rgba(212, 175, 55, 0.5)');
-    root.style.setProperty('--input-bg', 'rgba(26, 11, 46, 0.5)');
-    root.style.setProperty('--input-border', 'rgba(212, 175, 55, 0.3)');
-    root.style.setProperty('--success-color', '#6ef0a1');
-    root.style.setProperty('--success-bg', 'rgba(110, 240, 161, 0.12)');
-    root.style.setProperty('--danger-color', '#ff5c5c');
-    root.style.setProperty('--danger-bg', 'rgba(255, 92, 92, 0.1)');
-    root.style.setProperty('--warn-color', '#ffb347');
-    root.style.setProperty('--warn-bg', 'rgba(255, 179, 71, 0.1)');
+    root.style.setProperty('--input-bg', 'rgba(240, 194, 57, 0.04)');
+    root.style.setProperty('--input-border', 'rgba(212, 175, 55, 0.2)');
+    root.style.setProperty('--success-color', '#34d399');
+    root.style.setProperty('--success-bg', 'rgba(16, 185, 129, 0.1)');
+    root.style.setProperty('--danger-color', '#ef4444');
+    root.style.setProperty('--danger-bg', 'rgba(239, 68, 68, 0.1)');
+    root.style.setProperty('--warn-color', '#f59e0b');
+    root.style.setProperty('--warn-bg', 'rgba(245, 158, 11, 0.1)');
   }
 }
 
@@ -336,7 +308,7 @@ export const Btn = ({ children, variant = 'primary', size = 'md', ...props }) =>
     primary: { background: 'var(--accent-cyan)', color: 'var(--bg-deep)', border: 'none' },
     outline: { background: 'rgba(25, 20, 10, 0.4)', color: 'var(--text-primary)', border: '1px solid rgba(212, 175, 55, 0.25)' },
     danger: { background: 'rgba(224, 85, 85, 0.1)', color: '#e05555', border: '1px solid rgba(224, 85, 85, 0.25)' },
-    ghost: { background: 'transparent', color: 'var(--text-tertiary)', border: 'none' },
+    ghost: { background: 'var(--accent-bg)', color: 'var(--text-tertiary)', border: 'none' },
   }
   const sizes = {
     sm: { padding: '8px 14px', fontSize: 12 },

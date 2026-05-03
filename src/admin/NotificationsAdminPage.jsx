@@ -23,7 +23,7 @@ export default function NotificationsAdminPage() {
     scheduled_at: '',
     target_type: 'all', // all, specific
     target_user_id: '',
-    tone: '#D4AF37',
+    tone: 'var(--accent-primary)',
     media_url: ''
   })
 
@@ -67,7 +67,7 @@ export default function NotificationsAdminPage() {
       setForm({
         title: '', body: '', sender_name: 'Admin Office',
         scheduled_at: '', target_type: 'all', target_user_id: '',
-        tone: '#D4AF37', media_url: ''
+        tone: 'var(--accent-primary)', media_url: ''
       })
       fetchData()
     }
@@ -115,7 +115,7 @@ export default function NotificationsAdminPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <label style={{ fontSize: 12, fontWeight: 700, color: T.textSub, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Accent Tone</label>
                   <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                    {['#D4AF37', '#5eba82', '#e05555', '#5b8def'].map(c => (
+                    {['var(--accent-primary)', '#5eba82', '#e05555', '#5b8def'].map(c => (
                       <div 
                         key={c} 
                         onClick={() => setForm({...form, tone: c})}

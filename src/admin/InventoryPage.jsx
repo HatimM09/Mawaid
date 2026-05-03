@@ -222,7 +222,7 @@ export default function InventoryPage({ role: roleProp }) {
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
             fontSize: 13, fontWeight: 700, color: '#fff',
-            background: 'transparent', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+            background: 'var(--accent-bg)', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
           }}
         >
           <ArrowUpRight size={16} /> <span>{canEditStock ? 'In' : 'Add'}</span>
@@ -236,7 +236,7 @@ export default function InventoryPage({ role: roleProp }) {
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
               padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
               fontSize: 13, fontWeight: 700, color: '#fff',
-              background: 'transparent', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+              background: 'var(--accent-bg)', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
             }}
           >
             <ArrowDownRight size={16} /> <span>Out</span>
@@ -343,11 +343,11 @@ export default function InventoryPage({ role: roleProp }) {
                     </div>
                   </div>
                   <div style={{ display: 'flex', background: 'rgba(0,0,0,0.2)', borderRadius: 12, padding: 4, gap: 4, border: '1px solid var(--border-glass)', marginTop: 'auto' }}>
-                    <button onClick={() => setShowTx({ product: p, type: 'in' })} className="stock-btn stock-in" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: '#fff', background: 'transparent' }}>
+                    <button onClick={() => setShowTx({ product: p, type: 'in' })} className="stock-btn stock-in" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: '#fff', background: 'var(--accent-bg)' }}>
                       <ArrowUpRight size={16} /> In
                     </button>
                     {canEditStock && (
-                      <button onClick={() => setShowTx({ product: p, type: 'out' })} className="stock-btn stock-out" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: '#fff', background: 'transparent' }}>
+                      <button onClick={() => setShowTx({ product: p, type: 'out' })} className="stock-btn stock-out" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: '#fff', background: 'var(--accent-bg)' }}>
                         <ArrowDownRight size={16} /> Out
                       </button>
                     )}

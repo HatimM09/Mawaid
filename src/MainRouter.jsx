@@ -8,6 +8,7 @@ import AdminRoute from './admin/AdminRoute'
 import Dashboard from './admin/Dashboard'
 import UsersPage from './admin/UsersPage'
 import SurveysPage from './admin/SurveysPage'
+import DailySurveyTracking from './admin/DailySurveyTracking'
 import FeedbackAdminPage from './admin/FeedbackAdminPage'
 import RequestsAdminPage from './admin/RequestsAdminPage'
 import QueriesAdminPage from './admin/QueriesAdminPage'
@@ -26,6 +27,7 @@ export default function MainRouter() {
             <Route index element={<Dashboard />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="surveys" element={<SurveysPage />} />
+            <Route path="survey-tracking" element={<DailySurveyTracking />} />
             <Route path="inventory" element={<InventoryPage />} />
             <Route path="feedback" element={<FeedbackAdminPage />} />
             <Route path="requests" element={<RequestsAdminPage />} />

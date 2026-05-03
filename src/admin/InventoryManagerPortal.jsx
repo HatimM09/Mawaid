@@ -11,19 +11,19 @@ import InventoryPage from './InventoryPage'
 
 const T = {
   ...SharedT,
-  goldBar: 'linear-gradient(to right, #8B6B23 0%, #D4AF37 45%, #FFD700 50%, #D4AF37 55%, #8B6B23 100%)'
+  goldBar: SharedT.accentGrad || 'var(--accent-grad)'
 }
 
 const Spinner = ({ fullPage = true }) => (
   <div style={fullPage ? { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 20px' } : {}}>
-    <div className="spin" style={{ width: 34, height: 34, border: `2.5px solid rgba(212,175,55,0.2)`, borderTop: `2.5px solid #D4AF37`, borderRadius: '50%' }} />
+    <div className="spin" style={{ width: 34, height: 34, border: `2.5px solid var(--border-light)`, borderTop: `2.5px solid var(--accent-primary)`, borderRadius: '50%' }} />
     <style>{`@keyframes spin { to { transform: rotate(360deg); } }.spin { animation: spin 0.8s linear infinite; }`}</style>
   </div>
 )
 
-const PortalCard = ({ title, value, icon, color = '#D4AF37', sub, organic }) => (
+const PortalCard = ({ title, value, icon, color = 'var(--accent-primary)', sub, organic }) => (
   <div style={{ 
-    background: 'linear-gradient(145deg, rgba(35,28,15,0.7), rgba(15,12,8,0.5))',
+    background: SharedT.accentGrad || 'var(--accent-grad)',
     border: `1.5px solid ${color}30`,
     borderRadius: organic ? '40px 80px 40px 80px' : 24, padding: 24, 
     backdropFilter: 'blur(40px) saturate(1.8)',
@@ -37,7 +37,7 @@ const PortalCard = ({ title, value, icon, color = '#D4AF37', sub, organic }) => 
       {sub && <span style={{ fontSize: 10, fontWeight: 800, color: color, opacity: 0.8, letterSpacing: '0.1em' }}>{sub}</span>}
     </div>
     <div style={{ fontSize: 11, color: 'rgba(255, 248, 225, 0.5)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.15em', fontFamily: "'DM Sans', sans-serif" }}>{title}</div>
-    <div style={{ fontSize: 32, fontWeight: 900, color: '#FFF8E1', marginTop: 4, fontFamily: "'Playfair Display', serif" }}>{value}</div>
+    <div style={{ fontSize: 32, fontWeight: 900, color: 'var(--text-primary)', marginTop: 4, fontFamily: "'Playfair Display', serif" }}>{value}</div>
   </div>
 )
 
@@ -48,8 +48,7 @@ export default function InventoryManagerPortal({ signOut, user }) {
   const [stats, setStats] = useState({ totalItems: 0, lowStock: 0, recentTx: 0 })
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem('almawaid_theme') || 'midnight'
-    updateSystemTheme(savedTheme)
+    updateSystemTheme('royal')
     
     if (user?.role) {
       setStaffInfo(user); setLoading(false)
@@ -92,8 +91,8 @@ export default function InventoryManagerPortal({ signOut, user }) {
 
   return (
     <div style={{ 
-      minHeight: '100vh', background: 'radial-gradient(circle at 50% 0%, #1a150a 0%, #0f0c08 100%)',
-      color: '#FFF8E1', overflowX: 'hidden', fontFamily: "'DM Sans', sans-serif"
+      minHeight: '100vh', background: 'var(--bg-grad)',
+      color: 'var(--text-primary)', overflowX: 'hidden', fontFamily: "'DM Sans', sans-serif"
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@400;500;700;900&family=Amiri:wght@400;700&display=swap');
@@ -104,9 +103,9 @@ export default function InventoryManagerPortal({ signOut, user }) {
 
       {/* Header */}
       <header style={{ textAlign: 'center', padding: '40px 20px 20px' }}>
-         <p style={{ fontFamily: "'Amiri',serif", fontSize: 16, color: '#D4AF37', margin: '0 0 4px' }}>بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</p>
-         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 900, letterSpacing: '0.15em', color: '#D4AF37', fontFamily: "'Playfair Display',serif" }}>AL-MAWAID</h1>
-         <div style={{ fontSize: 9, letterSpacing: '0.3em', textTransform: 'uppercase', color: 'rgba(212,175,55,0.5)', marginTop: 4 }}>Inventory Control Portal</div>
+         <p style={{ fontFamily: "'Amiri',serif", fontSize: 16, color: 'var(--accent-primary)', margin: '0 0 4px' }}>بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</p>
+         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 900, letterSpacing: '0.15em', color: 'var(--accent-primary)', fontFamily: "'Playfair Display',serif" }}>AL-MAWAID</h1>
+         <div style={{ fontSize: 9, letterSpacing: '0.3em', textTransform: 'uppercase', color: 'var(--border-active)', marginTop: 4 }}>Inventory Control Portal</div>
       </header>
 
       <main style={{ maxWidth: 1200, margin: '0 auto', padding: '20px clamp(16px, 4vw, 32px) 120px' }}>
@@ -128,15 +127,15 @@ export default function InventoryManagerPortal({ signOut, user }) {
             </button>
 
             <div style={{ 
-              background: 'linear-gradient(145deg, rgba(35,28,15,0.6), rgba(15,12,8,0.4))',
-              border: `1.5px solid rgba(212,175,55,0.2)`,
+              background: SharedT.accentGrad || 'var(--accent-grad)',
+              border: `1.5px solid var(--border-light)`,
               borderRadius: '24px 24px 40px 40px', padding: 24, 
               backdropFilter: 'blur(30px) saturate(1.8)',
               boxShadow: '0 15px 35px rgba(0,0,0,0.4)'
             }}>
                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                  <div style={{ fontSize: 13, fontWeight: 900, color: '#D4AF37', letterSpacing: '0.1em' }}>RECENT ACTIVITY</div>
-                  <button onClick={() => setActiveTab('inventory')} style={{ background: 'none', border: 'none', color: 'rgba(255,248,225,0.5)', fontSize: 11, cursor: 'pointer', fontWeight: 700 }}>VIEW ALL</button>
+                  <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--accent-primary)', letterSpacing: '0.1em' }}>RECENT ACTIVITY</div>
+                  <button onClick={() => setActiveTab('inventory')} style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', fontSize: 11, cursor: 'pointer', fontWeight: 700 }}>VIEW ALL</button>
                </div>
                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                   {stats.recentLogs?.length > 0 ? stats.recentLogs.map(log => (
@@ -150,8 +149,8 @@ export default function InventoryManagerPortal({ signOut, user }) {
                              {log.type === 'in' ? <ArrowUpRight size={16} color="#10b981" /> : <ArrowDownRight size={16} color="#ef4444" />}
                           </div>
                           <div>
-                             <div style={{ fontSize: 13, fontWeight: 700, color: '#FFF8E1' }}>{log.product_name}</div>
-                             <div style={{ fontSize: 10, color: 'rgba(255,248,225,0.4)' }}>{new Date(log.created_at).toLocaleTimeString()} • {log.note || 'No note'}</div>
+                             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{log.product_name}</div>
+                             <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{new Date(log.created_at).toLocaleTimeString()} • {log.note || 'No note'}</div>
                           </div>
                        </div>
                        <div style={{ fontSize: 14, fontWeight: 900, color: log.type === 'in' ? '#10b981' : '#ef4444' }}>
@@ -179,11 +178,11 @@ export default function InventoryManagerPortal({ signOut, user }) {
       <nav style={{ 
         position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
         width: '92%', maxWidth: 500, height: 74,
-        background: 'rgba(15,12,8,0.92)', backdropFilter: 'blur(30px)',
-        border: '1.5px solid rgba(212,175,55,0.4)', borderRadius: 100,
+        background: 'var(--bg-card)', backdropFilter: 'blur(30px)',
+        border: '1.5px solid var(--border-active)', borderRadius: 100,
         display: 'flex', justifyContent: 'center', alignItems: 'center',
         padding: '0 20px', zIndex: 1000,
-        boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 30px rgba(212,175,55,0.15)',
+        boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 30px var(--accent-bg)',
         overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none'
       }}>
         <style>{`.inventory-nav::-webkit-scrollbar { display: none; }`}</style>
@@ -198,14 +197,14 @@ export default function InventoryManagerPortal({ signOut, user }) {
             <button key={id} onClick={() => setActiveTab(id)} style={{ 
               background: 'none', border: 'none', cursor: 'pointer',
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-              color: active ? '#D4AF37' : 'rgba(255,248,225,0.4)',
+              color: active ? 'var(--accent-primary)' : 'var(--text-tertiary)',
               transition: 'all 0.3s'
             }}>
               <div style={{ 
                 width: 44, height: 44, borderRadius: '50%', 
-                background: active ? 'rgba(212,175,55,0.15)' : 'transparent',
+                background: active ? 'var(--accent-bg)' : 'transparent',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                border: active ? '1px solid rgba(212,175,55,0.3)' : '1px solid transparent'
+                border: active ? '1px solid var(--accent-border)' : '1px solid transparent'
               }}>
                 <Icon size={20} strokeWidth={active ? 2.5 : 1.5} />
               </div>

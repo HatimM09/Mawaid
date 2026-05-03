@@ -9,15 +9,17 @@ import { T, updateSystemTheme } from './ui'
 import { supabase } from './supabaseClient'
 
 const NAV = [
-  { to: '/admin', label: 'Dashboard', Icon: LayoutDashboard, color: '#D4AF37', end: true },
-  { to: '/admin/users', label: 'Thali Users', Icon: Users, color: '#D4AF37' },
-  { to: '/admin/requests', label: 'Thali Requests', Icon: FileText, color: '#D4AF37' },
-  { to: '/admin/inventory', label: 'Inventory', Icon: Package, color: '#D4AF37' },
-  { to: '/admin/queries', label: 'Queries', Icon: '?' },
-  { to: '/admin/staff', label: 'Staff', Icon: Shield, color: '#D4AF37' },
-  { to: '/admin/notifications', label: 'Broadcast', Icon: Send, color: '#D4AF37' },
-  { to: '/admin/feedback', label: 'Reports', Icon: Star, color: '#D4AF37' },
-  { to: '/admin/settings', label: 'Settings', Icon: Settings, color: '#D4AF37' },
+  { to: '/admin', label: 'Dashboard', Icon: LayoutDashboard, color: 'var(--accent-primary)', end: true },
+  { to: '/admin/users', label: 'Thali Users', Icon: Users, color: 'var(--accent-primary)' },
+  { to: '/admin/surveys', label: 'Surveys', Icon: ClipboardList, color: 'var(--accent-primary)' },
+  { to: '/admin/survey-tracking', label: 'Survey Tracking', Icon: History, color: 'var(--accent-primary)' },
+  { to: '/admin/requests', label: 'Thali Requests', Icon: FileText, color: 'var(--accent-primary)' },
+  { to: '/admin/inventory', label: 'Inventory', Icon: Package, color: 'var(--accent-primary)' },
+  { to: '/admin/queries', label: 'Queries', Icon: MessageSquare, color: 'var(--accent-primary)' },
+  { to: '/admin/staff', label: 'Staff', Icon: Shield, color: 'var(--accent-primary)' },
+  { to: '/admin/notifications', label: 'Broadcast', Icon: Send, color: 'var(--accent-primary)' },
+  { to: '/admin/feedback', label: 'Feedback', Icon: Star, color: 'var(--accent-primary)' },
+  { to: '/admin/settings', label: 'Settings', Icon: Settings, color: 'var(--accent-primary)' },
 ]
 
 export default function AdminLayout() {
@@ -46,8 +48,7 @@ export default function AdminLayout() {
   }, [])
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem('almawaid_theme') || 'midnight'
-    updateSystemTheme(savedTheme)
+    updateSystemTheme('royal')
   }, [])
 
   useEffect(() => {
@@ -82,7 +83,7 @@ export default function AdminLayout() {
       {/* Brand */}
       <div style={{ padding: '0 12px 32px', display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{
-          width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #8B6B23, #B8860B)',
+          width: 32, height: 32, borderRadius: '50%', background: 'var(--accent-grad)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           boxShadow: '0 0 15px rgba(184, 134, 11, 0.4)', flexShrink: 0,
           border: '1px solid rgba(212, 175, 55, 0.3)'
@@ -137,12 +138,12 @@ export default function AdminLayout() {
       </nav>
 
       <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border-light)', paddingTop: 24, paddingBottom: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <button onClick={() => { navigate('/admin/settings'); setSideOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 14px', background: 'transparent', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}>
+        <button onClick={() => { navigate('/admin/settings'); setSideOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 14px', background: 'var(--accent-bg)', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}>
           <Settings size={20} />
           {(!collapsed || isMobile) && <span style={{ fontSize: 14, fontWeight: 600 }}>Settings</span>}
         </button>
         <button onClick={() => { if (window.confirm('Are you sure you want to logout?')) handleLogout() }}
-          style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 14px', background: 'transparent', border: 'none', color: '#ff5c5c', cursor: 'pointer', transition: '0.2s', marginBottom: 12 }}>
+          style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 14px', background: 'var(--accent-bg)', border: 'none', color: '#ff5c5c', cursor: 'pointer', transition: '0.2s', marginBottom: 12 }}>
           <LogOut size={20} />
           {(!collapsed || isMobile) && <span style={{ fontSize: 14, fontWeight: 600 }}>Logout</span>}
         </button>
@@ -190,7 +191,7 @@ export default function AdminLayout() {
         }
 
         .glow-text {
-          color: #FFF8E1;
+          color: var(--text-primary);
           text-shadow: 0 0 15px rgba(212, 175, 55, 0.6);
           font-family: 'Cinzel', serif;
         }
@@ -220,7 +221,7 @@ export default function AdminLayout() {
         <header className="admin-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{
-              width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg, #8B6B23, #B8860B)',
+              width: 32, height: 32, borderRadius: '50%', background: 'var(--accent-grad)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               boxShadow: '0 0 15px rgba(184, 134, 11, 0.4)',
               border: '1px solid rgba(212, 175, 55, 0.3)'
@@ -230,7 +231,7 @@ export default function AdminLayout() {
             <div className="admin-nav-breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255, 248, 225, 0.6)', fontSize: 13, fontWeight: 600 }}>
               <span className="glow-text" style={{ letterSpacing: '0.05em' }}>AL-MAWAID</span>
               <ChevronRight size={14} />
-              <span style={{ color: '#FFF8E1' }}>{getActiveLabel()}</span>
+              <span style={{ color: 'var(--text-primary)' }}>{getActiveLabel()}</span>
             </div>
           </div>
 
@@ -248,17 +249,17 @@ export default function AdminLayout() {
               readOnly
               onClick={() => setShowPalette(true)}
               placeholder="Search command (CMD+K)"
-              style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', outline: 'none', paddingLeft: 10, fontSize: 13, flex: 1, fontWeight: 600 }}
+              style={{ background: 'var(--accent-bg)', border: 'none', color: 'var(--text-primary)', outline: 'none', paddingLeft: 10, fontSize: 13, flex: 1, fontWeight: 600 }}
             />
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '4px 4px 4px 12px', background: 'rgba(25, 20, 10, 0.6)', borderRadius: 18, border: '1px solid rgba(212, 175, 55, 0.25)' }}>
               <div className="desktop-only" style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: '#FFF8E1' }}>Admin Portal</div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-primary)' }}>Admin Portal</div>
                 <div style={{ fontSize: 10, color: 'rgba(212, 175, 55, 0.6)' }}>{adminName.toLowerCase()}</div>
               </div>
-              <div style={{ width: 36, height: 36, borderRadius: 14, background: 'linear-gradient(135deg, #B8860B, #8B6B23)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#D4AF37', fontWeight: 800, fontSize: 13, border: '1px solid rgba(212, 175, 55, 0.3)' }}>
+              <div style={{ width: 36, height: 36, borderRadius: 14, background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-primary)', fontWeight: 800, fontSize: 13, border: '1px solid rgba(212, 175, 55, 0.3)' }}>
                 {adminName.charAt(0).toUpperCase()}
               </div>
             </div>
@@ -286,7 +287,7 @@ export default function AdminLayout() {
             <button 
               onClick={() => setSideOpen(!sideOpen)}
               className={`nav-item ${sideOpen ? 'active' : ''}`}
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}
+              style={{ background: 'var(--accent-bg)', border: 'none', cursor: 'pointer' }}
             >
               <Menu size={22} />
               <span style={{ fontSize: 10, fontWeight: 700 }}>More</span>
@@ -311,7 +312,7 @@ export default function AdminLayout() {
                     </NavLink>
                   ))}
                   <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '8px 0' }} />
-                  <button onClick={handleLogout} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: 'transparent', border: 'none', color: '#ff5c5c', cursor: 'pointer', width: '100%' }}>
+                  <button onClick={handleLogout} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: 'var(--accent-bg)', border: 'none', color: '#ff5c5c', cursor: 'pointer', width: '100%' }}>
                     <LogOut size={18} />
                     <span style={{ fontSize: 13, fontWeight: 600 }}>Logout</span>
                   </button>
@@ -334,7 +335,7 @@ export default function AdminLayout() {
                 placeholder="Type a command or search..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                style={{ background: 'transparent', border: 'none', color: '#fff', outline: 'none', paddingLeft: 16, fontSize: 16, flex: 1 }}
+                style={{ background: 'var(--accent-bg)', border: 'none', color: '#fff', outline: 'none', paddingLeft: 16, fontSize: 16, flex: 1 }}
               />
             </div>
             <div style={{ padding: 12, maxHeight: 400, overflowY: 'auto' }}>
