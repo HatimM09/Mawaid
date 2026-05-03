@@ -2205,7 +2205,7 @@ export default function App() {
     const user = session?.user || mockUser
     if (!user) return
 
-    const setupPush = async () => {
+    const setupPush = async (retry = true) => {
       try {
         if (!('serviceWorker' in navigator)) return
         const reg = await navigator.serviceWorker.ready
@@ -2221,14 +2221,26 @@ export default function App() {
 
         // 2. Only subscribe if we don't have one
         if (!subscription) {
-          subscription = await reg.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(vapidKey)
-          })
-          console.log('✨ Fresh Push Subscription Created')
+          try {
+            subscription = await reg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlBase64ToUint8Array(vapidKey)
+            })
+            console.log('✨ Fresh Push Subscription Created')
+          } catch (subErr) {
+            if (retry && (subErr.name === 'AbortError' || subErr.name === 'InvalidStateError')) {
+              console.warn('⚠️ Push setup failed, attempting reset and retry...');
+              const existing = await reg.pushManager.getSubscription();
+              if (existing) await existing.unsubscribe();
+              // Short delay before retry
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              return setupPush(false); 
+            }
+            throw subErr;
+          }
         }
 
-        // 3. Always update Supabase to ensure the subscription is linked to the CURRENT user
+        // 3. Always update Supabase
         const { error: upsertErr } = await supabase.from('push_subscriptions').upsert({
           user_id: user.id,
           subscription: subscription.toJSON()
@@ -2237,16 +2249,6 @@ export default function App() {
         if (upsertErr) throw upsertErr
         console.log('🚀 Push Subscription Sync Successful')
       } catch (err) {
-        // If it's a "Registration failed" error, it might be due to mismatched keys from a previous build
-        // We'll try a nuclear reset ONLY if it fails
-        if (err.name === 'AbortError' || err.name === 'InvalidStateError') {
-          console.warn('⚠️ Push setup failed, attempting reset...')
-          try {
-            const reg = await navigator.serviceWorker.ready
-            const sub = await reg.pushManager.getSubscription()
-            if (sub) await sub.unsubscribe()
-          } catch (resetErr) { console.error('Push reset failed:', resetErr) }
-        }
         console.error('❌ Push Setup Failed:', err)
       }
     }
