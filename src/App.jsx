@@ -1,5 +1,6 @@
-// src/App.jsx — Al-Mawaid Food Survey System — FIXED v5
+// src/App.jsx — Al-Mawaid Food Survey System — FIXED v5.2 (1.0.2)
 // Member App + Khidmat Guzar Portal + Admin Bridge — fully linked
+// v1.0.2 - Force Cache Purge Implementation
 
 import React, {
   useState, useEffect, useRef, createContext, useContext, useCallback
@@ -701,6 +702,11 @@ function LoginPage({ onRoleLogin }) {
               {loading ? 'Processing…' : 'Sign In'}
             </button>
           </form>
+
+          {/* Version Tag */}
+          <div style={{ textAlign: 'center', marginTop: 24, fontSize: 10, color: 'rgba(197, 160, 89, 0.4)', letterSpacing: '0.1em', fontWeight: 700 }}>
+            v1.0.2 • CACHE_PURGED
+          </div>
         </div>
       </div>
     </>
