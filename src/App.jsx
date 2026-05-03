@@ -364,7 +364,7 @@ function LoginPage({ onRoleLogin }) {
       padding: 20, position: 'relative', overflowY: 'auto', overflowX: 'hidden', fontFamily: "'DM Sans',sans-serif",
       background: '#0f0c08'
     }}>
-      {/* Wheat background with blur */}
+      {/* Wheat background with enhanced warmth and depth */}
       <img
         src="/wheat_bg.png"
         alt=""
@@ -372,71 +372,72 @@ function LoginPage({ onRoleLogin }) {
         style={{
           position: 'absolute', inset: 0, width: '100%', height: '100%',
           objectFit: 'cover', objectPosition: 'center',
-          filter: 'blur(2px) brightness(0.6)',
-          animation: 'kenburns 40s infinite alternate ease-in-out',
+          filter: 'blur(4px) brightness(0.7) contrast(1.1) saturate(1.2)',
+          animation: 'kenburns 30s infinite alternate ease-in-out',
           zIndex: 0,
         }}
       />
       <div style={{
         position: 'absolute', inset: 0, zIndex: 1,
-        background: 'radial-gradient(circle at 50% 50%, rgba(15,12,8,0.1) 0%, rgba(15,12,8,0.4) 100%)',
-        backdropFilter: 'saturate(1.1)',
+        background: 'radial-gradient(circle at 50% 50%, rgba(74, 58, 44, 0.1) 0%, rgba(74, 58, 44, 0.5) 100%)',
+        backdropFilter: 'saturate(1.2)',
       }} />
 
-      {/* Main card with ornate border */}
-      <div style={{ position: 'relative', zIndex: 2, width: '100%', maxWidth: 440, padding: 10, backdropFilter: 'blur(15px)', WebkitBackdropFilter: 'blur(15px)' }}>
+      {/* Main card with 'Liquid Gold' ornate border */}
+      <div style={{ position: 'relative', zIndex: 2, width: '100%', maxWidth: 440, padding: 10 }}>
 
-        {/* Ornate golden border frame */}
+        {/* Ornate liquid golden border frame */}
         <div style={{
           position: 'relative',
-          borderRadius: 28,
-          padding: 1.5,
-          background: 'linear-gradient(135deg, rgba(139,107,35,0.4) 0%, rgba(212,175,55,0.1) 50%, rgba(139,107,35,0.4) 100%)',
-          boxShadow: '0 40px 100px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.1)',
+          borderRadius: 42,
+          padding: 2,
+          background: 'linear-gradient(135deg, rgba(224,160,60,0.6) 0%, rgba(255,248,231,0.2) 50%, rgba(224,160,60,0.6) 100%)',
+          boxShadow: '0 50px 120px rgba(0,0,0,0.7), inset 0 1px 2px rgba(255,255,255,0.3)',
         }}>
-          {/* Corner ornaments - removed for a cleaner glass look if preferred, or kept subtle */}
+          {/* Corner highlights - 'Liquid beads' look */}
           {['0 0', '100% 0', '0 100%', '100% 100%'].map((pos, i) => (
             <div key={i} style={{
               position: 'absolute',
-              left: pos.includes('100% ') ? 'auto' : -6,
-              right: pos.includes('100% ') ? -6 : 'auto',
-              top: pos.includes('100%') ? 'auto' : -6,
-              bottom: pos.includes('100%') ? -8 : 'auto',
-              width: 24, height: 24, zIndex: 10,
-              background: 'linear-gradient(135deg, rgba(139,107,35,0.8), rgba(212,175,55,0.6))',
+              left: pos.includes('100% ') ? 'auto' : -2,
+              right: pos.includes('100% ') ? -2 : 'auto',
+              top: pos.includes('100%') ? 'auto' : -2,
+              bottom: pos.includes('100%') ? -2 : 'auto',
+              width: 12, height: 12, zIndex: 10,
+              background: 'radial-gradient(circle at 30% 30%, #FFF8E7, #E0A03C)',
               borderRadius: '50%',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 4px 12px rgba(139,107,35,0.4)',
-              fontSize: 10, color: '#fff',
-              border: '1px solid rgba(255,255,255,0.2)'
-            }}>✦</div>
+              boxShadow: '0 2px 10px rgba(224,160,60,0.6)',
+              border: '1px solid rgba(255,255,255,0.4)'
+            }} />
           ))}
 
-          {/* Card interior — Enhanced Glassmorphism */}
+          {/* Card interior — Heavy Glassmorphism */}
           <div style={{
-            borderRadius: 26,
-            background: 'rgba(15, 12, 8, 0.25)',
-            backdropFilter: 'blur(25px) saturate(1.6)',
-            WebkitBackdropFilter: 'blur(25px) saturate(1.6)',
-            padding: '32px 32px 36px',
-            border: '1px solid rgba(212,175,55,0.25)',
-            boxShadow: '0 25px 80px rgba(0,0,0,0.4), inset 0 1px 1px rgba(255,255,255,0.1)',
+            borderRadius: 40,
+            background: 'rgba(42, 34, 24, 0.35)',
+            backdropFilter: 'blur(35px) saturate(1.8)',
+            WebkitBackdropFilter: 'blur(35px) saturate(1.8)',
+            padding: '40px 32px 42px',
+            border: '1px solid rgba(224,160,60,0.3)',
+            boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.1)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 20
           }}>
             {/* Logo + Title */}
-            <div style={{ textAlign: 'center', marginBottom: 14 }}>
+            <div style={{ textAlign: 'center' }}>
               <div style={{
-                width: 72, height: 72, margin: '0 auto 8px',
+                width: 84, height: 84, margin: '0 auto 10px',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                filter: 'drop-shadow(0 0 16px rgba(212,175,55,0.5)) drop-shadow(0 4px 12px rgba(0,0,0,0.5))',
+                filter: 'drop-shadow(0 10px 20px rgba(0,0,0,0.5))',
               }}>
-                <img src="/al-mawaid.png" alt="Al-Mawaid" style={{ width: 66, height: 66, objectFit: 'contain' }} />
+                <img src="/al-mawaid.png" alt="Al-Mawaid" style={{ width: 80, height: 80, objectFit: 'contain' }} />
               </div>
               <h1 style={{
-                margin: '0 0 0px', fontSize: 38, fontWeight: 900,
+                margin: '0', fontSize: 42, fontWeight: 900,
                 background: 'linear-gradient(135deg, #E0A03C 0%, #FFF8E7 40%, #E0A03C 80%, #B8860B 100%)',
                 WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                letterSpacing: '0.12em', fontFamily: "'Cinzel','Playfair Display',serif",
-                textShadow: '0 10px 20px rgba(0,0,0,0.3)'
+                letterSpacing: '0.14em', fontFamily: "'Cinzel','Playfair Display',serif",
+                textShadow: '0 15px 30px rgba(0,0,0,0.4)'
               }}>Al-Mawaid</h1>
             </div>
 
