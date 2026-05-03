@@ -165,7 +165,7 @@ export default function Dashboard() {
         </AdminCard>
 
         {/* Quick Nav */}
-        <AdminCard style={{ gridArea: 'nav', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <AdminCard onClick={() => navigate('/admin/users')} style={{ gridArea: 'nav', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', cursor: 'pointer' }}>
           <div style={{ padding: '24px' }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 20 }}>QUICK NAVIGATION</div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -226,7 +226,7 @@ export default function Dashboard() {
         </AdminCard>
 
         {/* Thali */}
-        <AdminCard style={{ gridArea: 'thali', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <AdminCard onClick={() => navigate('/admin/requests')} style={{ gridArea: 'thali', display: 'flex', flexDirection: 'column', gap: 12, cursor: 'pointer' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Star size={18} color="var(--accent-gold)" />
@@ -234,11 +234,11 @@ export default function Dashboard() {
             <div style={{ fontSize: 24, fontWeight: 900 }}>{stats.requests}</div>
           </div>
           <div style={{ fontSize: 13, fontWeight: 700 }}>Thali Requests</div>
-          <Btn variant="primary" size="sm" style={{ width: '100%' }}>Quick Approve</Btn>
+          <Btn variant="primary" size="sm" style={{ width: '100%' }}>View All</Btn>
         </AdminCard>
 
         {/* Missing Surveys */}
-        <AdminCard style={{ gridArea: 'actionable', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <AdminCard onClick={() => navigate('/admin/survey-tracking')} style={{ gridArea: 'actionable', display: 'flex', flexDirection: 'column', gap: 12, cursor: 'pointer' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent-pink)' }}>PENDING SURVEYS</div>
             <Badge color="var(--accent-pink)">{missingSurveys.length}</Badge>
@@ -256,9 +256,6 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-          {missingSurveys.length > 0 && (
-            <Btn variant="outline" size="sm" style={{ width: '100%', marginTop: 4 }}>Notify All Pending</Btn>
-          )}
         </AdminCard>
 
         {/* Reports */}

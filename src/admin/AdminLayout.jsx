@@ -142,7 +142,7 @@ export default function AdminLayout() {
           <Settings size={20} />
           {(!collapsed || isMobile) && <span style={{ fontSize: 14, fontWeight: 600 }}>Settings</span>}
         </button>
-        <button onClick={() => { if (window.confirm('Are you sure you want to logout?')) handleLogout() }}
+        <button onClick={handleLogout}
           style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 14px', background: 'var(--accent-bg)', border: 'none', color: '#ff5c5c', cursor: 'pointer', transition: '0.2s', marginBottom: 12 }}>
           <LogOut size={20} />
           {(!collapsed || isMobile) && <span style={{ fontSize: 14, fontWeight: 600 }}>Logout</span>}
@@ -153,7 +153,7 @@ export default function AdminLayout() {
 
   return (
     <div className="admin-root" style={{ 
-      display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', 
+      display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden', 
       background: 'var(--bg-deep)',
       position: 'relative'
     }}>
@@ -163,24 +163,25 @@ export default function AdminLayout() {
       }} />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=DM+Sans:wght@400;500;700;900&display=swap');
-        .admin-main { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; padding: 0; position: relative; z-index: 1; }
+        .admin-main { flex: 1; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; padding: 0; position: relative; z-index: 1; }
         .admin-header { height: 70px; display: flex; align-items: center; padding: 0 30px; background: var(--bg-card); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-glass); z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
         .global-bottom-nav { 
           position: fixed; bottom: 0px; left: 0; right: 0;
           width: 100%; height: 75px;
-          background: rgba(10, 13, 20, 0.95); backdrop-filter: blur(30px);
+          background: rgba(10, 13, 20, 0.98); backdrop-filter: blur(30px);
           border-top: 1px solid var(--border-light);
           display: flex; align-items: center;
-          padding: 0 10px; z-index: 2000;
-          box-shadow: 0 -10px 40px rgba(0,0,0,0.4);
+          padding: 0; z-index: 2000;
+          box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
           overflow-x: auto;
           scrollbar-width: none;
           -ms-overflow-style: none;
+          -webkit-overflow-scrolling: touch;
         }
         .global-bottom-nav::-webkit-scrollbar { display: none; }
         .bottom-nav-inner {
-          display: flex; align-items: center; min-width: 100%; gap: 8px;
-          padding: 0 10px;
+          display: flex; align-items: center; gap: 4px;
+          padding: 0 16px; min-width: max-content;
         }
         .nav-item {
           display: flex; flexDirection: column; align-items: center; gap: 4px;
@@ -215,6 +216,27 @@ export default function AdminLayout() {
         @keyframes slideUp {
           from { transform: translateY(20px); opacity: 0; }
           to { transform: translateY(0); opacity: 1; }
+        }
+
+         @media (min-width: 1025px) {
+          .global-bottom-nav {
+            bottom: 24px; left: 50%; transform: translateX(-50%);
+            width: auto; max-width: 90%; height: 74px;
+            border-radius: 26px; border: 1px solid rgba(212, 175, 55, 0.3);
+            background: rgba(10, 13, 20, 0.85);
+            padding: 0 12px; margin: 0 auto;
+            overflow: visible;
+          }
+          .bottom-nav-inner { gap: 12px; }
+          .nav-item {
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            padding: 10px 18px;
+          }
+          .nav-item:hover {
+            transform: translateY(-12px) scale(1.15);
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+          }
         }
 
         @media (max-width: 1024px) {
@@ -277,7 +299,7 @@ export default function AdminLayout() {
                 {adminName.charAt(0).toUpperCase()}
               </div>
             </div>
-            <button onClick={() => { if (window.confirm('Are you sure you want to logout?')) handleLogout() }} style={{ background: 'none', border: 'none', color: '#ff5c5c', cursor: 'pointer' }}><LogOut size={20} /></button>
+            <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: '#ff5c5c', cursor: 'pointer' }}><LogOut size={20} /></button>
           </div>
         </header>
 

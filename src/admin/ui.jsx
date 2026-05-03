@@ -132,8 +132,8 @@ export const PageTitle = ({ children, sub }) => (
   </div>
 )
 
-export const AdminCard = ({ children, style: extra = {}, glass = true }) => (
-  <div className="admin-card" style={{
+export const AdminCard = ({ children, style: extra = {}, glass = true, ...props }) => (
+  <div className="admin-card" {...props} style={{
     background: glass ? 'rgba(15, 20, 30, 0.6)' : T.card,
     backdropFilter: glass ? 'blur(24px) saturate(1.2)' : 'none',
     WebkitBackdropFilter: glass ? 'blur(24px) saturate(1.2)' : 'none',
