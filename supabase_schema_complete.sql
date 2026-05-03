@@ -1,8 +1,9 @@
 -- ============================================================
--- AL-MAWAID COMPLETE SUPABASE SCHEMA
+-- AL-MAWAID COMPLETE SUPABASE SCHEMA (CLEANED)
 -- Run this in your Supabase SQL Editor (Dashboard > SQL Editor)
 -- This creates all tables, RLS policies, storage buckets,
 -- and seed data needed for the full app to work.
+-- NOTE: Push Notifications and Edge Functions have been removed.
 -- ============================================================
 
 -- ════════════════════════════════════════════════════════════
@@ -93,22 +94,33 @@ CREATE TABLE IF NOT EXISTS public.weekly_menu (
 CREATE TABLE IF NOT EXISTS public.survey_submissions_flat (
   id              BIGSERIAL PRIMARY KEY,
   user_id         UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  week_id         TEXT DEFAULT '',
   thali_number    TEXT DEFAULT '',
   email           TEXT DEFAULT '',
 
   -- Monday
-  mon_l_status    TEXT DEFAULT NULL,  -- 'Applied' or 'Not Applied'
+  mon_l_status    TEXT DEFAULT NULL,
   mon_l_dish_1    TEXT DEFAULT NULL,
   mon_l_dish_2    TEXT DEFAULT NULL,
   mon_l_dish_3    TEXT DEFAULT NULL,
   mon_l_dish_4    TEXT DEFAULT NULL,
   mon_l_dish_5    TEXT DEFAULT NULL,
+  mon_l_dish_6    TEXT DEFAULT NULL,
+  mon_l_dish_7    TEXT DEFAULT NULL,
+  mon_l_dish_8    TEXT DEFAULT NULL,
+  mon_l_dish_9    TEXT DEFAULT NULL,
+  mon_l_dish_10   TEXT DEFAULT NULL,
   mon_d_status    TEXT DEFAULT NULL,
   mon_d_dish_1    TEXT DEFAULT NULL,
   mon_d_dish_2    TEXT DEFAULT NULL,
   mon_d_dish_3    TEXT DEFAULT NULL,
   mon_d_dish_4    TEXT DEFAULT NULL,
   mon_d_dish_5    TEXT DEFAULT NULL,
+  mon_d_dish_6    TEXT DEFAULT NULL,
+  mon_d_dish_7    TEXT DEFAULT NULL,
+  mon_d_dish_8    TEXT DEFAULT NULL,
+  mon_d_dish_9    TEXT DEFAULT NULL,
+  mon_d_dish_10   TEXT DEFAULT NULL,
 
   -- Tuesday
   tue_l_status    TEXT DEFAULT NULL,
@@ -117,12 +129,22 @@ CREATE TABLE IF NOT EXISTS public.survey_submissions_flat (
   tue_l_dish_3    TEXT DEFAULT NULL,
   tue_l_dish_4    TEXT DEFAULT NULL,
   tue_l_dish_5    TEXT DEFAULT NULL,
+  tue_l_dish_6    TEXT DEFAULT NULL,
+  tue_l_dish_7    TEXT DEFAULT NULL,
+  tue_l_dish_8    TEXT DEFAULT NULL,
+  tue_l_dish_9    TEXT DEFAULT NULL,
+  tue_l_dish_10   TEXT DEFAULT NULL,
   tue_d_status    TEXT DEFAULT NULL,
   tue_d_dish_1    TEXT DEFAULT NULL,
   tue_d_dish_2    TEXT DEFAULT NULL,
   tue_d_dish_3    TEXT DEFAULT NULL,
   tue_d_dish_4    TEXT DEFAULT NULL,
   tue_d_dish_5    TEXT DEFAULT NULL,
+  tue_d_dish_6    TEXT DEFAULT NULL,
+  tue_d_dish_7    TEXT DEFAULT NULL,
+  tue_d_dish_8    TEXT DEFAULT NULL,
+  tue_d_dish_9    TEXT DEFAULT NULL,
+  tue_d_dish_10   TEXT DEFAULT NULL,
 
   -- Wednesday
   wed_l_status    TEXT DEFAULT NULL,
@@ -131,12 +153,22 @@ CREATE TABLE IF NOT EXISTS public.survey_submissions_flat (
   wed_l_dish_3    TEXT DEFAULT NULL,
   wed_l_dish_4    TEXT DEFAULT NULL,
   wed_l_dish_5    TEXT DEFAULT NULL,
+  wed_l_dish_6    TEXT DEFAULT NULL,
+  wed_l_dish_7    TEXT DEFAULT NULL,
+  wed_l_dish_8    TEXT DEFAULT NULL,
+  wed_l_dish_9    TEXT DEFAULT NULL,
+  wed_l_dish_10   TEXT DEFAULT NULL,
   wed_d_status    TEXT DEFAULT NULL,
   wed_d_dish_1    TEXT DEFAULT NULL,
   wed_d_dish_2    TEXT DEFAULT NULL,
   wed_d_dish_3    TEXT DEFAULT NULL,
   wed_d_dish_4    TEXT DEFAULT NULL,
   wed_d_dish_5    TEXT DEFAULT NULL,
+  wed_d_dish_6    TEXT DEFAULT NULL,
+  wed_d_dish_7    TEXT DEFAULT NULL,
+  wed_d_dish_8    TEXT DEFAULT NULL,
+  wed_d_dish_9    TEXT DEFAULT NULL,
+  wed_d_dish_10   TEXT DEFAULT NULL,
 
   -- Thursday
   thu_l_status    TEXT DEFAULT NULL,
@@ -145,12 +177,22 @@ CREATE TABLE IF NOT EXISTS public.survey_submissions_flat (
   thu_l_dish_3    TEXT DEFAULT NULL,
   thu_l_dish_4    TEXT DEFAULT NULL,
   thu_l_dish_5    TEXT DEFAULT NULL,
+  thu_l_dish_6    TEXT DEFAULT NULL,
+  thu_l_dish_7    TEXT DEFAULT NULL,
+  thu_l_dish_8    TEXT DEFAULT NULL,
+  thu_l_dish_9    TEXT DEFAULT NULL,
+  thu_l_dish_10   TEXT DEFAULT NULL,
   thu_d_status    TEXT DEFAULT NULL,
   thu_d_dish_1    TEXT DEFAULT NULL,
   thu_d_dish_2    TEXT DEFAULT NULL,
   thu_d_dish_3    TEXT DEFAULT NULL,
   thu_d_dish_4    TEXT DEFAULT NULL,
   thu_d_dish_5    TEXT DEFAULT NULL,
+  thu_d_dish_6    TEXT DEFAULT NULL,
+  thu_d_dish_7    TEXT DEFAULT NULL,
+  thu_d_dish_8    TEXT DEFAULT NULL,
+  thu_d_dish_9    TEXT DEFAULT NULL,
+  thu_d_dish_10   TEXT DEFAULT NULL,
 
   -- Friday
   fri_l_status    TEXT DEFAULT NULL,
@@ -159,12 +201,22 @@ CREATE TABLE IF NOT EXISTS public.survey_submissions_flat (
   fri_l_dish_3    TEXT DEFAULT NULL,
   fri_l_dish_4    TEXT DEFAULT NULL,
   fri_l_dish_5    TEXT DEFAULT NULL,
+  fri_l_dish_6    TEXT DEFAULT NULL,
+  fri_l_dish_7    TEXT DEFAULT NULL,
+  fri_l_dish_8    TEXT DEFAULT NULL,
+  fri_l_dish_9    TEXT DEFAULT NULL,
+  fri_l_dish_10   TEXT DEFAULT NULL,
   fri_d_status    TEXT DEFAULT NULL,
   fri_d_dish_1    TEXT DEFAULT NULL,
   fri_d_dish_2    TEXT DEFAULT NULL,
   fri_d_dish_3    TEXT DEFAULT NULL,
   fri_d_dish_4    TEXT DEFAULT NULL,
   fri_d_dish_5    TEXT DEFAULT NULL,
+  fri_d_dish_6    TEXT DEFAULT NULL,
+  fri_d_dish_7    TEXT DEFAULT NULL,
+  fri_d_dish_8    TEXT DEFAULT NULL,
+  fri_d_dish_9    TEXT DEFAULT NULL,
+  fri_d_dish_10   TEXT DEFAULT NULL,
 
   -- Saturday
   sat_l_status    TEXT DEFAULT NULL,
@@ -173,12 +225,22 @@ CREATE TABLE IF NOT EXISTS public.survey_submissions_flat (
   sat_l_dish_3    TEXT DEFAULT NULL,
   sat_l_dish_4    TEXT DEFAULT NULL,
   sat_l_dish_5    TEXT DEFAULT NULL,
+  sat_l_dish_6    TEXT DEFAULT NULL,
+  sat_l_dish_7    TEXT DEFAULT NULL,
+  sat_l_dish_8    TEXT DEFAULT NULL,
+  sat_l_dish_9    TEXT DEFAULT NULL,
+  sat_l_dish_10   TEXT DEFAULT NULL,
   sat_d_status    TEXT DEFAULT NULL,
   sat_d_dish_1    TEXT DEFAULT NULL,
   sat_d_dish_2    TEXT DEFAULT NULL,
   sat_d_dish_3    TEXT DEFAULT NULL,
   sat_d_dish_4    TEXT DEFAULT NULL,
   sat_d_dish_5    TEXT DEFAULT NULL,
+  sat_d_dish_6    TEXT DEFAULT NULL,
+  sat_d_dish_7    TEXT DEFAULT NULL,
+  sat_d_dish_8    TEXT DEFAULT NULL,
+  sat_d_dish_9    TEXT DEFAULT NULL,
+  sat_d_dish_10   TEXT DEFAULT NULL,
 
   -- Edit tracking
   edit_metadata   JSONB DEFAULT '{}',
@@ -290,22 +352,22 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
   updated_at  TIMESTAMPTZ DEFAULT now()
 );
 
--- ════════════════════════════════════════════════════════════
--- 13. PUSH SUBSCRIPTIONS (Web Push notification endpoints)
--- ════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS public.push_subscriptions (
-  id            BIGSERIAL PRIMARY KEY,
-  user_id       UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  subscription  JSONB NOT NULL,
-  created_at    TIMESTAMPTZ DEFAULT now(),
-
-  UNIQUE(user_id, subscription)
-);
-
 
 -- ════════════════════════════════════════════════════════════
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- ════════════════════════════════════════════════════════════
+
+-- Security Definer function to check admin status without recursion
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.staff
+    WHERE user_id = auth.uid()
+    AND role = 'admin'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Enable RLS on all tables
 ALTER TABLE public.user_stats ENABLE ROW LEVEL SECURITY;
@@ -320,7 +382,6 @@ ALTER TABLE public.notices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
 
 -- ── user_stats ──
 CREATE POLICY "Users can read all profiles" ON public.user_stats FOR SELECT USING (true);
@@ -329,17 +390,13 @@ CREATE POLICY "Service role can insert profiles" ON public.user_stats FOR INSERT
 
 -- ── staff ──
 CREATE POLICY "Anyone can read staff" ON public.staff FOR SELECT USING (true);
-CREATE POLICY "Staff can manage staff" ON public.staff FOR ALL USING (
-  EXISTS (SELECT 1 FROM public.staff WHERE user_id = auth.uid() AND role = 'admin')
-);
+CREATE POLICY "Staff can manage staff" ON public.staff FOR ALL USING (public.is_admin());
 CREATE POLICY "Staff insert for admins" ON public.staff FOR INSERT WITH CHECK (true);
 CREATE POLICY "Staff delete for admins" ON public.staff FOR DELETE USING (true);
 
 -- ── khidmat_guzaar ──
 CREATE POLICY "Anyone can read khidmat team" ON public.khidmat_guzaar FOR SELECT USING (true);
-CREATE POLICY "Admins can manage khidmat team" ON public.khidmat_guzaar FOR ALL USING (
-  EXISTS (SELECT 1 FROM public.staff WHERE user_id = auth.uid() AND role = 'admin')
-);
+CREATE POLICY "Admins can manage khidmat team" ON public.khidmat_guzaar FOR ALL USING (public.is_admin());
 
 -- ── weekly_menu ──
 CREATE POLICY "Anyone can read menu" ON public.weekly_menu FOR SELECT USING (true);
@@ -381,10 +438,6 @@ CREATE POLICY "Staff can insert inventory log" ON public.inventory_log FOR INSER
 -- ── app_settings ──
 CREATE POLICY "Anyone can read settings" ON public.app_settings FOR SELECT USING (true);
 CREATE POLICY "Admins can manage settings" ON public.app_settings FOR ALL USING (true);
-
--- ── push_subscriptions ──
-CREATE POLICY "Users can manage own push sub" ON public.push_subscriptions FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users can insert own push sub" ON public.push_subscriptions FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 
 -- ════════════════════════════════════════════════════════════

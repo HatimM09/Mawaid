@@ -66,8 +66,8 @@ export default function AdminLayout() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
-    sessionStorage.removeItem('al_mawaid_portal')
-    navigate('/', { replace: true })
+    localStorage.removeItem('al_mawaid_portal')
+    localStorage.removeItem('al_mawaid_mock_user')
     window.location.reload()
   }
 

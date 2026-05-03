@@ -9,13 +9,4 @@ createRoot(document.getElementById('root')).render(
   </StrictMode>,
 )
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    // PWA caching service worker
-    navigator.serviceWorker.register('/service-worker.js').then(reg => {
-      console.log('PWA SW Registered!', reg);
-    }).catch(err => {
-      console.log('PWA SW registration failed: ', err);
-    });
-  });
-}
+// service worker removed

@@ -29,28 +29,25 @@ const T = {
 }
 
 function Card({ children, style = {}, active, organic, title, count, icon }) {
-  const organicStyle = organic ? {
-    borderRadius: '40px 100px 40px 100px',
-    background: SharedT.accentGrad || 'var(--accent-grad)',
-  } : {
+  const cardStyle = {
     borderRadius: 24,
     background: 'var(--bg-card)',
   }
 
   return (
     <div style={{
-      ...organicStyle,
-      padding: '24px 30px',
-      border: `1.5px solid ${active ? 'rgba(255,215,0,0.6)' : 'var(--border-light)'}`,
-      backdropFilter: 'blur(40px) saturate(1.8)',
-      boxShadow: '0 15px 35px rgba(0,0,0,0.45), inset 0 1px 1px rgba(255,255,255,0.05)',
+      ...cardStyle,
+      padding: '28px 32px',
+      border: `1px solid ${active ? 'var(--accent-primary)' : 'var(--border-light)'}`,
+      backdropFilter: 'blur(30px) saturate(1.2)',
+      boxShadow: '0 12px 40px rgba(0,0,0,0.3)',
       ...style
     }}>
       {(title || count) && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {icon}
-            <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', fontFamily: "'Playfair Display',serif" }}>{title}</span>
+            <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', fontFamily: "'Inter', sans-serif" }}>{title}</span>
           </div>
           {count !== undefined && (
             <span style={{ fontSize: 24, fontWeight: 900, color: 'var(--accent-primary)' }}>{count}</span>
@@ -104,10 +101,10 @@ export default function KhidmatPortal({ signOut, user }) {
   return (
     <div style={{
       minHeight: '100vh', background: 'var(--bg-grad)',
-      color: 'var(--text-primary)', overflowX: 'hidden', fontFamily: "'DM Sans', sans-serif"
+      color: 'var(--text-primary)', overflowX: 'hidden', fontFamily: "'Inter', sans-serif"
     }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@400;500;700;900&family=Amiri:wght@400;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Amiri:wght@400;700&display=swap');
         @keyframes spin { to { transform: rotate(360deg); } }
         .spin { animation: spin 0.8s linear infinite; }
         ::-webkit-scrollbar { width: 0; }
@@ -115,8 +112,8 @@ export default function KhidmatPortal({ signOut, user }) {
 
       {/* Header */}
       <header style={{ textAlign: 'center', padding: '40px 20px 20px' }}>
-        <p style={{ fontFamily: "'Amiri',serif", fontSize: 16, color: 'var(--accent-primary)', margin: '0 0 4px' }}>بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</p>
-        <h1 style={{ margin: 0, fontSize: 24, fontWeight: 900, letterSpacing: '0.15em', color: 'var(--accent-primary)', fontFamily: "'Playfair Display',serif" }}>AL-MAWAID</h1>
+        <p style={{ fontFamily: "'Inter', sans-serif, 'Amiri', serif", fontSize: 16, color: 'var(--accent-primary)', margin: '0 0 4px' }}>بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</p>
+        <h1 style={{ margin: 0, fontSize: 24, fontWeight: 900, letterSpacing: '0.15em', color: 'var(--accent-primary)', fontFamily: "'Inter', sans-serif" }}>AL-MAWAID</h1>
         <div style={{ fontSize: 9, letterSpacing: '0.3em', textTransform: 'uppercase', color: 'var(--border-active)', marginTop: 4 }}>Khidmat Team Portal</div>
       </header>
 
@@ -127,14 +124,14 @@ export default function KhidmatPortal({ signOut, user }) {
             {/* Staff Profile - Organic */}
             <Card organic style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
               <div style={{
-                width: 60, height: 60, borderRadius: '50%', background: '#B8860B',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, fontWeight: 900, color: '#fff',
-                boxShadow: '0 10px 20px rgba(0,0,0,0.3)', border: '2px solid var(--accent-primary)'
+                width: 64, height: 64, borderRadius: '50%', background: 'var(--accent-bg)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, fontWeight: 900, color: 'var(--accent-primary)',
+                boxShadow: '0 8px 20px rgba(0,0,0,0.2)', border: '2px solid var(--accent-border)'
               }}>
                 {staffInfo.name.charAt(0)}
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--accent-primary)', fontFamily: "'Playfair Display',serif" }}>{staffInfo.name}</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--accent-primary)', fontFamily: "'Inter', sans-serif" }}>{staffInfo.name}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{staffInfo.role}</div>
               </div>
               <button
@@ -150,7 +147,7 @@ export default function KhidmatPortal({ signOut, user }) {
             {/* Weekly Menu Preview */}
             <div style={{ marginTop: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, padding: '0 10px' }}>
-                <div style={{ fontSize: 10, fontWeight: 800, color: 'rgba(212,175,55,0.6)', letterSpacing: '0.2em', textTransform: 'uppercase' }}>WHOLE WEEK MENU</div>
+                <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--accent-primary)', letterSpacing: '0.2em', textTransform: 'uppercase', opacity: 0.7 }}>WHOLE WEEK MENU</div>
                 <div onClick={() => setActiveTab('survey')} style={{ fontSize: 10, color: 'var(--accent-primary)', fontWeight: 700, cursor: 'pointer' }}>VIEW ALL</div>
               </div>
               <div style={{ 

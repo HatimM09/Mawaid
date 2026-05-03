@@ -79,23 +79,23 @@ export const updateSystemTheme = (themeId) => {
     root.style.setProperty('--warn-color', '#b45309');
     root.style.setProperty('--warn-bg', '#fef3c7');
   } else if (themeId === 'royal') {
-    // Royal Gold & Black
-    root.style.setProperty('--bg-deep', '#050505');
-    root.style.setProperty('--bg-surface', 'rgba(212, 175, 55, 0.04)');
-    root.style.setProperty('--bg-card', 'rgba(212, 175, 55, 0.04)');
-    root.style.setProperty('--bg-card-hover', 'rgba(212, 175, 55, 0.08)');
-    root.style.setProperty('--bg-grad', 'radial-gradient(ellipse at 30% 0%, #1a1308 0%, #050505 60%)');
-    root.style.setProperty('--text-primary', '#FAF3E0');
-    root.style.setProperty('--text-tertiary', 'rgba(250, 243, 224, 0.55)');
-    root.style.setProperty('--accent-primary', '#F0C239');
-    root.style.setProperty('--accent-cyan', '#F0C239');
-    root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #F0C239 0%, #D4A017 50%, #B8860B 100%)');
-    root.style.setProperty('--accent-bg', 'rgba(240, 194, 57, 0.08)');
-    root.style.setProperty('--accent-border', 'rgba(240, 194, 57, 0.35)');
-    root.style.setProperty('--border-light', 'rgba(212, 175, 55, 0.15)');
-    root.style.setProperty('--border-active', 'rgba(212, 175, 55, 0.5)');
-    root.style.setProperty('--input-bg', 'rgba(240, 194, 57, 0.04)');
-    root.style.setProperty('--input-border', 'rgba(212, 175, 55, 0.2)');
+    // Professional Royal (Slate & Champagne Gold)
+    root.style.setProperty('--bg-deep', '#0a0d14');
+    root.style.setProperty('--bg-surface', 'rgba(197, 160, 89, 0.03)');
+    root.style.setProperty('--bg-card', 'rgba(197, 160, 89, 0.03)');
+    root.style.setProperty('--bg-card-hover', 'rgba(197, 160, 89, 0.06)');
+    root.style.setProperty('--bg-grad', 'radial-gradient(circle at 0% 0%, #161b22 0%, #0a0d14 100%)');
+    root.style.setProperty('--text-primary', '#f0f4f8');
+    root.style.setProperty('--text-tertiary', 'rgba(240, 244, 248, 0.55)');
+    root.style.setProperty('--accent-primary', '#c5a059');
+    root.style.setProperty('--accent-cyan', '#c5a059');
+    root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #d4b47a 0%, #c5a059 50%, #a68446 100%)');
+    root.style.setProperty('--accent-bg', 'rgba(197, 160, 89, 0.08)');
+    root.style.setProperty('--accent-border', 'rgba(197, 160, 89, 0.3)');
+    root.style.setProperty('--border-light', 'rgba(197, 160, 89, 0.12)');
+    root.style.setProperty('--border-active', 'rgba(197, 160, 89, 0.4)');
+    root.style.setProperty('--input-bg', 'rgba(197, 160, 89, 0.02)');
+    root.style.setProperty('--input-border', 'rgba(197, 160, 89, 0.15)');
     root.style.setProperty('--success-color', '#34d399');
     root.style.setProperty('--success-bg', 'rgba(16, 185, 129, 0.1)');
     root.style.setProperty('--danger-color', '#ef4444');
@@ -134,12 +134,12 @@ export const PageTitle = ({ children, sub }) => (
 
 export const AdminCard = ({ children, style: extra = {}, glass = true }) => (
   <div className="admin-card" style={{
-    background: glass ? 'rgba(15, 12, 8, 0.45)' : T.card,
-    backdropFilter: glass ? 'blur(40px) saturate(1.8)' : 'none',
-    WebkitBackdropFilter: glass ? 'blur(40px) saturate(1.8)' : 'none',
-    border: `1px solid ${T.borderActive}`,
-    borderRadius: 24, padding: 'clamp(16px, 4vw, 24px)',
-    boxShadow: '0 12px 48px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08)',
+    background: glass ? 'rgba(15, 20, 30, 0.6)' : T.card,
+    backdropFilter: glass ? 'blur(24px) saturate(1.2)' : 'none',
+    WebkitBackdropFilter: glass ? 'blur(24px) saturate(1.2)' : 'none',
+    border: `1px solid ${T.border}`,
+    borderRadius: 20, padding: 'clamp(20px, 4vw, 28px)',
+    boxShadow: '0 10px 40px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05)',
     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
     color: T.text,
     ...extra,
@@ -186,42 +186,41 @@ export const SlideDrawer = ({ isOpen, onClose, title, children, width = 480 }) =
 
 export const StatCard = ({ icon, label, value, color, sub }) => (
   <AdminCard style={{ 
-    display: 'flex', alignItems: 'center', gap: 'clamp(12px, 3vw, 16px)',
-    border: `1px solid ${color ? `${color}40` : 'rgba(212, 175, 55, 0.25)'}`,
-    boxShadow: `0 8px 30px ${color ? `${color}15` : 'rgba(212, 175, 55, 0.15)'}`
+    display: 'flex', alignItems: 'center', gap: 'clamp(12px, 3vw, 20px)',
+    border: `1px solid ${color ? `${color}30` : 'rgba(197, 160, 89, 0.15)'}`,
+    boxShadow: `0 8px 32px rgba(0,0,0,0.2)`
   }}>
     <div style={{
-      width: 'clamp(40px, 10vw, 48px)', height: 'clamp(40px, 10vw, 48px)', borderRadius: 14, flexShrink: 0,
-      background: color ? `${color}18` : 'rgba(212, 175, 55, 0.12)',
-      border: `1px solid ${color ? `${color}40` : 'rgba(212, 175, 55, 0.3)'}`,
+      width: 'clamp(44px, 11vw, 52px)', height: 'clamp(44px, 11vw, 52px)', borderRadius: 14, flexShrink: 0,
+      background: color ? `${color}12` : 'rgba(197, 160, 89, 0.08)',
+      border: `1px solid ${color ? `${color}30` : 'rgba(197, 160, 89, 0.2)'}`,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: 'clamp(18px, 4vw, 22px)', color: color || 'var(--accent-cyan)',
-      boxShadow: `0 0 15px ${color ? `${color}30` : 'rgba(212, 175, 55, 0.2)'}`
+      fontSize: 'clamp(20px, 4.5vw, 24px)', color: color || 'var(--accent-primary)',
     }}>
       {icon}
     </div>
-    <div>
-      <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+    <div style={{ flex: 1 }}>
+      <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.15em' }}>
         {label}
       </div>
-      <div style={{ fontSize: 'clamp(20px, 5vw, 26px)', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.2, marginTop: 2 }}>
+      <div style={{ fontSize: 'clamp(22px, 5.5vw, 28px)', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1, marginTop: 4 }}>
         {value}
       </div>
-      {sub && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, opacity: 0.8 }}>{sub}</div>}
     </div>
   </AdminCard>
 )
 
 export const Table = ({ headers, rows, emptyMsg = 'No data found.' }) => (
-  <div style={{ overflowX: 'auto', borderRadius: 16, border: '1px solid rgba(212, 175, 55, 0.15)', background: 'rgba(15, 12, 8, 0.3)' }}>
+  <div style={{ overflowX: 'auto', borderRadius: 16, border: '1px solid var(--border-light)', background: 'rgba(0, 0, 0, 0.2)' }}>
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, minWidth: 600 }}>
       <thead>
-        <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border-light)' }}>
+        <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-light)' }}>
           {headers.map((h, i) => (
             <th key={i} style={{
-              padding: '12px 16px', textAlign: 'left',
+              padding: '16px', textAlign: 'left',
               color: 'var(--text-tertiary)', fontWeight: 700,
-              fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase',
+              fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase',
               whiteSpace: 'nowrap',
             }}>
               {h}
@@ -233,7 +232,7 @@ export const Table = ({ headers, rows, emptyMsg = 'No data found.' }) => (
         {rows.length === 0 ? (
           <tr>
             <td colSpan={headers.length} style={{
-              padding: '40px 16px', textAlign: 'center',
+              padding: '48px 16px', textAlign: 'center',
               color: 'var(--text-tertiary)', fontSize: 14,
             }}>
               {emptyMsg}
@@ -244,11 +243,11 @@ export const Table = ({ headers, rows, emptyMsg = 'No data found.' }) => (
             borderBottom: ri < rows.length - 1 ? '1px solid var(--border-light)' : 'none',
             transition: 'background 0.2s',
           }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
           >
             {row.map((cell, ci) => (
-              <td key={ci} style={{ padding: '14px 16px', color: 'var(--text-primary)', verticalAlign: 'middle' }}>
+              <td key={ci} style={{ padding: '16px', color: 'var(--text-primary)', verticalAlign: 'middle' }}>
                 {cell}
               </td>
             ))}

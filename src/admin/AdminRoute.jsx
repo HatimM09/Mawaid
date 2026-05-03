@@ -26,11 +26,11 @@ export default function AdminRoute() {
         role = staffRow?.role || ''
       } catch (err) {
         // If staff table doesn't exist, fall back to portal flag for demo
-        console.warn('[AdminRoute] staff table not found, using sessionStorage fallback')
+        console.warn('[AdminRoute] staff table not found, using localStorage fallback')
       }
 
-      // Also accept the sessionStorage flag set by the login page
-      const portalRole = sessionStorage.getItem('al_mawaid_portal') || ''
+      // Also accept the localStorage flag set by the login page
+      const portalRole = localStorage.getItem('al_mawaid_portal') || ''
 
       if (role === 'admin' || portalRole === 'admin') {
         setStatus('allowed')

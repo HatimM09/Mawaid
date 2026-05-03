@@ -10,7 +10,7 @@ import {
   Mail, Lock, Eye, EyeOff, AlertCircle, ChevronDown, ChevronUp,
   ClipboardList, ChevronLeft, ChevronRight, Phone, MapPin,
   Users, Wallet, Bell, LifeBuoy, Info, MessageCircle, Upload, Utensils,
-  Sun, Moon
+  Sun, Moon, Medal, Package, Shield
 } from 'lucide-react'
 import { supabase } from './admin/supabaseClient'
 import { useWeeklyMenu } from './common/useWeeklyMenu'
@@ -33,32 +33,32 @@ const THEMES = {
     loginCard: 'rgba(74, 58, 44, 0.94)', headerWave: '#4A3A2C',
     successBg: 'rgba(16, 185, 129, 0.1)', successBorder: 'rgba(16, 185, 129, 0.3)', successText: '#34d399',
   },
-  purple: {
-    id: 'purple', name: 'Light Purple', icon: '💜',
-    bg: '#f5f0ff', bgGrad: 'linear-gradient(135deg, #f5f0ff 0%, #ede4ff 50%, #e8dff5 100%)',
-    card: '#ffffff', cardActive: '#faf5ff',
-    border: '#e0d4f5', borderActive: '#7c3aed',
-    accent: '#7c3aed', accentGrad: 'linear-gradient(135deg, #8b5cf6, #6d28d9)',
-    accentBg: 'rgba(124, 58, 237, 0.08)', accentBorder: 'rgba(124, 58, 237, 0.3)',
-    text: '#1e1b4b', textSub: '#6b6394', textBody: '#312e58',
-    navBg: 'rgba(245, 240, 255, 0.98)', navBorder: '#e0d4f5',
-    geo: 'rgba(124, 58, 237, 0.04)', spinnerBorder: 'rgba(124, 58, 237, 0.2)', spinnerTop: '#7c3aed',
-    inputBg: '#ffffff', inputBorder: '#d4c4ed',
-    loginCard: '#ffffff', headerWave: '#f5f0ff',
+  bright: {
+    id: 'bright', name: 'Radiant Dawn', icon: '🌅',
+    bg: '#fdfbf7', bgGrad: 'radial-gradient(circle at top right, #fdfbf7 0%, #f4eee1 100%)',
+    card: '#ffffff', cardActive: '#faf6ec',
+    border: '#e8ddc5', borderActive: '#c4a460',
+    accent: '#b8860b', accentGrad: 'linear-gradient(135deg, #dfb44a, #b8860b)',
+    accentBg: 'rgba(184, 134, 11, 0.08)', accentBorder: 'rgba(184, 134, 11, 0.3)',
+    text: '#2d2416', textSub: '#706454', textBody: '#4a3d2e',
+    navBg: 'rgba(253, 251, 247, 0.98)', navBorder: '#e8ddc5',
+    geo: 'rgba(184, 134, 11, 0.04)', spinnerBorder: 'rgba(184, 134, 11, 0.2)', spinnerTop: '#b8860b',
+    inputBg: '#ffffff', inputBorder: '#e0d4bc',
+    loginCard: '#ffffff', headerWave: '#f4eee1',
     successBg: '#ecfdf5', successBorder: '#a7f3d0', successText: '#047857',
   },
   royal: {
-    id: 'royal', name: 'Royal Gold & Black', icon: '👑',
-    bg: '#050505', bgGrad: 'radial-gradient(ellipse at 30% 0%, #1a1308 0%, #050505 60%)',
-    card: 'rgba(212, 175, 55, 0.04)', cardActive: 'rgba(212, 175, 55, 0.08)',
-    border: 'rgba(212, 175, 55, 0.15)', borderActive: 'rgba(212, 175, 55, 0.5)',
-    accent: '#F0C239', accentGrad: 'linear-gradient(135deg, #F0C239 0%, #D4A017 50%, #B8860B 100%)',
-    accentBg: 'rgba(240, 194, 57, 0.08)', accentBorder: 'rgba(240, 194, 57, 0.35)',
-    text: '#FAF3E0', textSub: 'rgba(250, 243, 224, 0.55)', textBody: '#E8DCC8',
-    navBg: 'rgba(5, 5, 5, 0.97)', navBorder: 'rgba(212, 175, 55, 0.25)',
-    geo: 'rgba(240, 194, 57, 0.04)', spinnerBorder: 'rgba(240, 194, 57, 0.2)', spinnerTop: '#F0C239',
-    inputBg: 'rgba(240, 194, 57, 0.04)', inputBorder: 'rgba(212, 175, 55, 0.2)',
-    loginCard: 'rgba(10, 8, 3, 0.92)', headerWave: '#050505',
+    id: 'royal', name: 'Professional Royal', icon: '👔',
+    bg: '#0a0d14', bgGrad: 'radial-gradient(circle at 0% 0%, #161b22 0%, #0a0d14 100%)',
+    card: 'rgba(197, 160, 89, 0.03)', cardActive: 'rgba(197, 160, 89, 0.08)',
+    border: 'rgba(197, 160, 89, 0.15)', borderActive: 'rgba(197, 160, 89, 0.4)',
+    accent: '#c5a059', accentGrad: 'linear-gradient(135deg, #d4b47a 0%, #c5a059 50%, #a68446 100%)',
+    accentBg: 'rgba(197, 160, 89, 0.12)', accentBorder: 'rgba(197, 160, 89, 0.35)',
+    text: '#f0f4f8', textSub: 'rgba(240, 244, 248, 0.55)', textBody: '#e1e7ed',
+    navBg: 'rgba(10, 13, 20, 0.98)', navBorder: 'rgba(197, 160, 89, 0.25)',
+    geo: 'rgba(197, 160, 89, 0.05)', spinnerBorder: 'rgba(197, 160, 89, 0.2)', spinnerTop: '#c5a059',
+    inputBg: 'rgba(197, 160, 89, 0.04)', inputBorder: 'rgba(197, 160, 89, 0.2)',
+    loginCard: 'rgba(15, 20, 30, 0.95)', headerWave: '#0a0d14',
     successBg: 'rgba(16, 185, 129, 0.1)', successBorder: 'rgba(16, 185, 129, 0.3)', successText: '#34d399',
   },
 }
@@ -144,7 +144,7 @@ const Spinner = ({ fullPage = true }) => {
   const inner = (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
       <div className="spin" style={{ width: 34, height: 34, border: `2.5px solid ${t.spinnerBorder}`, borderTop: `2.5px solid ${t.spinnerTop}`, borderRadius: '50%' }} />
-      {fullPage && <p style={{ margin: 0, fontSize: 12, color: t.textSub, opacity: .45, fontFamily: "'DM Sans',sans-serif", letterSpacing: '0.08em' }}>Loading…</p>}
+      {fullPage && <p style={{ margin: 0, fontSize: 12, color: t.textSub, opacity: .45, fontFamily: "'Inter', sans-serif", letterSpacing: '0.08em' }}>Loading…</p>}
     </div>
   )
   return fullPage
@@ -153,7 +153,7 @@ const Spinner = ({ fullPage = true }) => {
 }
 
 const ErrorBanner = ({ msg }) => (
-  <div style={{ margin: '8px 0', padding: '11px 14px', borderRadius: 10, background: 'rgba(220,60,60,0.09)', border: '1px solid rgba(220,60,60,0.28)', color: '#e05555', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, fontFamily: "'DM Sans',sans-serif" }}>
+  <div style={{ margin: '8px 0', padding: '11px 14px', borderRadius: 10, background: 'rgba(220,60,60,0.09)', border: '1px solid rgba(220,60,60,0.28)', color: '#e05555', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, fontFamily: "'Inter', sans-serif" }}>
     <AlertCircle size={14} style={{ flexShrink: 0 }} />{msg}
   </div>
 )
@@ -165,7 +165,7 @@ const Avatar = ({ avatarUrl, name, email, size = 56 }) => {
     <div style={{ width: size, height: size, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, border: `2px solid ${t.accent}`, boxShadow: `0 4px 16px ${t.accentBg}` }}>
       {avatarUrl
         ? <img src={avatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        : <div style={{ width: '100%', height: '100%', background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.38, fontWeight: 800, color: '#fff', fontFamily: "'Playfair Display',serif" }}>{initials}</div>
+        : <div style={{ width: '100%', height: '100%', background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.38, fontWeight: 800, color: '#fff', fontFamily: "'Inter', sans-serif" }}>{initials}</div>
       }
     </div>
   )
@@ -173,7 +173,7 @@ const Avatar = ({ avatarUrl, name, email, size = 56 }) => {
 
 const SectionLabel = ({ children }) => {
   const t = useTheme()
-  return <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', color: t.textSub, textTransform: 'uppercase', marginBottom: 12, fontFamily: "'DM Sans',sans-serif", opacity: .7 }}>{children}</div>
+  return <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', color: t.textSub, textTransform: 'uppercase', marginBottom: 12, fontFamily: "'Inter', sans-serif", opacity: .7 }}>{children}</div>
 }
 
 function Card({ children, style = {}, active, organic }) {
@@ -205,7 +205,7 @@ const Btn = ({ children, onClick, disabled, style: extra = {}, variant = 'primar
   const baseStyle = {
     padding: '12px 20px', borderRadius: 14, border: 'none',
     fontWeight: 700, cursor: disabled ? 'not-allowed' : 'pointer',
-    fontFamily: "'DM Sans', sans-serif", transition: 'all 0.3s ease',
+    fontFamily: "'Inter', sans-serif", transition: 'all 0.3s ease',
     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
     width: 'fit-content', opacity: disabled ? 0.5 : 1
   }
@@ -233,7 +233,7 @@ const Badge = ({ children, color, style = {} }) => (
     borderRadius: 8, fontSize: 10, fontWeight: 800, textTransform: 'uppercase',
     letterSpacing: '0.08em', background: `${color}15` || 'rgba(212, 175, 55, 0.1)',
     color: color || '#D4AF37', border: `1px solid ${color}30` || 'rgba(212, 175, 55, 0.25)',
-    fontFamily: "'DM Sans', sans-serif", ...style
+    fontFamily: "'Inter', sans-serif", ...style
   }}>
     {children}
   </div>
@@ -246,21 +246,21 @@ const BackHeader = ({ title, onBack }) => {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
       <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><ChevronLeft size={20} color={t.accent} /></button>
-      <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{title}</h2>
+      <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: t.accent, fontFamily: "'Inter', sans-serif" }}>{title}</h2>
     </div>
   )
 }
 
 const EmptyState = ({ msg }) => {
   const t = useTheme()
-  return <div style={{ textAlign: 'center', padding: 48, color: t.textSub, fontSize: 15, fontFamily: "'DM Sans',sans-serif" }}>{msg}</div>
+  return <div style={{ textAlign: 'center', padding: 48, color: t.textSub, fontSize: 15, fontFamily: "'Inter', sans-serif" }}>{msg}</div>
 }
 
 const GlobalStyles = () => {
   const t = useTheme()
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=DM+Sans:wght@400;500;600;700;800&family=Amiri:wght@400;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Amiri:wght@400;700&display=swap');
       @keyframes spin { to { transform: rotate(360deg); } }
       .spin { animation: spin 0.8s linear infinite; }
       * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
@@ -280,77 +280,53 @@ const GlobalStyles = () => {
 // LOGIN PAGE
 // ══════════════════════════════════════════════════════════════
 const LOGIN_ROLES = [
-  { id: 'member', label: 'Khidmat Guzar', icon: '👤' },
-  { id: 'khidmat', label: 'Al Mawaid Team', icon: 'logo' },
-  { id: 'inventory_manager', label: 'Inventory', icon: '📦' },
-  { id: 'admin', label: 'Admin', icon: '🛡️' },
+  { id: 'khidmat_guzar',      label: 'Khidmat\nGuzar',     icon: <User size={20} />,    short: 'Khidmat Guzar' },
+  { id: 'khidmat',            label: 'Al-Mawaid\nTeam',    icon: <Medal size={20} />,   short: 'Al-Mawaid Team' },
+  { id: 'inventory_manager',  label: 'Inventory',          icon: <Package size={20} />, short: 'Inventory Manager' },
+  { id: 'admin',              label: 'Admin',              icon: <Shield size={20} />,  short: 'Admin' },
 ]
 
 function LoginPage({ onRoleLogin }) {
-  const t = THEMES.dark
-  const [role, setRole] = useState('member')
-  const [email, setEmail] = useState('')
+  const [role, setRole]         = useState('khidmat_guzar')
+  const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [mode, setMode] = useState('login')
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState('')
 
-  const inp = {
-    width: '100%', padding: '13px 13px 13px 44px', borderRadius: 12, boxSizing: 'border-box',
-    background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text,
-    fontSize: 15, outline: 'none', fontFamily: "'DM Sans',sans-serif", transition: 'border 0.2s'
-  }
+  const activeRole = LOGIN_ROLES.find(r => r.id === role)
 
   const handleAuth = async (e) => {
-    e.preventDefault(); setError(''); setLoading(true)
+    e.preventDefault()
+    setError('')
+    setLoading(true)
     try {
-      if (role === 'member' && mode === 'signup') {
-        const { error: err } = await supabase.auth.signUp({ email, password })
-        if (err) throw err
-        setError('✅ Check your email for a verification link!')
-        setLoading(false); return
-      }
       if (role === 'inventory_manager') {
         const { data: invStaff, error: invErr } = await supabase
           .from('staff').select('*').ilike('email', email).eq('role', 'inventory_manager').maybeSingle()
-
-        if (invErr || !invStaff) {
-          throw new Error('Unauthorized: Email not registered as Inventory Manager.')
-        }
+        if (invErr || !invStaff) throw new Error('Unauthorized: Email not registered as Inventory Manager.')
         onRoleLogin('inventory_manager', { user: { email, id: invStaff.user_id || `inv_${invStaff.id}`, ...invStaff } })
-        setLoading(false)
-        return
+        setLoading(false); return
       }
 
       const { data: { session }, error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
       if (signInErr) throw signInErr
 
-      if (role === 'member') { onRoleLogin('member', session); setLoading(false); return }
+      if (role === 'khidmat_guzar') { onRoleLogin('khidmat_guzar', session); setLoading(false); return }
 
       let { data: staffRow, error: staffErr } = await supabase
         .from('staff').select('*').eq('user_id', session.user.id).maybeSingle()
-
-      // Auto-link staff by email if user_id is missing
       if (!staffRow && !staffErr) {
-        const { data: emailMatch } = await supabase
-          .from('staff').select('*').eq('email', session.user.email).maybeSingle()
+        const { data: emailMatch } = await supabase.from('staff').select('*').eq('email', session.user.email).maybeSingle()
         if (emailMatch && !emailMatch.user_id) {
-          const { data: updated } = await supabase
-            .from('staff').update({ user_id: session.user.id }).eq('id', emailMatch.id).select().single()
+          const { data: updated } = await supabase.from('staff').update({ user_id: session.user.id }).eq('id', emailMatch.id).select().single()
           staffRow = updated
-        } else if (emailMatch) {
-          staffRow = emailMatch
-        }
+        } else if (emailMatch) { staffRow = emailMatch }
       }
-      if (staffErr && staffErr.code !== 'PGRST116') {
-        await supabase.auth.signOut(); throw new Error(staffErr.message)
-      }
+      if (staffErr && staffErr.code !== 'PGRST116') { await supabase.auth.signOut(); throw new Error(staffErr.message) }
       const dbRole = staffRow?.role || ''
-      if (role === 'admin' && dbRole !== 'admin') {
-        await supabase.auth.signOut(); throw new Error('You do not have admin privileges.')
-      }
-      if (role === 'khidmat' && !['khidmat_guzar', 'supervisor', 'khidmat', 'admin'].includes(dbRole)) {
+      if (role === 'admin' && dbRole !== 'admin') { await supabase.auth.signOut(); throw new Error('You do not have admin privileges.') }
+      if (role === 'khidmat' && !['khidmat_guzar','supervisor','khidmat','admin'].includes(dbRole)) {
         await supabase.auth.signOut(); throw new Error('You are not registered as part of the Al Mawaid Team.')
       }
       onRoleLogin(dbRole === 'admin' ? 'admin' : dbRole, session)
@@ -359,253 +335,375 @@ function LoginPage({ onRoleLogin }) {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 20, position: 'relative', overflowY: 'auto', overflowX: 'hidden', fontFamily: "'DM Sans',sans-serif",
-      background: '#0f0c08'
-    }}>
-      {/* Wheat background with enhanced warmth and depth */}
-      <img
-        src="/wheat_bg.png"
-        alt=""
-        aria-hidden="true"
-        style={{
-          position: 'absolute', inset: 0, width: '100%', height: '100%',
-          objectFit: 'cover', objectPosition: 'center',
-          filter: 'blur(4px) brightness(0.7) contrast(1.1) saturate(1.2)',
-          animation: 'kenburns 30s infinite alternate ease-in-out',
-          zIndex: 0,
-        }}
-      />
-      <div style={{
-        position: 'absolute', inset: 0, zIndex: 1,
-        background: 'radial-gradient(circle at 50% 50%, rgba(74, 58, 44, 0.1) 0%, rgba(74, 58, 44, 0.5) 100%)',
-        backdropFilter: 'saturate(1.2)',
-      }} />
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
-      {/* Main card with 'Liquid Gold' ornate border */}
-      <div style={{ position: 'relative', zIndex: 2, width: '100%', maxWidth: 440, padding: 10 }}>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { margin: 0; overflow: hidden; }
 
-        {/* Ornate liquid golden border frame */}
-        <div style={{
-          position: 'relative',
-          borderRadius: 42,
-          padding: 2,
-          background: 'linear-gradient(135deg, rgba(224,160,60,0.6) 0%, rgba(255,248,231,0.2) 50%, rgba(224,160,60,0.6) 100%)',
-          boxShadow: '0 50px 120px rgba(0,0,0,0.7), inset 0 1px 2px rgba(255,255,255,0.3)',
-        }}>
-          {/* Corner highlights - 'Liquid beads' look */}
-          {['0 0', '100% 0', '0 100%', '100% 100%'].map((pos, i) => (
-            <div key={i} style={{
-              position: 'absolute',
-              left: pos.includes('100% ') ? 'auto' : -2,
-              right: pos.includes('100% ') ? -2 : 'auto',
-              top: pos.includes('100%') ? 'auto' : -2,
-              bottom: pos.includes('100%') ? -2 : 'auto',
-              width: 12, height: 12, zIndex: 10,
-              background: 'radial-gradient(circle at 30% 30%, #FFF8E7, #E0A03C)',
-              borderRadius: '50%',
-              boxShadow: '0 2px 10px rgba(224,160,60,0.6)',
-              border: '1px solid rgba(255,255,255,0.4)'
-            }} />
+        .lp-root {
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          position: relative;
+          overflow: hidden;
+          background: #1a0f00;
+          font-family: 'Inter', sans-serif;
+        }
+
+        /* ── Wheat field background ── */
+        .lp-bg {
+          position: absolute; inset: 0;
+          background-image: url('/wheat_bg.png');
+          background-size: cover;
+          background-position: center;
+          filter: brightness(0.78) contrast(1.08) saturate(1.1);
+          z-index: 0;
+        }
+
+        /* ── Vignette overlay ── */
+        .lp-vignette {
+          position: absolute; inset: 0; z-index: 1;
+          background: radial-gradient(ellipse at 50% 50%,
+            rgba(30,18,4,0.10) 0%,
+            rgba(12,7,2,0.55) 100%);
+        }
+
+        /* ── Sparkle ── */
+        .lp-sparkle {
+          position: absolute;
+          bottom: clamp(20px, 5vh, 48px);
+          right: clamp(20px, 5vw, 60px);
+          z-index: 10;
+          color: #FFD84D;
+          font-size: clamp(22px, 4vw, 36px);
+          line-height: 1;
+          filter: drop-shadow(0 0 10px #FFD84D88);
+          animation: sparkle-pulse 3s ease-in-out infinite;
+          user-select: none;
+        }
+        @keyframes sparkle-pulse {
+          0%,100% { opacity: 0.75; transform: scale(1) rotate(0deg); }
+          50%      { opacity: 1;    transform: scale(1.15) rotate(10deg); }
+        }
+
+        /* ── Glass card ── */
+        .lp-card {
+          position: relative;
+          z-index: 5;
+          width: min(420px, 94vw);
+          padding: clamp(28px,5vw,44px) clamp(22px,5vw,36px);
+          border-radius: 32px;
+          background: rgba(255, 248, 230, 0.38);
+          backdrop-filter: blur(28px) saturate(1.4) brightness(1.05);
+          -webkit-backdrop-filter: blur(28px) saturate(1.4) brightness(1.05);
+          border: 1.5px solid rgba(255, 240, 180, 0.65);
+          box-shadow:
+            0 0 0 1px rgba(200,140,40,0.18),
+            0 32px 80px rgba(0,0,0,0.32),
+            inset 0 1px 2px rgba(255,255,255,0.75),
+            inset 0 -1px 2px rgba(180,120,20,0.15);
+          display: flex;
+          flex-direction: column;
+          gap: 0;
+          animation: card-in 0.6s cubic-bezier(0.16,1,0.3,1) both;
+        }
+        @keyframes card-in {
+          from { opacity: 0; transform: translateY(18px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0)   scale(1); }
+        }
+
+        /* ── Filigree corners ── */
+        .lp-corner {
+          position: absolute;
+          width: 44px; height: 44px;
+          pointer-events: none;
+          z-index: 6;
+        }
+        .lp-corner svg { width: 100%; height: 100%; }
+        .lp-corner--tl { top: -3px;  left: -3px;  transform: rotate(0deg); }
+        .lp-corner--tr { top: -3px;  right: -3px; transform: rotate(90deg); }
+        .lp-corner--bl { bottom: -3px; left: -3px;  transform: rotate(270deg); }
+        .lp-corner--br { bottom: -3px; right: -3px; transform: rotate(180deg); }
+
+        /* ── Logo & title ── */
+        .lp-brand { text-align: center; margin-bottom: 20px; }
+        .lp-logo  { width: 62px; height: 62px; object-fit: contain; margin-bottom: 10px; filter: drop-shadow(0 6px 18px rgba(0,0,0,0.35)); }
+        .lp-title {
+          font-family: 'Inter', sans-serif;
+          font-weight: 900;
+          font-size: clamp(26px, 7vw, 38px);
+          letter-spacing: 0.14em;
+          background: linear-gradient(180deg, #C8902A 0%, #7A4E10 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+          line-height: 1;
+          filter: drop-shadow(0 1px 2px rgba(255,255,255,0.18));
+        }
+
+        /* ── Role tabs ── */
+        .lp-tabs {
+          display: flex;
+          gap: 6px;
+          background: rgba(15, 10, 4, 0.55);
+          border-radius: 18px;
+          padding: 6px;
+          border: 1px solid rgba(200,150,40,0.25);
+          margin-bottom: 18px;
+        }
+        .lp-tab {
+          flex: 1;
+          border: none;
+          border-radius: 13px;
+          padding: 10px 4px;
+          cursor: pointer;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 5px;
+          font-family: 'Inter', sans-serif;
+          font-size: 9px;
+          font-weight: 800;
+          letter-spacing: 0.06em;
+          line-height: 1.25;
+          text-align: center;
+          white-space: pre-line;
+          transition: all 0.28s cubic-bezier(0.4,0,0.2,1);
+        }
+        .lp-tab--active {
+          background: linear-gradient(135deg, #FFD84D 0%, #E0A030 50%, #B87B14 100%);
+          color: #2a1a04;
+          box-shadow: 0 6px 20px rgba(220,160,30,0.45);
+          transform: scale(1.04);
+        }
+        .lp-tab--inactive {
+          background: rgba(15, 10, 4, 0.5);
+          color: rgba(200,150,60,0.55);
+        }
+        .lp-tab--inactive:hover { color: rgba(220,170,70,0.85); background: rgba(30,20,8,0.6); }
+
+        /* ── Role subtitle ── */
+        .lp-subtitle {
+          text-align: center;
+          font-size: 11.5px;
+          font-weight: 600;
+          color: rgba(80,50,15,0.75);
+          letter-spacing: 0.04em;
+          margin-bottom: 18px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+        }
+        .lp-subtitle svg { opacity: 0.6; }
+
+        /* ── Input group ── */
+        .lp-form { display: flex; flex-direction: column; gap: 14px; }
+        .lp-label {
+          display: block;
+          font-size: 9.5px;
+          font-weight: 900;
+          letter-spacing: 0.2em;
+          color: rgba(90,58,15,0.7);
+          text-transform: uppercase;
+          margin-bottom: 7px;
+        }
+        .lp-input-wrap { position: relative; }
+        .lp-input-wrap svg {
+          position: absolute;
+          left: 16px;
+          top: 50%; transform: translateY(-50%);
+          color: rgba(160,105,30,0.65);
+          pointer-events: none;
+          width: 17px; height: 17px;
+        }
+        .lp-input {
+          width: 100%;
+          padding: 15px 16px 15px 46px;
+          border-radius: 15px;
+          border: 1px solid rgba(220,180,80,0.28);
+          background: rgba(120,75,15,0.07);
+          color: #3a2508;
+          font-size: 14.5px;
+          font-family: 'Inter', sans-serif;
+          font-weight: 500;
+          outline: none;
+          transition: border-color 0.2s, box-shadow 0.2s;
+          box-shadow: inset 0 2px 5px rgba(0,0,0,0.04);
+        }
+        .lp-input:focus {
+          border-color: rgba(200,140,40,0.55);
+          box-shadow: 0 0 0 3px rgba(200,140,40,0.12), inset 0 2px 5px rgba(0,0,0,0.04);
+        }
+        .lp-input::placeholder { color: rgba(90,58,15,0.32); }
+        .lp-eye {
+          position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+          background: none; border: none; cursor: pointer;
+          color: rgba(140,95,25,0.55); padding: 4px;
+          display: flex; align-items: center;
+        }
+        .lp-eye:hover { color: rgba(180,120,30,0.9); }
+
+        /* ── Error ── */
+        .lp-error {
+          text-align: center;
+          font-size: 12px;
+          font-weight: 700;
+          color: #c0392b;
+          padding: 8px 12px;
+          border-radius: 10px;
+          background: rgba(192,57,43,0.09);
+          border: 1px solid rgba(192,57,43,0.22);
+        }
+
+        /* ── Submit button ── */
+        .lp-btn {
+          width: 100%;
+          padding: 18px;
+          border-radius: 18px;
+          border: none;
+          margin-top: 6px;
+          background: linear-gradient(135deg, #FFD84D 0%, #E0A030 45%, #B87B14 100%);
+          color: #2a1a04;
+          font-family: 'Inter', sans-serif;
+          font-size: 15px;
+          font-weight: 700;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          cursor: pointer;
+          box-shadow:
+            0 12px 32px rgba(184,123,20,0.35),
+            inset 0 1px 1px rgba(255,255,255,0.45);
+          transition: filter 0.2s, transform 0.15s, box-shadow 0.2s;
+        }
+        .lp-btn:hover:not(:disabled) {
+          filter: brightness(1.07);
+          transform: translateY(-1px);
+          box-shadow: 0 16px 40px rgba(184,123,20,0.45), inset 0 1px 1px rgba(255,255,255,0.45);
+        }
+        .lp-btn:active:not(:disabled) { transform: translateY(0); filter: brightness(0.97); }
+        .lp-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+      `}</style>
+
+      <div className="lp-root">
+        {/* Background */}
+        <div className="lp-bg" />
+        <div className="lp-vignette" />
+
+        {/* Sparkle */}
+        <div className="lp-sparkle">✦</div>
+
+        {/* Card */}
+        <div className="lp-card">
+          {/* Filigree corners */}
+          {['tl','tr','bl','br'].map(pos => (
+            <div key={pos} className={`lp-corner lp-corner--${pos}`}>
+              <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <linearGradient id={`cg-${pos}`} x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#FFF8E0"/>
+                    <stop offset="0.45" stopColor="#E0A030"/>
+                    <stop offset="1" stopColor="#9A6010"/>
+                  </linearGradient>
+                </defs>
+                {/* L-bracket */}
+                <path
+                  d="M5 5 L5 38 M5 5 L38 5"
+                  stroke={`url(#cg-${pos})`} strokeWidth="5.5"
+                  strokeLinecap="round" strokeLinejoin="round" fill="none"
+                />
+                {/* Small diamond accent */}
+                <rect x="1" y="1" width="8" height="8" rx="2"
+                  fill={`url(#cg-${pos})`} opacity="0.85"
+                  transform="rotate(45 5 5)"
+                />
+              </svg>
+            </div>
           ))}
 
-          {/* Card interior — Heavy Glassmorphism */}
-          <div style={{
-            borderRadius: 40,
-            background: 'rgba(42, 34, 24, 0.35)',
-            backdropFilter: 'blur(35px) saturate(1.8)',
-            WebkitBackdropFilter: 'blur(35px) saturate(1.8)',
-            padding: '40px 32px 42px',
-            border: '1px solid rgba(224,160,60,0.3)',
-            boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.1)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 20
-          }}>
-            {/* Logo + Title */}
-            <div style={{ textAlign: 'center' }}>
-              <div style={{
-                width: 84, height: 84, margin: '0 auto 10px',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                filter: 'drop-shadow(0 10px 20px rgba(0,0,0,0.5))',
-              }}>
-                <img src="/al-mawaid.png" alt="Al-Mawaid" style={{ width: 80, height: 80, objectFit: 'contain' }} />
-              </div>
-              <h1 style={{
-                margin: '0', fontSize: 42, fontWeight: 900,
-                background: 'linear-gradient(135deg, #E0A03C 0%, #FFF8E7 40%, #E0A03C 80%, #B8860B 100%)',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                letterSpacing: '0.14em', fontFamily: "'Cinzel','Playfair Display',serif",
-                textShadow: '0 15px 30px rgba(0,0,0,0.4)'
-              }}>Al-Mawaid</h1>
-            </div>
-
-            {/* Role tabs */}
-            <div style={{
-              display: 'flex', gap: 3, marginBottom: 10,
-              background: 'transparent',
-              borderRadius: 14, padding: 4,
-              border: '1px solid rgba(212,175,55,0.2)',
-              backdropFilter: 'blur(25px) saturate(1.5)',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-            }}>
-              {LOGIN_ROLES.map(r => {
-                const active = role === r.id
-                return (
-                  <button key={r.id} onClick={() => { setRole(r.id); setError('') }} style={{
-                    flex: 1, padding: '10px 4px', borderRadius: 11, border: 'none',
-                    background: active ? 'linear-gradient(135deg, #B8860B, #8B6B23)' : 'transparent',
-                    color: active ? '#fff' : t.textSub,
-                    cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-                    boxShadow: active ? '0 4px 16px rgba(139,107,35,0.4)' : 'none',
-                    transform: active ? 'scale(1.05)' : 'scale(1)',
-                  }}>
-                    <span style={{ fontSize: 20 }}>
-                      {r.icon === 'logo'
-                        ? <img src="/al-mawaid.png" alt="" style={{ width: 22, height: 22, objectFit: 'contain', filter: active ? 'brightness(10)' : 'none' }} />
-                        : r.icon}
-                    </span>
-                    <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{r.label}</span>
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* Role descriptor bar */}
-            <div style={{
-              marginBottom: 16, padding: '10px 14px', borderRadius: 12,
-              background: 'rgba(255, 255, 255, 0.02)',
-              border: '1px solid rgba(212,175,55,0.12)',
-              backdropFilter: 'blur(12px)',
-              fontSize: 12, color: 'rgba(240,234,210,0.8)', textAlign: 'center',
-              fontFamily: "'DM Sans',sans-serif", letterSpacing: '0.04em',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.02)'
-            }}>
-              {role === 'member' && <><span>👤</span> Khidmat Guzar — member portal</>}
-              {role === 'khidmat' && <><img src="/al-mawaid.png" alt="" style={{ width: 14, height: 14, objectFit: 'contain' }} /> Al Mawaid Team — service portal</>}
-              {role === 'inventory_manager' && <><span>📦</span> Inventory Manager — stock portal</>}
-              {role === 'admin' && <><span>🛡️</span> Admin — full management portal</>}
-            </div>
-
-            {/* Form */}
-            <form onSubmit={handleAuth}>
-              {/* Email */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={{
-                  display: 'block', fontSize: 11, fontWeight: 900,
-                  color: '#E0A03C', marginBottom: 10,
-                  letterSpacing: '0.16em', fontFamily: "'DM Sans',sans-serif"
-                }}>EMAIL</label>
-                <div style={{ position: 'relative' }}>
-                  <Mail size={16} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: 'rgba(224, 160, 60, 0.5)' }} />
-                  <input
-                    type="email" value={email} onChange={e => setEmail(e.target.value)} required
-                    placeholder="your@email.com"
-                    style={{
-                      width: '100%', padding: '14px 16px 14px 44px', borderRadius: 12, boxSizing: 'border-box',
-                      background: 'rgba(0, 0, 0, 0.15)', border: '1px solid rgba(224, 160, 60, 0.2)',
-                      color: '#FFF8E7', fontSize: 15, outline: 'none',
-                      fontFamily: "'DM Sans',sans-serif", transition: 'all 0.25s',
-                      boxShadow: 'inset 0 4px 10px rgba(0,0,0,0.3)',
-                    }}
-                    onFocus={e => { e.target.style.borderColor = '#E0A03C'; e.target.style.background = 'rgba(0,0,0,0.2)'; }}
-                    onBlur={e => { e.target.style.borderColor = 'rgba(224, 160, 60, 0.25)'; e.target.style.background = 'rgba(0,0,0,0.15)'; }}
-                  />
-                </div>
-              </div>
-
-              {/* Password — hidden for inventory */}
-              {role !== 'inventory_manager' && (
-                <div style={{ marginBottom: 10 }}>
-                  <label style={{
-                    display: 'block', fontSize: 11, fontWeight: 900,
-                    color: '#E0A03C', marginBottom: 10,
-                    letterSpacing: '0.16em', fontFamily: "'DM Sans',sans-serif"
-                  }}>PASSWORD</label>
-                  <div style={{ position: 'relative' }}>
-                    <Lock size={16} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: 'rgba(224, 160, 60, 0.5)' }} />
-                    <input
-                      type={showPass ? 'text' : 'password'} value={password}
-                      onChange={e => setPassword(e.target.value)} required
-                      placeholder="••••••••"
-                      style={{
-                        width: '100%', padding: '14px 48px 14px 44px', borderRadius: 12, boxSizing: 'border-box',
-                        background: 'rgba(0, 0, 0, 0.15)', border: '1px solid rgba(224, 160, 60, 0.2)',
-                        color: '#FFF8E7', fontSize: 15, outline: 'none',
-                        fontFamily: "'DM Sans',sans-serif", transition: 'all 0.25s',
-                        boxShadow: 'inset 0 4px 10px rgba(0,0,0,0.3)',
-                      }}
-                      onFocus={e => { e.target.style.borderColor = '#E0A03C'; e.target.style.background = 'rgba(0,0,0,0.2)'; }}
-                      onBlur={e => { e.target.style.borderColor = 'rgba(224, 160, 60, 0.25)'; e.target.style.background = 'rgba(0,0,0,0.15)'; }}
-                    />
-                    <button type="button" onClick={() => setShowPass(s => !s)} style={{
-                      position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
-                      background: 'none', border: 'none', cursor: 'pointer', padding: 4,
-                      color: 'rgba(212,175,55,0.7)', display: 'flex'
-                    }}>
-                      {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {error && <ErrorBanner msg={error} />}
-
-              {/* Submit button — Royal Gold */}
-              <button
-                type="submit" disabled={loading}
-                className="login-btn"
-                style={{
-                  width: '100%', padding: '15px 20px', borderRadius: 12, border: 'none', marginTop: 10,
-                  background: loading
-                    ? 'rgba(224,160,60,0.2)'
-                    : 'linear-gradient(135deg, #B8860B 0%, #E0A03C 40%, #FFF8E7 60%, #E0A03C 100%)',
-                  color: loading ? 'rgba(255,248,231,0.35)' : '#4A3A2C',
-                  fontSize: 16, fontWeight: 900, cursor: loading ? 'not-allowed' : 'pointer',
-                  boxShadow: loading ? 'none' : '0 10px 30px rgba(0,0,0,0.4), 0 0 20px rgba(224,160,60,0.2)',
-                  transition: 'all 0.3s ease', fontFamily: "'Cinzel','DM Sans',sans-serif",
-                  letterSpacing: '0.12em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                }}>
-                {loading ? 'Processing…' : 'SIGN IN'}
-              </button>
-            </form>
+          {/* Brand */}
+          <div className="lp-brand">
+            <img src="/al-mawaid.png" alt="Al-Mawaid" className="lp-logo" />
+            <div className="lp-title">AL-MAWAID</div>
           </div>
+
+          {/* Role tabs */}
+          <div className="lp-tabs">
+            {LOGIN_ROLES.map(r => (
+              <button
+                key={r.id}
+                className={`lp-tab ${role === r.id ? 'lp-tab--active' : 'lp-tab--inactive'}`}
+                onClick={() => { setRole(r.id); setError('') }}
+                type="button"
+              >
+                {r.icon}
+                {r.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Subtitle */}
+          <div className="lp-subtitle">
+            <User size={13} />
+            {activeRole?.short} — member portal
+          </div>
+
+          {/* Form */}
+          <form className="lp-form" onSubmit={handleAuth}>
+            <div>
+              <label className="lp-label">Email</label>
+              <div className="lp-input-wrap">
+                <Mail />
+                <input
+                  type="email"
+                  className="lp-input"
+                  placeholder="your@email.com"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                />
+              </div>
+            </div>
+
+            {role !== 'inventory_manager' && (
+              <div>
+                <label className="lp-label">Password</label>
+                <div className="lp-input-wrap">
+                  <Lock />
+                  <input
+                    type={showPass ? 'text' : 'password'}
+                    className="lp-input"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    className="lp-eye"
+                    onClick={() => setShowPass(s => !s)}
+                    tabIndex={-1}
+                  >
+                    {showPass ? <EyeOff size={17} /> : <Eye size={17} />}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {error && <div className="lp-error">{error}</div>}
+
+            <button type="submit" className="lp-btn" disabled={loading}>
+              {loading ? 'Processing…' : 'Sign In'}
+            </button>
+          </form>
         </div>
       </div>
-
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&display=swap');
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes kenburns {
-          0% { transform: scale(1); }
-          100% { transform: scale(1.15) translate(10px, 5px); }
-        }
-        .spin { animation: spin 0.8s linear infinite; }
-        body { margin: 0; }
-        input::placeholder { color: rgba(212,175,55,0.35); }
-        .login-btn {
-          width: 100%; padding: 15px 20px; borderRadius: 12; border: 1px solid rgba(212,175,55,0.4) !important; marginTop: 15px;
-          background: rgba(212,175,55,0.08) !important;
-          backdrop-filter: blur(10px);
-          color: #FFF8E1;
-          fontSize: 16px; fontWeight: 800; cursor: pointer;
-          boxShadow: 0 4px 15px rgba(0,0,0,0.2);
-          transition: all 0.3s ease; fontFamily: "'Cinzel','DM Sans',sans-serif";
-          letterSpacing: 0.1em; display: flex; alignItems: center; justifyContent: center; gap: 10px;
-        }
-        .login-btn:hover:not(:disabled) {
-          background: rgba(212,175,55,0.15) !important;
-          border-color: #D4AF37 !important;
-          box-shadow: 0 0 30px rgba(212,175,55,0.3), 0 8px 32px rgba(0,0,0,0.5) !important;
-          transform: translateY(-1px);
-        }
-        .login-btn:active:not(:disabled) { transform: translateY(0); }
-        .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-      `}</style>
-    </div>
+    </>
   )
 }
 
@@ -772,7 +870,7 @@ function SurveyModal({ startDay, onClose }) {
         <div style={{ display: 'flex', gap: 4, overflowX: 'auto', marginBottom: 14, paddingBottom: 2, scrollbarWidth: 'none' }}>
           {DAYS.map(day => (
             <button key={day} onClick={() => goToDay(day)}
-              style={{ flexShrink: 0, padding: '4px 10px', borderRadius: 20, border: `1.5px solid ${currentDay === day ? t.accent : t.border}`, background: currentDay === day ? t.accentBg : 'transparent', color: currentDay === day ? t.accent : t.textSub, fontWeight: 700, fontSize: 10, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>
+              style={{ flexShrink: 0, padding: '4px 10px', borderRadius: 20, border: `1.5px solid ${currentDay === day ? t.accent : t.border}`, background: currentDay === day ? t.accentBg : 'transparent', color: currentDay === day ? t.accent : t.textSub, fontWeight: 700, fontSize: 10, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
               {weeklyMenu[day]?.en?.slice(0, 3) || day.slice(0, 3)}
             </button>
           ))}
@@ -783,18 +881,18 @@ function SurveyModal({ startDay, onClose }) {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <img src="/al-mawaid.png" alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />
-              <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{menu.en}</h2>
+              <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700, color: t.accent, fontFamily: "'Inter', sans-serif" }}>{menu.en || currentDay}</h2>
             </div>
-            <div style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 3 }}>
+            <div style={{ fontSize: 13, color: t.textSub, fontFamily: "'Inter', sans-serif", marginTop: 3 }}>
               {currentMeal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}<span style={{ margin: '0 6px', opacity: .3 }}>·</span>
-              <span style={{ fontFamily: "'Amiri',serif", fontSize: 14 }}>{menu.ar}</span>
+              <span style={{ fontFamily: "'Inter', sans-serif, 'Amiri', serif", fontSize: 14 }}>{menu.ar}</span>
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><X size={18} color={t.textSub} /></button>
         </div>
 
         {editBlocked && (
-          <div style={{ marginBottom: 12, padding: 11, borderRadius: 10, background: 'rgba(220,140,40,0.10)', border: '1px solid rgba(220,140,40,0.28)', color: '#d4882a', fontSize: 12, fontFamily: "'DM Sans',sans-serif" }}>
+          <div style={{ marginBottom: 12, padding: 11, borderRadius: 10, background: 'rgba(220,140,40,0.10)', border: '1px solid rgba(220,140,40,0.28)', color: '#d4882a', fontSize: 12, fontFamily: "'Inter', sans-serif" }}>
             ⚠️ 1 edit already used for this meal — view only.
           </div>
         )}
@@ -802,11 +900,11 @@ function SurveyModal({ startDay, onClose }) {
         {/* Prev / Next */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
           <button onClick={handlePrev} disabled={isFirst}
-            style={{ flex: 1, padding: '8px 12px', borderRadius: 10, border: `1px solid ${t.border}`, background: 'transparent', color: isFirst ? t.border : t.textSub, fontSize: 13, fontWeight: 600, cursor: isFirst ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontFamily: "'DM Sans',sans-serif" }}>
+            style={{ flex: 1, padding: '8px 12px', borderRadius: 10, border: `1px solid ${t.border}`, background: 'transparent', color: isFirst ? t.border : t.textSub, fontSize: 13, fontWeight: 600, cursor: isFirst ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontFamily: "'Inter', sans-serif" }}>
             <ChevronLeft size={13} /> Prev
           </button>
           <button onClick={handleNext} disabled={loading}
-            style={{ flex: 1, padding: '8px 12px', borderRadius: 10, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontFamily: "'DM Sans',sans-serif" }}>
+            style={{ flex: 1, padding: '8px 12px', borderRadius: 10, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontFamily: "'Inter', sans-serif" }}>
             {isLast ? 'Finish ✓' : 'Next'} {!isLast && <ChevronRight size={13} />}
           </button>
         </div>
@@ -814,37 +912,37 @@ function SurveyModal({ startDay, onClose }) {
         {/* Content */}
         {editBlocked ? (
           <div style={{ padding: 14, background: t.inputBg, borderRadius: 12, border: `1px solid ${t.border}` }}>
-            <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{wantsFood ? 'Responded: Yes' : 'Responded: No (skipped)'}</p>
+            <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: t.textSub, fontFamily: "'Inter', sans-serif" }}>{wantsFood ? 'Responded: Yes' : 'Responded: No (skipped)'}</p>
             {wantsFood && Object.entries(responses).map(([dish, val]) => (
               <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: `1px solid ${t.border}` }}>
-                <span style={{ fontSize: 13, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{val === 'yes' ? '✅' : val === 'no' ? '❌' : `${val}%`}</span>
+                <span style={{ fontSize: 13, color: t.text, fontFamily: "'Inter', sans-serif" }}>{dish}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: t.accent, fontFamily: "'Inter', sans-serif" }}>{val === 'yes' ? '✅' : val === 'no' ? '❌' : `${val}%`}</span>
               </div>
             ))}
           </div>
         ) : wantsFood === null ? (
           <div>
-            <p style={{ fontSize: 15, fontWeight: 600, color: t.text, marginBottom: 14, fontFamily: "'DM Sans',sans-serif" }}>
-              Do you want {currentMeal} for {menu.en}?
+            <p style={{ fontSize: 15, fontWeight: 600, color: t.text, marginBottom: 14, fontFamily: "'Inter', sans-serif" }}>
+              Do you want {currentMeal} for {menu.en || currentDay}?
             </p>
             <div style={{ display: 'flex', gap: 10 }}>
               <button className="stagger-item" onClick={() => setWantsFood(true)}
-                style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>✅ Yes</button>
+                style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>✅ Yes</button>
               <button className="stagger-item" onClick={() => { setWantsFood(false); setTimeout(handleNext, 200) }}
-                style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${t.border}`, background: 'transparent', color: t.text, fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>❌ No</button>
+                style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${t.border}`, background: 'transparent', color: t.text, fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>❌ No</button>
             </div>
           </div>
         ) : wantsFood ? (
           <div>
-            <p style={{ fontSize: 12, fontWeight: 600, color: t.textSub, marginBottom: 10, fontFamily: "'DM Sans',sans-serif" }}>Select portion for each dish:</p>
+            <p style={{ fontSize: 12, fontWeight: 600, color: t.textSub, marginBottom: 10, fontFamily: "'Inter', sans-serif" }}>Select portion for each dish:</p>
             {dishes.map((dish, idx) => (
               <div key={dish} className="stagger-item" style={{ marginBottom: 10, padding: 12, background: t.inputBg, borderRadius: 11, animationDelay: `${0.1 + idx * 0.05}s` }}>
-                <p style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</p>
+                <p style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: t.text, fontFamily: "'Inter', sans-serif" }}>{dish}</p>
                 {isRotiItem(dish) ? (
                   <div style={{ display: 'flex', gap: 8 }}>
                     {['yes', 'no'].map(opt => (
                       <button key={opt} onClick={() => setResponses(prev => ({ ...prev, [dish]: opt }))}
-                        style={{ flex: 1, padding: '8px 4px', borderRadius: 9, border: `1.5px solid ${responses[dish] === opt ? (opt === 'yes' ? t.accent : '#e05555') : t.border}`, background: responses[dish] === opt ? (opt === 'yes' ? t.accentBg : 'rgba(220,80,80,0.09)') : 'transparent', color: responses[dish] === opt ? (opt === 'yes' ? t.accent : '#e05555') : t.text, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>
+                        style={{ flex: 1, padding: '8px 4px', borderRadius: 9, border: `1.5px solid ${responses[dish] === opt ? (opt === 'yes' ? t.accent : '#e05555') : t.border}`, background: responses[dish] === opt ? (opt === 'yes' ? t.accentBg : 'rgba(220,80,80,0.09)') : 'transparent', color: responses[dish] === opt ? (opt === 'yes' ? t.accent : '#e05555') : t.text, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
                         {opt === 'yes' ? '✅ Yes' : '❌ No'}
                       </button>
                     ))}
@@ -853,7 +951,7 @@ function SurveyModal({ startDay, onClose }) {
                   <div style={{ display: 'flex', gap: 5 }}>
                     {[0, 25, 50, 100].map(pct => (
                       <button key={pct} onClick={() => setResponses(prev => ({ ...prev, [dish]: pct }))}
-                        style={{ flex: 1, padding: '7px 2px', borderRadius: 9, border: `1.5px solid ${responses[dish] === pct ? t.accent : t.border}`, background: responses[dish] === pct ? t.accentBg : 'transparent', color: responses[dish] === pct ? t.accent : t.text, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>
+                        style={{ flex: 1, padding: '7px 2px', borderRadius: 9, border: `1.5px solid ${responses[dish] === pct ? t.accent : t.border}`, background: responses[dish] === pct ? t.accentBg : 'transparent', color: responses[dish] === pct ? t.accent : t.text, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
                         {pct}%
                       </button>
                     ))}
@@ -862,12 +960,12 @@ function SurveyModal({ startDay, onClose }) {
               </div>
             ))}
             <button onClick={handleNext} disabled={loading || Object.keys(responses).length < dishes.length}
-              style={{ width: '100%', padding: 13, borderRadius: 11, border: 'none', marginTop: 6, background: Object.keys(responses).length < dishes.length ? t.border : t.accentGrad, color: '#fff', fontSize: 14, fontWeight: 700, cursor: Object.keys(responses).length < dishes.length ? 'not-allowed' : 'pointer', opacity: Object.keys(responses).length < dishes.length ? .5 : 1, fontFamily: "'DM Sans',sans-serif" }}>
+              style={{ width: '100%', padding: 13, borderRadius: 11, border: 'none', marginTop: 6, background: Object.keys(responses).length < dishes.length ? t.border : t.accentGrad, color: '#fff', fontSize: 14, fontWeight: 700, cursor: Object.keys(responses).length < dishes.length ? 'not-allowed' : 'pointer', opacity: Object.keys(responses).length < dishes.length ? .5 : 1, fontFamily: "'Inter', sans-serif" }}>
               {loading ? 'Saving…' : isLast ? 'Complete Survey ✓' : 'Save & Next →'}
             </button>
           </div>
         ) : (
-          <div style={{ textAlign: 'center', padding: 20, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>Skipping this meal…</div>
+          <div style={{ textAlign: 'center', padding: 20, color: t.textSub, fontFamily: "'Inter', sans-serif" }}>Skipping this meal…</div>
         )}
       </div>
     </div>
@@ -1010,7 +1108,7 @@ function DailySurveyModal({ onClose }) {
               <ClipboardList size={22} color="#fff" />
             </div>
             <div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif" }}>Daily Food Survey</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: t.accent, fontFamily: "'Inter', sans-serif" }}>Daily Food Survey</div>
               <div style={{ fontSize: 11, color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{today} • {userData.thali_no ? `Thali #${userData.thali_no}` : 'Loading...'}</div>
             </div>
           </div>
@@ -1130,16 +1228,16 @@ function ThaliUserApp() {
 
   return (
     <ThemeCtx.Provider value={t}>
-      <div style={{ fontFamily: "'DM Sans','Segoe UI',-apple-system,sans-serif", minHeight: '100vh', background: t.bgGrad, color: t.text, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }}>
+      <div style={{ fontFamily: "'Inter', sans-serif", minHeight: '100vh', background: t.bgGrad, color: t.text, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }}>
         <header style={{ position: 'relative', overflow: 'hidden', background: t.bgGrad, padding: '14px 0 0', flexShrink: 0 }}>
           <GeoBg t={t} />
           <div style={{ position: 'relative', zIndex: 1, maxWidth: 1200, margin: '0 auto', padding: '0 clamp(16px, 4vw, 32px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <img src="/al-mawaid.png" alt="" style={{ width: 24, height: 24, objectFit: 'contain', filter: 'drop-shadow(0 2px 6px rgba(196,156,90,0.5))' }} />
-                <span style={{ fontSize: 9, letterSpacing: '0.24em', textTransform: 'uppercase', color: t.textSub, opacity: .55, fontWeight: 700, fontFamily: "'DM Sans',sans-serif" }}>Al-Mawaid</span>
+                <span style={{ fontSize: 9, letterSpacing: '0.24em', textTransform: 'uppercase', color: t.textSub, opacity: .55, fontWeight: 700, fontFamily: "'Inter', sans-serif" }}>Al-Mawaid</span>
               </div>
-              <span style={{ fontSize: 11, color: t.textSub, opacity: .4, fontFamily: "'DM Sans',sans-serif" }}>
+              <span style={{ fontSize: 11, color: t.textSub, opacity: .4, fontFamily: "'Inter', sans-serif" }}>
                 {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
               </span>
             </div>
@@ -1149,7 +1247,7 @@ function ThaliUserApp() {
               </div>
             )}
             <div style={{ textAlign: 'center', marginBottom: 6 }}>
-              <h1 style={{ margin: 0, fontSize: activeTab === 'home' ? 28 : 20, fontWeight: 700, letterSpacing: '0.06em', lineHeight: 1.1, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{tabLabels[activeTab]}</h1>
+              <h1 style={{ margin: 0, fontSize: activeTab === 'home' ? 28 : 20, fontWeight: 700, letterSpacing: '0.06em', lineHeight: 1.1, color: t.accent, fontFamily: "'Inter', sans-serif" }}>{tabLabels[activeTab]}</h1>
             </div>
           </div>
           <svg style={{ display: 'block', position: 'relative', zIndex: 1 }} width="100%" viewBox="0 0 1440 28" preserveAspectRatio="none">
@@ -1202,7 +1300,7 @@ function ThaliUserApp() {
                 <span style={{ 
                   fontSize: 7.5, fontWeight: 900, letterSpacing: '0.08em', 
                   color: active ? t.accent : '#FFF8E7', opacity: active ? 1 : .3, 
-                  fontFamily: "'DM Sans',sans-serif", textTransform: 'uppercase' 
+                  fontFamily: "'Inter', sans-serif", textTransform: 'uppercase' 
                 }}>{label}</span>
               </button>
             )
@@ -1273,8 +1371,8 @@ function HomePage({ setActiveTab }) {
         <div style={{ position: 'absolute', top: -20, left: -20, width: 80, height: 80, background: t.accentGrad, borderRadius: '50%', filter: 'blur(40px)', opacity: 0.08 }} />
         <Avatar avatarUrl={profileData?.avatar_url} name={profileData?.name} size={46} />
         <div style={{ flex: 1, position: 'relative', zIndex: 1 }}>
-          <div style={{ fontSize: 17, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>{profileData?.name || 'Thali User'}</div>
-          <div style={{ fontSize: 11, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 2 }}>Thali #{profileData?.thali_number || '—'}</div>
+          <div style={{ fontSize: 17, fontWeight: 800, color: t.accent, fontFamily: "'Inter', sans-serif", lineHeight: 1.2 }}>{profileData?.name || 'Thali User'}</div>
+          <div style={{ fontSize: 11, color: t.textSub, fontFamily: "'Inter', sans-serif", marginTop: 2 }}>Thali #{profileData?.thali_number || '—'}</div>
         </div>
       </Card>
 
@@ -1291,10 +1389,10 @@ function HomePage({ setActiveTab }) {
           <div style={{ flex: 1, minWidth: 240 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: surveyOpen ? t.successText : t.textSub, boxShadow: surveyOpen ? `0 0 10px ${t.successText}` : 'none' }} />
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? 'SURVEY LIVE' : 'SURVEY CLOSED'}</div>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: t.accent, fontFamily: "'Inter', sans-serif" }}>{surveyOpen ? 'SURVEY LIVE' : 'SURVEY CLOSED'}</div>
             </div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>Weekly Food Survey</div>
-            <div style={{ fontSize: 13, color: t.textSub, marginTop: 8, fontFamily: "'DM Sans',sans-serif" }}>{getSurveyWindowMessage()}</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: t.text, fontFamily: "'Inter', sans-serif", lineHeight: 1.2 }}>Weekly Food Survey</div>
+            <div style={{ fontSize: 13, color: t.textSub, marginTop: 8, fontFamily: "'Inter', sans-serif" }}>{getSurveyWindowMessage()}</div>
           </div>
 
           <button 
@@ -1307,7 +1405,7 @@ function HomePage({ setActiveTab }) {
               fontSize: 14, fontWeight: 900, border: 'none', cursor: surveyOpen ? 'pointer' : 'not-allowed',
               display: 'flex', alignItems: 'center', gap: 10, boxShadow: surveyOpen ? `0 10px 25px ${t.accent}40` : 'none',
               transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              fontFamily: "'DM Sans',sans-serif"
+              fontFamily: "'Inter', sans-serif"
             }}
           >
             <ClipboardList size={18} /> Start Survey
@@ -1321,7 +1419,7 @@ function HomePage({ setActiveTab }) {
         <div style={{ position: 'absolute', top: -30, right: -30, width: 100, height: 100, background: t.accentGrad, borderRadius: '50%', filter: 'blur(50px)', opacity: 0.08 }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
           <div style={{ width: 36, height: 36, borderRadius: 10, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Star size={16} color="#fff" fill="#fff" /></div>
-          <div style={{ fontSize: 17, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif" }}>Daily Feedback</div>
+          <div style={{ fontSize: 17, fontWeight: 800, color: t.accent, fontFamily: "'Inter', sans-serif" }}>Daily Feedback</div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
           {['lunch', 'dinner'].map(meal => {
@@ -1330,7 +1428,7 @@ function HomePage({ setActiveTab }) {
             const submitted = feedbackSubmitted[meal]
             return (
               <div key={meal} style={{ background: t.inputBg, padding: 14, borderRadius: 14, border: `1px solid ${stars > 0 ? t.accentBorder : t.border}`, transition: 'border-color 0.3s' }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif" }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'Inter', sans-serif" }}>
                   {meal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}
                 </div>
                 {submitted ? (
@@ -1344,7 +1442,7 @@ function HomePage({ setActiveTab }) {
                         </button>
                       ))}
                     </div>
-                    {stars > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: t.accent, opacity: 0.7, fontFamily: "'DM Sans',sans-serif" }}>{STAR_LABELS[stars]}</div>}
+                    {stars > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: t.accent, opacity: 0.7, fontFamily: "'Inter', sans-serif" }}>{STAR_LABELS[stars]}</div>}
                   </div>
                 )}
               </div>
@@ -1357,7 +1455,7 @@ function HomePage({ setActiveTab }) {
             value={lunchComment}
             onChange={e => { setLunchComment(e.target.value); setDinnerComment(e.target.value) }}
             placeholder="Tell us what you liked or how we can improve..."
-            style={{ width: '100%', padding: '12px 14px', borderRadius: 12, background: t.inputBg, border: `1px solid ${t.border}`, color: t.text, fontSize: 13, resize: 'none', outline: 'none', fontFamily: "'DM Sans',sans-serif", minHeight: 70, boxSizing: 'border-box' }}
+            style={{ width: '100%', padding: '12px 14px', borderRadius: 12, background: t.inputBg, border: `1px solid ${t.border}`, color: t.text, fontSize: 13, resize: 'none', outline: 'none', fontFamily: "'Inter', sans-serif", minHeight: 70, boxSizing: 'border-box' }}
           />
         </div>
         <Btn onClick={handleSubmitCombined} disabled={submittingFeedback || (!lunchStars && !dinnerStars)} style={{ width: '100%', height: 48, fontSize: 14 }}>
@@ -1400,8 +1498,8 @@ function WeeklyMenuPage() {
               <Utensils size={20} color="#fff" />
             </div>
             <div>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.2em', color: t.accent, textTransform: 'uppercase', fontFamily: "'DM Sans',sans-serif" }}>Culinary Journey</div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif" }}>Weekly Menu</div>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.2em', color: t.accent, textTransform: 'uppercase', fontFamily: "'Inter', sans-serif" }}>Culinary Journey</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: t.text, fontFamily: "'Inter', sans-serif" }}>Weekly Menu</div>
             </div>
           </div>
 
@@ -1455,10 +1553,10 @@ function WeeklyMenuPage() {
                     {day.slice(0, 2).toUpperCase()}
                   </div>
                   <div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: isExpanded ? t.accent : t.text, fontFamily: "'Playfair Display',serif" }}>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: isExpanded ? t.accent : t.text, fontFamily: "'Inter', sans-serif" }}>
                       {day.charAt(0).toUpperCase() + day.slice(1)}
                     </div>
-                    <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 2, opacity: 0.7 }}>
+                    <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'Inter', sans-serif", marginTop: 2, opacity: 0.7 }}>
                       {menu.en || 'Special Menu Coming Soon'}
                     </div>
                   </div>
@@ -1480,7 +1578,7 @@ function WeeklyMenuPage() {
                   <div style={{ 
                     textAlign: 'center', marginBottom: 20, padding: '12px', 
                     borderRadius: 20, background: 'rgba(212,175,55,0.05)',
-                    fontFamily: "'Amiri',serif", fontSize: 18, color: t.accent
+                    fontFamily: "'Inter', sans-serif, 'Amiri', serif", fontSize: 18, color: t.accent
                   }}>{menu.ar}</div>
                 )}
 
@@ -1551,7 +1649,7 @@ function PostPage() {
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, background: t.card, borderRadius: 13, padding: 5, border: `1px solid ${t.border}` }}>
         {[{ id: 'requests', label: '📋 Requests' }, { id: 'queries', label: '❓ Queries' }].map(({ id, label }) => (
           <button key={id} onClick={() => setSubTab(id)}
-            style={{ flex: 1, padding: '10px 12px', borderRadius: 9, border: 'none', background: subTab === id ? t.accentGrad : 'transparent', color: subTab === id ? '#fff' : t.textSub, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.25s' }}>
+            style={{ flex: 1, padding: '10px 12px', borderRadius: 9, border: 'none', background: subTab === id ? t.accentGrad : 'transparent', color: subTab === id ? '#fff' : t.textSub, fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: "'Inter', sans-serif", transition: 'all 0.25s' }}>
             {label}
           </button>
         ))}
@@ -1574,7 +1672,7 @@ function ThaliRequestsSection() {
   const [stopTo, setStopTo] = useState('')
   const [extraItems, setExtraItems] = useState([{ name: '', qty: 1 }])
   const today = new Date().toISOString().split('T')[0]
-  const inp = { width: '100%', padding: '11px 13px', borderRadius: 11, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }
+  const inp = { width: '100%', padding: '11px 13px', borderRadius: 11, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 14, outline: 'none', fontFamily: "'Inter', sans-serif" }
 
   const resetAll = () => { setResumeFrom(''); setResumeTo(''); setStopFrom(''); setStopTo(''); setExtraItems([{ name: '', qty: 1 }]); setError(''); setSuccess('') }
   const openRequest = (type) => { resetAll(); setActiveRequest(activeRequest === type ? null : type) }
@@ -1603,8 +1701,8 @@ function ThaliRequestsSection() {
     <button onClick={() => openRequest(type)} style={{ width: '100%', padding: 15, background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left' }}>
       <div style={{ width: 44, height: 44, borderRadius: 12, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{emoji}</div>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: activeRequest === type ? t.accent : t.text, fontFamily: "'DM Sans',sans-serif" }}>{label}</div>
-        <div style={{ fontSize: 12, color: t.textSub, marginTop: 1, fontFamily: "'DM Sans',sans-serif" }}>{desc}</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: activeRequest === type ? t.accent : t.text, fontFamily: "'Inter', sans-serif" }}>{label}</div>
+        <div style={{ fontSize: 12, color: t.textSub, marginTop: 1, fontFamily: "'Inter', sans-serif" }}>{desc}</div>
       </div>
       {activeRequest === type ? <ChevronUp size={14} color={t.accent} /> : <ChevronDown size={14} color={t.accent} />}
     </button>
@@ -1612,17 +1710,17 @@ function ThaliRequestsSection() {
 
   return (
     <div>
-      {success && <div style={{ marginBottom: 12, padding: 13, borderRadius: 12, background: t.successBg, border: `1px solid ${t.successBorder}`, color: t.successText, fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>{success}</div>}
+      {success && <div style={{ marginBottom: 12, padding: 13, borderRadius: 12, background: t.successBg, border: `1px solid ${t.successBorder}`, color: t.successText, fontSize: 14, fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>{success}</div>}
       <RCard type="resume">
         <HdrBtn type="resume" emoji="▶️" label="Resume Thali" desc="Restart your thali service" />
         {activeRequest === 'resume' && (
           <div style={{ padding: '0 16px 16px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-              <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>FROM</label><input type="date" value={resumeFrom} min={today} onChange={e => setResumeFrom(e.target.value)} style={inp} /></div>
-              <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>TO</label><input type="date" value={resumeTo} min={resumeFrom || today} onChange={e => setResumeTo(e.target.value)} style={inp} /></div>
+              <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'Inter', sans-serif" }}>FROM</label><input type="date" value={resumeFrom} min={today} onChange={e => setResumeFrom(e.target.value)} style={inp} /></div>
+              <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'Inter', sans-serif" }}>TO</label><input type="date" value={resumeTo} min={resumeFrom || today} onChange={e => setResumeTo(e.target.value)} style={inp} /></div>
             </div>
             {error && <ErrorBanner msg={error} />}
-            <button onClick={() => handleSubmit('resume')} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting…' : '✅ Submit Resume Request'}</button>
+            <button onClick={() => handleSubmit('resume')} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, fontFamily: "'Inter', sans-serif" }}>{submitting ? 'Submitting…' : '✅ Submit Resume Request'}</button>
           </div>
         )}
       </RCard>
@@ -1631,11 +1729,11 @@ function ThaliRequestsSection() {
         {activeRequest === 'stop' && (
           <div style={{ padding: '0 16px 16px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-              <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>FROM</label><input type="date" value={stopFrom} min={today} onChange={e => setStopFrom(e.target.value)} style={inp} /></div>
-              <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>TO</label><input type="date" value={stopTo} min={stopFrom || today} onChange={e => setStopTo(e.target.value)} style={inp} /></div>
+              <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'Inter', sans-serif" }}>FROM</label><input type="date" value={stopFrom} min={today} onChange={e => setStopFrom(e.target.value)} style={inp} /></div>
+              <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'Inter', sans-serif" }}>TO</label><input type="date" value={stopTo} min={stopFrom || today} onChange={e => setStopTo(e.target.value)} style={inp} /></div>
             </div>
             {error && <ErrorBanner msg={error} />}
-            <button onClick={() => handleSubmit('stop')} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : 'linear-gradient(135deg,#e05555,#c03030)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting…' : '⏹️ Submit Stop Request'}</button>
+            <button onClick={() => handleSubmit('stop')} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : 'linear-gradient(135deg,#e05555,#c03030)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, fontFamily: "'Inter', sans-serif" }}>{submitting ? 'Submitting…' : '⏹️ Submit Stop Request'}</button>
           </div>
         )}
       </RCard>
@@ -1649,15 +1747,15 @@ function ThaliRequestsSection() {
                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                   {[1, 2, 3, 4].map(n => (
                     <button key={n} onClick={() => updateExtraItem(i, 'qty', n)}
-                      style={{ width: 32, height: 36, borderRadius: 9, border: `1.5px solid ${item.qty === n ? t.accent : t.border}`, background: item.qty === n ? t.accentBg : 'transparent', color: item.qty === n ? t.accent : t.textSub, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>{n}</button>
+                      style={{ width: 32, height: 36, borderRadius: 9, border: `1.5px solid ${item.qty === n ? t.accent : t.border}`, background: item.qty === n ? t.accentBg : 'transparent', color: item.qty === n ? t.accent : t.textSub, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>{n}</button>
                   ))}
                 </div>
                 {extraItems.length > 1 && <button onClick={() => removeExtraItem(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><X size={15} color="#e05555" /></button>}
               </div>
             ))}
-            {extraItems.length < 6 && <button onClick={addExtraItem} style={{ width: '100%', padding: 10, borderRadius: 11, border: `1px dashed ${t.accent}`, background: 'transparent', color: t.accent, fontWeight: 600, fontSize: 13, cursor: 'pointer', marginBottom: 10, fontFamily: "'DM Sans',sans-serif" }}>+ Add Another Item</button>}
+            {extraItems.length < 6 && <button onClick={addExtraItem} style={{ width: '100%', padding: 10, borderRadius: 11, border: `1px dashed ${t.accent}`, background: 'transparent', color: t.accent, fontWeight: 600, fontSize: 13, cursor: 'pointer', marginBottom: 10, fontFamily: "'Inter', sans-serif" }}>+ Add Another Item</button>}
             {error && <ErrorBanner msg={error} />}
-            <button onClick={() => handleSubmit('extra')} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting…' : '➕ Submit Extra Food Request'}</button>
+            <button onClick={() => handleSubmit('extra')} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, fontFamily: "'Inter', sans-serif" }}>{submitting ? 'Submitting…' : '➕ Submit Extra Food Request'}</button>
           </div>
         )}
       </RCard>
@@ -1714,8 +1812,8 @@ function QueriesSection() {
   return (
     <div>
       <Card style={{ marginBottom: 18 }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: t.accent, marginBottom: 12, fontFamily: "'Playfair Display',serif" }}>✉️ New Query</div>
-        <textarea value={comment} onChange={e => setComment(e.target.value)} style={{ width: '100%', minHeight: 78, padding: 12, borderRadius: 11, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 14, resize: 'vertical', outline: 'none', fontFamily: "'DM Sans',sans-serif", marginBottom: 10 }} placeholder="Describe your query or issue…" />
+        <div style={{ fontSize: 15, fontWeight: 700, color: t.accent, marginBottom: 12, fontFamily: "'Inter', sans-serif" }}>✉️ New Query</div>
+        <textarea value={comment} onChange={e => setComment(e.target.value)} style={{ width: '100%', minHeight: 78, padding: 12, borderRadius: 11, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 14, resize: 'vertical', outline: 'none', fontFamily: "'Inter', sans-serif", marginBottom: 10 }} placeholder="Describe your query or issue…" />
         {mediaFiles.length > 0 && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
             {mediaFiles.map((item, i) => (
@@ -1728,31 +1826,31 @@ function QueriesSection() {
         )}
         <input ref={fileInputRef} type="file" accept="image/*,video/*" multiple onChange={handleFileSelect} style={{ display: 'none' }} />
         {mediaFiles.length < 4 && (
-          <button onClick={() => fileInputRef.current?.click()} style={{ width: '100%', padding: 10, borderRadius: 11, border: `1px dashed ${t.accentBorder}`, background: t.accentBg, color: t.accent, fontWeight: 600, fontSize: 13, cursor: 'pointer', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontFamily: "'DM Sans',sans-serif" }}>
+          <button onClick={() => fileInputRef.current?.click()} style={{ width: '100%', padding: 10, borderRadius: 11, border: `1px dashed ${t.accentBorder}`, background: t.accentBg, color: t.accent, fontWeight: 600, fontSize: 13, cursor: 'pointer', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, fontFamily: "'Inter', sans-serif" }}>
             <Camera size={14} /> Attach Photo / Video ({mediaFiles.length}/4)
           </button>
         )}
         {error && <ErrorBanner msg={error} />}
-        {success && <div style={{ marginBottom: 10, padding: 11, borderRadius: 10, background: t.successBg, border: `1px solid ${t.successBorder}`, color: t.successText, fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>{success}</div>}
-        <button onClick={handleSubmit} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting…' : '📨 Submit Query'}</button>
+        {success && <div style={{ marginBottom: 10, padding: 11, borderRadius: 10, background: t.successBg, border: `1px solid ${t.successBorder}`, color: t.successText, fontSize: 13, fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>{success}</div>}
+        <button onClick={handleSubmit} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: 14, fontFamily: "'Inter', sans-serif" }}>{submitting ? 'Submitting…' : '📨 Submit Query'}</button>
       </Card>
       <SectionLabel>My Queries</SectionLabel>
-      {loading ? <Spinner /> : queries.length === 0 ? <div style={{ textAlign: 'center', padding: 40, color: t.textSub, fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>No queries yet.</div> : queries.map(q => (
+      {loading ? <Spinner /> : queries.length === 0 ? <div style={{ textAlign: 'center', padding: 40, color: t.textSub, fontSize: 14, fontFamily: "'Inter', sans-serif" }}>No queries yet.</div> : queries.map(q => (
         <Card key={q.id} style={{ marginBottom: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
             <div>
-              <span style={{ display: 'block', fontSize: 11, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginBottom: 4 }}>{new Date(q.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: `${statusColor(q.status)}20`, color: statusColor(q.status), border: `1px solid ${statusColor(q.status)}38`, fontFamily: "'DM Sans',sans-serif" }}>{q.status?.toUpperCase()}</span>
+              <span style={{ display: 'block', fontSize: 11, color: t.textSub, fontFamily: "'Inter', sans-serif", marginBottom: 4 }}>{new Date(q.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: `${statusColor(q.status)}20`, color: statusColor(q.status), border: `1px solid ${statusColor(q.status)}38`, fontFamily: "'Inter', sans-serif" }}>{q.status?.toUpperCase()}</span>
             </div>
             <a href={buildQueryShareLink(q)} target="_blank" rel="noreferrer" style={{ width: 38, height: 38, borderRadius: 12, background: 'linear-gradient(135deg,#25D366,#128C7E)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', flexShrink: 0, boxShadow: '0 8px 18px rgba(18,140,126,0.22)' }}><WhatsAppLogo size={18} /></a>
           </div>
-          {q.comment && <p style={{ margin: '0 0 8px', fontSize: 14, color: t.textBody, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>{q.comment}</p>}
+          {q.comment && <p style={{ margin: '0 0 8px', fontSize: 14, color: t.textBody, lineHeight: 1.6, fontFamily: "'Inter', sans-serif" }}>{q.comment}</p>}
           {q.media && q.media.length > 0 && (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
               {q.media.map((m, i) => m.path && m.type === 'image' && <img key={i} src={m.path} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover' }} />)}
             </div>
           )}
-          {q.admin_reply && <div style={{ marginTop: 8, padding: 10, borderRadius: 9, background: t.accentBg, border: `1px solid ${t.accentBorder}`, fontSize: 13, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>💬 <strong>Reply:</strong> {q.admin_reply}</div>}
+          {q.admin_reply && <div style={{ marginTop: 8, padding: 10, borderRadius: 9, background: t.accentBg, border: `1px solid ${t.accentBorder}`, fontSize: 13, color: t.accent, fontFamily: "'Inter', sans-serif" }}>💬 <strong>Reply:</strong> {q.admin_reply}</div>}
         </Card>
       ))}
     </div>
@@ -1784,8 +1882,8 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
     <button onClick={onClick} style={{ width: '100%', padding: '13px 16px', borderRadius: 14, border: `1px solid ${t.border}`, background: t.card, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10, textAlign: 'left', transition: 'all 0.2s' }}>
       <div style={{ width: 42, height: 42, borderRadius: 12, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</div>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{label}</div>
-        <div style={{ fontSize: 12, color: t.textSub, marginTop: 1, fontFamily: "'DM Sans',sans-serif" }}>{desc}</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'Inter', sans-serif" }}>{label}</div>
+        <div style={{ fontSize: 12, color: t.textSub, marginTop: 1, fontFamily: "'Inter', sans-serif" }}>{desc}</div>
       </div>
       <ChevronRight size={15} color={t.textSub} />
     </button>
@@ -1796,13 +1894,13 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
     <main style={{ flex: 1, padding: '16px 16px 96px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       <Card active style={{ textAlign: 'center', marginBottom: 20 }}>
         <div style={{ width: 84, height: 84, margin: '0 auto 14px' }}><Avatar avatarUrl={profileData?.avatar_url} name={profileData?.name} email={user.email} size={84} /></div>
-        <h2 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700, color: t.text, fontFamily: "'Playfair Display',serif" }}>{profileData?.name || 'Thali User'}</h2>
-        <div style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginBottom: 6 }}>{user.email}</div>
-        {profileData?.thali_number && <div style={{ display: 'inline-block', padding: '4px 16px', borderRadius: 20, background: t.accentBg, border: `1px solid ${t.accentBorder}`, marginBottom: 6 }}><span style={{ fontSize: 13, color: t.accent, fontWeight: 700, fontFamily: "'DM Sans',sans-serif" }}>Thali #{profileData.thali_number}</span></div>}
-        {profileData?.phone && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 6 }}><Phone size={12} color={t.textSub} /><span style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{profileData.phone}</span></div>}
-        {profileData?.address && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 4 }}><MapPin size={12} color={t.textSub} /><span style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{profileData.address}</span></div>}
-        <div style={{ fontSize: 11, color: t.textSub, marginTop: 10, opacity: .5, fontFamily: "'DM Sans',sans-serif" }}>Thali User since {new Date(user.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
-        <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 10, background: t.accentBg, border: `1px solid ${t.accentBorder}`, fontSize: 12, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>ℹ️ To update your profile details, contact an admin.</div>
+        <h2 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700, color: t.text, fontFamily: "'Inter', sans-serif" }}>{profileData?.name || 'Thali User'}</h2>
+        <div style={{ fontSize: 13, color: t.textSub, fontFamily: "'Inter', sans-serif", marginBottom: 6 }}>{user.email}</div>
+        {profileData?.thali_number && <div style={{ display: 'inline-block', padding: '4px 16px', borderRadius: 20, background: t.accentBg, border: `1px solid ${t.accentBorder}`, marginBottom: 6 }}><span style={{ fontSize: 13, color: t.accent, fontWeight: 700, fontFamily: "'Inter', sans-serif" }}>Thali #{profileData.thali_number}</span></div>}
+        {profileData?.phone && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 6 }}><Phone size={12} color={t.textSub} /><span style={{ fontSize: 13, color: t.textSub, fontFamily: "'Inter', sans-serif" }}>{profileData.phone}</span></div>}
+        {profileData?.address && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 4 }}><MapPin size={12} color={t.textSub} /><span style={{ fontSize: 13, color: t.textSub, fontFamily: "'Inter', sans-serif" }}>{profileData.address}</span></div>}
+        <div style={{ fontSize: 11, color: t.textSub, marginTop: 10, opacity: .5, fontFamily: "'Inter', sans-serif" }}>Thali User since {new Date(user.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+        <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 10, background: t.accentBg, border: `1px solid ${t.accentBorder}`, fontSize: 12, color: t.accent, fontFamily: "'Inter', sans-serif" }}>ℹ️ To update your profile details, contact an admin.</div>
       </Card>
       <SectionLabel>My Activity</SectionLabel>
       <NavCard label="My Surveys" icon={<ClipboardList size={19} color="#fff" />} desc="View your weekly survey responses" onClick={() => onNav('surveys')} />
@@ -1815,19 +1913,19 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
       <div style={{ marginTop: 20, marginBottom: 20 }}>
         <SectionLabel>App Theme</SectionLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {Object.values(THEMES).filter(th => th.id === 'dark' || th.id === 'purple').map(th => (
+          {Object.values(THEMES).filter(th => th.id === 'dark' || th.id === 'bright').map(th => (
             <button key={th.id} onClick={() => setTheme(th.id)}
               style={{ padding: '12px 14px', borderRadius: 13, border: `1.5px solid ${theme === th.id ? th.accent : t.border}`, background: theme === th.id ? th.accentBg : t.card, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.25s' }}>
               <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
                 {[th.bg, th.accent, th.card].map((c, i) => <div key={i} style={{ width: 20, height: 20, borderRadius: '50%', background: c, border: '1.5px solid rgba(255,255,255,0.12)' }} />)}
               </div>
-              <div style={{ flex: 1, textAlign: 'left', fontSize: 14, fontWeight: 700, color: theme === th.id ? th.accent : t.text, fontFamily: "'DM Sans',sans-serif" }}>{th.icon} {th.name}</div>
+              <div style={{ flex: 1, textAlign: 'left', fontSize: 14, fontWeight: 700, color: theme === th.id ? th.accent : t.text, fontFamily: "'Inter', sans-serif" }}>{th.icon} {th.name}</div>
               {theme === th.id && <Check size={15} color={th.accent} />}
             </button>
           ))}
         </div>
       </div>
-      <button onClick={signOut} style={{ width: '100%', padding: 14, borderRadius: 13, border: '1px solid rgba(220,60,60,0.28)', background: 'rgba(220,60,60,0.07)', color: '#e05555', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: "'DM Sans',sans-serif" }}>
+      <button onClick={signOut} style={{ width: '100%', padding: 14, borderRadius: 13, border: '1px solid rgba(220,60,60,0.28)', background: 'rgba(220,60,60,0.07)', color: '#e05555', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: "'Inter', sans-serif" }}>
         <LogOut size={15} /> Sign Out
       </button>
     </main>
@@ -1879,21 +1977,21 @@ function MySurveysPage({ onBack }) {
           <Card key={day} active style={{ marginBottom: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
               <img src="/al-mawaid.png" alt="" style={{ width: 28, height: 28, objectFit: 'contain' }} />
-              <div style={{ fontSize: 16, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{weeklyMenu[day]?.en || day}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: t.accent, fontFamily: "'Inter', sans-serif" }}>{weeklyMenu[day]?.en || day}</div>
             </div>
             {['lunch', 'dinner'].map(meal => {
               const r = dayData[meal]; if (!r) return null
               return (
                 <div key={meal} style={{ marginBottom: 8, padding: 11, background: t.inputBg, borderRadius: 10, border: `1px solid ${t.border}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{meal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}</span>
-                    <span style={{ fontSize: 10, color: (r.edit_count || 0) < 1 ? t.accent : '#e05555', fontFamily: "'DM Sans',sans-serif", fontWeight: 600 }}>{(r.edit_count || 0) < 1 ? '1 edit left' : 'no edits left'}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: t.accent, fontFamily: "'Inter', sans-serif" }}>{meal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}</span>
+                    <span style={{ fontSize: 10, color: (r.edit_count || 0) < 1 ? t.accent : '#e05555', fontFamily: "'Inter', sans-serif", fontWeight: 600 }}>{(r.edit_count || 0) < 1 ? '1 edit left' : 'no edits left'}</span>
                   </div>
-                  <div style={{ fontSize: 13, color: r.wants_food ? t.successText : '#e05555', fontWeight: 700, fontFamily: "'DM Sans',sans-serif", marginBottom: r.wants_food ? 6 : 0 }}>{r.wants_food ? '✅ Requested Food' : '❌ Skipped'}</div>
+                  <div style={{ fontSize: 13, color: r.wants_food ? t.successText : '#e05555', fontWeight: 700, fontFamily: "'Inter', sans-serif", marginBottom: r.wants_food ? 6 : 0 }}>{r.wants_food ? '✅ Requested Food' : '❌ Skipped'}</div>
                   {r.wants_food && r.dish_responses && Object.entries(r.dish_responses).map(([dish, val]) => (
                     <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid ${t.border}` }}>
-                      <span style={{ fontSize: 12, color: t.textBody, fontFamily: "'DM Sans',sans-serif" }}>{dish}</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{val === 'yes' ? '✅' : val === 'no' ? '❌' : `${val}%`}</span>
+                      <span style={{ fontSize: 12, color: t.textBody, fontFamily: "'Inter', sans-serif" }}>{dish}</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: t.accent, fontFamily: "'Inter', sans-serif" }}>{val === 'yes' ? '✅' : val === 'no' ? '❌' : `${val}%`}</span>
                     </div>
                   ))}
                 </div>
@@ -1930,15 +2028,15 @@ function MyRequestsPage({ onBack }) {
         <Card key={r.id} style={{ marginBottom: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{typeLabel(r.request_type)}</div>
-              <span style={{ display: 'inline-flex', marginTop: 6, fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: `${statusColor(r.status)}20`, color: statusColor(r.status), border: `1px solid ${statusColor(r.status)}40`, fontFamily: "'DM Sans',sans-serif" }}>{r.status?.toUpperCase()}</span>
+              <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'Inter', sans-serif" }}>{typeLabel(r.request_type)}</div>
+              <span style={{ display: 'inline-flex', marginTop: 6, fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: `${statusColor(r.status)}20`, color: statusColor(r.status), border: `1px solid ${statusColor(r.status)}40`, fontFamily: "'Inter', sans-serif" }}>{r.status?.toUpperCase()}</span>
             </div>
             <a href={buildShareLink(r)} target="_blank" rel="noreferrer" style={{ width: 38, height: 38, borderRadius: 12, background: 'linear-gradient(135deg,#25D366,#128C7E)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', flexShrink: 0, boxShadow: '0 8px 18px rgba(18,140,126,0.22)' }}><WhatsAppLogo size={18} /></a>
           </div>
-          {r.from_date && <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{r.from_date} → {r.to_date}</div>}
-          {r.extra_items && <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{r.extra_items.map(i => `${i.name} x${i.qty}`).join(', ')}</div>}
-          {r.admin_note && <div style={{ marginTop: 8, fontSize: 12, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>Note: {r.admin_note}</div>}
-          <div style={{ fontSize: 10, color: t.textSub, marginTop: 6, opacity: .5, fontFamily: "'DM Sans',sans-serif" }}>{new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+          {r.from_date && <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'Inter', sans-serif" }}>{r.from_date} → {r.to_date}</div>}
+          {r.extra_items && <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'Inter', sans-serif" }}>{r.extra_items.map(i => `${i.name} x${i.qty}`).join(', ')}</div>}
+          {r.admin_note && <div style={{ marginTop: 8, fontSize: 12, color: t.accent, fontFamily: "'Inter', sans-serif" }}>Note: {r.admin_note}</div>}
+          <div style={{ fontSize: 10, color: t.textSub, marginTop: 6, opacity: .5, fontFamily: "'Inter', sans-serif" }}>{new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
         </Card>
       ))}
     </main>
@@ -1953,7 +2051,7 @@ function KhidmatTeamPage({ onBack }) {
   return (
     <main style={{ flex: 1, padding: '16px 16px 96px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       <BackHeader title="Khidmat Guzaar" onBack={onBack} />
-      <div style={{ marginBottom: 16, padding: '11px 14px', borderRadius: 12, background: t.accentBg, border: `1px solid ${t.accentBorder}`, fontSize: 13, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>🤝 Our dedicated service team — the ones who make every meal possible.</div>
+      <div style={{ marginBottom: 16, padding: '11px 14px', borderRadius: 12, background: t.accentBg, border: `1px solid ${t.accentBorder}`, fontSize: 13, color: t.accent, fontFamily: "'Inter', sans-serif" }}>🤝 Our dedicated service team — the ones who make every meal possible.</div>
       {loading ? <Spinner /> : staff.length === 0 ? <EmptyState msg="No staff profiles available." /> : staff.map(member => {
         const rawPhone = member.phone || '', actionPhone = rawPhone.replace(/[^\d+]/g, ''), whatsappPhone = actionPhone.replace(/^\+/, '')
         return (
@@ -1961,10 +2059,10 @@ function KhidmatTeamPage({ onBack }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
               <Avatar avatarUrl={member.avatar_url} name={member.name} email="" size={60} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 17, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{member.name}</div>
-                {member.role && <div style={{ display: 'inline-block', marginTop: 4, padding: '2px 10px', borderRadius: 20, background: t.accentBg, border: `1px solid ${t.accentBorder}` }}><span style={{ fontSize: 11, fontWeight: 700, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{member.role}</span></div>}
-                {member.phone && <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6 }}><Phone size={12} color={t.textSub} /><span style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{member.phone}</span></div>}
-                {member.area && <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3 }}><MapPin size={12} color={t.textSub} /><span style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{member.area}</span></div>}
+                <div style={{ fontSize: 17, fontWeight: 700, color: t.accent, fontFamily: "'Inter', sans-serif" }}>{member.name}</div>
+                {member.role && <div style={{ display: 'inline-block', marginTop: 4, padding: '2px 10px', borderRadius: 20, background: t.accentBg, border: `1px solid ${t.accentBorder}` }}><span style={{ fontSize: 11, fontWeight: 700, color: t.accent, fontFamily: "'Inter', sans-serif" }}>{member.role}</span></div>}
+                {member.phone && <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6 }}><Phone size={12} color={t.textSub} /><span style={{ fontSize: 12, color: t.textSub, fontFamily: "'Inter', sans-serif" }}>{member.phone}</span></div>}
+                {member.area && <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3 }}><MapPin size={12} color={t.textSub} /><span style={{ fontSize: 12, color: t.textSub, fontFamily: "'Inter', sans-serif" }}>{member.area}</span></div>}
               </div>
             </div>
             {actionPhone && (
@@ -2014,8 +2112,8 @@ function NotificationsPage({ onBack }) {
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
             <div style={{ width: 42, height: 42, borderRadius: 12, background: `${item.tone}20`, border: `1px solid ${item.tone}45`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Bell size={18} color={item.tone} /></div>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{item.title}</div>
-              <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.6, marginTop: 4, fontFamily: "'DM Sans',sans-serif" }}>{item.body}</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'Inter', sans-serif" }}>{item.title}</div>
+              <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.6, marginTop: 4, fontFamily: "'Inter', sans-serif" }}>{item.body}</div>
             </div>
           </div>
         </Card>
@@ -2028,10 +2126,10 @@ function NotificationsPage({ onBack }) {
             <div style={{ width: 42, height: 42, borderRadius: 12, background: `${item.tone || t.accent}20`, border: `1px solid ${item.tone || t.accent}45`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Bell size={18} color={item.tone || t.accent} /></div>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{item.title}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'Inter', sans-serif" }}>{item.title}</div>
                 <div style={{ fontSize: 10, color: t.textSub }}>{item.sender_name}</div>
               </div>
-              <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.6, marginTop: 4, fontFamily: "'DM Sans',sans-serif" }}>{item.body}</div>
+              <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.6, marginTop: 4, fontFamily: "'Inter', sans-serif" }}>{item.body}</div>
               {item.media && item.media[0] && (
                 <img
                   src={item.media[0]}
@@ -2059,7 +2157,7 @@ function SupportTicketsPage({ onBack }) {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const issueTypes = [{ id: 'general', label: 'General' }, { id: 'thali-related', label: 'Thali Related Issues' }, { id: 'thali-delivery', label: 'Thali Delivery Issues' }]
-  const inputStyle = { width: '100%', padding: '11px 13px', borderRadius: 16, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }
+  const inputStyle = { width: '100%', padding: '11px 13px', borderRadius: 16, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 14, outline: 'none', fontFamily: "'Inter', sans-serif" }
   const statusColor = s => s === 'open' ? '#d4882a' : s === 'resolved' ? '#5eba82' : '#7aabb8'
 
   useEffect(() => { loadTickets() }, [])
@@ -2085,12 +2183,12 @@ function SupportTicketsPage({ onBack }) {
     <main style={{ flex: 1, padding: '16px 16px 96px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       {onBack && <BackHeader title="Support Ticket" onBack={onBack} />}
       <Card active style={{ marginBottom: 18 }}>
-        <div style={{ fontSize: 18, fontWeight: 700, color: t.accent, marginBottom: 6, fontFamily: "'Playfair Display',serif" }}>Raise a Support Ticket</div>
-        <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.6, marginBottom: 14, fontFamily: "'DM Sans',sans-serif" }}>Tell us your problem and our team can follow up on general, thali-related, or delivery issues.</div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: t.accent, marginBottom: 6, fontFamily: "'Inter', sans-serif" }}>Raise a Support Ticket</div>
+        <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.6, marginBottom: 14, fontFamily: "'Inter', sans-serif" }}>Tell us your problem and our team can follow up on general, thali-related, or delivery issues.</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8, marginBottom: 12 }}>
           {issueTypes.map(type => (
             <button key={type.id} onClick={() => setTicketType(type.id)}
-              style={{ padding: '11px 12px', borderRadius: 11, textAlign: 'left', cursor: 'pointer', border: `1px solid ${ticketType === type.id ? t.accentBorder : t.border}`, background: ticketType === type.id ? t.accentBg : t.card, color: ticketType === type.id ? t.accent : t.textSub, fontWeight: 700, fontSize: 13, fontFamily: "'DM Sans',sans-serif" }}>
+              style={{ padding: '11px 12px', borderRadius: 11, textAlign: 'left', cursor: 'pointer', border: `1px solid ${ticketType === type.id ? t.accentBorder : t.border}`, background: ticketType === type.id ? t.accentBg : t.card, color: ticketType === type.id ? t.accent : t.textSub, fontWeight: 700, fontSize: 13, fontFamily: "'Inter', sans-serif" }}>
               {type.label}
             </button>
           ))}
@@ -2098,18 +2196,18 @@ function SupportTicketsPage({ onBack }) {
         <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" style={{ ...inputStyle, marginBottom: 10 }} />
         <textarea value={details} onChange={e => setDetails(e.target.value)} placeholder="Describe your problem" style={{ ...inputStyle, minHeight: 110, resize: 'vertical', marginBottom: 10 }} />
         {error && <ErrorBanner msg={error} />}
-        {success && <div style={{ marginBottom: 10, padding: 11, borderRadius: 10, background: t.successBg, border: `1px solid ${t.successBorder}`, color: t.successText, fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>{success}</div>}
-        <button onClick={handleSubmit} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting...' : 'Submit Support Ticket'}</button>
+        {success && <div style={{ marginBottom: 10, padding: 11, borderRadius: 10, background: t.successBg, border: `1px solid ${t.successBorder}`, color: t.successText, fontSize: 13, fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>{success}</div>}
+        <button onClick={handleSubmit} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: 14, fontFamily: "'Inter', sans-serif" }}>{submitting ? 'Submitting...' : 'Submit Support Ticket'}</button>
       </Card>
       <SectionLabel>Recent Tickets</SectionLabel>
       {loading ? <Spinner /> : tickets.length === 0 ? <EmptyState msg="No support tickets raised yet." /> : tickets.map(ticket => (
         <Card key={ticket.id} style={{ marginBottom: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 10 }}>
-            <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{new Date(ticket.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
-            <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: `${statusColor(ticket.status)}20`, color: statusColor(ticket.status), border: `1px solid ${statusColor(ticket.status)}40`, fontFamily: "'DM Sans',sans-serif" }}>{ticket.status?.toUpperCase()}</span>
+            <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'Inter', sans-serif" }}>{new Date(ticket.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: `${statusColor(ticket.status)}20`, color: statusColor(ticket.status), border: `1px solid ${statusColor(ticket.status)}40`, fontFamily: "'Inter', sans-serif" }}>{ticket.status?.toUpperCase()}</span>
           </div>
-          <div style={{ whiteSpace: 'pre-line', fontSize: 13, color: t.textBody, lineHeight: 1.7, fontFamily: "'DM Sans',sans-serif" }}>{ticket.comment?.replace('[Support Ticket]\n', '')}</div>
-          {ticket.admin_reply && <div style={{ marginTop: 8, padding: 10, borderRadius: 9, background: t.accentBg, border: `1px solid ${t.accentBorder}`, fontSize: 13, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>Reply: {ticket.admin_reply}</div>}
+          <div style={{ whiteSpace: 'pre-line', fontSize: 13, color: t.textBody, lineHeight: 1.7, fontFamily: "'Inter', sans-serif" }}>{ticket.comment?.replace('[Support Ticket]\n', '')}</div>
+          {ticket.admin_reply && <div style={{ marginTop: 8, padding: 10, borderRadius: 9, background: t.accentBg, border: `1px solid ${t.accentBorder}`, fontSize: 13, color: t.accent, fontFamily: "'Inter', sans-serif" }}>Reply: {ticket.admin_reply}</div>}
         </Card>
       ))}
     </main>
@@ -2131,8 +2229,8 @@ function AboutPage({ onBack }) {
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
             <div style={{ width: 42, height: 42, borderRadius: 12, background: t.accentBg, border: `1px solid ${t.accentBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Info size={18} color={t.accent} /></div>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{card.title}</div>
-              <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.7, marginTop: 4, fontFamily: "'DM Sans',sans-serif" }}>{card.body}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: t.text, fontFamily: "'Inter', sans-serif" }}>{card.title}</div>
+              <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.7, marginTop: 4, fontFamily: "'Inter', sans-serif" }}>{card.body}</div>
             </div>
           </div>
         </Card>
@@ -2160,15 +2258,15 @@ function ResetPasswordPage({ onBack }) {
       <Card>
         <form onSubmit={handleReset}>
           <div style={{ marginBottom: 20 }}>
-            <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 7, letterSpacing: '0.14em', fontFamily: "'DM Sans',sans-serif" }}>NEW PASSWORD</label>
+            <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 7, letterSpacing: '0.14em', fontFamily: "'Inter', sans-serif" }}>NEW PASSWORD</label>
             <div style={{ position: 'relative' }}>
               <Lock size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: t.accent, opacity: .6 }} />
-              <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)} required placeholder="Enter new password" style={{ width: '100%', padding: '13px 13px 13px 44px', borderRadius: 12, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 15, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
+              <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)} required placeholder="Enter new password" style={{ width: '100%', padding: '13px 13px 13px 44px', borderRadius: 12, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 15, outline: 'none', fontFamily: "'Inter', sans-serif" }} />
             </div>
           </div>
           {error && <ErrorBanner msg={error} />}
-          {success && <div style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 12, background: t.successBg, border: `1px solid ${t.successBorder}`, fontSize: 13, color: t.successText, fontFamily: "'DM Sans',sans-serif" }}>✅ {success}</div>}
-          <button type="submit" disabled={loading} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: loading ? t.border : t.accentGrad, color: '#fff', fontSize: 15, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? .7 : 1, fontFamily: "'DM Sans',sans-serif" }}>{loading ? 'Updating...' : 'Update Password'}</button>
+          {success && <div style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 12, background: t.successBg, border: `1px solid ${t.successBorder}`, fontSize: 13, color: t.successText, fontFamily: "'Inter', sans-serif" }}>✅ {success}</div>}
+          <button type="submit" disabled={loading} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: loading ? t.border : t.accentGrad, color: '#fff', fontSize: 15, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? .7 : 1, fontFamily: "'Inter', sans-serif" }}>{loading ? 'Updating...' : 'Update Password'}</button>
         </form>
       </Card>
     </main>
@@ -2190,10 +2288,10 @@ function ResetPasswordPage({ onBack }) {
 export default function App() {
   const [session, setSession] = useState(undefined)
   const [mockUser, setMockUser] = useState(() => {
-    const saved = sessionStorage.getItem('al_mawaid_mock_user')
+    const saved = localStorage.getItem('al_mawaid_mock_user')
     return saved ? JSON.parse(saved) : null
   })
-  const [portalRole, setPortalRole] = useState(() => sessionStorage.getItem('al_mawaid_portal') || null)
+  const [portalRole, setPortalRole] = useState(() => localStorage.getItem('al_mawaid_portal') || null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
@@ -2202,8 +2300,8 @@ export default function App() {
       if (!sess) {
         setPortalRole(null);
         setMockUser(null);
-        sessionStorage.removeItem('al_mawaid_portal')
-        sessionStorage.removeItem('al_mawaid_mock_user')
+        localStorage.removeItem('al_mawaid_portal')
+        localStorage.removeItem('al_mawaid_mock_user')
       }
     })
     return () => subscription.unsubscribe()
@@ -2213,116 +2311,17 @@ export default function App() {
     await supabase.auth.signOut()
     setPortalRole(null)
     setMockUser(null)
-    sessionStorage.removeItem('al_mawaid_portal')
-    sessionStorage.removeItem('al_mawaid_mock_user')
+    localStorage.removeItem('al_mawaid_portal')
+    localStorage.removeItem('al_mawaid_mock_user')
   }, [])
 
-  // --- True Push Notifications (Closed App) ---
-  useEffect(() => {
-    const user = session?.user || mockUser
-    if (!user) return
+  // Push notifications removed
 
-    const setupPush = async (retry = true) => {
-      try {
-        if (!('serviceWorker' in navigator)) return
-        const reg = await navigator.serviceWorker.ready
-        
-        // Request Permission
-        const permission = await Notification.requestPermission()
-        if (permission !== 'granted') return
-
-        // 1. Check for existing subscription
-        let subscription = await reg.pushManager.getSubscription()
-        const vapidKey = import.meta.env.VITE_VAPID_KEY;
-        if (!vapidKey) return console.warn('⚠️ Missing VITE_VAPID_KEY');
-
-        // 2. Only subscribe if we don't have one
-        if (!subscription) {
-          try {
-            subscription = await reg.pushManager.subscribe({
-              userVisibleOnly: true,
-              applicationServerKey: urlBase64ToUint8Array(vapidKey)
-            })
-            console.log('✨ Fresh Push Subscription Created')
-          } catch (subErr) {
-            if (retry && (subErr.name === 'AbortError' || subErr.name === 'InvalidStateError')) {
-              console.warn('⚠️ Push setup failed, attempting reset and retry...');
-              const existing = await reg.pushManager.getSubscription();
-              if (existing) await existing.unsubscribe();
-              // Short delay before retry
-              await new Promise(resolve => setTimeout(resolve, 1000));
-              return setupPush(false); 
-            }
-            throw subErr;
-          }
-        }
-
-        // 3. Always update Supabase
-        const { error: upsertErr } = await supabase.from('push_subscriptions').upsert({
-          user_id: user.id,
-          subscription: subscription.toJSON()
-        }, { onConflict: 'user_id, subscription' })
-
-        if (upsertErr) throw upsertErr
-        console.log('🚀 Push Subscription Sync Successful')
-      } catch (err) {
-        console.error('❌ Push Setup Failed:', err)
-      }
-    }
-
-    setupPush()
-
-    // Existing Realtime logic (In-App)
-    const channel = supabase
-      .channel('public:notices')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'notices' },
-        (payload) => {
-          if (!payload.new.target_user_id || payload.new.target_user_id === user.id) {
-            showBrowserNotification(payload.new)
-          }
-        }
-      )
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
-  }, [session, mockUser])
-
-  function urlBase64ToUint8Array(base64String) {
-    const padding = '='.repeat((4 - base64String.length % 4) % 4)
-    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
-    const rawData = window.atob(base64)
-    const outputArray = new Uint8Array(rawData.length)
-    for (let i = 0; i < rawData.length; ++i) {
-      outputArray[i] = rawData.charCodeAt(i)
-    }
-    return outputArray
-  }
-
-  const showBrowserNotification = (notice) => {
-    if (!('Notification' in window) || Notification.permission !== 'granted') return
-
-    const options = {
-      body: notice.body,
-      icon: '/al-mawaid.png',
-      badge: '/al-mawaid.png',
-      vibrate: [200, 100, 200],
-      tag: 'almawaid-notice-' + notice.id,
-      renotify: true
-    }
-
-    const n = new Notification(notice.title || 'New Message from Al-Mawaid', options)
-    n.onclick = () => {
-      window.focus()
-      n.close()
-    }
-  }
 
   const handleRoleLogin = useCallback((role, sess) => {
-    sessionStorage.setItem('al_mawaid_portal', role)
+    localStorage.setItem('al_mawaid_portal', role)
     if (role === 'inventory_manager' && sess?.user) {
-      sessionStorage.setItem('al_mawaid_mock_user', JSON.stringify(sess.user))
+      localStorage.setItem('al_mawaid_mock_user', JSON.stringify(sess.user))
       setMockUser(sess.user)
     }
     setPortalRole(role)
@@ -2330,9 +2329,10 @@ export default function App() {
 
   if (session === undefined && !mockUser) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0c0c14', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div className="spin" style={{ width: 36, height: 36, border: '2.5px solid rgba(139,92,246,0.2)', borderTop: '2.5px solid #a78bfa', borderRadius: '50%' }} />
-        <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin .8s linear infinite}body{margin:0}`}</style>
+      <div style={{ minHeight: '100vh', background: '#0a0d14', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20 }}>
+        <div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(197, 160, 89, 0.1)', borderTop: '3px solid #c5a059', borderRadius: '50%' }} />
+        <div style={{ color: '#c5a059', fontSize: 12, fontWeight: 800, letterSpacing: '0.2em', textTransform: 'uppercase', opacity: 0.8 }}>AL-MAWAID</div>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin .8s linear infinite}body{margin:0;background:#0a0d14;}`}</style>
       </div>
     )
   }

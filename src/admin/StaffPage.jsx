@@ -25,9 +25,16 @@ export default function StaffPage() {
     e.preventDefault()
     if (!form.name || !form.email) return setMsg({ text: 'Name and email are required.', type: 'error' })
     setSaving(true)
-    const { error } = await supabase.from('staff').insert({ ...form })
+    
+    // Sanitize role for database constraint
+    const sanitizedForm = {
+      ...form,
+      role: form.role.toLowerCase().trim().replace(/\s+/g, '_')
+    }
+
+    const { error } = await supabase.from('staff').insert(sanitizedForm)
     setSaving(false)
-    if (error) return setMsg({ text: error.message, type: 'error' })
+    if (error) return setMsg({ text: `Database Error: ${error.message}. Please ensure the role is valid.`, type: 'error' })
     setMsg({ text: 'Staff member added successfully.', type: 'success' })
     setForm({ name: '', email: '', role: 'khidmat_guzar', phone: '' })
     setShowAdd(false)
@@ -42,6 +49,7 @@ export default function StaffPage() {
 
   const ROLE_COLORS = {
     khidmat_guzar: '#c49c5a',
+    khidmat: '#c49c5a',
     admin: '#5e9ce0',
     supervisor: '#9b8de0',
     inventory_manager: '#f59e0b',
@@ -92,7 +100,7 @@ export default function StaffPage() {
                 <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
                   style={{ width: '100%', padding: '12px 14px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit' }}>
                   <option value="khidmat_guzar">Khidmat Guzar</option>
-                  <option value="cook">Cook</option>
+                  <option value="khidmat">Al-Mawaid Team (Khidmat)</option>
                   <option value="supervisor">Supervisor</option>
                   <option value="inventory_manager">Inventory Manager</option>
                   <option value="admin">Admin</option>

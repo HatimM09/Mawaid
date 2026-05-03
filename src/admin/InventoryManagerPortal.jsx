@@ -23,11 +23,11 @@ const Spinner = ({ fullPage = true }) => (
 
 const PortalCard = ({ title, value, icon, color = 'var(--accent-primary)', sub, organic }) => (
   <div style={{ 
-    background: SharedT.accentGrad || 'var(--accent-grad)',
-    border: `1.5px solid ${color}30`,
-    borderRadius: organic ? '40px 80px 40px 80px' : 24, padding: 24, 
-    backdropFilter: 'blur(40px) saturate(1.8)',
-    boxShadow: '0 15px 35px rgba(0,0,0,0.45), inset 0 1px 1px rgba(255,255,255,0.05)',
+    background: 'var(--bg-card)',
+    border: `1px solid ${color}30`,
+    borderRadius: 20, padding: 28, 
+    backdropFilter: 'blur(32px) saturate(1.2)',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
     flex: 1, minWidth: 200, position: 'relative', overflow: 'hidden'
   }}>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -36,8 +36,8 @@ const PortalCard = ({ title, value, icon, color = 'var(--accent-primary)', sub, 
       </div>
       {sub && <span style={{ fontSize: 10, fontWeight: 800, color: color, opacity: 0.8, letterSpacing: '0.1em' }}>{sub}</span>}
     </div>
-    <div style={{ fontSize: 11, color: 'rgba(255, 248, 225, 0.5)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.15em', fontFamily: "'DM Sans', sans-serif" }}>{title}</div>
-    <div style={{ fontSize: 32, fontWeight: 900, color: 'var(--text-primary)', marginTop: 4, fontFamily: "'Playfair Display', serif" }}>{value}</div>
+    <div style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.15em', fontFamily: "'Inter', sans-serif" }}>{title}</div>
+    <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-primary)', marginTop: 6, fontFamily: "'Inter', sans-serif" }}>{value}</div>
   </div>
 )
 
@@ -92,10 +92,10 @@ export default function InventoryManagerPortal({ signOut, user }) {
   return (
     <div style={{ 
       minHeight: '100vh', background: 'var(--bg-grad)',
-      color: 'var(--text-primary)', overflowX: 'hidden', fontFamily: "'DM Sans', sans-serif"
+      color: 'var(--text-primary)', overflowX: 'hidden', fontFamily: "'Inter', sans-serif"
     }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@400;500;700;900&family=Amiri:wght@400;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Amiri:wght@400;700&display=swap');
         @keyframes spin { to { transform: rotate(360deg); } }
         .spin { animation: spin 0.8s linear infinite; }
         ::-webkit-scrollbar { width: 0; }
@@ -103,8 +103,8 @@ export default function InventoryManagerPortal({ signOut, user }) {
 
       {/* Header */}
       <header style={{ textAlign: 'center', padding: '40px 20px 20px' }}>
-         <p style={{ fontFamily: "'Amiri',serif", fontSize: 16, color: 'var(--accent-primary)', margin: '0 0 4px' }}>بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</p>
-         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 900, letterSpacing: '0.15em', color: 'var(--accent-primary)', fontFamily: "'Playfair Display',serif" }}>AL-MAWAID</h1>
+         <p style={{ fontFamily: "'Inter', sans-serif, 'Amiri', serif", fontSize: 16, color: 'var(--accent-primary)', margin: '0 0 4px' }}>بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</p>
+         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 900, letterSpacing: '0.15em', color: 'var(--accent-primary)', fontFamily: "'Inter', sans-serif" }}>AL-MAWAID</h1>
          <div style={{ fontSize: 9, letterSpacing: '0.3em', textTransform: 'uppercase', color: 'var(--border-active)', marginTop: 4 }}>Inventory Control Portal</div>
       </header>
 
@@ -127,11 +127,11 @@ export default function InventoryManagerPortal({ signOut, user }) {
             </button>
 
             <div style={{ 
-              background: SharedT.accentGrad || 'var(--accent-grad)',
-              border: `1.5px solid var(--border-light)`,
-              borderRadius: '24px 24px 40px 40px', padding: 24, 
-              backdropFilter: 'blur(30px) saturate(1.8)',
-              boxShadow: '0 15px 35px rgba(0,0,0,0.4)'
+              background: 'var(--bg-card)',
+              border: `1px solid var(--border-light)`,
+              borderRadius: 24, padding: 28, 
+              backdropFilter: 'blur(32px) saturate(1.2)',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.3)'
             }}>
                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                   <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--accent-primary)', letterSpacing: '0.1em' }}>RECENT ACTIVITY</div>
