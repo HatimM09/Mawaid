@@ -166,13 +166,21 @@ export default function AdminLayout() {
         .admin-main { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; padding: 0; position: relative; z-index: 1; }
         .admin-header { height: 70px; display: flex; align-items: center; padding: 0 30px; background: var(--bg-card); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-glass); z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
         .global-bottom-nav { 
-          position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-          width: 90%; maxWidth: 800px; height: 70px;
-          background: var(--bg-card); backdrop-filter: blur(25px);
-          border: 1px solid var(--border-glass); border-radius: 24px;
-          display: flex; justify-content: space-around; align-items: center;
-          padding: 0 20px; z-index: 2000;
-          box-shadow: 0 10px 40px rgba(0,0,0,0.6), 0 0 25px var(--accent-bg);
+          position: fixed; bottom: 0px; left: 0; right: 0;
+          width: 100%; height: 75px;
+          background: rgba(10, 13, 20, 0.95); backdrop-filter: blur(30px);
+          border-top: 1px solid var(--border-light);
+          display: flex; align-items: center;
+          padding: 0 10px; z-index: 2000;
+          box-shadow: 0 -10px 40px rgba(0,0,0,0.4);
+          overflow-x: auto;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+        .global-bottom-nav::-webkit-scrollbar { display: none; }
+        .bottom-nav-inner {
+          display: flex; align-items: center; min-width: 100%; gap: 8px;
+          padding: 0 10px;
         }
         .nav-item {
           display: flex; flexDirection: column; align-items: center; gap: 4px;
@@ -211,7 +219,13 @@ export default function AdminLayout() {
 
         @media (max-width: 1024px) {
           .admin-right-sidebar { display: none; }
-          .global-bottom-nav { width: 95%; bottom: 10px; height: 64px; }
+        }
+        @media (max-width: 768px) {
+          .admin-header { padding: 0 16px; height: 60px; }
+          .admin-search { display: none !important; }
+          .desktop-only { display: none !important; }
+          .admin-nav-breadcrumb { display: none !important; }
+          .admin-main { padding-bottom: 80px !important; }
         }
       `}</style>
 
@@ -276,49 +290,13 @@ export default function AdminLayout() {
 
         {/* Global Floating Bottom Nav */}
         <nav className="global-bottom-nav">
-          {NAV.slice(0, 4).map(({ to, label, Icon, end }) => (
-            <NavLink key={to} to={to} end={end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-              {typeof Icon === 'string' ? <span style={{ fontSize: 20, fontWeight: 800 }}>{Icon}</span> : <Icon size={22} />}
-              <span style={{ fontSize: 10, fontWeight: 700 }}>{label}</span>
-            </NavLink>
-          ))}
-          
-          <div style={{ position: 'relative' }}>
-            <button 
-              onClick={() => setSideOpen(!sideOpen)}
-              className={`nav-item ${sideOpen ? 'active' : ''}`}
-              style={{ background: 'var(--accent-bg)', border: 'none', cursor: 'pointer' }}
-            >
-              <Menu size={22} />
-              <span style={{ fontSize: 10, fontWeight: 700 }}>More</span>
-            </button>
-
-            {sideOpen && (
-              <div className="more-menu-container">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, padding: '0 4px' }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Administration</span>
-                  <X size={16} onClick={() => setSideOpen(false)} style={{ cursor: 'pointer' }} />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {NAV.slice(4).map(({ to, label, Icon }) => (
-                    <NavLink 
-                      key={to} to={to} 
-                      onClick={() => setSideOpen(false)}
-                      className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                      style={{ flexDirection: 'row', gap: 12, justifyContent: 'flex-start', padding: '10px 16px' }}
-                    >
-                      {typeof Icon === 'string' ? <span style={{ fontSize: 18, fontWeight: 800, width: 24, textAlign: 'center' }}>{Icon}</span> : <Icon size={18} />}
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>{label}</span>
-                    </NavLink>
-                  ))}
-                  <div style={{ height: 1, background: 'rgba(255,255,255,0.05)', margin: '8px 0' }} />
-                  <button onClick={handleLogout} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', background: 'var(--accent-bg)', border: 'none', color: '#ff5c5c', cursor: 'pointer', width: '100%' }}>
-                    <LogOut size={18} />
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>Logout</span>
-                  </button>
-                </div>
-              </div>
-            )}
+          <div className="bottom-nav-inner">
+            {NAV.map(({ to, label, Icon, end }) => (
+              <NavLink key={to} to={to} end={end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} style={{ flexShrink: 0, minWidth: 70 }}>
+                {typeof Icon === 'string' ? <span style={{ fontSize: 20, fontWeight: 800 }}>{Icon}</span> : <Icon size={22} />}
+                <span style={{ fontSize: 9, fontWeight: 700, whiteSpace: 'nowrap' }}>{label}</span>
+              </NavLink>
+            ))}
           </div>
         </nav>
       </div>

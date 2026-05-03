@@ -108,7 +108,7 @@ export const updateSystemTheme = (themeId) => {
 
 export const PageWrap = ({ children }) => (
   <div style={{ 
-    padding: '0 clamp(10px, 3vw, 40px) 120px', 
+    padding: '0 clamp(12px, 4vw, 40px) 140px', 
     maxWidth: '1400px', 
     margin: '0 auto',
     width: '100%',
@@ -116,7 +116,7 @@ export const PageWrap = ({ children }) => (
   }}>
     <style>{`
       @media (max-width: 768px) {
-        .admin-page-wrap { padding-bottom: 80px !important; }
+        .admin-page-wrap { padding-bottom: 100px !important; }
       }
     `}</style>
     <div className="admin-page-wrap">{children}</div>

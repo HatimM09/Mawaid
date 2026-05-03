@@ -330,7 +330,7 @@ function LoginPage({ onRoleLogin }) {
       if (role === 'khidmat' && !['khidmat_guzar','supervisor','khidmat','admin'].includes(dbRole)) {
         await supabase.auth.signOut(); throw new Error('You are not registered as part of the Al Mawaid Team.')
       }
-      onRoleLogin(dbRole === 'admin' ? 'admin' : dbRole, session)
+      onRoleLogin(role, session)
     } catch (err) { setError(err.message) }
     finally { setLoading(false) }
   }
@@ -2351,7 +2351,7 @@ export default function App() {
     return <Navigate to="/admin" replace />;
   }
 
-  if (['khidmat_guzar', 'supervisor', 'khidmat'].includes(portalRole)) {
+  if (['supervisor', 'khidmat'].includes(portalRole)) {
     return (
       <AuthCtx.Provider value={authValue}>
         <ThemeCtx.Provider value={THEMES.royal}>
