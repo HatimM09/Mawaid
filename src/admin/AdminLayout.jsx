@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, ClipboardList, Star, FileText,
-  MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight, ChevronLeft, Search, Bell, Zap, Command, Sparkles, AlertCircle, History, Package, Send
+  MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight, ChevronLeft, Search, Bell, Zap, Command, Sparkles, AlertCircle, History, Package, Send, RefreshCw
 } from 'lucide-react'
 import { T, updateSystemTheme } from './ui'
 import { supabase } from './supabaseClient'

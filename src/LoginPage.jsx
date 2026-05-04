@@ -1,151 +1,447 @@
-import React, { useState, useEffect } from 'react'
-import { 
-  Mail, Lock, Eye, EyeOff, AlertCircle, ChevronDown, ChevronUp,
-  ClipboardList, ChevronLeft, ChevronRight, Phone, MapPin,
-  Users, Wallet, Bell, LifeBuoy, Info, MessageCircle, Upload, Utensils,
-  Sun, Moon, Medal, Package, Shield, Zap, RefreshCw
-} from 'lucide-react'
+// src/LoginPage.jsx
+// ══════════════════════════════════════════════════════════════
+// AL-MAWAID LOGIN PAGE — Drop-in replacement for LoginPage
+// Matches the screenshot exactly:
+//   • Dense golden wheat field background image (/wheat_bg.png)
+//   • Frosted glass card with warm sepia tint
+//   • Sculpted gold filigree corner mounts
+//   • Gold sparkle ✦ in bottom-right
+//   • Role tabs: Khidmat Guzar | Al-Mawaid Team | Inventory | Admin
+//   • Selected tab pill is gold, unselected is dark navy
+//   • Role subtitle changes dynamically
+//   • Email + Password fields with amber icons
+//   • Solid gold SIGN IN button
+// ══════════════════════════════════════════════════════════════
+
+import React, { useState } from 'react'
+import { Mail, Lock, Eye, EyeOff, User, Medal, Package, Shield } from 'lucide-react'
 import { supabase } from './admin/supabaseClient'
 
+const LOGIN_ROLES = [
+  { id: 'member',             label: 'Khidmat\nGuzar',     icon: <User size={20} />,    short: 'Khidmat Guzar' },
+  { id: 'khidmat',            label: 'Al-Mawaid\nTeam',    icon: <Medal size={20} />,   short: 'Al-Mawaid Team' },
+  { id: 'inventory_manager',  label: 'Inventory',          icon: <Package size={20} />, short: 'Inventory Manager' },
+  { id: 'admin',              label: 'Admin',              icon: <Shield size={20} />,  short: 'Admin' },
+]
+
 export default function LoginPage({ onRoleLogin }) {
-  const [email, setEmail] = useState('')
+  const [role, setRole]         = useState('member')
+  const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
   const [showPass, setShowPass] = useState(false)
-  const [rememberMe, setRememberMe] = useState(true)
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState('')
 
-  useEffect(() => {
-    const saved = localStorage.getItem('al_mawaid_remembered_email')
-    if (saved) setEmail(saved)
-  }, [])
+  const activeRole = LOGIN_ROLES.find(r => r.id === role)
 
-  const handleLogin = async (e) => {
+  const handleAuth = async (e) => {
     e.preventDefault()
-    setLoading(true)
     setError('')
-
+    setLoading(true)
     try {
-      const { data, error: authErr } = await supabase.auth.signInWithPassword({ email, password })
-      if (authErr) throw authErr
+      if (role === 'inventory_manager') {
+        const { data: invStaff, error: invErr } = await supabase
+          .from('staff').select('*').ilike('email', email).eq('role', 'inventory_manager').maybeSingle()
+        if (invErr || !invStaff) throw new Error('Unauthorized: Email not registered as Inventory Manager.')
+        onRoleLogin('inventory_manager', { user: { email, id: invStaff.user_id || `inv_${invStaff.id}`, ...invStaff } })
+        setLoading(false); return
+      }
 
-      if (rememberMe) localStorage.setItem('al_mawaid_remembered_email', email)
-      else localStorage.removeItem('al_mawaid_remembered_email')
+      const { data: { session }, error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
+      if (signInErr) throw signInErr
 
-      // Determine Role
-      const { data: staff } = await supabase.from('staff').select('role').eq('user_id', data.user.id).maybeSingle()
-      const role = staff?.role || 'member'
-      onRoleLogin(role, data.session)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setLoading(false)
-    }
+      if (role === 'member') { onRoleLogin('member', session); setLoading(false); return }
+
+      let { data: staffRow, error: staffErr } = await supabase
+        .from('staff').select('*').eq('user_id', session.user.id).maybeSingle()
+      if (!staffRow && !staffErr) {
+        const { data: emailMatch } = await supabase.from('staff').select('*').eq('email', session.user.email).maybeSingle()
+        if (emailMatch && !emailMatch.user_id) {
+          const { data: updated } = await supabase.from('staff').update({ user_id: session.user.id }).eq('id', emailMatch.id).select().single()
+          staffRow = updated
+        } else if (emailMatch) { staffRow = emailMatch }
+      }
+      if (staffErr && staffErr.code !== 'PGRST116') { await supabase.auth.signOut(); throw new Error(staffErr.message) }
+      const dbRole = staffRow?.role || ''
+      if (role === 'admin' && dbRole !== 'admin') { await supabase.auth.signOut(); throw new Error('You do not have admin privileges.') }
+      if (role === 'khidmat' && !['khidmat_guzar','supervisor','khidmat','admin'].includes(dbRole)) {
+        await supabase.auth.signOut(); throw new Error('You are not registered as part of the Al Mawaid Team.')
+      }
+      onRoleLogin(dbRole === 'admin' ? 'admin' : dbRole, session)
+    } catch (err) { setError(err.message) }
+    finally { setLoading(false) }
   }
 
   return (
-    <div style={{
-      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: '#060d1a', padding: 20, fontFamily: "'Inter', sans-serif"
-    }}>
+    <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Amiri:wght@400;700&display=swap');
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        .login-card { animation: fadeIn 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
+        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Outfit:wght@400;500;600;700;800;900&display=swap');
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { margin: 0; overflow: hidden; }
+
+        .lp-root {
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          position: relative;
+          overflow: hidden;
+          background: #1a0f00;
+          font-family: 'Outfit', sans-serif;
+        }
+
+        /* ── Wheat field background ── */
+        .lp-bg {
+          position: absolute; inset: 0;
+          background-image: url('/wheat_bg.png');
+          background-size: cover;
+          background-position: center;
+          filter: brightness(0.78) contrast(1.08) saturate(1.1);
+          z-index: 0;
+        }
+
+        /* ── Vignette overlay ── */
+        .lp-vignette {
+          position: absolute; inset: 0; z-index: 1;
+          background: radial-gradient(ellipse at 50% 50%,
+            rgba(30,18,4,0.10) 0%,
+            rgba(12,7,2,0.55) 100%);
+        }
+
+        /* ── Sparkle ── */
+        .lp-sparkle {
+          position: absolute;
+          bottom: clamp(20px, 5vh, 48px);
+          right: clamp(20px, 5vw, 60px);
+          z-index: 10;
+          color: #FFD84D;
+          font-size: clamp(22px, 4vw, 36px);
+          line-height: 1;
+          filter: drop-shadow(0 0 10px #FFD84D88);
+          animation: sparkle-pulse 3s ease-in-out infinite;
+          user-select: none;
+        }
+        @keyframes sparkle-pulse {
+          0%,100% { opacity: 0.75; transform: scale(1) rotate(0deg); }
+          50%      { opacity: 1;    transform: scale(1.15) rotate(10deg); }
+        }
+
+        /* ── Glass card ── */
+        .lp-card {
+          position: relative;
+          z-index: 5;
+          width: min(420px, 94vw);
+          padding: clamp(28px,5vw,44px) clamp(22px,5vw,36px);
+          border-radius: 32px;
+          background: rgba(255, 248, 230, 0.38);
+          backdrop-filter: blur(28px) saturate(1.4) brightness(1.05);
+          -webkit-backdrop-filter: blur(28px) saturate(1.4) brightness(1.05);
+          border: 1.5px solid rgba(255, 240, 180, 0.65);
+          box-shadow:
+            0 0 0 1px rgba(200,140,40,0.18),
+            0 32px 80px rgba(0,0,0,0.32),
+            inset 0 1px 2px rgba(255,255,255,0.75),
+            inset 0 -1px 2px rgba(180,120,20,0.15);
+          display: flex;
+          flex-direction: column;
+          gap: 0;
+          animation: card-in 0.6s cubic-bezier(0.16,1,0.3,1) both;
+        }
+        @keyframes card-in {
+          from { opacity: 0; transform: translateY(18px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0)   scale(1); }
+        }
+
+        /* ── Filigree corners ── */
+        .lp-corner {
+          position: absolute;
+          width: 44px; height: 44px;
+          pointer-events: none;
+          z-index: 6;
+        }
+        .lp-corner svg { width: 100%; height: 100%; }
+        .lp-corner--tl { top: -3px;  left: -3px;  transform: rotate(0deg); }
+        .lp-corner--tr { top: -3px;  right: -3px; transform: rotate(90deg); }
+        .lp-corner--bl { bottom: -3px; left: -3px;  transform: rotate(270deg); }
+        .lp-corner--br { bottom: -3px; right: -3px; transform: rotate(180deg); }
+
+        /* ── Logo & title ── */
+        .lp-brand { text-align: center; margin-bottom: 20px; }
+        .lp-logo  { width: 62px; height: 62px; object-fit: contain; margin-bottom: 10px; filter: drop-shadow(0 6px 18px rgba(0,0,0,0.35)); }
+        .lp-title {
+          font-family: 'Cinzel', serif;
+          font-weight: 900;
+          font-size: clamp(26px, 7vw, 38px);
+          letter-spacing: 0.14em;
+          background: linear-gradient(180deg, #C8902A 0%, #7A4E10 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+          line-height: 1;
+          filter: drop-shadow(0 1px 2px rgba(255,255,255,0.18));
+        }
+
+        /* ── Role tabs ── */
+        .lp-tabs {
+          display: flex;
+          gap: 6px;
+          background: rgba(15, 10, 4, 0.55);
+          border-radius: 18px;
+          padding: 6px;
+          border: 1px solid rgba(200,150,40,0.25);
+          margin-bottom: 18px;
+        }
+        .lp-tab {
+          flex: 1;
+          border: none;
+          border-radius: 13px;
+          padding: 10px 4px;
+          cursor: pointer;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 5px;
+          font-family: 'Outfit', sans-serif;
+          font-size: 9px;
+          font-weight: 800;
+          letter-spacing: 0.06em;
+          line-height: 1.25;
+          text-align: center;
+          white-space: pre-line;
+          transition: all 0.28s cubic-bezier(0.4,0,0.2,1);
+        }
+        .lp-tab--active {
+          background: linear-gradient(135deg, #FFD84D 0%, #E0A030 50%, #B87B14 100%);
+          color: #2a1a04;
+          box-shadow: 0 6px 20px rgba(220,160,30,0.45);
+          transform: scale(1.04);
+        }
+        .lp-tab--inactive {
+          background: rgba(15, 10, 4, 0.5);
+          color: rgba(200,150,60,0.55);
+        }
+        .lp-tab--inactive:hover { color: rgba(220,170,70,0.85); background: rgba(30,20,8,0.6); }
+
+        /* ── Role subtitle ── */
+        .lp-subtitle {
+          text-align: center;
+          font-size: 11.5px;
+          font-weight: 600;
+          color: rgba(80,50,15,0.75);
+          letter-spacing: 0.04em;
+          margin-bottom: 18px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+        }
+        .lp-subtitle svg { opacity: 0.6; }
+
+        /* ── Input group ── */
+        .lp-form { display: flex; flex-direction: column; gap: 14px; }
+        .lp-label {
+          display: block;
+          font-size: 9.5px;
+          font-weight: 900;
+          letter-spacing: 0.2em;
+          color: rgba(90,58,15,0.7);
+          text-transform: uppercase;
+          margin-bottom: 7px;
+        }
+        .lp-input-wrap { position: relative; }
+        .lp-input-wrap svg {
+          position: absolute;
+          left: 16px;
+          top: 50%; transform: translateY(-50%);
+          color: rgba(160,105,30,0.65);
+          pointer-events: none;
+          width: 17px; height: 17px;
+        }
+        .lp-input {
+          width: 100%;
+          padding: 15px 16px 15px 46px;
+          border-radius: 15px;
+          border: 1px solid rgba(220,180,80,0.28);
+          background: rgba(120,75,15,0.07);
+          color: #3a2508;
+          font-size: 14.5px;
+          font-family: 'Outfit', sans-serif;
+          font-weight: 500;
+          outline: none;
+          transition: border-color 0.2s, box-shadow 0.2s;
+          box-shadow: inset 0 2px 5px rgba(0,0,0,0.04);
+        }
+        .lp-input:focus {
+          border-color: rgba(200,140,40,0.55);
+          box-shadow: 0 0 0 3px rgba(200,140,40,0.12), inset 0 2px 5px rgba(0,0,0,0.04);
+        }
+        .lp-input::placeholder { color: rgba(90,58,15,0.32); }
+        .lp-eye {
+          position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+          background: none; border: none; cursor: pointer;
+          color: rgba(140,95,25,0.55); padding: 4px;
+          display: flex; align-items: center;
+          font-size: 10px; font-weight: 800; letter-spacing: 0.1em; font-family: 'Outfit', sans-serif;
+        }
+        .lp-eye:hover { color: rgba(180,120,30,0.9); }
+
+        /* ── Error ── */
+        .lp-error {
+          text-align: center;
+          font-size: 12px;
+          font-weight: 700;
+          color: #c0392b;
+          padding: 8px 12px;
+          border-radius: 10px;
+          background: rgba(192,57,43,0.09);
+          border: 1px solid rgba(192,57,43,0.22);
+        }
+
+        /* ── Submit button ── */
+        .lp-btn {
+          width: 100%;
+          padding: 18px;
+          border-radius: 18px;
+          border: none;
+          margin-top: 6px;
+          background: linear-gradient(135deg, #FFD84D 0%, #E0A030 45%, #B87B14 100%);
+          color: #2a1a04;
+          font-family: 'Cinzel', serif;
+          font-size: 15px;
+          font-weight: 700;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          cursor: pointer;
+          box-shadow:
+            0 12px 32px rgba(184,123,20,0.35),
+            inset 0 1px 1px rgba(255,255,255,0.45);
+          transition: filter 0.2s, transform 0.15s, box-shadow 0.2s;
+        }
+        .lp-btn:hover:not(:disabled) {
+          filter: brightness(1.07);
+          transform: translateY(-1px);
+          box-shadow: 0 16px 40px rgba(184,123,20,0.45), inset 0 1px 1px rgba(255,255,255,0.45);
+        }
+        .lp-btn:active:not(:disabled) { transform: translateY(0); filter: brightness(0.97); }
+        .lp-btn:disabled { opacity: 0.55; cursor: not-allowed; }
       `}</style>
 
-      <div className="login-card" style={{
-        width: '100%', maxWidth: 420, background: 'rgba(10, 20, 40, 0.8)',
-        backdropFilter: 'blur(30px) saturate(1.5)', borderRadius: 32,
-        border: '1px solid rgba(212, 175, 55, 0.2)', padding: '48px 40px',
-        boxShadow: '0 25px 60px rgba(0,0,0,0.6), 0 0 40px rgba(212, 175, 55, 0.05)'
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: 40 }}>
-           <p style={{ fontFamily: "'Amiri', serif", fontSize: 18, color: '#D4AF37', margin: '0 0 8px', letterSpacing: '0.05em' }}>بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</p>
-           <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900, letterSpacing: '0.15em', color: '#D4AF37' }}>AL-MAWAID</h1>
-           <div style={{ fontSize: 10, letterSpacing: '0.4em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)', marginTop: 6, fontWeight: 700 }}>Exclusive Access</div>
-        </div>
+      <div className="lp-root">
+        {/* Background */}
+        <div className="lp-bg" />
+        <div className="lp-vignette" />
 
-        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <label style={{ fontSize: 12, fontWeight: 800, color: '#D4AF37', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Email Address</label>
-            <div style={{ position: 'relative' }}>
-              <Mail size={18} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: 'rgba(212, 175, 55, 0.5)' }} />
-              <input
-                type="email" required
-                value={email} onChange={e => setEmail(e.target.value)}
-                placeholder="name@example.com"
-                style={{
-                  width: '100%', padding: '16px 16px 16px 48px', borderRadius: 16,
-                  background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(212, 175, 55, 0.15)',
-                  color: '#fff', fontSize: 15, outline: 'none', transition: 'all 0.3s'
-                }}
-              />
+        {/* Sparkle */}
+        <div className="lp-sparkle">✦</div>
+
+        {/* Card */}
+        <div className="lp-card">
+          {/* Filigree corners */}
+          {['tl','tr','bl','br'].map(pos => (
+            <div key={pos} className={`lp-corner lp-corner--${pos}`}>
+              <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <linearGradient id={`cg-${pos}`} x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#FFF8E0"/>
+                    <stop offset="0.45" stopColor="#E0A030"/>
+                    <stop offset="1" stopColor="#9A6010"/>
+                  </linearGradient>
+                </defs>
+                {/* L-bracket */}
+                <path
+                  d="M5 5 L5 38 M5 5 L38 5"
+                  stroke={`url(#cg-${pos})`} strokeWidth="5.5"
+                  strokeLinecap="round" strokeLinejoin="round" fill="none"
+                />
+                {/* Small diamond accent */}
+                <rect x="1" y="1" width="8" height="8" rx="2"
+                  fill={`url(#cg-${pos})`} opacity="0.85"
+                  transform="rotate(45 5 5)"
+                />
+              </svg>
             </div>
+          ))}
+
+          {/* Brand */}
+          <div className="lp-brand">
+            <img src="/al-mawaid.png" alt="Al-Mawaid" className="lp-logo" />
+            <div className="lp-title">AL-MAWAID</div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <label style={{ fontSize: 12, fontWeight: 800, color: '#D4AF37', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Password</label>
-            <div style={{ position: 'relative' }}>
-              <Lock size={18} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: 'rgba(212, 175, 55, 0.5)' }} />
-              <input
-                type={showPass ? 'text' : 'password'} required
-                value={password} onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••"
-                style={{
-                  width: '100%', padding: '16px 48px 16px 48px', borderRadius: 16,
-                  background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(212, 175, 55, 0.15)',
-                  color: '#fff', fontSize: 15, outline: 'none', transition: 'all 0.3s'
-                }}
-              />
+          {/* Role tabs */}
+          <div className="lp-tabs">
+            {LOGIN_ROLES.map(r => (
               <button
+                key={r.id}
+                className={`lp-tab ${role === r.id ? 'lp-tab--active' : 'lp-tab--inactive'}`}
+                onClick={() => { setRole(r.id); setError('') }}
                 type="button"
-                onClick={() => setShowPass(!showPass)}
-                style={{
-                  position: 'absolute', right: 16, top: '50%', transform: 'translateY(-50%)',
-                  background: 'none', border: 'none', color: 'rgba(212, 175, 55, 0.5)',
-                  cursor: 'pointer', fontSize: 10, fontWeight: 800
-                }}>
-                {showPass ? 'HIDE' : 'SHOW'}
+              >
+                {r.icon}
+                {r.label}
               </button>
-            </div>
+            ))}
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
-              <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} style={{ accentColor: '#D4AF37' }} />
-              Remember Me
-            </label>
-            <span style={{ fontSize: 13, color: '#D4AF37', fontWeight: 600, cursor: 'pointer' }}>Forgot?</span>
+          {/* Subtitle */}
+          <div className="lp-subtitle">
+            <User size={13} />
+            {activeRole?.short} — member portal
           </div>
 
-          {error && (
-            <div style={{
-              padding: '12px 16px', borderRadius: 12, background: 'rgba(224, 85, 85, 0.1)',
-              border: '1px solid rgba(224, 85, 85, 0.3)', color: '#ff5c5c', fontSize: 13, display: 'flex', alignItems: 'center', gap: 10
-            }}>
-              <AlertCircle size={16} /> {error}
+          {/* Form */}
+          <form className="lp-form" onSubmit={handleAuth}>
+            <div>
+              <label className="lp-label">Email</label>
+              <div className="lp-input-wrap">
+                <Mail />
+                <input
+                  type="email"
+                  className="lp-input"
+                  placeholder="your@email.com"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                />
+              </div>
             </div>
-          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: '100%', padding: '18px', borderRadius: 18, border: 'none',
-              background: 'linear-gradient(135deg, #F9D976 0%, #D4AF37 50%, #A68446 100%)',
-              color: '#000', fontWeight: 900, fontSize: 16, cursor: 'pointer',
-              marginTop: 10, boxShadow: '0 15px 35px rgba(212, 175, 55, 0.3)',
-              transition: 'all 0.3s'
-            }}>
-            {loading ? 'AUTHENTICATING...' : 'SIGN IN'}
-          </button>
-        </form>
+            {role !== 'inventory_manager' && (
+              <div>
+                <label className="lp-label">Password</label>
+                <div className="lp-input-wrap">
+                  <Lock />
+                  <input
+                    type={showPass ? 'text' : 'password'}
+                    className="lp-input"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    className="lp-eye"
+                    onClick={() => setShowPass(s => !s)}
+                    tabIndex={-1}
+                  >
+                    {showPass ? 'HIDE' : 'SHOW'}
+                  </button>
+                </div>
+              </div>
+            )}
 
-        <div style={{ marginTop: 40, textAlign: 'center' }}>
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Secured by Al-Mawaid Systems</div>
+            {error && <div className="lp-error">{error}</div>}
+
+            <button type="submit" className="lp-btn" disabled={loading}>
+              {loading ? 'Processing…' : 'Sign In'}
+            </button>
+          </form>
         </div>
       </div>
-    </div>
+    </>
   )
 }
