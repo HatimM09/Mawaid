@@ -12,7 +12,7 @@ import { AuthCtx, ThemeCtx } from './admin/context'
 import AdminLayout from './admin/AdminLayout'
 import KhidmatPortal from './admin/KhidmatPortal'
 import InventoryManagerPortal from './admin/InventoryManagerPortal'
-import LoginPage from './LoginPage'
+import LoginPage from './LoginPage.jsx'
 
 // ══════════════════════════════════════════════════════════════
 // THEME CONFIGURATION
