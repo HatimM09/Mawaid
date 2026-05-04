@@ -1973,6 +1973,31 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
       <NavCard label="About" icon={<Info size={19} color="#fff" />} desc="Learn more about the app and services" onClick={() => onNav('about')} />
       <NavCard label="Reset Password" icon={<Lock size={19} color="#fff" />} desc="Update your account password" onClick={() => onNav('reset_password')} />
       <div style={{ marginTop: 20, marginBottom: 20 }}>
+        <SectionLabel>App Management</SectionLabel>
+        <button 
+          onClick={async () => {
+            if (window.confirm('This will clear all local app cache and reload to the latest version. Continue?')) {
+              if ('serviceWorker' in navigator) {
+                const regs = await navigator.serviceWorker.getRegistrations();
+                for (let reg of regs) await reg.unregister();
+              }
+              const keys = await caches.keys();
+              for (let key of keys) await caches.delete(key);
+              window.location.reload(true);
+            }
+          }}
+          style={{ width: '100%', padding: '12px 14px', borderRadius: 13, border: `1.5px solid ${t.border}`, background: t.card, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, transition: 'all 0.25s' }}
+        >
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(224, 85, 85, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Zap size={16} color="#e05555" />
+          </div>
+          <div style={{ flex: 1, textAlign: 'left', fontSize: 14, fontWeight: 700, color: t.text, fontFamily: "'Inter', sans-serif" }}>Clear App Cache & Update</div>
+          <ChevronRight size={14} color={t.textSub} />
+        </button>
+        <div style={{ marginTop: 8, fontSize: 10, color: t.textSub, textAlign: 'center', opacity: 0.6 }}>Current Version: 2.0.1 (Build 102)</div>
+      </div>
+
+      <div style={{ marginTop: 20, marginBottom: 20 }}>
         <SectionLabel>App Theme</SectionLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {Object.values(THEMES).filter(th => th.id === 'dark' || th.id === 'bright').map(th => (
@@ -2364,6 +2389,13 @@ export default function App() {
         setMockUser(null);
         localStorage.removeItem('al_mawaid_portal')
         localStorage.removeItem('al_mawaid_mock_user')
+        window.OneSignal.push(() => {
+          window.OneSignal.logout();
+        });
+      } else {
+        window.OneSignal.push(() => {
+          window.OneSignal.login(sess.user.id);
+        });
       }
     })
 

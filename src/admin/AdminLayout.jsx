@@ -248,6 +248,7 @@ export default function AdminLayout() {
           .desktop-only { display: none !important; }
           .admin-nav-breadcrumb { display: none !important; }
           .admin-main { padding-bottom: 80px !important; }
+          .mobile-only { display: block !important; }
         }
       `}</style>
 
@@ -290,6 +291,13 @@ export default function AdminLayout() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button 
+              onClick={() => setSideOpen(true)} 
+              className="mobile-only"
+              style={{ display: 'none', background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: 8 }}
+            >
+              <Menu size={24} />
+            </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '4px 4px 4px 12px', background: 'rgba(25, 20, 10, 0.6)', borderRadius: 18, border: '1px solid rgba(212, 175, 55, 0.25)' }}>
               <div className="desktop-only" style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-primary)' }}>Admin Portal</div>
@@ -303,7 +311,35 @@ export default function AdminLayout() {
           </div>
         </header>
 
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
+          {/* Desktop Sidebar */}
+          <aside className="desktop-only" style={{ 
+            width: collapsed ? 80 : 260, 
+            background: 'var(--bg-card)', 
+            borderRight: '1px solid var(--border-glass)',
+            transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            zIndex: 10,
+            overflowX: 'hidden'
+          }}>
+            <SidebarContent />
+          </aside>
+
+          {/* Mobile Sidebar Overlay */}
+          {sideOpen && (
+            <div 
+              onClick={() => setSideOpen(false)} 
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', zIndex: 1000 }} 
+            />
+          )}
+          <aside style={{ 
+            position: 'fixed', top: 0, bottom: 0, left: sideOpen ? 0 : -280, 
+            width: 280, background: 'var(--bg-deep)', zIndex: 1001, 
+            transition: 'left 0.3s ease',
+            boxShadow: '20px 0 50px rgba(0,0,0,0.5)'
+          }}>
+            <SidebarContent isMobile />
+          </aside>
+
           {/* Dynamic content */}
           <main key={location.pathname} className="smooth-appear scroll-container" style={{ flex: 1, padding: '24px', paddingBottom: 120, overflowY: 'auto', overflowX: 'hidden' }}>
             <Outlet context={{ role }} />

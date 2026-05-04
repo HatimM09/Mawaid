@@ -83,7 +83,7 @@ export default function NotificationsAdminPage() {
             notificationBody.chrome_web_image = payload.media[0]
           }
 
-          await fetch("https://onesignal.com/api/v1/notifications", {
+          const response = await fetch("https://onesignal.com/api/v1/notifications", {
             method: "POST",
             headers: {
               "Content-Type": "application/json; charset=utf-8",
@@ -91,9 +91,13 @@ export default function NotificationsAdminPage() {
             },
             body: JSON.stringify(notificationBody)
           })
+          const resData = await response.json()
+          console.log("OneSignal Response:", resData)
+          if (!response.ok) throw new Error(resData.errors?.[0] || "OneSignal API Error")
         }
       } catch (err) {
         console.error("OneSignal Error:", err)
+        alert("Push Notification Error: " + err.message)
       }
 
       alert('Notification generated and broadcasted successfully!')
