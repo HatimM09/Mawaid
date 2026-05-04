@@ -2366,6 +2366,18 @@ export default function App() {
         localStorage.removeItem('al_mawaid_mock_user')
       }
     })
+
+    // OneSignal Init
+    window.OneSignal = window.OneSignal || [];
+    window.OneSignal.push(() => {
+      window.OneSignal.init({
+        appId: import.meta.env.VITE_ONESIGNAL_APP_ID || "36968038-7359-450f-90e8-07f9c8742913", // Fallback or use env
+        safari_web_id: "web.onesignal.auto.10468a35-180a-48d1-817c-658231267812",
+        notifyButton: { enable: true },
+        allowLocalhostAsSecureOrigin: true,
+      });
+    });
+
     return () => subscription.unsubscribe()
   }, [])
 

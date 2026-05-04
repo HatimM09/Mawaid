@@ -61,9 +61,42 @@ export default function NotificationsAdminPage() {
     const { error } = await supabase.from('notices').insert([payload])
     
     if (error) {
-      alert('Error: ' + error.message)
+      alert('Error saving notice: ' + error.message)
     } else {
-      alert('Notification generated successfully!')
+      // 🚀 Trigger OneSignal Push Notification
+      try {
+        const onesignalAppId = import.meta.env.VITE_ONESIGNAL_APP_ID || "36968038-7359-450f-90e8-07f9c8742913"
+        const onesignalApiKey = import.meta.env.VITE_ONESIGNAL_REST_API_KEY
+        
+        if (onesignalApiKey) {
+          const notificationBody = {
+            app_id: onesignalAppId,
+            headings: { en: payload.title },
+            contents: { en: payload.body },
+            included_segments: payload.target_user_id ? [] : ["All"],
+            include_external_user_ids: payload.target_user_id ? [payload.target_user_id] : null,
+            chrome_web_badge: "https://spciaktztqnjsttrtosu.supabase.co/storage/v1/object/public/al-mawaid.png",
+            chrome_web_icon: "https://spciaktztqnjsttrtosu.supabase.co/storage/v1/object/public/al-mawaid.png"
+          }
+
+          if (payload.media && payload.media[0]) {
+            notificationBody.chrome_web_image = payload.media[0]
+          }
+
+          await fetch("https://onesignal.com/api/v1/notifications", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json; charset=utf-8",
+              "Authorization": `Basic ${onesignalApiKey}`
+            },
+            body: JSON.stringify(notificationBody)
+          })
+        }
+      } catch (err) {
+        console.error("OneSignal Error:", err)
+      }
+
+      alert('Notification generated and broadcasted successfully!')
       setForm({
         title: '', body: '', sender_name: 'Admin Office',
         scheduled_at: '', target_type: 'all', target_user_id: '',
