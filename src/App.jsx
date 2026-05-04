@@ -281,20 +281,20 @@ const GlobalStyles = () => {
 // LOGIN PAGE
 // ══════════════════════════════════════════════════════════════
 const LOGIN_ROLES = [
-  { id: 'khidmat_guzar',      label: 'Khidmat\nGuzar',     icon: <User size={20} />,    short: 'Khidmat Guzar' },
-  { id: 'khidmat',            label: 'Al-Mawaid\nTeam',    icon: <Medal size={20} />,   short: 'Al-Mawaid Team' },
-  { id: 'inventory_manager',  label: 'Inventory',          icon: <Package size={20} />, short: 'Inventory Manager' },
-  { id: 'admin',              label: 'Admin',              icon: <Shield size={20} />,  short: 'Admin' },
+  { id: 'khidmat_guzar', label: 'Khidmat\nGuzar', icon: <User size={20} />, short: 'Khidmat Guzar' },
+  { id: 'khidmat', label: 'Al-Mawaid\nTeam', icon: <Medal size={20} />, short: 'Al-Mawaid Team' },
+  { id: 'inventory_manager', label: 'Inventory', icon: <Package size={20} />, short: 'Inventory Manager' },
+  { id: 'admin', label: 'Admin', icon: <Shield size={20} />, short: 'Admin' },
 ]
 
 function LoginPage({ onRoleLogin }) {
-  const [role, setRole]         = useState('khidmat_guzar')
-  const [email, setEmail]       = useState('')
+  const [role, setRole] = useState('khidmat_guzar')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
-  const [loading, setLoading]   = useState(false)
-  const [error, setError]       = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
     const savedEmail = localStorage.getItem('al_mawaid_remembered_email')
@@ -315,7 +315,7 @@ function LoginPage({ onRoleLogin }) {
         const { data: invStaff, error: invErr } = await supabase
           .from('staff').select('*').ilike('email', email).eq('role', 'inventory_manager').maybeSingle()
         if (invErr || !invStaff) throw new Error('Unauthorized: Email not registered as Inventory Manager.')
-        
+
         if (rememberMe) {
           localStorage.setItem('al_mawaid_remembered_email', email)
         } else {
@@ -349,7 +349,7 @@ function LoginPage({ onRoleLogin }) {
       if (staffErr && staffErr.code !== 'PGRST116') { await supabase.auth.signOut(); throw new Error(staffErr.message) }
       const dbRole = staffRow?.role || ''
       if (role === 'admin' && dbRole !== 'admin') { await supabase.auth.signOut(); throw new Error('You do not have admin privileges.') }
-      if (role === 'khidmat' && !['khidmat_guzar','supervisor','khidmat','admin'].includes(dbRole)) {
+      if (role === 'khidmat' && !['khidmat_guzar', 'supervisor', 'khidmat', 'admin'].includes(dbRole)) {
         await supabase.auth.signOut(); throw new Error('You are not registered as part of the Al Mawaid Team.')
       }
       onRoleLogin(role, session)
@@ -622,14 +622,14 @@ function LoginPage({ onRoleLogin }) {
         {/* Card */}
         <div className="lp-card">
           {/* Filigree corners */}
-          {['tl','tr','bl','br'].map(pos => (
+          {['tl', 'tr', 'bl', 'br'].map(pos => (
             <div key={pos} className={`lp-corner lp-corner--${pos}`}>
               <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <defs>
                   <linearGradient id={`cg-${pos}`} x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
-                    <stop stopColor="#FFF8E0"/>
-                    <stop offset="0.45" stopColor="#E0A030"/>
-                    <stop offset="1" stopColor="#9A6010"/>
+                    <stop stopColor="#FFF8E0" />
+                    <stop offset="0.45" stopColor="#E0A030" />
+                    <stop offset="1" stopColor="#9A6010" />
                   </linearGradient>
                 </defs>
                 {/* L-bracket */}
@@ -711,11 +711,11 @@ function LoginPage({ onRoleLogin }) {
                     className="lp-eye"
                     onClick={() => setShowPass(s => !s)}
                     tabIndex={-1}
-                    style={{ 
-                      right: 12, 
-                      fontSize: 10, 
-                      fontWeight: 800, 
-                      textTransform: 'uppercase', 
+                    style={{
+                      right: 12,
+                      fontSize: 10,
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
                       letterSpacing: '0.05em',
                       color: '#C8902A',
                       background: 'rgba(200,144,42,0.1)',
@@ -731,10 +731,10 @@ function LoginPage({ onRoleLogin }) {
             )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 0 6px' }}>
-              <input 
-                type="checkbox" 
-                id="rememberMe" 
-                checked={rememberMe} 
+              <input
+                type="checkbox"
+                id="rememberMe"
+                checked={rememberMe}
                 onChange={e => setRememberMe(e.target.checked)}
                 style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#C8902A' }}
               />
@@ -795,7 +795,7 @@ function SurveyModal({ startDay, onClose }) {
       if (data) {
         const currentWeekId = getWeekDate()
         const isFromOldWeek = data.week_id !== currentWeekId
-        
+
         const dayKey = currentDay.substring(0, 3).toLowerCase()
         const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
         const status = data[`${dayKey}_${mealKey}_status`]
@@ -803,7 +803,7 @@ function SurveyModal({ startDay, onClose }) {
         const editCount = isFromOldWeek ? 0 : (data.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0
 
         setExistingResponse({ ...data, edit_count: editCount, is_template: isFromOldWeek })
-        
+
         if (status) {
           setWantsFood(status === 'Applied')
           const activeDishes = menu[currentMeal] || []
@@ -1039,7 +1039,7 @@ function DailySurveyModal({ onClose }) {
   const [responses, setResponses] = useState({})
   const [loading, setLoading] = useState(false)
   const [userData, setUserData] = useState({ thali_no: '', email: user.email })
-  
+
   const today = getTodayKey()
   const menu = weeklyMenu[today] || { lunch: [], dinner: [] }
   const dayKey = today.substring(0, 3).toLowerCase()
@@ -1334,26 +1334,26 @@ function ThaliUserApp() {
                 }
                 setActiveTab(id)
               }}
-                style={{ 
-                  background: 'none', border: 'none', cursor: 'pointer', 
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', 
-                  gap: 4, padding: '2px 18px', position: 'relative', 
-                  WebkitTapHighlightColor: 'transparent', transition: 'all 0.2s' 
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  gap: 4, padding: '2px 18px', position: 'relative',
+                  WebkitTapHighlightColor: 'transparent', transition: 'all 0.2s'
                 }}>
                 {active && <div style={{ position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)', width: 32, height: 3, borderRadius: 6, background: t.accent, boxShadow: `0 0 10px ${t.accent}` }} />}
-                <div style={{ 
-                  width: 32, height: 32, borderRadius: 10, transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', 
-                  background: active ? t.accentBg : 'transparent', 
-                  border: active ? `1.5px solid ${t.accentBorder}` : '1.5px solid transparent', 
+                <div style={{
+                  width: 32, height: 32, borderRadius: 10, transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  background: active ? t.accentBg : 'transparent',
+                  border: active ? `1.5px solid ${t.accentBorder}` : '1.5px solid transparent',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   transform: active ? 'scale(1.1) translateY(-2px)' : 'scale(1)'
                 }}>
                   <Icon size={18} color={active ? t.accent : '#FFF8E7'} strokeWidth={active ? 2.5 : 1.5} style={{ opacity: active ? 1 : .35 }} />
                 </div>
-                <span style={{ 
-                  fontSize: 7.5, fontWeight: 900, letterSpacing: '0.08em', 
-                  color: active ? t.accent : '#FFF8E7', opacity: active ? 1 : .3, 
-                  fontFamily: "'Inter', sans-serif", textTransform: 'uppercase' 
+                <span style={{
+                  fontSize: 7.5, fontWeight: 900, letterSpacing: '0.08em',
+                  color: active ? t.accent : '#FFF8E7', opacity: active ? 1 : .3,
+                  fontFamily: "'Inter', sans-serif", textTransform: 'uppercase'
                 }}>{label}</span>
               </button>
             )
@@ -1437,7 +1437,7 @@ function HomePage({ setActiveTab }) {
         position: 'relative', overflow: 'hidden', padding: '24px'
       }}>
         <div style={{ position: 'absolute', top: -40, right: -40, width: 120, height: 120, background: t.accentGrad, borderRadius: '50%', filter: 'blur(60px)', opacity: 0.15 }} />
-        
+
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 240 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -1448,13 +1448,13 @@ function HomePage({ setActiveTab }) {
             <div style={{ fontSize: 13, color: t.textSub, marginTop: 8, fontFamily: "'Inter', sans-serif" }}>{getSurveyWindowMessage()}</div>
           </div>
 
-          <button 
+          <button
             onClick={() => setShowSurvey(true)}
             disabled={!surveyOpen}
-            style={{ 
-              padding: '16px 28px', borderRadius: 16, 
-              background: surveyOpen ? t.accentGrad : 'rgba(255,255,255,0.05)', 
-              color: surveyOpen ? '#000' : t.textSub, 
+            style={{
+              padding: '16px 28px', borderRadius: 16,
+              background: surveyOpen ? t.accentGrad : 'rgba(255,255,255,0.05)',
+              color: surveyOpen ? '#000' : t.textSub,
               fontSize: 14, fontWeight: 900, border: 'none', cursor: surveyOpen ? 'pointer' : 'not-allowed',
               display: 'flex', alignItems: 'center', gap: 10, boxShadow: surveyOpen ? `0 10px 25px ${t.accent}40` : 'none',
               transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -1508,10 +1508,10 @@ function HomePage({ setActiveTab }) {
             value={lunchComment}
             onChange={e => { setLunchComment(e.target.value); setDinnerComment(e.target.value) }}
             placeholder="Tell us what you liked or how we can improve..."
-            style={{ 
-              width: '100%', padding: '15px 18px', borderRadius: 18, 
-              background: 'rgba(255,255,255,0.03)', border: `1.5px solid ${t.border}`, 
-              color: t.text, fontSize: 14, resize: 'none', outline: 'none', 
+            style={{
+              width: '100%', padding: '15px 18px', borderRadius: 18,
+              background: 'rgba(255,255,255,0.03)', border: `1.5px solid ${t.border}`,
+              color: t.text, fontSize: 14, resize: 'none', outline: 'none',
               fontFamily: "'Inter', sans-serif", minHeight: 90, boxSizing: 'border-box',
               transition: 'all 0.3s ease',
               boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)'
@@ -1547,13 +1547,13 @@ function WeeklyMenuPage() {
   return (
     <main style={{ flex: 1, padding: '16px 16px 100px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       {/* Dynamic Header with Dropdown */}
-      <div style={{ 
-        marginBottom: 24, padding: '24px', borderRadius: 32, 
+      <div style={{
+        marginBottom: 24, padding: '24px', borderRadius: 32,
         background: t.cardActive, border: `1.5px solid ${t.borderActive}`,
-        position: 'relative', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.3)' 
+        position: 'relative', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.3)'
       }}>
         <div style={{ position: 'absolute', top: -40, right: -20, width: 140, height: 140, background: t.accentGrad, borderRadius: '50%', filter: 'blur(50px)', opacity: 0.15 }} />
-        
+
         <div style={{ position: 'relative', zIndex: 2 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
             <div style={{ width: 40, height: 40, borderRadius: 14, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 16px rgba(0,0,0,0.2)' }}>
@@ -1575,14 +1575,14 @@ function WeeklyMenuPage() {
           const menu = weeklyMenu[day] || { en: '', ar: '', lunch: [], dinner: [] }
           const isToday = day === todayKey
           const isExpanded = day === expandedDay
-          
+
           return (
-            <div 
-              key={day} 
+            <div
+              key={day}
               id={`day-card-${day}`}
               onClick={() => setExpandedDay(isExpanded ? null : day)}
-              style={{ 
-                borderRadius: 28, 
+              style={{
+                borderRadius: 28,
                 background: isExpanded ? 'rgba(255, 215, 0, 0.05)' : t.card,
                 border: `1.5px solid ${isToday ? t.accent : isExpanded ? t.borderActive : t.border}`,
                 padding: '20px',
@@ -1594,9 +1594,9 @@ function WeeklyMenuPage() {
               }}
             >
               {isToday && (
-                <div style={{ 
-                  position: 'absolute', top: 12, right: 12, 
-                  background: t.accentGrad, color: '#000', padding: '4px 12px', 
+                <div style={{
+                  position: 'absolute', top: 12, right: 12,
+                  background: t.accentGrad, color: '#000', padding: '4px 12px',
                   borderRadius: 100, fontSize: 10, fontWeight: 900, letterSpacing: '0.1em',
                   boxShadow: '0 4px 10px rgba(184,134,11,0.4)'
                 }}>TODAY</div>
@@ -1604,8 +1604,8 @@ function WeeklyMenuPage() {
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                  <div style={{ 
-                    width: 50, height: 50, borderRadius: 16, 
+                  <div style={{
+                    width: 50, height: 50, borderRadius: 16,
                     background: isExpanded ? t.accentGrad : t.inputBg,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 20, fontWeight: 800, color: isExpanded ? '#000' : t.accent,
@@ -1629,16 +1629,16 @@ function WeeklyMenuPage() {
               </div>
 
               {/* Collapsible Content */}
-              <div style={{ 
-                maxHeight: isExpanded ? '1000px' : '0px', 
+              <div style={{
+                maxHeight: isExpanded ? '1000px' : '0px',
                 opacity: isExpanded ? 1 : 0,
                 overflow: 'hidden',
                 transition: 'all 0.5s ease-in-out',
                 marginTop: isExpanded ? 24 : 0
               }}>
                 {menu.ar && (
-                  <div style={{ 
-                    textAlign: 'center', marginBottom: 20, padding: '12px', 
+                  <div style={{
+                    textAlign: 'center', marginBottom: 20, padding: '12px',
                     borderRadius: 20, background: 'rgba(212,175,55,0.05)',
                     fontFamily: "'Inter', sans-serif, 'Amiri', serif", fontSize: 18, color: t.accent
                   }}>{menu.ar}</div>
@@ -1646,8 +1646,8 @@ function WeeklyMenuPage() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
                   {/* Lunch Card */}
-                  <div style={{ 
-                    padding: '16px', borderRadius: 24, 
+                  <div style={{
+                    padding: '16px', borderRadius: 24,
                     background: t.card, border: `1px solid ${t.border}`,
                     boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
                   }}>
@@ -1659,8 +1659,8 @@ function WeeklyMenuPage() {
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                       {menu.lunch.length > 0 ? menu.lunch.map(dish => (
-                        <div key={dish} style={{ 
-                          padding: '8px 16px', borderRadius: 14, 
+                        <div key={dish} style={{
+                          padding: '8px 16px', borderRadius: 14,
                           background: t.inputBg, border: `1px solid ${t.border}`,
                           fontSize: 13, fontWeight: 600, color: t.textBody
                         }}>{dish}</div>
@@ -1669,8 +1669,8 @@ function WeeklyMenuPage() {
                   </div>
 
                   {/* Dinner Card */}
-                  <div style={{ 
-                    padding: '16px', borderRadius: 24, 
+                  <div style={{
+                    padding: '16px', borderRadius: 24,
                     background: t.card, border: `1px solid ${t.border}`,
                     boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
                   }}>
@@ -1682,8 +1682,8 @@ function WeeklyMenuPage() {
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                       {menu.dinner.length > 0 ? menu.dinner.map(dish => (
-                        <div key={dish} style={{ 
-                          padding: '8px 16px', borderRadius: 14, 
+                        <div key={dish} style={{
+                          padding: '8px 16px', borderRadius: 14,
                           background: t.inputBg, border: `1px solid ${t.border}`,
                           fontSize: 13, fontWeight: 600, color: t.textBody
                         }}>{dish}</div>
@@ -1967,14 +1967,14 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
       <SectionLabel>My Activity</SectionLabel>
       <NavCard label="My Surveys" icon={<ClipboardList size={19} color="#fff" />} desc="View your weekly survey responses" onClick={() => onNav('surveys')} />
       <NavCard label="My Requests" icon={<img src="/al-mawaid.png" alt="" style={{ width: 22, height: 22, objectFit: 'contain' }} />} desc="Resume, stop & extra food requests" onClick={() => onNav('requests')} />
-      <NavCard label="Khidmat Guzaar" icon={<Users size={19} color="#fff" />} desc="Meet our service team" onClick={() => onNav('khidmat')} />
-      <NavCard label="Alerts" icon={<Bell size={19} color="#fff" />} desc="See notices and important updates" onClick={() => onNav('notifications')} />
+      <NavCard label="Khidmat Guzaar" icon={<Users size={19} color="#fff" />} desc="Meet our Al-Mawaid team" onClick={() => onNav('khidmat')} />
+      <NavCard label="Alerts" icon={<Bell size={19} color="#fff" />} desc="important updates" onClick={() => onNav('notifications')} />
       <NavCard label="Support Ticket" icon={<LifeBuoy size={19} color="#fff" />} desc="Raise general, thali, and delivery issues" onClick={() => onNav('support')} />
       <NavCard label="About" icon={<Info size={19} color="#fff" />} desc="Learn more about the app and services" onClick={() => onNav('about')} />
       <NavCard label="Reset Password" icon={<Lock size={19} color="#fff" />} desc="Update your account password" onClick={() => onNav('reset_password')} />
       <div style={{ marginTop: 20, marginBottom: 20 }}>
         <SectionLabel>App Management</SectionLabel>
-        <button 
+        <button
           onClick={async () => {
             if (window.confirm('This will clear all local app cache and reload to the latest version. Continue?')) {
               if ('serviceWorker' in navigator) {

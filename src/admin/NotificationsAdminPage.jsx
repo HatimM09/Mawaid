@@ -94,6 +94,9 @@ export default function NotificationsAdminPage() {
           const resData = await response.json()
           console.log("OneSignal Response:", resData)
           if (!response.ok) throw new Error(resData.errors?.[0] || "OneSignal API Error")
+        } else {
+          console.warn("OneSignal REST API Key missing. Skipping push notification.")
+          alert("Notice saved, but Push Notification skipped (REST API Key not found in environment).")
         }
       } catch (err) {
         console.error("OneSignal Error:", err)
