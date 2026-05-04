@@ -3,20 +3,15 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import MainRouter from './MainRouter.jsx'
 
-// Force unregister legacy service workers to fix "old version" issues
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(registrations => {
-    for (let registration of registrations) {
-      registration.unregister();
-      console.log('Legacy Service Worker unregistered');
-    }
-  });
-}
 
-// Clear legacy caches
-if ('caches' in window) {
-  caches.keys().then(names => {
-    for (let name of names) caches.delete(name);
+// Register Service Worker for PWA
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      console.log('SW registered:', reg);
+    }).catch(err => {
+      console.log('SW registration failed:', err);
+    });
   });
 }
 

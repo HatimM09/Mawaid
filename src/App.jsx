@@ -292,8 +292,17 @@ function LoginPage({ onRoleLogin }) {
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
+  const [rememberMe, setRememberMe] = useState(false)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState('')
+
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('al_mawaid_remembered_email')
+    if (savedEmail) {
+      setEmail(savedEmail)
+      setRememberMe(true)
+    }
+  }, [])
 
   const activeRole = LOGIN_ROLES.find(r => r.id === role)
 
@@ -306,12 +315,25 @@ function LoginPage({ onRoleLogin }) {
         const { data: invStaff, error: invErr } = await supabase
           .from('staff').select('*').ilike('email', email).eq('role', 'inventory_manager').maybeSingle()
         if (invErr || !invStaff) throw new Error('Unauthorized: Email not registered as Inventory Manager.')
+        
+        if (rememberMe) {
+          localStorage.setItem('al_mawaid_remembered_email', email)
+        } else {
+          localStorage.removeItem('al_mawaid_remembered_email')
+        }
+
         onRoleLogin('inventory_manager', { user: { email, id: invStaff.user_id || `inv_${invStaff.id}`, ...invStaff } })
         setLoading(false); return
       }
 
       const { data: { session }, error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
       if (signInErr) throw signInErr
+
+      if (rememberMe) {
+        localStorage.setItem('al_mawaid_remembered_email', email)
+      } else {
+        localStorage.removeItem('al_mawaid_remembered_email')
+      }
 
       if (role === 'khidmat_guzar') { onRoleLogin('khidmat_guzar', session); setLoading(false); return }
 
@@ -523,7 +545,7 @@ function LoginPage({ onRoleLogin }) {
         }
         .lp-input {
           width: 100%;
-          padding: 15px 16px 15px 46px;
+          padding: 15px 46px 15px 46px;
           border-radius: 15px;
           border: 1px solid rgba(220,180,80,0.28);
           background: rgba(120,75,15,0.07);
@@ -695,6 +717,19 @@ function LoginPage({ onRoleLogin }) {
                 </div>
               </div>
             )}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '2px 0 6px' }}>
+              <input 
+                type="checkbox" 
+                id="rememberMe" 
+                checked={rememberMe} 
+                onChange={e => setRememberMe(e.target.checked)}
+                style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#C8902A' }}
+              />
+              <label htmlFor="rememberMe" style={{ fontSize: 12, fontWeight: 600, color: 'rgba(90,58,15,0.7)', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                Remember Me
+              </label>
+            </div>
 
             {error && <div className="lp-error">{error}</div>}
 
@@ -1256,8 +1291,8 @@ function ThaliUserApp() {
               <h1 style={{ margin: 0, fontSize: activeTab === 'home' ? 28 : 20, fontWeight: 700, letterSpacing: '0.06em', lineHeight: 1.1, color: t.accent, fontFamily: "'Inter', sans-serif" }}>{tabLabels[activeTab]}</h1>
             </div>
           </div>
-          <svg style={{ display: 'block', position: 'relative', zIndex: 1 }} width="100%" viewBox="0 0 1440 28" preserveAspectRatio="none">
-            <path d="M0,10 C200,28 400,0 600,14 C800,28 1000,4 1200,18 C1320,26 1400,10 1440,14 L1440,28 L0,28 Z" fill={t.headerWave} opacity="0.9" />
+          <svg style={{ display: 'block', position: 'relative', zIndex: 1, marginTop: -1 }} width="100%" height="40" viewBox="0 0 1440 40" preserveAspectRatio="none">
+            <path d="M0,0 C240,40 480,40 720,20 C960,0 1200,0 1440,20 L1440,40 L0,40 Z" fill={t.headerWave} />
           </svg>
         </header>
 
@@ -1270,12 +1305,13 @@ function ThaliUserApp() {
         {showDailySurvey && <DailySurveyModal onClose={() => { setShowDailySurvey(false); setActiveTab('home') }} />}
 
         <nav className="mobile-bottom-nav" style={{
-          position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-          width: '100%', maxWidth: 1200, zIndex: 30, display: 'flex',
-          justifyContent: 'space-around', alignItems: 'center', padding: 'clamp(6px, 1.5vw, 12px) 4px clamp(12px, 3vw, 22px)',
-          background: t.navBg, borderTop: `1px solid ${t.navBorder}`,
-          boxShadow: '0 -8px 30px rgba(0,0,0,0.20)',
-          borderRadius: '32px 32px 0 0'
+          position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+          width: 'calc(100% - 32px)', maxWidth: 500, zIndex: 100, display: 'flex',
+          justifyContent: 'space-around', alignItems: 'center', padding: '12px 8px',
+          background: 'rgba(10, 13, 20, 0.85)', backdropFilter: 'blur(20px) saturate(1.8)',
+          border: `1.5px solid ${t.border}`,
+          boxShadow: '0 20px 40px rgba(0,0,0,0.4), inset 0 1px 1px rgba(255,255,255,0.05)',
+          borderRadius: 40
         }}>
           {tabs.map(({ id, label, Icon }) => {
             const active = activeTab === id
@@ -1290,24 +1326,26 @@ function ThaliUserApp() {
                 style={{ 
                   background: 'none', border: 'none', cursor: 'pointer', 
                   display: 'flex', flexDirection: 'column', alignItems: 'center', 
-                  gap: 4, padding: '2px 18px', position: 'relative', 
-                  WebkitTapHighlightColor: 'transparent', transition: 'all 0.2s' 
+                  gap: 4, padding: '4px 12px', position: 'relative', 
+                  WebkitTapHighlightColor: 'transparent', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  flex: 1
                 }}>
-                {active && <div style={{ position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)', width: 32, height: 3, borderRadius: 6, background: t.accent, boxShadow: `0 0 10px ${t.accent}` }} />}
                 <div style={{ 
-                  width: 32, height: 32, borderRadius: 10, transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', 
-                  background: active ? t.accentBg : 'transparent', 
-                  border: active ? `1.5px solid ${t.accentBorder}` : '1.5px solid transparent', 
+                  width: 38, height: 38, borderRadius: 14, transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)', 
+                  background: active ? t.accentGrad : 'transparent', 
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transform: active ? 'scale(1.1) translateY(-2px)' : 'scale(1)'
+                  transform: active ? 'scale(1.15) translateY(-4px)' : 'scale(1)',
+                  boxShadow: active ? `0 8px 20px ${t.accent}40` : 'none',
                 }}>
-                  <Icon size={18} color={active ? t.accent : '#FFF8E7'} strokeWidth={active ? 2.5 : 1.5} style={{ opacity: active ? 1 : .35 }} />
+                  <Icon size={20} color={active ? '#000' : t.textSub} strokeWidth={active ? 2.5 : 2} style={{ opacity: active ? 1 : .6 }} />
                 </div>
                 <span style={{ 
-                  fontSize: 7.5, fontWeight: 900, letterSpacing: '0.08em', 
-                  color: active ? t.accent : '#FFF8E7', opacity: active ? 1 : .3, 
-                  fontFamily: "'Inter', sans-serif", textTransform: 'uppercase' 
+                  fontSize: 8.5, fontWeight: 800, letterSpacing: '0.05em', 
+                  color: active ? t.accent : t.textSub, opacity: active ? 1 : .5, 
+                  fontFamily: "'Inter', sans-serif", textTransform: 'uppercase',
+                  marginTop: 2
                 }}>{label}</span>
+                {active && <div style={{ position: 'absolute', bottom: -2, width: 4, height: 4, borderRadius: '50%', background: t.accent, boxShadow: `0 0 8px ${t.accent}` }} />}
               </button>
             )
           })}
@@ -1371,7 +1409,7 @@ function HomePage({ setActiveTab }) {
   if (!weeklyMenu) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
 
   return (
-    <main style={{ flex: 1, padding: '16px 16px 96px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{ flex: 1, padding: '20px 16px 120px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       {/* Profile strip */}
       <Card active style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, padding: '14px 16px', borderRadius: 18, position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: -20, left: -20, width: 80, height: 80, background: t.accentGrad, borderRadius: '50%', filter: 'blur(40px)', opacity: 0.08 }} />
@@ -1461,7 +1499,16 @@ function HomePage({ setActiveTab }) {
             value={lunchComment}
             onChange={e => { setLunchComment(e.target.value); setDinnerComment(e.target.value) }}
             placeholder="Tell us what you liked or how we can improve..."
-            style={{ width: '100%', padding: '12px 14px', borderRadius: 12, background: t.inputBg, border: `1px solid ${t.border}`, color: t.text, fontSize: 13, resize: 'none', outline: 'none', fontFamily: "'Inter', sans-serif", minHeight: 70, boxSizing: 'border-box' }}
+            style={{ 
+              width: '100%', padding: '15px 18px', borderRadius: 18, 
+              background: 'rgba(255,255,255,0.03)', border: `1.5px solid ${t.border}`, 
+              color: t.text, fontSize: 14, resize: 'none', outline: 'none', 
+              fontFamily: "'Inter', sans-serif", minHeight: 90, boxSizing: 'border-box',
+              transition: 'all 0.3s ease',
+              boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)'
+            }}
+            onFocus={e => { e.target.style.borderColor = t.accent; e.target.style.background = 'rgba(255,255,255,0.05)' }}
+            onBlur={e => { e.target.style.borderColor = t.border; e.target.style.background = 'rgba(255,255,255,0.03)' }}
           />
         </div>
         <Btn onClick={handleSubmitCombined} disabled={submittingFeedback || (!lunchStars && !dinnerStars)} style={{ width: '100%', height: 48, fontSize: 14 }}>
