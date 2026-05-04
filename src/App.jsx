@@ -711,8 +711,20 @@ function LoginPage({ onRoleLogin }) {
                     className="lp-eye"
                     onClick={() => setShowPass(s => !s)}
                     tabIndex={-1}
+                    style={{ 
+                      right: 12, 
+                      fontSize: 10, 
+                      fontWeight: 800, 
+                      textTransform: 'uppercase', 
+                      letterSpacing: '0.05em',
+                      color: '#C8902A',
+                      background: 'rgba(200,144,42,0.1)',
+                      padding: '4px 8px',
+                      borderRadius: 6,
+                      border: '1px solid rgba(200,144,42,0.2)'
+                    }}
                   >
-                    {showPass ? <EyeOff size={17} /> : <Eye size={17} />}
+                    {showPass ? 'Hide' : 'Show'}
                   </button>
                 </div>
               </div>
@@ -1305,13 +1317,12 @@ function ThaliUserApp() {
         {showDailySurvey && <DailySurveyModal onClose={() => { setShowDailySurvey(false); setActiveTab('home') }} />}
 
         <nav className="mobile-bottom-nav" style={{
-          position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
-          width: 'calc(100% - 32px)', maxWidth: 500, zIndex: 100, display: 'flex',
-          justifyContent: 'space-around', alignItems: 'center', padding: '12px 8px',
-          background: 'rgba(10, 13, 20, 0.85)', backdropFilter: 'blur(20px) saturate(1.8)',
-          border: `1.5px solid ${t.border}`,
-          boxShadow: '0 20px 40px rgba(0,0,0,0.4), inset 0 1px 1px rgba(255,255,255,0.05)',
-          borderRadius: 40
+          position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+          width: '100%', maxWidth: 1200, zIndex: 100, display: 'flex',
+          justifyContent: 'space-around', alignItems: 'center', padding: 'clamp(8px, 2vw, 12px) 4px clamp(12px, 3vw, 22px)',
+          background: t.navBg, borderTop: `1px solid ${t.navBorder}`,
+          boxShadow: '0 -8px 30px rgba(0,0,0,0.20)',
+          borderRadius: '32px 32px 0 0'
         }}>
           {tabs.map(({ id, label, Icon }) => {
             const active = activeTab === id
@@ -1326,26 +1337,24 @@ function ThaliUserApp() {
                 style={{ 
                   background: 'none', border: 'none', cursor: 'pointer', 
                   display: 'flex', flexDirection: 'column', alignItems: 'center', 
-                  gap: 4, padding: '4px 12px', position: 'relative', 
-                  WebkitTapHighlightColor: 'transparent', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                  flex: 1
+                  gap: 4, padding: '2px 18px', position: 'relative', 
+                  WebkitTapHighlightColor: 'transparent', transition: 'all 0.2s' 
                 }}>
+                {active && <div style={{ position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)', width: 32, height: 3, borderRadius: 6, background: t.accent, boxShadow: `0 0 10px ${t.accent}` }} />}
                 <div style={{ 
-                  width: 38, height: 38, borderRadius: 14, transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)', 
-                  background: active ? t.accentGrad : 'transparent', 
+                  width: 32, height: 32, borderRadius: 10, transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', 
+                  background: active ? t.accentBg : 'transparent', 
+                  border: active ? `1.5px solid ${t.accentBorder}` : '1.5px solid transparent', 
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transform: active ? 'scale(1.15) translateY(-4px)' : 'scale(1)',
-                  boxShadow: active ? `0 8px 20px ${t.accent}40` : 'none',
+                  transform: active ? 'scale(1.1) translateY(-2px)' : 'scale(1)'
                 }}>
-                  <Icon size={20} color={active ? '#000' : t.textSub} strokeWidth={active ? 2.5 : 2} style={{ opacity: active ? 1 : .6 }} />
+                  <Icon size={18} color={active ? t.accent : '#FFF8E7'} strokeWidth={active ? 2.5 : 1.5} style={{ opacity: active ? 1 : .35 }} />
                 </div>
                 <span style={{ 
-                  fontSize: 8.5, fontWeight: 800, letterSpacing: '0.05em', 
-                  color: active ? t.accent : t.textSub, opacity: active ? 1 : .5, 
-                  fontFamily: "'Inter', sans-serif", textTransform: 'uppercase',
-                  marginTop: 2
+                  fontSize: 7.5, fontWeight: 900, letterSpacing: '0.08em', 
+                  color: active ? t.accent : '#FFF8E7', opacity: active ? 1 : .3, 
+                  fontFamily: "'Inter', sans-serif", textTransform: 'uppercase' 
                 }}>{label}</span>
-                {active && <div style={{ position: 'absolute', bottom: -2, width: 4, height: 4, borderRadius: '50%', background: t.accent, boxShadow: `0 0 8px ${t.accent}` }} />}
               </button>
             )
           })}
@@ -1465,7 +1474,7 @@ function HomePage({ setActiveTab }) {
           <div style={{ width: 36, height: 36, borderRadius: 10, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Star size={16} color="#fff" fill="#fff" /></div>
           <div style={{ fontSize: 17, fontWeight: 800, color: t.accent, fontFamily: "'Inter', sans-serif" }}>Daily Feedback</div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, marginBottom: 16 }}>
           {['lunch', 'dinner'].map(meal => {
             const stars = meal === 'lunch' ? lunchStars : dinnerStars
             const setStars = meal === 'lunch' ? setLunchStars : setDinnerStars
