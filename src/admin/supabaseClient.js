@@ -9,11 +9,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder', {
-  realtime: {
-    params: {
-      eventsPerSecond: 10
-    }
-  },
   auth: {
     storageKey: 'al-mawaid-auth-token',
     autoRefreshToken: true,

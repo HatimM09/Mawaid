@@ -51,21 +51,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadAll()
-    
-    // Subscribe to realtime inventory changes
-    const channel = supabase
-      .channel('admin_dashboard_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => {
-        loadStats()
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'inventory_log' }, () => {
-        loadStats()
-      })
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
   }, [loadAll])
 
   const loadStats = async () => {

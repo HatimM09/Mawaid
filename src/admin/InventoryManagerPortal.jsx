@@ -60,17 +60,6 @@ export default function InventoryManagerPortal({ signOut, user }) {
       setLoading(false)
     }
     loadStats()
-
-    // Realtime stats updates
-    const channel = supabase
-      .channel('portal_stats_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => loadStats())
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'inventory_log' }, () => loadStats())
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
   }, [user])
 
   const loadStats = async () => {

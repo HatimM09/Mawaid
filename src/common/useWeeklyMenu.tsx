@@ -32,26 +32,7 @@ export const useWeeklyMenu = () => {
     load();
   }, []);
 
-  // Realtime updates
-  useEffect(() => {
-    // Generate a unique channel name to avoid "callbacks after subscribe" conflicts
-    // when this hook is used in multiple components simultaneously.
-    const channelName = `weekly_menu_updates_${Math.random().toString(36).slice(2, 11)}`;
-    const channel = supabase
-      .channel(channelName)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'weekly_menu' },
-        () => {
-          load();
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  // Realtime updates removed as requested
 
   return menu;
 };

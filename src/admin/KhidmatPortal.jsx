@@ -316,18 +316,6 @@ function NoticesPortalView() {
         setNotices(data || [])
         setLoading(false)
       })
-
-    const channel = supabase.channel('public:notices')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notices' }, (payload) => {
-        setNotices(prev => [payload.new, ...prev])
-        // Trigger browser notification
-        if (Notification.permission === 'granted') {
-          new Notification(payload.new.title, { body: payload.new.body, icon: '/logo.png' })
-        }
-      })
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
   }, [])
 
   if (loading) return <Spinner fullPage={false} />

@@ -32,6 +32,7 @@ export default function AdminLayout() {
 
   const [showPalette, setShowPalette] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [showMore, setShowMore] = useState(false)
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -166,19 +167,16 @@ export default function AdminLayout() {
         .admin-main { flex: 1; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; padding: 0; position: relative; z-index: 1; }
         .admin-header { height: 70px; display: flex; align-items: center; padding: 0 30px; background: var(--bg-card); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-glass); z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
         .global-bottom-nav { 
-          position: fixed; bottom: 0px; left: 0; right: 0;
-          width: 100%; height: 75px;
-          background: rgba(10, 13, 20, 0.98); backdrop-filter: blur(30px);
-          border-top: 1px solid var(--border-light);
+          position: fixed; bottom: 16px; left: 16px; right: 16px;
+          height: 70px;
+          background: rgba(15, 12, 8, 0.9); backdrop-filter: blur(25px);
+          border: 1px solid rgba(212, 175, 55, 0.3);
+          border-radius: 24px;
           display: flex; align-items: center;
-          padding: 0; z-index: 2000;
-          box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
-          overflow-x: auto;
-          scrollbar-width: none;
-          -ms-overflow-style: none;
-          -webkit-overflow-scrolling: touch;
+          padding: 0 8px; z-index: 2000;
+          box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+          overflow: visible;
         }
-        .global-bottom-nav::-webkit-scrollbar { display: none; }
         .bottom-nav-inner {
           display: flex; align-items: center; gap: 4px;
           padding: 0 16px; min-width: max-content;
@@ -307,6 +305,12 @@ export default function AdminLayout() {
                 {adminName.charAt(0).toUpperCase()}
               </div>
             </div>
+            <button 
+              onClick={() => window.location.reload()} 
+              style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <RefreshCw size={18} />
+            </button>
             <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: '#ff5c5c', cursor: 'pointer' }}><LogOut size={20} /></button>
           </div>
         </header>
@@ -348,14 +352,47 @@ export default function AdminLayout() {
 
         {/* Global Floating Bottom Nav */}
         <nav className="global-bottom-nav">
-          <div className="bottom-nav-inner">
-            {NAV.map(({ to, label, Icon, end }) => (
-              <NavLink key={to} to={to} end={end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} style={{ flexShrink: 0, minWidth: 70 }}>
-                {typeof Icon === 'string' ? <span style={{ fontSize: 20, fontWeight: 800 }}>{Icon}</span> : <Icon size={22} />}
-                <span style={{ fontSize: 9, fontWeight: 700, whiteSpace: 'nowrap' }}>{label}</span>
+          <div className="bottom-nav-inner" style={{ width: '100%', justifyContent: 'space-around', gap: 0, padding: 0 }}>
+            {/* Show first 4 items */}
+            {NAV.slice(0, 4).map(({ to, label, Icon, end }) => (
+              <NavLink key={to} to={to} end={end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} style={{ flex: 1, minWidth: 0, padding: '8px 4px' }}>
+                <Icon size={20} />
+                <span style={{ fontSize: 8, fontWeight: 700 }}>{label}</span>
               </NavLink>
             ))}
+            
+            {/* More Button */}
+            <button 
+              onClick={() => setShowMore(!showMore)}
+              className={`nav-item ${showMore ? 'active' : ''}`}
+              style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', padding: '8px 4px' }}
+            >
+              <Menu size={20} />
+              <span style={{ fontSize: 8, fontWeight: 700 }}>More</span>
+            </button>
           </div>
+
+          {/* More Menu Popup */}
+          {showMore && (
+            <>
+              <div onClick={() => setShowMore(false)} style={{ position: 'fixed', inset: 0, zIndex: 2099 }} />
+              <div className="more-menu-container">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                  {NAV.slice(4).map(({ to, label, Icon, end }) => (
+                    <NavLink 
+                      key={to} to={to} end={end} 
+                      onClick={() => setShowMore(false)}
+                      className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                      style={{ padding: '12px 8px' }}
+                    >
+                      <Icon size={18} />
+                      <span style={{ fontSize: 8, fontWeight: 700 }}>{label}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </nav>
       </div>
 

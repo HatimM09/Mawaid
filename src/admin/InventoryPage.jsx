@@ -75,28 +75,6 @@ export default function InventoryPage({ role: roleProp }) {
 
   useEffect(() => {
     fetchData()
-    
-    // Set up real-time subscription with status logging
-    const channel = supabase
-      .channel('inventory_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, (payload) => {
-        console.log('🔄 Realtime Inventory Change:', payload)
-        fetchData()
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'inventory_log' }, (payload) => {
-        console.log('🔄 Realtime Log Added:', payload)
-        fetchData()
-      })
-      .subscribe((status) => {
-        console.log('📡 Realtime Connection Status:', status)
-        if (status === 'SUBSCRIBED') console.log('✅ Successfully connected to Realtime!')
-        if (status === 'CHANNEL_ERROR') console.error('❌ Realtime connection failed. Check RLS policies.')
-      })
-
-    return () => {
-      console.log('🔌 Cleaning up Realtime channel...')
-      supabase.removeChannel(channel)
-    }
   }, [])
 
   const fetchData = async () => {
