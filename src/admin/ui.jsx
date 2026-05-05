@@ -124,11 +124,11 @@ export const PageWrap = ({ children }) => (
 )
 
 export const PageTitle = ({ children, sub }) => (
-  <div style={{ marginBottom: 32 }}>
-    <h1 style={{ margin: 0, fontSize: 'clamp(24px, 5vw, 32px)', fontWeight: 800, color: T.text, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+  <div style={{ marginBottom: 40 }}>
+    <h1 style={{ margin: 0, fontSize: 'clamp(32px, 6vw, 44px)', fontWeight: 800, color: T.text, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
       {children}
     </h1>
-    {sub && <p style={{ margin: '6px 0 0', color: T.textSub, fontSize: 'clamp(13px, 3vw, 15px)', fontWeight: 500 }}>{sub}</p>}
+    {sub && <p style={{ margin: '8px 0 0', color: T.textSub, fontSize: 'clamp(15px, 3.5vw, 18px)', fontWeight: 500 }}>{sub}</p>}
   </div>
 )
 
@@ -164,20 +164,20 @@ export const SlideDrawer = ({ isOpen, onClose, title, children, width = 480 }) =
     <div style={{
       position: 'fixed', top: 0, right: 0, bottom: 0,
       width: 'min(100%, ' + (typeof width === 'number' ? width + 'px' : width) + ')',
-      background: 'rgba(19, 23, 32, 0.9)', backdropFilter: 'blur(32px)', zIndex: 3001,
+      background: 'rgba(19, 23, 32, 0.95)', backdropFilter: 'blur(32px)', zIndex: 3001,
       boxShadow: '-20px 0 60px rgba(0,0,0,0.4)',
       transform: isOpen ? 'translateX(0)' : 'translateX(100%)',
       transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
       display: 'flex', flexDirection: 'column',
       borderLeft: '1px solid var(--border-glass)'
     }}>
-      <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>{title}</h3>
-        <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', cursor: 'pointer', padding: 8, borderRadius: 10, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <X size={18} />
+      <div style={{ padding: '28px 36px', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h3 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--text-primary)' }}>{title}</h3>
+        <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', cursor: 'pointer', padding: 10, borderRadius: 12, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <X size={22} />
         </button>
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: 'clamp(20px, 5vw, 32px)' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 'clamp(24px, 6vw, 40px)' }}>
         {children}
       </div>
     </div>
@@ -186,27 +186,28 @@ export const SlideDrawer = ({ isOpen, onClose, title, children, width = 480 }) =
 
 export const StatCard = ({ icon, label, value, color, sub }) => (
   <AdminCard style={{ 
-    display: 'flex', alignItems: 'center', gap: 'clamp(12px, 3vw, 20px)',
-    border: `1px solid ${color ? `${color}30` : 'rgba(197, 160, 89, 0.15)'}`,
-    boxShadow: `0 8px 32px rgba(0,0,0,0.2)`
+    display: 'flex', alignItems: 'center', gap: 'clamp(16px, 4vw, 24px)',
+    border: `1.5px solid ${color ? `${color}30` : 'rgba(197, 160, 89, 0.15)'}`,
+    boxShadow: `0 12px 40px rgba(0,0,0,0.25)`,
+    padding: '24px'
   }}>
     <div style={{
-      width: 'clamp(44px, 11vw, 52px)', height: 'clamp(44px, 11vw, 52px)', borderRadius: 14, flexShrink: 0,
+      width: 'clamp(52px, 13vw, 64px)', height: 'clamp(52px, 13vw, 64px)', borderRadius: 16, flexShrink: 0,
       background: color ? `${color}12` : 'rgba(197, 160, 89, 0.08)',
-      border: `1px solid ${color ? `${color}30` : 'rgba(197, 160, 89, 0.2)'}`,
+      border: `1.5px solid ${color ? `${color}30` : 'rgba(197, 160, 89, 0.2)'}`,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: 'clamp(20px, 4.5vw, 24px)', color: color || 'var(--accent-primary)',
+      fontSize: 'clamp(24px, 5.5vw, 32px)', color: color || 'var(--accent-primary)',
     }}>
       {icon}
     </div>
     <div style={{ flex: 1 }}>
-      <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.15em' }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.15em' }}>
         {label}
       </div>
-      <div style={{ fontSize: 'clamp(22px, 5.5vw, 28px)', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1, marginTop: 4 }}>
+      <div style={{ fontSize: 'clamp(26px, 6vw, 36px)', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1, marginTop: 6 }}>
         {value}
       </div>
-      {sub && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, opacity: 0.8 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 6, opacity: 0.8 }}>{sub}</div>}
     </div>
   </AdminCard>
 )
@@ -218,9 +219,9 @@ export const Table = ({ headers, rows, emptyMsg = 'No data found.' }) => (
         <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-light)' }}>
           {headers.map((h, i) => (
             <th key={i} style={{
-              padding: '16px', textAlign: 'left',
-              color: 'var(--text-tertiary)', fontWeight: 700,
-              fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase',
+              padding: '20px 16px', textAlign: 'left',
+              color: 'var(--text-tertiary)', fontWeight: 800,
+              fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase',
               whiteSpace: 'nowrap',
             }}>
               {h}
@@ -247,7 +248,7 @@ export const Table = ({ headers, rows, emptyMsg = 'No data found.' }) => (
             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
           >
             {row.map((cell, ci) => (
-              <td key={ci} style={{ padding: '16px', color: 'var(--text-primary)', verticalAlign: 'middle' }}>
+              <td key={ci} style={{ padding: '20px 16px', color: 'var(--text-primary)', verticalAlign: 'middle', fontSize: 15, fontWeight: 500 }}>
                 {cell}
               </td>
             ))}
@@ -310,9 +311,9 @@ export const Btn = ({ children, variant = 'primary', size = 'md', ...props }) =>
     ghost: { background: 'var(--accent-bg)', color: 'var(--text-tertiary)', border: 'none' },
   }
   const sizes = {
-    sm: { padding: '8px 14px', fontSize: 12 },
-    md: { padding: '12px 20px', fontSize: 13 },
-    lg: { padding: '16px 28px', fontSize: 14 },
+    sm: { padding: '10px 16px', fontSize: 13 },
+    md: { padding: '14px 24px', fontSize: 15 },
+    lg: { padding: '18px 32px', fontSize: 16 },
   }
   return (
     <button className="admin-btn" style={{
@@ -409,9 +410,9 @@ export const Grid = ({ cols = 4, children, style: extra = {}, gap = 20 }) => (
 
 export const SectionHeader = ({ children }) => (
   <div style={{
-    fontSize: 10, fontWeight: 800, color: 'var(--text-tertiary)',
+    fontSize: 12, fontWeight: 800, color: 'var(--text-tertiary)',
     textTransform: 'uppercase', letterSpacing: '0.15em',
-    marginBottom: 16, marginTop: 8,
+    marginBottom: 20, marginTop: 12,
   }}>
     {children}
   </div>

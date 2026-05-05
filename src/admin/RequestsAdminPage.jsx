@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { supabase } from './supabaseClient'
-import { RefreshCw, Search, CheckCircle, Clock, XCircle, ShieldAlert } from 'lucide-react'
+import { RefreshCw, Search, CheckCircle, Clock, XCircle, ShieldAlert, Lock } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, fmtDate, fmtDateTime } from './ui'
 
 const STATUS_COLORS = { pending: '#e09855', approved: '#5eba82', rejected: '#e05555' }
@@ -60,12 +60,27 @@ export default function RequestsAdminPage() {
       </div>,
       <Badge color="#9b8de0">{r.request_type || '—'}</Badge>,
       <div style={{ fontSize: 13, color: T.textSub, maxWidth: 200, lineHeight: 1.5 }}>{r.details || '—'}</div>,
-      r.date ? fmtDate(r.date) : '—',
+      <div>
+        {r.from_date ? (
+          <div style={{ fontSize: 12 }}>
+            <span style={{ fontWeight: 700, color: T.accent }}>{fmtDate(r.from_date)}</span>
+            {r.to_date ? (
+              <> <span style={{ opacity: 0.5 }}>→</span> <span style={{ fontWeight: 700, color: T.accent }}>{fmtDate(r.to_date)}</span></>
+            ) : (
+              <Badge color={T.success} style={{ marginLeft: 6, fontSize: 8 }}>Permanent</Badge>
+            )}
+          </div>
+        ) : r.date ? (
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.accent }}>{fmtDate(r.date)}</div>
+        ) : (
+          <span style={{ opacity: 0.3 }}>—</span>
+        )}
+      </div>,
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         {STATUS_ICONS[status]}
         <Badge color={STATUS_COLORS[status]}>{status}</Badge>
       </div>,
-      fmtDateTime(r.created_at),
+      <div style={{ fontSize: 11, color: T.textSub, opacity: 0.8 }}>{fmtDateTime(r.created_at)}</div>,
       <div style={{ display: 'flex', gap: 6 }}>
         {isAdmin ? (
           <>
@@ -81,7 +96,10 @@ export default function RequestsAdminPage() {
             )}
           </>
         ) : (
-          <span style={{ fontSize: 11, color: T.textSub, opacity: 0.5 }}>View Only</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: 0.6 }}>
+            <Lock size={12} color={T.textSub} />
+            <span style={{ fontSize: 11, color: T.textSub, fontWeight: 700 }}>Admin Only</span>
+          </div>
         )}
       </div>,
     ]
@@ -95,8 +113,15 @@ export default function RequestsAdminPage() {
   return (
     <PageWrap>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <PageTitle sub={`${requests.length} total requests`}>Thali Requests</PageTitle>
-        {!isAdmin && <Badge color="var(--accent-orange)"><ShieldAlert size={12} style={{ marginRight: 6 }} /> Read-Only Mode (Khidmat)</Badge>}
+        <PageTitle>Thali Requests</PageTitle>
+        {!isAdmin && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(212, 175, 55, 0.1)', padding: '8px 16px', borderRadius: 12, border: '1px solid rgba(212, 175, 55, 0.3)' }}>
+            <ShieldAlert size={16} color="var(--accent-gold)" />
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-gold)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Resolution Reserved for Admin
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Quick counts */}
@@ -150,7 +175,7 @@ export default function RequestsAdminPage() {
       {loading ? <Spinner /> : (
         <AdminCard style={{ padding: 0 }}>
           <Table
-            headers={['Thali User', 'Type', 'Details', 'Date', 'Status', 'Submitted', 'Actions']}
+            headers={['Thali User', 'Type', 'Request Details', 'Dates / Schedule', 'Status', 'Submitted At', 'Actions']}
             rows={rows}
             emptyMsg="No requests found."
           />

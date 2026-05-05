@@ -62,6 +62,20 @@ body {
     radial-gradient(circle at 0% 0%, rgba(157, 80, 187, 0.08) 0%, transparent 40%),
     radial-gradient(circle at 100% 100%, rgba(0, 242, 255, 0.05) 0%, transparent 40%);
   background-attachment: fixed;
+  user-select: none; /* Prevent text selection in UI */
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100vh;
+  height: -webkit-fill-available;
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-top: env(safe-area-inset-top);
 }
 
 .glass {

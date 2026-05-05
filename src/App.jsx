@@ -77,26 +77,32 @@ const getTodayKey = () => {
   return map[new Date().getDay()] || 'monday'
 }
 
-// Survey window: Saturday 8PM to Monday 10AM
+// Survey window: Saturday 8PM to Monday 11AM
 const isSurveyOpen = () => {
   const now = new Date()
   const day = now.getDay() // 0=Sun,1=Mon,...,6=Sat
   const hour = now.getHours()
   if (day === 6 && hour >= 20) return true  // Sat 8PM+
   if (day === 0) return true                 // All Sunday
-  if (day === 1 && hour < 10) return true   // Mon before 10AM
+  if (day === 1 && hour < 11) return true   // Mon before 11AM
   return false
 }
 
 const getSurveyWindowMessage = () => {
-  if (isSurveyOpen()) return 'Survey window is open! (Sat 8PM – Mon 10AM)'
-  return 'Survey window opens Saturday 8:00 PM and closes Monday 10:00 AM.'
+  if (isSurveyOpen()) return 'Survey window is open! (Sat 8PM – Mon 11AM)'
+  return 'Survey window opens Saturday 8:00 PM and closes Monday 11:00 AM.'
 }
 
 const getWeekDate = () => {
   const now = new Date()
-  const day = now.getDay()
-  const diff = now.getDate() - day + (day === 0 ? -6 : 1)
+  const day = now.getDay() // 0=Sun
+  const hour = now.getHours()
+  // Normal Monday of current week
+  let diff = now.getDate() - day + (day === 0 ? -6 : 1)
+  // If we are in the weekend survey window (Sat 8PM+ or Sun), we shift to NEXT week
+  if (day === 0 || (day === 6 && hour >= 20)) {
+    diff += 7
+  }
   const monday = new Date(now.setDate(diff))
   return monday.toISOString().split('T')[0]
 }
@@ -111,6 +117,22 @@ const mapDishToCol = (day, meal, dish) => {
   const m = meal === 'lunch' ? 'l' : 'd'
   const dishKey = dish.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 20)
   return `${d}_${m}_${dishKey}`
+}
+
+const canEditMeal = (dayName, weekId) => {
+  if (isSurveyOpen()) return true
+  const now = new Date()
+  const weekStart = new Date(weekId) // Monday
+  const dayIdx = DAYS.indexOf(dayName)
+  if (dayIdx === -1) return false
+  
+  const mealDate = new Date(weekStart)
+  mealDate.setDate(mealDate.getDate() + dayIdx)
+  mealDate.setHours(0, 0, 0, 0)
+  
+  const limit = new Date(mealDate)
+  limit.setHours(limit.getHours() - 48)
+  return now < limit
 }
 
 
@@ -174,7 +196,7 @@ const Avatar = ({ avatarUrl, name, email, size = 56 }) => {
 
 const SectionLabel = ({ children }) => {
   const t = useTheme()
-  return <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', color: t.textSub, textTransform: 'uppercase', marginBottom: 12, fontFamily: "'DM Sans',sans-serif", opacity: .7 }}>{children}</div>
+  return <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.18em', color: t.textSub, textTransform: 'uppercase', marginBottom: 14, fontFamily: "'DM Sans',sans-serif", opacity: .7 }}>{children}</div>
 }
 
 function Card({ children, style = {}, active, organic }) {
@@ -215,11 +237,11 @@ function Card({ children, style = {}, active, organic }) {
 const Btn = ({ children, onClick, disabled, style: extra = {}, variant = 'primary' }) => {
   const t = useTheme()
   const baseStyle = {
-    padding: '12px 20px', borderRadius: 14, border: 'none',
+    padding: '14px 24px', borderRadius: 16, border: 'none',
     fontWeight: 700, cursor: disabled ? 'not-allowed' : 'pointer',
     fontFamily: "'DM Sans', sans-serif", transition: 'all 0.3s ease',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-    width: 'fit-content', opacity: disabled ? 0.5 : 1
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+    width: 'fit-content', opacity: disabled ? 0.5 : 1, fontSize: 16
   }
   const variants = {
     primary: { background: t.accentGrad, color: '#000', boxShadow: `0 4px 15px ${t.accentBg}` },
@@ -241,8 +263,8 @@ const Btn = ({ children, onClick, disabled, style: extra = {}, variant = 'primar
 
 const Badge = ({ children, color, style = {} }) => (
   <div style={{
-    display: 'inline-flex', alignItems: 'center', padding: '4px 10px',
-    borderRadius: 8, fontSize: 10, fontWeight: 800, textTransform: 'uppercase',
+    display: 'inline-flex', alignItems: 'center', padding: '6px 12px',
+    borderRadius: 10, fontSize: 12, fontWeight: 800, textTransform: 'uppercase',
     letterSpacing: '0.08em', background: `${color}15` || 'rgba(212, 175, 55, 0.1)',
     color: color || '#D4AF37', border: `1px solid ${color}30` || 'rgba(212, 175, 55, 0.25)',
     fontFamily: "'DM Sans', sans-serif", ...style
@@ -265,7 +287,7 @@ const BackHeader = ({ title, onBack }) => {
 
 const EmptyState = ({ msg }) => {
   const t = useTheme()
-  return <div style={{ textAlign: 'center', padding: 48, color: t.textSub, fontSize: 15, fontFamily: "'DM Sans',sans-serif" }}>{msg}</div>
+  return <div style={{ textAlign: 'center', padding: 60, color: t.textSub, fontSize: 18, fontFamily: "'DM Sans',sans-serif" }}>{msg}</div>
 }
 
 const GlobalStyles = () => {
@@ -284,6 +306,22 @@ const GlobalStyles = () => {
       ::-webkit-scrollbar-thumb { background: ${t.borderActive}; border-radius: 10px; }
       ::-webkit-scrollbar-thumb:hover { background: ${t.accent}; }
 
+      @media (min-width: 1025px) {
+        .mobile-bottom-nav {
+          padding: 16px 24px 24px !important;
+          height: 96px;
+          border-radius: 32px 32px 0 0 !important;
+          max-width: 800px !important;
+          left: 50% !important;
+          transform: translateX(-50%) !important;
+        }
+        .mobile-bottom-nav button {
+          gap: 8px !important;
+        }
+        .mobile-bottom-nav span {
+          fontSize: 10px !important;
+        }
+      }
     `}</style>
   )
 }
@@ -295,7 +333,11 @@ function SurveyModal({ startDay, onClose }) {
   const t = useTheme()
   const { user } = useAuth()
   const weeklyMenu = useWeeklyMenu() || {}
-  const [currentDay, setCurrentDay] = useState(startDay || 'monday')
+  
+  const currentWeekId = getWeekDate()
+  const visibleDays = isSurveyOpen() ? DAYS : DAYS.filter(d => canEditMeal(d, currentWeekId))
+  
+  const [currentDay, setCurrentDay] = useState(startDay || (visibleDays[0] || 'monday'))
   const [currentMeal, setCurrentMeal] = useState('lunch')
   const [wantsFood, setWantsFood] = useState(null)
   const [responses, setResponses] = useState({})
@@ -303,16 +345,20 @@ function SurveyModal({ startDay, onClose }) {
   const [existingResponse, setExistingResponse] = useState(null)
 
   const [userData, setUserData] = useState({ thali_no: '', email: user.email })
-  const currentDayIndex = DAYS.indexOf(currentDay)
+  const currentDayIndexInVisible = visibleDays.indexOf(currentDay)
   const menu = weeklyMenu[currentDay] || { lunch: [], dinner: [] }
-  const editBlocked = existingResponse && (existingResponse.edit_count || 0) >= 1
+  const dayKey = currentDay.substring(0, 3).toLowerCase()
+  const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
+  const isEditable = canEditMeal(currentDay, currentWeekId)
+  const editCount = (existingResponse && !existingResponse.is_template) ? (existingResponse.edit_metadata?.[`${dayKey}_${mealKey}`] || 0) : 0
+  const editBlocked = !isEditable || (!isSurveyOpen() && editCount >= 1)
 
   useEffect(() => { loadExisting() }, [currentDay, currentMeal])
 
   const loadExisting = async () => {
     try {
       if (!userData.thali_no) {
-        const { data: u } = await supabase.from('user_stats').select('thali_number, email').eq('user_id', user.id).single()
+        const { data: u } = await supabase.from('user_stats').select('thali_number, email').eq('user_id', user.id).maybeSingle()
         if (u) setUserData({ thali_no: u.thali_number || '', email: u.email || user.email })
       }
 
@@ -328,11 +374,10 @@ function SurveyModal({ startDay, onClose }) {
         const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
         const status = data[`${dayKey}_${mealKey}_status`]
         // If it's an old week, we reset the edit count for the new week
-        const editCount = isFromOldWeek ? 0 : (data.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0
+        const editCountData = isFromOldWeek ? 0 : (data.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0
+        setExistingResponse({ ...data, is_template: isFromOldWeek })
 
-        setExistingResponse({ ...data, edit_count: editCount, is_template: isFromOldWeek })
-
-        if (status) {
+        if (status && !isFromOldWeek) {
           setWantsFood(status === 'Applied')
           const activeDishes = menu[currentMeal] || []
           const dishRes = {}
@@ -368,8 +413,8 @@ function SurveyModal({ startDay, onClose }) {
       try {
         const dayKey = currentDay.substring(0, 3).toLowerCase()
         const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
-        const currentEdits = existingResponse?.edit_metadata || {}
-        const newEditCount = (currentEdits[`${dayKey}_${mealKey}`] || 0) + (existingResponse ? 1 : 0)
+        const currentEdits = (existingResponse && !existingResponse.is_template) ? (existingResponse.edit_metadata || {}) : {}
+        const newEditCount = (currentEdits[`${dayKey}_${mealKey}`] || 0) + (existingResponse && !existingResponse.is_template ? 1 : 0)
 
         const currentWeekId = getWeekDate()
         const updateObj = {
@@ -394,8 +439,8 @@ function SurveyModal({ startDay, onClose }) {
         }
 
         await supabase.from('survey_submissions_flat').upsert([updateObj])
-
-        if (!existingResponse) {
+        // Increment survey count only for new thali submissions, not edits
+        if (!existingResponse || existingResponse.is_template) {
           await supabase.rpc('increment_user_surveys', { p_user_id: user.id })
         }
       } catch (err) {
@@ -407,8 +452,8 @@ function SurveyModal({ startDay, onClose }) {
 
     if (currentMeal === 'lunch') {
       setCurrentMeal('dinner'); setWantsFood(null); setResponses({})
-    } else if (currentDayIndex < DAYS.length - 1) {
-      setCurrentDay(DAYS[currentDayIndex + 1]); setCurrentMeal('lunch'); setWantsFood(null); setResponses({})
+    } else if (currentDayIndexInVisible < visibleDays.length - 1) {
+      setCurrentDay(visibleDays[currentDayIndexInVisible + 1]); setCurrentMeal('lunch'); setWantsFood(null); setResponses({})
     } else {
       // 4. Survey Complete - Delete old week data if this was a template-based submission
       if (existingResponse?.is_template) {
@@ -429,15 +474,15 @@ function SurveyModal({ startDay, onClose }) {
   const handlePrev = () => {
     if (currentMeal === 'dinner') {
       setCurrentMeal('lunch'); setWantsFood(null); setResponses({})
-    } else if (currentDayIndex > 0) {
-      setCurrentDay(DAYS[currentDayIndex - 1]); setCurrentMeal('dinner'); setWantsFood(null); setResponses({})
+    } else if (currentDayIndexInVisible > 0) {
+      setCurrentDay(visibleDays[currentDayIndexInVisible - 1]); setCurrentMeal('dinner'); setWantsFood(null); setResponses({})
     }
   }
 
   const dishes = currentMeal === 'lunch' ? menu.lunch : menu.dinner
-  const isFirst = currentDayIndex === 0 && currentMeal === 'lunch'
-  const isLast = currentDayIndex === DAYS.length - 1 && currentMeal === 'dinner'
-  const progress = ((currentDayIndex * 2 + (currentMeal === 'lunch' ? 1 : 2)) / (DAYS.length * 2)) * 100
+  const isFirst = currentDayIndexInVisible === 0 && currentMeal === 'lunch'
+  const isLast = currentDayIndexInVisible === visibleDays.length - 1 && currentMeal === 'dinner'
+  const progress = ((currentDayIndexInVisible * 2 + (currentMeal === 'lunch' ? 1 : 2)) / (visibleDays.length * 2)) * 100
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.82)', padding: 16, backdropFilter: 'blur(12px)', overflowY: 'auto' }} onClick={onClose}>
@@ -449,7 +494,7 @@ function SurveyModal({ startDay, onClose }) {
 
         {/* Day pills */}
         <div style={{ display: 'flex', gap: 4, overflowX: 'auto', marginBottom: 14, paddingBottom: 2, scrollbarWidth: 'none' }}>
-          {DAYS.map(day => (
+          {visibleDays.map(day => (
             <button key={day} onClick={() => goToDay(day)}
               style={{ flexShrink: 0, padding: '4px 10px', borderRadius: 20, border: `1.5px solid ${currentDay === day ? t.accent : t.border}`, background: currentDay === day ? t.accentBg : 'transparent', color: currentDay === day ? t.accent : t.textSub, fontWeight: 700, fontSize: 10, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>
               {weeklyMenu[day]?.en?.slice(0, 3) || day.slice(0, 3)}
@@ -474,7 +519,7 @@ function SurveyModal({ startDay, onClose }) {
 
         {editBlocked && (
           <div style={{ marginBottom: 12, padding: 11, borderRadius: 10, background: 'rgba(220,140,40,0.10)', border: '1px solid rgba(220,140,40,0.28)', color: '#d4882a', fontSize: 12, fontFamily: "'DM Sans',sans-serif" }}>
-            ⚠️ 1 edit already used for this meal — view only.
+            {!isEditable ? '⚠️ This meal is locked (less than 48h until serving) — view only.' : '⚠️ Edit limit reached (1 edit allowed post-window) — view only.'}
           </div>
         )}
 
@@ -810,30 +855,28 @@ function ThaliUserApp() {
   return (
     <ThemeCtx.Provider value={t}>
       <div style={{ fontFamily: "'DM Sans','Segoe UI',-apple-system,sans-serif", minHeight: '100vh', background: t.bgGrad, color: t.text, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }}>
-        <header style={{ position: 'relative', overflow: 'hidden', background: t.bgGrad, padding: '14px 0 0', flexShrink: 0 }}>
+        <header style={{ position: 'relative', overflow: 'hidden', background: t.bgGrad, padding: 'clamp(8px, 2vw, 14px) 0 0', flexShrink: 0 }}>
           <GeoBg t={t} />
           <div style={{ position: 'relative', zIndex: 1, maxWidth: 1200, margin: '0 auto', padding: '0 clamp(16px, 4vw, 32px)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <img src="/al-mawaid.png" alt="" style={{ width: 24, height: 24, objectFit: 'contain', filter: 'drop-shadow(0 2px 6px rgba(196,156,90,0.5))' }} />
+                <img src="/al-mawaid.png" alt="" style={{ width: 22, height: 22, objectFit: 'contain', filter: 'drop-shadow(0 2px 6px rgba(196,156,90,0.5))' }} />
                 <span style={{ fontSize: 9, letterSpacing: '0.24em', textTransform: 'uppercase', color: t.textSub, opacity: .55, fontWeight: 700, fontFamily: "'DM Sans',sans-serif" }}>Al-Mawaid</span>
               </div>
-              <span style={{ fontSize: 11, color: t.textSub, opacity: .4, fontFamily: "'DM Sans',sans-serif" }}>
+              <span style={{ fontSize: 10, color: t.textSub, opacity: .4, fontFamily: "'DM Sans',sans-serif" }}>
                 {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
               </span>
             </div>
             {activeTab === 'home' && (
               <div style={{ textAlign: 'center', marginBottom: 2 }}>
-                <p style={{ fontFamily: "'Noto Nastaliq Urdu','Amiri',serif", fontSize: 16, color: t.accent, margin: 0, lineHeight: 1.8 }}>بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</p>
+                <p style={{ fontFamily: "'Noto Nastaliq Urdu','Amiri',serif", fontSize: 15, color: t.accent, margin: 0, lineHeight: 1.6 }}>بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</p>
               </div>
             )}
-            <div style={{ textAlign: 'center', marginBottom: 6 }}>
-              <h1 style={{ margin: 0, fontSize: activeTab === 'home' ? 28 : 20, fontWeight: 700, letterSpacing: '0.06em', lineHeight: 1.1, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{tabLabels[activeTab]}</h1>
+            <div style={{ textAlign: 'center', marginBottom: 4 }}>
+              <h1 style={{ margin: 0, fontSize: activeTab === 'home' ? 24 : 18, fontWeight: 700, letterSpacing: '0.06em', lineHeight: 1.1, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{tabLabels[activeTab]}</h1>
             </div>
           </div>
-          <svg style={{ display: 'block', position: 'relative', zIndex: 1 }} width="100%" viewBox="0 0 1440 28" preserveAspectRatio="none">
-            <path d="M0,10 C200,28 400,0 600,14 C800,28 1000,4 1200,18 C1320,26 1400,10 1440,14 L1440,28 L0,28 Z" fill={t.headerWave} opacity="0.9" />
-          </svg>
+          {/* Header cleared by removing wave and reducing heights for mobile */}
         </header>
 
         {activeTab === 'home' && <HomePage setActiveTab={setActiveTab} />}
@@ -847,9 +890,10 @@ function ThaliUserApp() {
         <nav className="mobile-bottom-nav" style={{
           position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
           width: '100%', maxWidth: 1200, zIndex: 30, display: 'flex',
-          justifyContent: 'space-around', alignItems: 'center', padding: 'clamp(6px, 1.5vw, 12px) 4px clamp(12px, 3vw, 22px)',
+          justifyContent: 'space-around', alignItems: 'center', 
+          padding: '12px 4px calc(12px + env(safe-area-inset-bottom, 0px))',
           background: t.navBg, borderTop: `1px solid ${t.navBorder}`,
-          boxShadow: '0 -8px 30px rgba(0,0,0,0.20)',
+          boxShadow: '0 -10px 40px rgba(0,0,0,0.25)',
           borderRadius: '32px 32px 0 0'
         }}>
           {tabs.map(({ id, label, Icon }) => {
@@ -865,21 +909,21 @@ function ThaliUserApp() {
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
                   display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  gap: 4, padding: '2px 18px', position: 'relative',
+                  gap: 6, padding: '2px 20px', position: 'relative',
                   WebkitTapHighlightColor: 'transparent', transition: 'all 0.2s'
                 }}>
-                {active && <div style={{ position: 'absolute', top: -8, left: '50%', transform: 'translateX(-50%)', width: 32, height: 3, borderRadius: 6, background: t.accent, boxShadow: `0 0 10px ${t.accent}` }} />}
+                {active && <div style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', width: 36, height: 4, borderRadius: 6, background: t.accent, boxShadow: `0 0 12px ${t.accent}` }} />}
                 <div style={{
-                  width: 32, height: 32, borderRadius: 10, transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  width: 38, height: 38, borderRadius: 12, transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                   background: active ? t.accentBg : 'transparent',
-                  border: active ? `1.5px solid ${t.accentBorder}` : '1.5px solid transparent',
+                  border: active ? `2px solid ${t.accentBorder}` : '2px solid transparent',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transform: active ? 'scale(1.1) translateY(-2px)' : 'scale(1)'
+                  transform: active ? 'scale(1.15) translateY(-4px)' : 'scale(1)'
                 }}>
-                  <Icon size={18} color={active ? t.accent : '#FFF8E7'} strokeWidth={active ? 2.5 : 1.5} style={{ opacity: active ? 1 : .35 }} />
+                  <Icon size={22} color={active ? t.accent : '#FFF8E7'} strokeWidth={active ? 2.5 : 1.5} style={{ opacity: active ? 1 : .35 }} />
                 </div>
                 <span style={{
-                  fontSize: 7.5, fontWeight: 900, letterSpacing: '0.08em',
+                  fontSize: 8.5, fontWeight: 900, letterSpacing: '0.08em',
                   color: active ? t.accent : '#FFF8E7', opacity: active ? 1 : .3,
                   fontFamily: "'DM Sans',sans-serif", textTransform: 'uppercase'
                 }}>{label}</span>
@@ -942,6 +986,8 @@ function HomePage({ setActiveTab }) {
     } catch { } finally { setSubmittingFeedback(false) }
   }
 
+  const currentWeekId = getWeekDate()
+  const isAnyMealEditable = DAYS.some(d => canEditMeal(d, currentWeekId))
 
   if (!weeklyMenu) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
 
@@ -952,16 +998,16 @@ function HomePage({ setActiveTab }) {
         <div style={{ position: 'absolute', top: -20, left: -20, width: 80, height: 80, background: t.accentGrad, borderRadius: '50%', filter: 'blur(40px)', opacity: 0.08 }} />
         <Avatar avatarUrl={profileData?.avatar_url} name={profileData?.name} size={46} />
         <div style={{ flex: 1, position: 'relative', zIndex: 1 }}>
-          <div style={{ fontSize: 17, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>{profileData?.name || 'Thali User'}</div>
-          <div style={{ fontSize: 11, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 2 }}>Thali #{profileData?.thali_number || '—'}</div>
+          <div style={{ fontSize: 19, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>{profileData?.name || 'Thali User'}</div>
+          <div style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 2 }}>Thali #{profileData?.thali_number || '—'}</div>
         </div>
       </Card>
 
       {/* Weekly Survey Section */}
       <Card organic style={{
         marginBottom: 20, borderRadius: 24,
-        background: surveyOpen ? t.accentBg : 'rgba(0,0,0,0.2)',
-        border: `1.5px solid ${surveyOpen ? t.accent : t.border}`,
+        background: (surveyOpen || isAnyMealEditable) ? t.accentBg : 'rgba(0,0,0,0.2)',
+        border: `1.5px solid ${(surveyOpen || isAnyMealEditable) ? t.accent : t.border}`,
         position: 'relative', overflow: 'hidden', padding: '24px'
       }}>
         <div style={{ position: 'absolute', top: -40, right: -40, width: 120, height: 120, background: t.accentGrad, borderRadius: '50%', filter: 'blur(60px)', opacity: 0.15 }} />
@@ -969,27 +1015,26 @@ function HomePage({ setActiveTab }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 240 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: surveyOpen ? t.successText : t.textSub, boxShadow: surveyOpen ? `0 0 10px ${t.successText}` : 'none' }} />
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? 'SURVEY LIVE' : 'SURVEY CLOSED'}</div>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: (surveyOpen || isAnyMealEditable) ? t.successText : t.textSub, boxShadow: (surveyOpen || isAnyMealEditable) ? `0 0 10px ${t.successText}` : 'none' }} />
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? 'SURVEY LIVE' : (isAnyMealEditable ? 'EDITING WINDOW' : 'SURVEY CLOSED')}</div>
             </div>
             <div style={{ fontSize: 24, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>Weekly Food Survey</div>
-            <div style={{ fontSize: 13, color: t.textSub, marginTop: 8, fontFamily: "'DM Sans',sans-serif" }}>{getSurveyWindowMessage()}</div>
+            <div style={{ fontSize: 13, color: t.textSub, marginTop: 8, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? getSurveyWindowMessage() : (isAnyMealEditable ? 'You can still edit upcoming meals (48h rule).' : 'Survey is closed for this week.')}</div>
           </div>
 
           <button
             onClick={() => setShowSurvey(true)}
-            disabled={!surveyOpen}
             style={{
               padding: '16px 28px', borderRadius: 16,
-              background: surveyOpen ? t.accentGrad : 'rgba(255,255,255,0.05)',
-              color: surveyOpen ? '#000' : t.textSub,
-              fontSize: 14, fontWeight: 900, border: 'none', cursor: surveyOpen ? 'pointer' : 'not-allowed',
-              display: 'flex', alignItems: 'center', gap: 10, boxShadow: surveyOpen ? `0 10px 25px ${t.accent}40` : 'none',
+              background: (surveyOpen || isAnyMealEditable) ? t.accentGrad : 'rgba(255,255,255,0.05)',
+              color: (surveyOpen || isAnyMealEditable) ? '#000' : t.textSub,
+              fontSize: 14, fontWeight: 900, border: 'none', cursor: (surveyOpen || isAnyMealEditable) ? 'pointer' : 'not-allowed',
+              display: 'flex', alignItems: 'center', gap: 10, boxShadow: (surveyOpen || isAnyMealEditable) ? `0 10px 25px ${t.accent}40` : 'none',
               transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
               fontFamily: "'DM Sans',sans-serif"
             }}
           >
-            <ClipboardList size={18} /> Start Survey
+            <ClipboardList size={18} /> {surveyOpen ? 'Start Survey' : 'Edit Responses'}
           </button>
         </div>
       </Card>
@@ -1282,7 +1327,7 @@ function ThaliRequestsSection() {
     setError(''); setSuccess(''); setSubmitting(true)
     try {
       let payload = { user_id: user.id, request_type: type, status: 'pending' }
-      if (type === 'resume') { if (!resumeFrom || !resumeTo) throw new Error('Please select both dates'); payload = { ...payload, from_date: resumeFrom, to_date: resumeTo } }
+      if (type === 'resume') { if (!resumeFrom) throw new Error('Please select a date'); payload = { ...payload, from_date: resumeFrom, to_date: null } }
       else if (type === 'stop') { if (!stopFrom || !stopTo) throw new Error('Please select both dates'); payload = { ...payload, from_date: stopFrom, to_date: stopTo } }
       else if (type === 'miqaat') { if (!miqaatOption) throw new Error('Please select an option'); payload = { ...payload, details: `Option ${miqaatOption}` } }
       else if (type === 'extra') { const valid = extraItems.filter(i => i.name.trim()); if (!valid.length) throw new Error('Please add at least one item'); payload = { ...payload, extra_items: valid } }
@@ -1314,9 +1359,9 @@ function ThaliRequestsSection() {
         <HdrBtn type="resume" emoji="▶️" label="Resume Thali" desc="Restart your thali service" />
         {activeRequest === 'resume' && (
           <div style={{ padding: '0 16px 16px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-              <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>FROM</label><input type="date" value={resumeFrom} min={today} onChange={e => setResumeFrom(e.target.value)} style={inp} /></div>
-              <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>TO</label><input type="date" value={resumeTo} min={resumeFrom || today} onChange={e => setResumeTo(e.target.value)} style={inp} /></div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>RESUME FROM</label>
+              <input type="date" value={resumeFrom} min={today} onChange={e => setResumeFrom(e.target.value)} style={inp} />
             </div>
             {error && <ErrorBanner msg={error} />}
             <button onClick={() => handleSubmit('resume')} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting…' : '✅ Submit Resume Request'}</button>
@@ -1340,11 +1385,11 @@ function ThaliRequestsSection() {
         <HdrBtn type="miqaat" emoji="" label="Miqaat Pirsu" desc="Select your Miqaat option" />
         {activeRequest === 'miqaat' && (
           <div style={{ padding: '0 16px 16px' }}>
-            <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-              {[1, 2].map(n => (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              {[1, 2, 3, 4].map(n => (
                 <button key={n} onClick={() => setMiqaatOption(n)}
-                  style={{ flex: 1, padding: 12, borderRadius: 11, border: `1.5px solid ${miqaatOption === n ? t.accent : t.border}`, background: miqaatOption === n ? t.accentBg : 'transparent', color: miqaatOption === n ? t.accent : t.textSub, fontWeight: 700, fontSize: 16, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.2s' }}>
-                  Option {n}
+                  style={{ flex: 1, height: 48, borderRadius: 12, border: `1.5px solid ${miqaatOption === n ? t.accent : t.border}`, background: miqaatOption === n ? t.accentBg : 'transparent', color: miqaatOption === n ? t.accent : t.textSub, fontWeight: 800, fontSize: 18, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.2s' }}>
+                  {n}
                 </button>
               ))}
             </div>

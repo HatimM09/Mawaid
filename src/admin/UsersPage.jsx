@@ -137,7 +137,7 @@ export default function UsersPage() {
   return (
     <PageWrap>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>
-        <PageTitle sub="Full management of thali user profiles and database status">Thali Users Database</PageTitle>
+        <PageTitle>Thali Users Database</PageTitle>
         {isAdmin && (
           <Btn onClick={() => { setEditForm({ name: '', email: '', thali_number: '', phone: '', address: '' }); setIsAdding(true); }}>
             <UserPlus size={16} /> <span className="desktop-only">Add Thali User</span><span className="mobile-only" style={{ display: 'none' }}>Add</span>

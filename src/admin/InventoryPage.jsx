@@ -6,7 +6,8 @@ import {
 } from 'react-router-dom'
 import {
   Package, Plus, ArrowUpRight, ArrowDownRight,
-  History, AlertTriangle, RefreshCw, X, Search
+  History, AlertTriangle, RefreshCw, X, Search,
+  ShoppingCart, Box, Trash2, TrendingDown, TrendingUp, Layers, MousePointer2
 } from 'lucide-react'
 import {
   T, PageWrap, PageTitle, AdminCard, Table,
@@ -30,6 +31,49 @@ const CATEGORIES = [
   { id: 13, name: 'Sauces & Dressings', icon: '🥫' },
   { id: 14, name: 'Crockery', icon: '🍽️' },
 ]
+
+const CAT_ICONS = {
+  1: '🌾', 2: '🍚', 3: '🌶️', 4: '🫙', 5: '🍗',
+  6: '🥦', 7: '🥛', 8: '🥜', 9: '🧼', 10: '🥡',
+  11: '📦', 12: '🍹', 13: '🥫', 14: '🍽️'
+}
+
+const getProductIcon = (name = '', catId) => {
+  const n = name.toLowerCase()
+  if (n.includes('rice')) return '🍚'
+  if (n.includes('flour') || n.includes('atta') || n.includes('wheat')) return '🌾'
+  if (n.includes('dal') || n.includes('lentil') || n.includes('pulse')) return '🥣'
+  if (n.includes('oil')) return '🛢️'
+  if (n.includes('ghee') || n.includes('butter')) return '🧈'
+  if (n.includes('chicken')) return '🍗'
+  if (n.includes('meat') || n.includes('mutton')) return '🍖'
+  if (n.includes('beef') || n.includes('steak')) return '🥩'
+  if (n.includes('egg')) return '🥚'
+  if (n.includes('milk') || n.includes('dairy')) return '🥛'
+  if (n.includes('yogurt') || n.includes('curd') || n.includes('dahi')) return '🍦'
+  if (n.includes('cheese')) return '🧀'
+  if (n.includes('tea') || n.includes('chai')) return '☕'
+  if (n.includes('coffee')) return '🥤'
+  if (n.includes('sugar') || n.includes('sweet')) return '🧊'
+  if (n.includes('salt')) return '🧂'
+  if (n.includes('onion')) return '🧅'
+  if (n.includes('tomato')) return '🍅'
+  if (n.includes('potato')) return '🥔'
+  if (n.includes('garlic')) return '🧄'
+  if (n.includes('ginger')) return '🫚'
+  if (n.includes('chilli') || n.includes('mirch')) return '🌶️'
+  if (n.includes('coriander') || n.includes('herb') || n.includes('dhanya')) return '🌿'
+  if (n.includes('lemon')) return '🍋'
+  if (n.includes('fruit') || n.includes('apple')) return '🍎'
+  if (n.includes('banana')) return '🍌'
+  if (n.includes('mango')) return '🥭'
+  if (n.includes('soap') || n.includes('clean') || n.includes('wash')) return '🧴'
+  if (n.includes('napkin') || n.includes('tissue')) return '🧻'
+  if (n.includes('foil') || n.includes('wrap')) return '🪙'
+  if (n.includes('spoon') || n.includes('fork') || n.includes('plate')) return '🍴'
+  if (n.includes('box') || n.includes('pack') || n.includes('container')) return '🥡'
+  return CAT_ICONS[catId] || '📦'
+}
 
 const ModalOverlay = ({ onClose, children }) => (
   <div
@@ -97,8 +141,10 @@ export default function InventoryPage({ role: roleProp }) {
     const p = showTx.product
     const newStock = showTx.type === 'in' ? p.stock + qty : Math.max(0, p.stock - qty)
     const logEntry = {
-      product_id: p.id, product_name: p.name, type: showTx.type,
-      qty, new_stock: newStock, note: txNote
+      product_id: p.id,
+      type: showTx.type,
+      qty,
+      note: txNote || ''
     }
     setShowTx(null); setTxQty(''); setTxNote('')
     
@@ -107,7 +153,9 @@ export default function InventoryPage({ role: roleProp }) {
     const { error: logErr } = await supabase.from('inventory_log').insert([logEntry])
     
     if (updErr || logErr) {
-      alert('Transaction failed. Please try again.')
+      console.error('Inventory Update Error:', updErr)
+      console.error('Inventory Log Error:', logErr)
+      alert(`Transaction failed: ${updErr?.message || logErr?.message || 'Unknown Error'}. Please check your permissions or connection.`)
       fetchData()
     }
   }
@@ -129,22 +177,41 @@ export default function InventoryPage({ role: roleProp }) {
     // Realtime will trigger fetchData()
   }
 
-  const handleExportCSV = () => {
-    const headers = ['Product', 'Type', 'Quantity', 'Note', 'Date']
-    const rows = auditLog.map(l => [
-      l.product_name, 
-      l.type.toUpperCase(), 
-      l.qty, 
-      l.note || '', 
-      new Date(l.created_at).toLocaleString('en-GB')
-    ])
-    const csvContent = [headers, ...rows].map(e => e.join(',')).join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `inventory_report_${new Date().toISOString().split('T')[0]}.csv`
-    link.click()
+  const handleExportCSV = (days = null) => {
+    let dataToExport = auditLog
+    
+    const exportNow = (logs) => {
+      const headers = ['Product', 'Type', 'Quantity', 'Note', 'Date']
+      const rows = logs.map(l => [
+        l.product_name, 
+        l.type.toUpperCase(), 
+        l.qty, 
+        l.note || '', 
+        new Date(l.created_at).toLocaleString('en-GB')
+      ])
+      const csvContent = [headers, ...rows].map(e => e.join(',')).join('\n')
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `inventory_${days ? days + 'days' : 'recent'}_report_${new Date().toISOString().split('T')[0]}.csv`
+      link.click()
+    }
+
+    if (days === 30) {
+      const thirtyDaysAgo = new Date()
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+      supabase.from('inventory_log')
+        .select('*')
+        .gte('created_at', thirtyDaysAgo.toISOString())
+        .order('created_at', { ascending: false })
+        .then(({ data }) => {
+          if (data) exportNow(data)
+          else alert('No data found for the last 30 days')
+        })
+    } else {
+      exportNow(dataToExport)
+    }
   }
 
   const handleResetAllStock = async () => {
@@ -172,24 +239,41 @@ export default function InventoryPage({ role: roleProp }) {
     return [
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', border: '1px solid rgba(212, 175, 55, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
-          {cat?.icon || '📦'}
+          {getProductIcon(p.name, p.category_id)}
         </div>
         <div>
           <div style={{ fontWeight: 700, color: T.text }}>{p.name}</div>
           <div style={{ fontSize: 11, color: T.textSub }}>{cat?.name} {p.subcategory ? `> ${p.subcategory}` : ''}</div>
         </div>
       </div>,
-      <div style={{ fontWeight: 800, fontSize: 16, color: isLow ? T.danger : T.text }}>
-        {p.stock} <span style={{ fontSize: 11, fontWeight: 500, color: T.textSub }}>{p.unit}</span>
-        <div style={{ fontSize: 9, fontWeight: 600, color: T.textSub, marginTop: 2 }}>Min: {p.low_stock_threshold} {p.unit}</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+           <div style={{ fontWeight: 800, fontSize: 18, color: isLow ? T.danger : T.text }}>
+            {p.stock} <span style={{ fontSize: 11, fontWeight: 500, color: T.textSub }}>{p.unit}</span>
+          </div>
+          <Badge color={p.stock === 0 ? T.danger : isLow ? T.warn : T.success}>
+            {p.stock === 0 ? 'Out of Stock' : isLow ? 'Low Stock' : 'Good'}
+          </Badge>
+        </div>
+        <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 10, overflow: 'hidden', position: 'relative', border: '1px solid var(--border-glass)' }}>
+          <div style={{ 
+            height: '100%', 
+            width: `${Math.min(100, (p.stock / (p.low_stock_threshold * 2)) * 100)}%`, 
+            background: p.stock === 0 ? T.danger : isLow ? T.warn : T.success,
+            boxShadow: `0 0 10px ${p.stock === 0 ? T.danger : isLow ? T.warn : T.success}40`,
+            transition: 'width 0.5s ease-out'
+          }} />
+        </div>
+        <div style={{ fontSize: 10, fontWeight: 600, color: T.textSub, marginTop: 4 }}>
+          Threshold: {p.low_stock_threshold} {p.unit}
+        </div>
       </div>,
-      <Badge color={isLow ? T.warn : T.success}>{isLow ? 'Refill Soon' : 'Good Stock'}</Badge>,
       <div style={{ 
         display: 'flex', 
-        background: 'rgba(0,0,0,0.2)', 
-        borderRadius: 12, 
-        padding: 4, 
-        gap: 4,
+        background: 'rgba(0,0,0,0.3)', 
+        borderRadius: 14, 
+        padding: 5, 
+        gap: 6,
         border: '1px solid var(--border-glass)'
       }}>
         <button 
@@ -224,18 +308,21 @@ export default function InventoryPage({ role: roleProp }) {
     ]
   })
 
-  const logRows = auditLog.map((l) => [
-    <div style={{ fontWeight: 600 }}>{l.product_name}</div>,
-    <Badge color={l.type === 'in' ? T.success : T.danger}>{l.type.toUpperCase()}</Badge>,
-    <div style={{ fontWeight: 700 }}>{l.qty}</div>,
-    <div style={{ fontSize: 12, color: T.textSub }}>{l.note || '—'}</div>,
-    <div style={{ fontSize: 11, color: T.textSub }}>{new Date(l.created_at).toLocaleString('en-GB')}</div>
-  ])
+  const logRows = auditLog.map((l) => {
+    const p = products.find(prod => prod.id === l.product_id)
+    return [
+      <div style={{ fontWeight: 600 }}>{l.product_name || p?.name || `Product #${l.product_id}`}</div>,
+      <Badge color={l.type === 'in' ? T.success : T.danger}>{l.type.toUpperCase()}</Badge>,
+      <div style={{ fontWeight: 700 }}>{l.qty}</div>,
+      <div style={{ fontSize: 12, color: T.textSub }}>{l.note || '—'}</div>,
+      <div style={{ fontSize: 11, color: T.textSub }}>{new Date(l.created_at).toLocaleString('en-GB')}</div>
+    ]
+  })
 
   return (
     <PageWrap>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
-        <PageTitle sub="Real-time supplies and stock management">Inventory</PageTitle>
+        <PageTitle>Inventory</PageTitle>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', background: 'rgba(255,255,255,0.05)', borderRadius: 12, padding: 4, border: '1px solid var(--border-glass)' }}>
             <button onClick={() => setViewMode('grid')} style={{ padding: '8px 10px', borderRadius: 8, border: 'none', background: viewMode === 'grid' ? T.accent : 'transparent', color: viewMode === 'grid' ? '#000' : T.textSub, cursor: 'pointer', fontWeight: 800, fontSize: 10 }}>GRID</button>
@@ -294,39 +381,61 @@ export default function InventoryPage({ role: roleProp }) {
               const isLow = p.stock <= p.low_stock_threshold
               return (
                 <AdminCard key={p.id} style={{ 
-                  padding: 24, display: 'flex', flexDirection: 'column', gap: 20, 
+                  padding: 24, display: 'flex', flexDirection: 'column', gap: 18, 
                   transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', 
-                  border: isLow ? `1px solid ${T.warn}40` : `1px solid ${T.borderActive}`,
-                  boxShadow: isLow ? `0 12px 32px ${T.warn}15` : '0 12px 48px rgba(0,0,0,0.45)'
+                  border: isLow ? `1.5px solid ${T.warn}50` : `1.5px solid ${T.borderGlass}`,
+                  boxShadow: isLow ? `0 12px 32px ${T.warn}15` : '0 12px 48px rgba(0,0,0,0.45)',
+                  background: isLow ? 'rgba(245, 158, 11, 0.03)' : T.card
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ 
-                      width: 52, height: 52, borderRadius: 16, 
-                      background: 'rgba(212, 175, 55, 0.08)', 
-                      border: `1px solid ${T.borderActive}`, 
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26 
+                      width: 56, height: 56, borderRadius: 18, 
+                      background: isLow ? 'rgba(245, 158, 11, 0.1)' : 'rgba(212, 175, 55, 0.08)', 
+                      border: `1px solid ${isLow ? T.warn : T.borderActive}`, 
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 
                     }}>
-                      {cat?.icon || '📦'}
+                      {getProductIcon(p.name, p.category_id)}
                     </div>
-                    <Badge color={isLow ? T.warn : T.success}>{isLow ? 'Refill' : 'Good Stock'}</Badge>
+                    <div style={{ textAlign: 'right' }}>
+                      <Badge color={p.stock === 0 ? T.danger : isLow ? T.warn : T.success}>
+                        {p.stock === 0 ? 'Empty' : isLow ? 'Low' : 'Healthy'}
+                      </Badge>
+                      <div style={{ fontSize: 10, color: T.textSub, marginTop: 4, fontWeight: 700 }}>{p.unit.toUpperCase()}</div>
+                    </div>
                   </div>
+                  
                   <div>
-                    <div style={{ fontWeight: 800, fontSize: 18, color: T.text, marginBottom: 2 }}>{p.name}</div>
-                    <div style={{ fontSize: 12, color: T.textSub }}>{cat?.name}</div>
-                  </div>
-                  <div style={{ background: 'rgba(0,0,0,0.2)', padding: 12, borderRadius: 12, border: '1px solid var(--border-glass)' }}>
-                    <div style={{ fontSize: 10, color: T.textSub, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Current Stock</div>
-                    <div style={{ fontSize: 24, fontWeight: 900, color: isLow ? T.danger : T.accent }}>
-                      {p.stock} <span style={{ fontSize: 14, fontWeight: 500, color: T.textSub }}>{p.unit}</span>
+                    <div style={{ fontWeight: 800, fontSize: 20, color: T.text, marginBottom: 2 }}>{p.name}</div>
+                    <div style={{ fontSize: 12, color: T.textSub, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Layers size={12} /> {cat?.name}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', background: 'rgba(0,0,0,0.2)', borderRadius: 12, padding: 4, gap: 4, border: '1px solid var(--border-glass)', marginTop: 'auto' }}>
-                    <button onClick={() => setShowTx({ product: p, type: 'in' })} className="stock-btn stock-in" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: '#fff', background: 'var(--accent-bg)' }}>
-                      <ArrowUpRight size={16} /> In
+
+                  <div style={{ position: 'relative' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8 }}>
+                       <div style={{ fontSize: 28, fontWeight: 900, color: p.stock === 0 ? T.danger : isLow ? T.warn : T.accent, lineHeight: 1 }}>
+                        {p.stock}
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: T.textSub }}>Min: {p.low_stock_threshold}</div>
+                    </div>
+                    <div style={{ height: 8, background: 'rgba(0,0,0,0.3)', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border-glass)' }}>
+                      <div style={{ 
+                        height: '100%', 
+                        width: `${Math.min(100, (p.stock / (p.low_stock_threshold * 2)) * 100)}%`, 
+                        background: p.stock === 0 ? T.danger : isLow ? T.warn : T.success,
+                        boxShadow: `0 0 10px ${p.stock === 0 ? T.danger : isLow ? T.warn : T.success}40`,
+                        transition: 'width 0.6s cubic-bezier(0.4, 0, 0.2, 1)'
+                      }} />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', background: 'rgba(0,0,0,0.3)', borderRadius: 14, padding: 5, gap: 6, border: '1px solid var(--border-glass)', marginTop: 8 }}>
+                    <button onClick={() => setShowTx({ product: p, type: 'in' })} className="stock-btn stock-in" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,0.05)' }}>
+                      <TrendingUp size={16} /> In
                     </button>
                     {canEditStock && (
-                      <button onClick={() => setShowTx({ product: p, type: 'out' })} className="stock-btn stock-out" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 700, color: '#fff', background: 'var(--accent-bg)' }}>
-                        <ArrowDownRight size={16} /> Out
+                      <button onClick={() => setShowTx({ product: p, type: 'out' })} className="stock-btn stock-out" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 10, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 800, color: '#fff', background: 'rgba(255,255,255,0.05)' }}>
+                        <TrendingDown size={16} /> Out
                       </button>
                     )}
                   </div>
@@ -343,7 +452,10 @@ export default function InventoryPage({ role: roleProp }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: T.accent }}>Audit Logs & Reports</h3>
-            <Btn size="sm" variant="outline" onClick={handleExportCSV}>Export CSV Report</Btn>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Btn size="sm" variant="outline" onClick={() => handleExportCSV()}>Recent CSV</Btn>
+              <Btn size="sm" onClick={() => handleExportCSV(30)}>1 Month CSV Report</Btn>
+            </div>
           </div>
           
           <Grid cols={2}>

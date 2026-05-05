@@ -111,7 +111,7 @@ export default function FeedbackAdminPage() {
 
   return (
     <PageWrap>
-      <PageTitle sub={`${feedbacks.length} feedback entries`}>Meal Feedback</PageTitle>
+      <PageTitle>Meal Feedback</PageTitle>
 
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 16, marginBottom: 24 }}>

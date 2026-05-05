@@ -1,1 +1,1 @@
-// SW removed
+// File removed.

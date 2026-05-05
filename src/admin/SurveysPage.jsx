@@ -39,13 +39,19 @@ export default function SurveysPage() {
     if (!silent) setLoading(true)
     try {
       const currentWeekId = getWeekDate()
-      const [{ data: flat }, { data: us }] = await Promise.all([
-        supabase.from('survey_submissions_flat').select('*').eq('week_id', currentWeekId).order('updated_at', { ascending: false }),
-        supabase.from('user_stats').select('user_id,name,email,thali_number'),
-      ])
+      const { data: flat, error } = await supabase
+        .from('survey_submissions_flat')
+        .select('*, user_stats(*)')
+        .eq('week_id', currentWeekId)
+        .order('updated_at', { ascending: false })
       
+      if (error) throw error
+
+      // Map users for the UI stats if needed
       const uMap = {}
-      ;(us || []).forEach(u => { uMap[u.user_id] = u })
+      ;(flat || []).forEach(row => { 
+        if (row.user_stats) uMap[row.user_id] = row.user_stats 
+      })
       setUsers(uMap)
 
       // Transform flat rows into normalized response objects

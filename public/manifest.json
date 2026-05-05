@@ -1,12 +1,13 @@
 {
   "name": "Al-Mawaid",
-  "short_name": "AlMawaid",
-  "description": "Al-Mawaid - Daily Tiffin Menu & Survey System",
-  "start_url": "/",
+  "short_name": "Al-Mawaid",
+  "description": "Premium Daily Tiffin Menu & Survey Management System",
+  "start_url": ".",
   "display": "standalone",
-  "background_color": "#0f0c08",
+  "background_color": "#060d1a",
   "theme_color": "#D4AF37",
-  "orientation": "portrait",
+  "orientation": "portrait-primary",
+  "categories": ["food", "lifestyle", "productivity"],
   "icons": [
     {
       "src": "/al-mawaid.png",
@@ -18,7 +19,25 @@
       "src": "/al-mawaid.png",
       "sizes": "512x512",
       "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/al-mawaid.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Daily Menu",
+      "url": "/#home",
+      "description": "View today's menu"
+    },
+    {
+      "name": "Survey",
+      "url": "/#survey",
+      "description": "Fill weekly survey"
     }
   ]
 }

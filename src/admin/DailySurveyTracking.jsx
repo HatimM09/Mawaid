@@ -41,18 +41,22 @@ export default function DailySurveyTracking() {
     else setRefreshing(true)
     
     try {
+      const { data: resultsRaw, error } = await supabase
+        .from('user_stats')
+        .select(`
+          user_id, name, thali_number, email,
+          survey_submissions_flat (*)
+        `)
+      
+      if (error) throw error
       const currentWeekId = getWeekDate()
-      const [{ data: flat }, { data: us }] = await Promise.all([
-        supabase.from('survey_submissions_flat').select('*').eq('week_id', currentWeekId),
-        supabase.from('user_stats').select('user_id, name, thali_number, email')
-      ])
       
       const dayKey = day.substring(0, 3).toLowerCase()
       const mealKey = meal === 'lunch' ? 'l' : 'd'
       const statusKey = `${dayKey}_${mealKey}_status`
       
-      const results = (us || []).map(u => {
-        const resp = (flat || []).find(r => r.user_id === u.user_id)
+      const results = (resultsRaw || []).map(u => {
+        const resp = (u.survey_submissions_flat || []).find(r => r.week_id === currentWeekId)
         const status = resp ? resp[statusKey] : null
         const dishResponses = {}
         if (status === 'Applied') {
@@ -99,7 +103,7 @@ export default function DailySurveyTracking() {
   return (
     <PageWrap>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, gap: 16, flexWrap: 'wrap' }}>
-        <PageTitle sub={`Tracking survey responses for ${day.toUpperCase()} ${meal.toUpperCase()}`}>Daily Survey Tracker</PageTitle>
+        <PageTitle>Daily Survey Tracker</PageTitle>
         <Btn variant="outline" onClick={() => load(true)} disabled={refreshing}>
           <RefreshCw size={15} className={refreshing ? 'spin' : ''} />
           {refreshing ? 'Syncing...' : 'Sync Now'}

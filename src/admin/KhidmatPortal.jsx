@@ -12,6 +12,7 @@ import { AuthCtx, ThemeCtx, useAuth, useTheme } from './context'
 import { T as SharedT, updateSystemTheme } from './ui'
 import UsersPage from './UsersPage'
 import RequestsAdminPage from './RequestsAdminPage'
+import QueriesAdminPage from './QueriesAdminPage'
 import DailySurveyTracking from './DailySurveyTracking'
 
 const Spinner = ({ fullPage = true }) => {
@@ -172,6 +173,10 @@ export default function KhidmatPortal({ signOut, user }) {
           </div>
         ) : activeTab === 'users' ? (
           <UsersPage />
+        ) : activeTab === 'requests' ? (
+          <RequestsAdminPage />
+        ) : activeTab === 'queries' ? (
+          <QueriesAdminPage />
         ) : activeTab === 'survey' ? (
           <DailySurveyTracking />
         ) : activeTab === 'feedback' ? (
@@ -184,18 +189,19 @@ export default function KhidmatPortal({ signOut, user }) {
       {/* Global Portal Nav - Pill Shape */}
       <nav style={{
         position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
-        width: '92%', maxWidth: 500, height: 74,
-        background: 'var(--bg-card)', backdropFilter: 'blur(30px)',
+        width: '94%', maxWidth: 720, height: 84,
+        background: 'var(--bg-card)', backdropFilter: 'blur(40px)',
         border: '1.5px solid var(--border-active)', borderRadius: 100,
         display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-        padding: '0 10px', zIndex: 1000,
-        boxShadow: '0 20px 50px rgba(0,0,0,0.6), 0 0 30px var(--accent-bg)'
+        padding: '0 20px', zIndex: 1000,
+        boxShadow: '0 24px 60px rgba(0,0,0,0.7), 0 0 40px var(--accent-bg)'
       }}>
         {[
           { id: 'home', icon: Home, label: 'Home' },
           { id: 'users', icon: Users, label: 'Users' },
+          { id: 'requests', icon: Star, label: 'Requests' },
+          { id: 'queries', icon: MessageCircle, label: 'Tickets' },
           { id: 'survey', icon: Calendar, label: 'Stats' },
-          { id: 'feedback', icon: Star, label: 'Rating' },
         ].map(({ id, icon: Icon, label }) => {
           const active = activeTab === id
           return (
@@ -207,20 +213,20 @@ export default function KhidmatPortal({ signOut, user }) {
               minWidth: 50
             }}>
               <div style={{
-                width: 44, height: 44, borderRadius: '50%',
+                width: 52, height: 52, borderRadius: '50%',
                 background: active ? 'var(--accent-bg)' : 'transparent',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: active ? 'inset 0 0 10px var(--border-light)' : 'none',
+                boxShadow: active ? 'inset 0 0 15px var(--border-light)' : 'none',
                 border: active ? '1px solid var(--accent-border)' : '1px solid transparent'
               }}>
-                <Icon size={20} strokeWidth={active ? 2.5 : 1.5} />
+                <Icon size={24} strokeWidth={active ? 2.5 : 1.5} />
               </div>
-              <span style={{ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
+              <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
             </button>
           )
         })}
         <button onClick={signOut} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 12, color: '#e05555', opacity: 0.8 }}>
-          <LogOut size={20} />
+          <LogOut size={24} />
         </button>
       </nav>
     </div>

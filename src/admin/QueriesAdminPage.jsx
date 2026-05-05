@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { supabase } from './supabaseClient'
-import { RefreshCw, Search, Send, ChevronDown, ChevronUp, ShieldAlert } from 'lucide-react'
+import { RefreshCw, Search, Send, ChevronDown, ChevronUp, ShieldAlert, Lock } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner, fmtDateTime } from './ui'
 
 const STATUS_COLORS = { open: '#e09855', resolved: '#5eba82', closed: '#9aabb8' }
 
 export default function QueriesAdminPage() {
-  const { role } = useOutletContext()
+  const context = useOutletContext() || { role: 'khidmat' }
+  const { role } = context
   const isAdmin = role === 'admin'
   const [loading, setLoading]   = useState(true)
   const [queries, setQueries]   = useState([])
@@ -68,8 +69,15 @@ export default function QueriesAdminPage() {
   return (
     <PageWrap>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <PageTitle sub={`${queries.length} total queries`}>User Queries</PageTitle>
-        {!isAdmin && <Badge color="var(--accent-orange)"><ShieldAlert size={12} style={{ marginRight: 6 }} /> Read-Only Mode (Khidmat)</Badge>}
+        <PageTitle>User Tickets</PageTitle>
+        {!isAdmin && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'rgba(212, 175, 55, 0.1)', padding: '8px 16px', borderRadius: 12, border: '1px solid rgba(212, 175, 55, 0.3)' }}>
+            <ShieldAlert size={16} color="var(--accent-gold)" />
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-gold)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Admin Resolution Required
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Quick counts */}
@@ -147,6 +155,12 @@ export default function QueriesAdminPage() {
                       </div>
                     )}
                   </div>
+                  {!isAdmin && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: 0.6, alignSelf: 'flex-start' }}>
+                      <Lock size={14} color={T.textSub} />
+                      <span style={{ fontSize: 11, color: T.textSub, fontWeight: 700 }}>Admin Only</span>
+                    </div>
+                  )}
                   {isAdmin && (
                     <button onClick={() => { setExpanded(isExpanded ? null : q.id); setReply('') }}
                       style={{ background: 'none', border: 'none', color: T.textSub, cursor: 'pointer', padding: 4, display: 'flex' }}>

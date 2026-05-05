@@ -23,13 +23,21 @@ const NAV = [
 ]
 
 export default function AdminLayout() {
-  const [sideOpen, setSideOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
   const [adminName, setAdminName] = useState('Admin')
-  const [role, setRole] = useState('khidmat')
+  const [role, setRole] = useState(localStorage.getItem('al_mawaid_portal') || 'khidmat')
   const navigate = useNavigate()
-  const location = useLocation()
 
+  useEffect(() => {
+    const check = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        setAdminName(session.user.user_metadata?.name || 'Admin')
+        const { data: staff } = await supabase.from('staff').select('role').eq('user_id', session.user.id).maybeSingle()
+        if (staff?.role) setRole(staff.role)
+      }
+    }
+    check()
+  }, [])
   const [showPalette, setShowPalette] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [showMore, setShowMore] = useState(false)
@@ -79,78 +87,7 @@ export default function AdminLayout() {
 
   const filteredNav = NAV.filter(n => n.label.toLowerCase().includes(searchQuery.toLowerCase()))
 
-  const SidebarContent = ({ isMobile }) => (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: isMobile ? '32px 24px' : '24px 16px' }}>
-      {/* Brand */}
-      <div style={{ padding: '0 12px 32px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{
-          width: 32, height: 32, borderRadius: '50%', background: 'var(--accent-grad)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 0 15px rgba(184, 134, 11, 0.4)', flexShrink: 0,
-          border: '1px solid rgba(212, 175, 55, 0.3)'
-        }}>
-          <img src="/al-mawaid.png" alt="" style={{ width: 20, height: 20, objectFit: 'contain' }} />
-        </div>
-        {(!collapsed || isMobile) && (
-          <div style={{ fontWeight: 800, fontSize: 13, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
-            <span style={{ color: 'var(--text-primary)' }}>AL-MAWAID</span>
-            <span style={{ color: 'var(--text-tertiary)', marginLeft: 6 }}>{role.toUpperCase()}</span>
-          </div>
-        )}
-      </div>
 
-      <div style={{ color: 'var(--text-tertiary)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', padding: '0 12px 16px' }}>
-        {(!collapsed || isMobile) ? 'Command Center' : '•••'}
-      </div>
-
-      <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {NAV.map(({ to, label, Icon, color, end }) => (
-          <NavLink key={to} to={to} end={end}
-            style={({ isActive }) => ({
-              display: 'flex', alignItems: 'center', gap: 16,
-              padding: '12px 14px', borderRadius: 16,
-              textDecoration: 'none',
-              background: isActive ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
-              color: isActive ? 'var(--text-primary)' : 'var(--text-tertiary)',
-              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-              position: 'relative',
-              overflow: 'hidden'
-            })}
-            onClick={() => setSideOpen(false)}
-          >
-            {({ isActive }) => (
-              <>
-                <div style={{
-                  width: 38, height: 38, borderRadius: 12,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: isActive ? `rgba(${color === 'var(--accent-cyan)' ? '0, 242, 255' : color === 'var(--accent-purple)' ? '157, 80, 187' : '255, 153, 102'}, 0.1)` : 'transparent',
-                  color: isActive ? color : 'var(--text-tertiary)',
-                  boxShadow: isActive ? `0 0 20px rgba(${color === 'var(--accent-cyan)' ? '0, 242, 255' : '157, 80, 187'}, 0.2)` : 'none',
-                  transition: 'all 0.3s'
-                }}>
-                  {typeof Icon === 'string' ? <span style={{ fontSize: 18, fontWeight: 800 }}>{Icon}</span> : <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />}
-                </div>
-                {(!collapsed || isMobile) && <span style={{ fontWeight: 600, fontSize: 14 }}>{label}</span>}
-                {isActive && <div style={{ position: 'absolute', left: 0, top: '25%', bottom: '25%', width: 3, background: color, borderRadius: '0 4px 4px 0' }} />}
-              </>
-            )}
-          </NavLink>
-        ))}
-      </nav>
-
-      <div style={{ marginTop: 'auto', borderTop: '1px solid var(--border-light)', paddingTop: 24, paddingBottom: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <button onClick={() => { navigate('/admin/settings'); setSideOpen(false); }} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 14px', background: 'var(--accent-bg)', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}>
-          <Settings size={20} />
-          {(!collapsed || isMobile) && <span style={{ fontSize: 14, fontWeight: 600 }}>Settings</span>}
-        </button>
-        <button onClick={handleLogout}
-          style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '12px 14px', background: 'var(--accent-bg)', border: 'none', color: '#ff5c5c', cursor: 'pointer', transition: '0.2s', marginBottom: 12 }}>
-          <LogOut size={20} />
-          {(!collapsed || isMobile) && <span style={{ fontSize: 14, fontWeight: 600 }}>Logout</span>}
-        </button>
-      </div>
-    </div>
-  )
 
   return (
     <div className="admin-root" style={{ 
@@ -167,8 +104,8 @@ export default function AdminLayout() {
         .admin-main { flex: 1; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; padding: 0; position: relative; z-index: 1; }
         .admin-header { height: 70px; display: flex; align-items: center; padding: 0 30px; background: var(--bg-card); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-glass); z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
         .global-bottom-nav { 
-          position: fixed; bottom: 16px; left: 16px; right: 16px;
-          height: 70px;
+          position: fixed; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: 16px; right: 16px;
+          height: 80px;
           background: rgba(15, 12, 8, 0.9); backdrop-filter: blur(25px);
           border: 1px solid rgba(212, 175, 55, 0.3);
           border-radius: 24px;
@@ -219,7 +156,7 @@ export default function AdminLayout() {
          @media (min-width: 1025px) {
           .global-bottom-nav {
             bottom: 24px; left: 50%; transform: translateX(-50%);
-            width: auto; max-width: 90%; height: 74px;
+            width: auto; max-width: 90%; height: 88px;
             border-radius: 26px; border: 1px solid rgba(212, 175, 55, 0.3);
             background: rgba(10, 13, 20, 0.85);
             padding: 0 12px; margin: 0 auto;
@@ -289,17 +226,10 @@ export default function AdminLayout() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button 
-              onClick={() => setSideOpen(true)} 
-              className="mobile-only"
-              style={{ display: 'none', background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: 8 }}
-            >
-              <Menu size={24} />
-            </button>
+
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '4px 4px 4px 12px', background: 'rgba(25, 20, 10, 0.6)', borderRadius: 18, border: '1px solid rgba(212, 175, 55, 0.25)' }}>
               <div className="desktop-only" style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-primary)' }}>Admin Portal</div>
-                <div style={{ fontSize: 10, color: 'rgba(212, 175, 55, 0.6)' }}>{adminName.toLowerCase()}</div>
+                <div style={{ fontSize: 11, color: 'rgba(212, 175, 55, 0.7)', fontWeight: 600 }}>{adminName.toLowerCase()}</div>
               </div>
               <div style={{ width: 36, height: 36, borderRadius: 14, background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-primary)', fontWeight: 800, fontSize: 13, border: '1px solid rgba(212, 175, 55, 0.3)' }}>
                 {adminName.charAt(0).toUpperCase()}
@@ -316,33 +246,7 @@ export default function AdminLayout() {
         </header>
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
-          {/* Desktop Sidebar */}
-          <aside className="desktop-only" style={{ 
-            width: collapsed ? 80 : 260, 
-            background: 'var(--bg-card)', 
-            borderRight: '1px solid var(--border-glass)',
-            transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-            zIndex: 10,
-            overflowX: 'hidden'
-          }}>
-            <SidebarContent />
-          </aside>
-
-          {/* Mobile Sidebar Overlay */}
-          {sideOpen && (
-            <div 
-              onClick={() => setSideOpen(false)} 
-              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', zIndex: 1000 }} 
-            />
-          )}
-          <aside style={{ 
-            position: 'fixed', top: 0, bottom: 0, left: sideOpen ? 0 : -280, 
-            width: 280, background: 'var(--bg-deep)', zIndex: 1001, 
-            transition: 'left 0.3s ease',
-            boxShadow: '20px 0 50px rgba(0,0,0,0.5)'
-          }}>
-            <SidebarContent isMobile />
-          </aside>
+          {/* Sidebar removed as per request */}
 
           {/* Dynamic content */}
           <main key={location.pathname} className="smooth-appear scroll-container" style={{ flex: 1, padding: '24px', paddingBottom: 120, overflowY: 'auto', overflowX: 'hidden' }}>
@@ -353,8 +257,8 @@ export default function AdminLayout() {
         {/* Global Floating Bottom Nav */}
         <nav className="global-bottom-nav">
           <div className="bottom-nav-inner" style={{ width: '100%', justifyContent: 'space-around', gap: 0, padding: 0 }}>
-            {/* Show first 4 items */}
-            {NAV.slice(0, 4).map(({ to, label, Icon, end }) => (
+            {/* Show first 5 items for better functionality */}
+            {NAV.slice(0, 5).map(({ to, label, Icon, end }) => (
               <NavLink key={to} to={to} end={end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} style={{ flex: 1, minWidth: 0, padding: '8px 4px' }}>
                 <Icon size={20} />
                 <span style={{ fontSize: 8, fontWeight: 700 }}>{label}</span>
@@ -378,7 +282,7 @@ export default function AdminLayout() {
               <div onClick={() => setShowMore(false)} style={{ position: 'fixed', inset: 0, zIndex: 2099 }} />
               <div className="more-menu-container">
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-                  {NAV.slice(4).map(({ to, label, Icon, end }) => (
+                  {NAV.slice(5).map(({ to, label, Icon, end }) => (
                     <NavLink 
                       key={to} to={to} end={end} 
                       onClick={() => setShowMore(false)}

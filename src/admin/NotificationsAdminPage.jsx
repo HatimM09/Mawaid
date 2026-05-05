@@ -63,46 +63,6 @@ export default function NotificationsAdminPage() {
     if (error) {
       alert('Error saving notice: ' + error.message)
     } else {
-      // 🚀 Trigger OneSignal Push Notification
-      try {
-        const onesignalAppId = import.meta.env.VITE_ONESIGNAL_APP_ID || "36968038-7359-450f-90e8-07f9c8742913"
-        const onesignalApiKey = import.meta.env.VITE_ONESIGNAL_REST_API_KEY
-        
-        if (onesignalApiKey) {
-          const notificationBody = {
-            app_id: onesignalAppId,
-            headings: { en: payload.title },
-            contents: { en: payload.body },
-            included_segments: payload.target_user_id ? [] : ["All"],
-            include_external_user_ids: payload.target_user_id ? [payload.target_user_id] : null,
-            chrome_web_badge: "https://spciaktztqnjsttrtosu.supabase.co/storage/v1/object/public/al-mawaid.png",
-            chrome_web_icon: "https://spciaktztqnjsttrtosu.supabase.co/storage/v1/object/public/al-mawaid.png"
-          }
-
-          if (payload.media && payload.media[0]) {
-            notificationBody.chrome_web_image = payload.media[0]
-          }
-
-          const response = await fetch("https://onesignal.com/api/v1/notifications", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json; charset=utf-8",
-              "Authorization": `Basic ${onesignalApiKey}`
-            },
-            body: JSON.stringify(notificationBody)
-          })
-          const resData = await response.json()
-          console.log("OneSignal Response:", resData)
-          if (!response.ok) throw new Error(resData.errors?.[0] || "OneSignal API Error")
-        } else {
-          console.warn("OneSignal REST API Key missing. Skipping push notification.")
-          alert("Notice saved, but Push Notification skipped (REST API Key not found in environment).")
-        }
-      } catch (err) {
-        console.error("OneSignal Error:", err)
-        alert("Push Notification Error: " + err.message)
-      }
-
       alert('Notification generated and broadcasted successfully!')
       setForm({
         title: '', body: '', sender_name: 'Admin Office',
