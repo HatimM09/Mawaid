@@ -1,4 +1,13 @@
 -- ============================================================
+-- DANGER: THIS WILL DELETE ALL DATA AND TABLES IN THE PUBLIC SCHEMA
+-- ============================================================
+
+DROP SCHEMA public CASCADE;
+CREATE SCHEMA public;
+GRANT ALL ON SCHEMA public TO postgres;
+GRANT ALL ON SCHEMA public TO public;
+
+-- ============================================================
 -- AL-MAWAID COMPLETE SUPABASE SCHEMA (CLEANED)
 -- Run this in your Supabase SQL Editor (Dashboard > SQL Editor)
 -- This creates all tables, RLS policies, storage buckets,
@@ -255,15 +264,16 @@ CREATE TABLE IF NOT EXISTS public.notices (
 -- 10. INVENTORY (Kitchen stock management)
 -- ════════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS public.inventory (
-  id                  BIGSERIAL PRIMARY KEY,
-  name                TEXT NOT NULL DEFAULT '',
-  category            TEXT DEFAULT 'General',
-  unit                TEXT DEFAULT 'kg',
-  stock               NUMERIC DEFAULT 0,
-  low_stock_threshold NUMERIC DEFAULT 5,
-  image_url           TEXT DEFAULT '',
-  created_at          TIMESTAMPTZ DEFAULT now(),
-  updated_at          TIMESTAMPTZ DEFAULT now()
+  id          BIGSERIAL PRIMARY KEY,
+  name        TEXT NOT NULL DEFAULT '',
+  category_id INT DEFAULT NULL,
+  stock       NUMERIC DEFAULT 0,
+  unit        TEXT DEFAULT 'kg',
+  low_stock   NUMERIC DEFAULT 5,
+  category    TEXT DEFAULT 'General',
+  image_url   TEXT DEFAULT '',
+  created_at  TIMESTAMPTZ DEFAULT now(),
+  updated_at  TIMESTAMPTZ DEFAULT now()
 );
 
 -- ════════════════════════════════════════════════════════════
