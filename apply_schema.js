@@ -1,30 +1,45 @@
-const { spawnSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+import { execSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const sqlPath = path.join(__dirname, 'supabase_reset_all_and_apply.sql');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 try {
-  console.log("Reading SQL file...");
-  const sql = fs.readFileSync(sqlPath, 'utf8');
+  console.log("Preparing schema as a Supabase Migration...");
   
-  console.log("Applying SQL schema to your Supabase project...");
-  console.log("This will override the database with the correct tables and policies.");
-  console.log("Please wait...\n");
+  const supabaseDir = path.join(__dirname, 'supabase');
+  const migrationsDir = path.join(supabaseDir, 'migrations');
+  
+  if (!fs.existsSync(supabaseDir)) fs.mkdirSync(supabaseDir);
+  if (!fs.existsSync(migrationsDir)) fs.mkdirSync(migrationsDir);
 
-  const result = spawnSync('npx.cmd', ['supabase', 'db', 'query'], {
-    input: sql,
-    stdio: ['pipe', 'inherit', 'inherit']
+  // Clear old migrations to avoid conflicts
+  const files = fs.readdirSync(migrationsDir);
+  for (const file of files) {
+    fs.unlinkSync(path.join(migrationsDir, file));
+  }
+
+  // Copy the sql file into a new migration
+  const timestamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
+  const migrationFile = path.join(migrationsDir, `${timestamp}_apply_schema.sql`);
+  const sql = fs.readFileSync(path.join(__dirname, 'supabase_reset_all_and_apply.sql'), 'utf8');
+  
+  fs.writeFileSync(migrationFile, sql);
+  console.log(`Created migration file: ${migrationFile}`);
+
+  console.log("\nPushing migration directly to your linked remote Supabase project...");
+  console.log("Please wait (it may ask for your database password)...\n");
+
+  // Push directly to the linked project
+  execSync('npx supabase db push', {
+    stdio: 'inherit' // This allows you to type your password if prompted!
   });
 
-  if (result.error) {
-    console.error("❌ Error executing Supabase CLI:", result.error.message);
-  } else if (result.status !== 0) {
-    console.error(`❌ Supabase CLI exited with code ${result.status}. Check the output above.`);
-  } else {
-    console.log("\n✅ SUCCESS: Database schema and RLS policies have been fully applied!");
-    console.log("The 403 Forbidden errors should now be completely fixed.");
-  }
+  console.log("\n✅ SUCCESS: Database schema and RLS policies have been fully applied to your LIVE project!");
+  console.log("The 403 Forbidden errors should now be completely fixed.");
+
 } catch (error) {
-  console.error("❌ Failed to run script:", error.message);
+  console.error("\n❌ Failed to run script:", error.message);
 }
