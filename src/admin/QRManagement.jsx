@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { 
   T, PageWrap, AdminCard, PageTitle, Badge, Btn, Input, 
-  Table, Spinner, Alert, Grid, SectionHeader, Modal, fmtDate
+  Table, Spinner, Alert, Grid, SectionHeader, Modal, fmtDate, PackingTVView
 } from './ui'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'react-hot-toast'
@@ -24,6 +24,7 @@ export default function QRManagement() {
   const [isScanning, setIsScanning] = useState(false)
   const [viewMode, setViewMode] = useState('grid') // 'grid' | 'list'
   const [isBulkPrinting, setIsBulkPrinting] = useState(false)
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
   const navigate = useNavigate()
   const scannerRef = useRef(null)
 
@@ -136,30 +137,48 @@ export default function QRManagement() {
         return
       }
 
-      const today = ['sun','mon','tue','wed','thu','fri','sat'][new Date().getDay()]
-      const meal = new Date().getHours() < 16 ? 'l' : 'd'
-      const statusKey = `${today}_${meal}_status`
+      // Show the TV View pop-up directly
+      const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+      const today = days[new Date().getDay()]
+      const h = new Date().getHours()
+      const m = new Date().getMinutes()
+      const mealName = (h < 15 || (h === 15 && m < 30)) ? 'lunch' : 'dinner'
+      const dayKey = today.substring(0, 3).toLowerCase()
+      const mealKey = mealName === 'lunch' ? 'l' : 'd'
+      
       const weekId = getMonday(new Date()).toISOString().split('T')[0]
-
       const { data: submission } = await supabase
         .from('survey_submissions_flat')
         .select('*')
         .eq('user_id', userId)
         .eq('week_id', weekId)
-        .single()
+        .maybeSingle()
+
+      const dishRes = {}
+      if (submission && submission[`${dayKey}_${mealKey}_status`] === 'Applied') {
+        // Simple mapping for display
+        const { data: menuRow } = await supabase.from('weekly_menu').select('*').eq('day_name', today.charAt(0).toUpperCase() + today.slice(1)).maybeSingle()
+        if (menuRow) {
+          const dishList = (menuRow[mealName] || '').split(',').map(s => s.trim()).filter(Boolean)
+          dishList.forEach((dish, idx) => {
+            const val = submission[`${dayKey}_${mealKey}_dish_${idx + 1}`]
+            if (val !== undefined && val !== null) {
+              dishRes[dish] = val === 'Yes' ? 'yes' : (val === 'No' ? 'no' : (parseInt(val) || 0))
+            }
+          })
+        }
+      }
 
       setScanResult({
-        user,
-        status: submission ? submission[statusKey] : 'Not Submitted',
-        meal: meal === 'l' ? 'Lunch' : 'Dinner',
-        time: new Date().toLocaleTimeString()
+        ...user,
+        status: submission ? submission[`${dayKey}_${mealKey}_status`] : 'Not Submitted',
+        dishResponses: dishRes,
+        meal: mealName,
+        day: today
       })
       
       toast.success(`Scanned: ${user.name}`)
-      
-      setTimeout(() => {
-        navigate(`/admin/surveys?userId=${userId}`)
-      }, 800)
+      // Removed auto-navigate to stay in the TV View pop-up
     } catch (e) {
       console.error(e)
     } finally {
@@ -183,16 +202,93 @@ export default function QRManagement() {
     window.print()
   }
 
-  const triggerBulkPDF = () => {
+  const triggerBulkPDF = async () => {
     if (users.length === 0) {
       toast.error("No users to export")
       return
     }
-    setIsBulkPrinting(true)
-    setTimeout(() => {
-      window.print()
-      setIsBulkPrinting(false)
-    }, 1000)
+    
+    setIsGeneratingPDF(true)
+    const toastId = toast.loading("Generating Bulk PDF...")
+    
+    try {
+      // Load jsPDF dynamically if not already loaded
+      if (!window.jspdf) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script')
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+          script.onload = resolve
+          script.onerror = reject
+          document.head.appendChild(script)
+        })
+      }
+
+      const { jsPDF } = window.jspdf
+      const doc = new jsPDF('p', 'mm', 'a4')
+      const stickerSize = 90 // 9cm
+      
+      for (let i = 0; i < users.length; i++) {
+        const u = users[i]
+        const pageIndex = Math.floor(i / 2)
+        const itemOnPage = i % 2 // 0 or 1
+        
+        if (i > 0 && itemOnPage === 0) doc.addPage()
+        
+        // Draw Sticker on Canvas
+        const canvas = document.createElement('canvas')
+        const canvasSize = 1062 // 300 DPI approx
+        canvas.width = canvasSize
+        canvas.height = canvasSize
+        const ctx = canvas.getContext('2d')
+        
+        // 1. BG Circle
+        ctx.fillStyle = '#ffffff'
+        ctx.beginPath(); ctx.arc(canvasSize/2, canvasSize/2, canvasSize/2, 0, Math.PI*2); ctx.fill()
+        
+        // 2. Logo Spread
+        const logo = new Image()
+        logo.src = '/al-mawaid.png'
+        await new Promise(r => { logo.onload = r; logo.onerror = r })
+        const scale = Math.max(canvasSize / logo.width, canvasSize / logo.height)
+        ctx.drawImage(logo, (canvasSize - logo.width*scale)/2, (canvasSize - logo.height*scale)/2, logo.width*scale, logo.height*scale)
+        
+        // 3. QR Code
+        const qrCanvas = document.getElementById(`qr-canvas-${u.user_id}`)
+        if (qrCanvas) {
+          const qrSize = 295, quietZone = 35, boxSize = qrSize + quietZone*2
+          ctx.fillStyle = '#ffffff'
+          ctx.beginPath(); ctx.roundRect((canvasSize-boxSize)/2, canvasSize*0.35, boxSize, boxSize, 40); ctx.fill()
+          ctx.drawImage(qrCanvas, (canvasSize-qrSize)/2, canvasSize*0.35 + quietZone, qrSize, qrSize)
+        }
+        
+        // 4. Thali Number
+        const thaliText = `#${u.thali_number}`
+        ctx.font = '900 130px "DM Sans", sans-serif'
+        const tw = ctx.measureText(thaliText).width
+        ctx.fillStyle = '#ffffff'
+        ctx.beginPath(); ctx.roundRect((canvasSize-tw-100)/2, canvasSize*0.75, tw+100, 180, 90); ctx.fill()
+        ctx.fillStyle = '#000000'; ctx.textAlign = 'center'
+        ctx.fillText(thaliText, canvasSize/2, canvasSize*0.88)
+        
+        // Add to PDF
+        const stickerY = itemOnPage === 0 ? 30 : 160
+        doc.addImage(canvas.toDataURL('image/jpeg', 0.9), 'JPEG', (210-stickerSize)/2, stickerY, stickerSize, stickerSize)
+        
+        // Draw Cut Line
+        if (itemOnPage === 0) {
+          doc.setLineDash([2, 2], 0)
+          doc.line(10, 148.5, 200, 148.5)
+        }
+      }
+      
+      doc.save(`Al-Mawaid_Stickers_${new Date().toISOString().split('T')[0]}.pdf`)
+      toast.success("PDF Downloaded!", { id: toastId })
+    } catch (e) {
+      console.error(e)
+      toast.error("Failed to generate PDF", { id: toastId })
+    } finally {
+      setIsGeneratingPDF(false)
+    }
   }
 
   const downloadSticker = (u) => {
@@ -295,8 +391,9 @@ export default function QRManagement() {
 
       {activeTab === 'generate' && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
-           <Btn onClick={triggerBulkPDF} variant="outline" style={{ border: `1.5px solid ${T.accent}` }}>
-             <FileDown size={18} /> Bulk PDF Export (2 per Page)
+           <Btn onClick={triggerBulkPDF} disabled={isGeneratingPDF} variant="outline" style={{ border: `1.5px solid ${T.accent}`, minWidth: 220 }}>
+             {isGeneratingPDF ? <RefreshCw size={18} className="spin" /> : <FileDown size={18} />}
+             {isGeneratingPDF ? 'Generating PDF...' : 'Download Bulk PDF (2 per Page)'}
            </Btn>
         </div>
       )}
@@ -337,44 +434,13 @@ export default function QRManagement() {
           )}
 
           {scanResult && (
-            <div style={{ animation: 'slideUp 0.5s cubic-bezier(0.4, 0, 0.2, 1)' }}>
-              <AdminCard style={{ 
-                border: `2px solid ${scanResult.status === 'Applied' ? '#10b981' : '#f43f5e'}`,
-                background: scanResult.status === 'Applied' ? 'rgba(16, 185, 129, 0.03)' : 'rgba(244, 63, 94, 0.03)',
-                boxShadow: `0 32px 64px -12px ${scanResult.status === 'Applied' ? 'rgba(16,185,129,0.2)' : 'rgba(244,63,94,0.2)'}`,
-                padding: 32
-              }}>
-                <div style={{ textAlign: 'center', marginBottom: 32 }}>
-                   <div style={{ 
-                     width: 80, height: 80, borderRadius: '50%', margin: '0 auto 20px',
-                     background: scanResult.status === 'Applied' ? '#10b981' : '#f43f5e',
-                     display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
-                     boxShadow: `0 0 30px ${scanResult.status === 'Applied' ? '#10b98140' : '#f43f5e40'}`
-                   }}>
-                     {scanResult.status === 'Applied' ? <CheckCircle size={40} /> : <XCircle size={40} />}
-                   </div>
-                   <div style={{ fontSize: 13, fontWeight: 900, color: T.accent, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 8 }}>Thali #{scanResult.user.thali_number}</div>
-                   <h2 style={{ margin: 0, fontSize: 32, fontWeight: 900 }}>{scanResult.user.name}</h2>
-                </div>
-
-                <Grid cols={2} style={{ marginBottom: 32 }}>
-                  <div style={{ padding: 20, borderRadius: 20, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', textAlign: 'center' }}>
-                    <div style={{ fontSize: 11, color: T.textSub, marginBottom: 8, fontWeight: 800, textTransform: 'uppercase' }}>Session</div>
-                    <div style={{ fontWeight: 800, fontSize: 18 }}>{scanResult.meal}</div>
-                  </div>
-                  <div style={{ padding: 20, borderRadius: 20, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)', textAlign: 'center' }}>
-                    <div style={{ fontSize: 11, color: T.textSub, marginBottom: 8, fontWeight: 800, textTransform: 'uppercase' }}>Status</div>
-                    <div style={{ fontWeight: 800, fontSize: 18, color: scanResult.status === 'Applied' ? '#10b981' : '#f43f5e' }}>{scanResult.status === 'Applied' ? 'CONFIRMED' : 'NO ENTRY'}</div>
-                  </div>
-                </Grid>
-
-                <p style={{ textAlign: 'center', color: T.textSub, fontSize: 13, marginBottom: 32 }}>Redirecting to detailed survey view...</p>
-                
-                <Btn variant="outline" style={{ width: '100%', height: 54, borderRadius: 16 }} onClick={startScanner}>
-                  <RefreshCw size={18} /> Scan Another
-                </Btn>
-              </AdminCard>
-            </div>
+            <PackingTVView 
+              user={scanResult} 
+              onClose={() => {
+                setScanResult(null)
+                startScanner()
+              }} 
+            />
           )}
         </div>
       ) : (
@@ -487,15 +553,18 @@ export default function QRManagement() {
               <Btn style={{ flex: 1, borderRadius: 16, background: T.accentGrad }} onClick={printQR}><Printer size={18} /> Print Sticker</Btn>
             </div>
             
-            {/* Hidden QR for Canvas Download */}
-            <div style={{ display: 'none' }}>
-              <QRCodeCanvas 
-                id="hidden-qr-canvas"
-                value={`ALMAWAID:${selectedUser.user_id}`} 
-                size={295} 
-                level="H" 
-              />
-            </div>
+      {/* Hidden QR codes for PDF generation */}
+      <div style={{ display: 'none' }}>
+        {users.map(u => (
+          <QRCodeCanvas 
+            key={`qr-${u.user_id}`}
+            id={`qr-canvas-${u.user_id}`}
+            value={`ALMAWAID:${u.user_id}`} 
+            size={295} 
+            level="H" 
+          />
+        ))}
+      </div>
           </div>
         )}
       </Modal>

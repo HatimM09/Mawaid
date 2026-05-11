@@ -34,7 +34,7 @@ export default function SurveysPage() {
     const d = new Date().getDay()
     return d === 0 ? 'monday' : DAYS[d-1]
   })
-  const [mealFilter, setMealFilter] = useState(() => new Date().getHours() < 16 ? 'lunch' : 'dinner')
+  const [mealFilter, setMealFilter] = useState(() => (new Date().getHours() + new Date().getMinutes() / 60) < 15.5 ? 'lunch' : 'dinner')
   const [search, setSearch] = useState('')
   const [chartData, setChartData] = useState([])
   const [selectedUser, setSelectedUser] = useState(null)

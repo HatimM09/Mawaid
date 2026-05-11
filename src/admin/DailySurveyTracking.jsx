@@ -23,7 +23,7 @@ export default function DailySurveyTracking() {
     if (d === 0) return 'monday' 
     return ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'][d]
   })
-  const [meal, setMeal] = useState(() => new Date().getHours() < 16 ? 'lunch' : 'dinner')
+  const [meal, setMeal] = useState(() => (new Date().getHours() + new Date().getMinutes() / 60) < 15.5 ? 'lunch' : 'dinner')
   const [search, setSearch] = useState('')
   const [users, setUsers] = useState([])
   const [selectedUser, setSelectedUser] = useState(null)
@@ -347,22 +347,15 @@ export default function DailySurveyTracking() {
         </div>
       )}
 
-      {/* User Details Modal */}
-      <Modal 
-        isOpen={!!selectedUser} 
-        onClose={() => setSelectedUser(null)}
-        title="Survey Response"
-        maxWidth={460}
-      >
-        {selectedUser && (
-          <SurveyResponseDisplay 
-            user={selectedUser} 
-            meal={meal} 
-            day={day} 
-            onClose={() => setSelectedUser(null)} 
-          />
-        )}
-      </Modal>
+      {/* Packing Station TV View (Pop-up) */}
+      {selectedUser && (
+        <PackingTVView 
+          user={selectedUser} 
+          meal={meal} 
+          day={day} 
+          onClose={() => setSelectedUser(null)} 
+        />
+      )}
 
       <style>{`.spin { animation: spin 1s linear infinite } @keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </PageWrap>

@@ -131,10 +131,10 @@ const canEditMeal = (dayName, weekId, mealType) => {
   const mealDate = new Date(weekStart)
   mealDate.setDate(mealDate.getDate() + dayIdx)
 
-  // Edit window for a specific day: Opens 9 PM the night before
+  // Edit window for a specific day: Opens 8 PM the night before
   const openDate = new Date(mealDate)
   openDate.setDate(openDate.getDate() - 1)
-  openDate.setHours(21, 0, 0, 0)
+  openDate.setHours(20, 0, 0, 0)
 
   // Closes: 11:00 AM for lunch, 3:30 PM (15:30) for dinner on the day
   const closeDate = new Date(mealDate)
@@ -318,19 +318,20 @@ const GlobalStyles = () => {
 
       .mobile-bottom-nav {
         position: fixed; 
-        bottom: calc(16px + env(safe-area-inset-bottom, 0px)); 
+        bottom: calc(12px + env(safe-area-inset-bottom, 0px)); 
         left: 50%; 
         transform: translateX(-50%);
-        width: min(450px, calc(100% - 40px));
-        height: 74px;
+        width: min(480px, calc(100% - 32px));
+        height: 72px;
         background: ${t.navBg};
-        backdrop-filter: blur(30px) saturate(1.5);
+        backdrop-filter: blur(25px) saturate(1.8);
+        -webkit-backdrop-filter: blur(25px) saturate(1.8);
         border: 1.5px solid ${t.accentBorder};
         display: flex; align-items: center; justify-content: space-around;
-        padding: 0 12px;
+        padding: 0 8px;
         z-index: 9000;
-        border-radius: 30px;
-        box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7), inset 0 1px 1px rgba(255,255,255,0.1);
+        border-radius: 24px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.1);
       }
       .mobile-bottom-nav button {
         flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -378,7 +379,7 @@ function SurveyModal({ startDay, onClose }) {
   const weeklyMenu = useWeeklyMenu() || {}
 
   const currentWeekId = getWeekDate()
-  const visibleDays = isSurveyOpen() ? DAYS : DAYS.filter(d => canEditMeal(d, currentWeekId, 'lunch') || canEditMeal(d, currentWeekId, 'dinner'))
+  const visibleDays = DAYS // Show all days to allow viewing responses
 
   const [currentDay, setCurrentDay] = useState(startDay || (visibleDays[0] || 'monday'))
   const [currentMeal, setCurrentMeal] = useState('lunch')
@@ -454,7 +455,7 @@ function SurveyModal({ startDay, onClose }) {
   }
 
   const handleNext = async () => {
-    if (wantsFood !== null && !(existingResponse && (existingResponse.edit_count || 0) >= 1)) {
+    if (wantsFood !== null) {
       setLoading(true)
       try {
         const dayKey = currentDay.substring(0, 3).toLowerCase()
@@ -484,7 +485,7 @@ function SurveyModal({ startDay, onClose }) {
           })
         }
 
-        await supabase.from('survey_submissions_flat').upsert([updateObj])
+        await supabase.from('survey_submissions_flat').upsert([updateObj], { onConflict: 'user_id,week_id' })
         // Increment survey count only for new thali submissions, not edits
         if (!existingResponse || existingResponse.is_template) {
           await supabase.rpc('increment_user_surveys', { p_user_id: user.id })
@@ -565,7 +566,7 @@ function SurveyModal({ startDay, onClose }) {
 
         {editBlocked && (
           <div style={{ marginBottom: 12, padding: 11, borderRadius: 10, background: 'rgba(220,140,40,0.10)', border: '1px solid rgba(220,140,40,0.28)', color: '#d4882a', fontSize: 12, fontFamily: "'DM Sans',sans-serif" }}>
-            {!isEditable ? `⚠️ This meal is locked (${currentMeal === 'lunch' ? 'passed 11am' : 'passed 4pm'}) — view only.` : '⚠️ Edit limit reached — view only.'}
+            {!isEditable ? `⚠️ This meal is locked (${currentMeal === 'lunch' ? 'passed 11am' : 'passed 3:30pm'}) — view only.` : '⚠️ Edit limit reached — view only.'}
           </div>
         )}
 
@@ -754,7 +755,7 @@ function DailySurveyModal({ onClose }) {
         })
       }
 
-      const { error } = await supabase.from('survey_submissions_flat').upsert([updateObj])
+      const { error } = await supabase.from('survey_submissions_flat').upsert([updateObj], { onConflict: 'user_id,week_id' })
       if (error) throw error
 
       // Clean up old week if it exists
@@ -949,8 +950,8 @@ function ThaliUserApp() {
 
   return (
     <ThemeCtx.Provider value={t}>
-      <div style={{ fontFamily: "'DM Sans','Segoe UI',-apple-system,sans-serif", minHeight: '100vh', background: t.bgGrad, color: t.text, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden' }}>
-        <header style={{ position: 'relative', overflow: 'hidden', background: t.bgGrad, padding: 'clamp(8px, 2vw, 14px) 0 0', flexShrink: 0 }}>
+      <div style={{ fontFamily: "'DM Sans','Segoe UI',-apple-system,sans-serif", minHeight: '100dvh', background: t.bgGrad, color: t.text, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', position: 'relative' }}>
+        <header style={{ position: 'relative', overflow: 'hidden', background: t.bgGrad, padding: 'calc(env(safe-area-inset-top, 8px) + 4px) 0 0', flexShrink: 0 }}>
           <GeoBg t={t} />
           <div style={{ position: 'relative', zIndex: 1, maxWidth: 1200, margin: '0 auto', padding: '0 clamp(16px, 4vw, 32px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -1045,8 +1046,7 @@ function HomePage({ setActiveTab, setShowDailySurvey }) {
   const t = useTheme()
   const { user } = useAuth()
 
-  const [weeklyMenu, setWeeklyMenu] = useState(null)
-  const [menuLoading, setMenuLoading] = useState(true)
+  const weeklyMenu = useWeeklyMenu()
   const [showSurvey, setShowSurvey] = useState(false)
   const [showQR, setShowQR] = useState(false)
   const [profileData, setProfileData] = useState({ name: '', thali_number: '', avatar_url: '' })
@@ -1066,16 +1066,11 @@ function HomePage({ setActiveTab, setShowDailySurvey }) {
   useEffect(() => { loadData() }, [user])
 
   const loadData = async () => {
-    setMenuLoading(true)
     try {
-      const { data: menu } = await supabase.from('weekly_menu').select('*').order('week_start', { ascending: false }).limit(1)
-      setWeeklyMenu(menu?.[0] || null)
-
       const { data } = await supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle()
       if (data) setProfileData({ name: data.name || '', thali_number: data.thali_number || '', avatar_url: data.avatar_url || '' })
     } catch { }
     setStatsLoading(false)
-    setMenuLoading(false)
   }
 
   const handleSubmitCombined = async () => {
@@ -1098,10 +1093,10 @@ function HomePage({ setActiveTab, setShowDailySurvey }) {
   // Any meal editable in the current week?
   const isAnyMealEditable = DAYS.some(d => canEditMeal(d, currentWeekId, 'lunch') || canEditMeal(d, currentWeekId, 'dinner'))
 
-  if (menuLoading) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
+  if (!weeklyMenu || statsLoading) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
 
   return (
-    <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{ flex: 1, padding: '16px 16px calc(110px + env(safe-area-inset-bottom, 20px))', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       {/* Profile strip */}
       <Card active style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, padding: '14px 16px', borderRadius: 18, position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: -20, left: -20, width: 80, height: 80, background: t.accentGrad, borderRadius: '50%', filter: 'blur(40px)', opacity: 0.08 }} />
@@ -1144,7 +1139,7 @@ function HomePage({ setActiveTab, setShowDailySurvey }) {
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? 'SURVEY LIVE' : (isAnyMealEditable ? 'EDITING WINDOW' : 'SURVEY CLOSED')}</div>
             </div>
             <div style={{ fontSize: 24, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>Weekly Food Survey</div>
-            <div style={{ fontSize: 13, color: t.textSub, marginTop: 8, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? getSurveyWindowMessage() : (isAnyMealEditable ? 'You can still edit upcoming meals (Today: L < 11am, D < 4pm).' : 'Survey is closed for this week.')}</div>
+            <div style={{ fontSize: 13, color: t.textSub, marginTop: 8, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? getSurveyWindowMessage() : (isAnyMealEditable ? 'Daily edit window is live (L < 11am, D < 3:30pm).' : 'Weekly survey is closed. You can still view your responses.')}</div>
           </div>
 
           <button
@@ -1153,13 +1148,13 @@ function HomePage({ setActiveTab, setShowDailySurvey }) {
               padding: '16px 28px', borderRadius: 16,
               background: (surveyOpen || isAnyMealEditable) ? t.accentGrad : 'rgba(255,255,255,0.05)',
               color: (surveyOpen || isAnyMealEditable) ? '#000' : t.textSub,
-              fontSize: 14, fontWeight: 900, border: 'none', cursor: (surveyOpen || isAnyMealEditable) ? 'pointer' : 'not-allowed',
+              fontSize: 14, fontWeight: 900, border: 'none', cursor: 'pointer',
               display: 'flex', alignItems: 'center', gap: 10, boxShadow: (surveyOpen || isAnyMealEditable) ? `0 10px 25px ${t.accent}40` : 'none',
               transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
               fontFamily: "'DM Sans',sans-serif"
             }}
           >
-            <ClipboardList size={18} /> {surveyOpen ? 'Start Weekly Survey' : 'Edit Response'}
+            <ClipboardList size={18} /> {surveyOpen ? 'Start Weekly Survey' : (isAnyMealEditable ? 'Edit Response' : 'View Responses')}
           </button>
         </div>
       </Card>
@@ -1250,7 +1245,7 @@ function WeeklyMenuPage() {
   }
 
   return (
-    <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{ flex: 1, padding: '16px 16px calc(110px + env(safe-area-inset-bottom, 20px))', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       {/* Dynamic Header with Dropdown */}
       <div style={{
         marginBottom: 24, padding: '24px', borderRadius: 32,
@@ -1412,7 +1407,7 @@ function PostPage() {
   const t = useTheme()
   const [subTab, setSubTab] = useState('requests')
   return (
-    <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{ flex: 1, padding: '16px 16px calc(110px + env(safe-area-inset-bottom, 20px))', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, background: t.card, borderRadius: 13, padding: 5, border: `1px solid ${t.border}` }}>
         {[{ id: 'requests', label: '📋 Requests' }, { id: 'queries', label: '❓ Queries' }].map(({ id, label }) => (
           <button key={id} onClick={() => setSubTab(id)}
