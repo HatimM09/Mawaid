@@ -59,9 +59,21 @@ export default function RequestsAdminPage() {
         <div style={{ color: T.textSub, fontSize: 11 }}>#{u.thali_number || '—'}</div>
       </div>,
       <Badge color="#9b8de0">{r.request_type || '—'}</Badge>,
-      <div style={{ fontSize: 13, color: T.textSub, maxWidth: 200, lineHeight: 1.5 }}>{r.details || '—'}</div>,
+      <div style={{ fontSize: 13, color: T.textSub, maxWidth: 220, lineHeight: 1.5 }}>
+        {r.request_type === 'extra' && r.extra_items ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {r.extra_items.map((item, i) => (
+              <div key={i} style={{ background: 'rgba(255,255,255,0.03)', padding: '2px 6px', borderRadius: 6, fontSize: 11 }}>
+                <span style={{ color: T.accent, fontWeight: 700 }}>{item.qty}x</span> {item.name}
+              </div>
+            ))}
+          </div>
+        ) : r.details || '—'}
+      </div>,
       <div>
-        {r.from_date ? (
+        {r.request_type === 'miqaat' ? (
+          <Badge color={T.accent}>MIQAAT MODE</Badge>
+        ) : r.from_date ? (
           <div style={{ fontSize: 12 }}>
             <span style={{ fontWeight: 700, color: T.accent }}>{fmtDate(r.from_date)}</span>
             {r.to_date ? (

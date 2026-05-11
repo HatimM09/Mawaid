@@ -16,6 +16,7 @@ import StaffPage from './admin/StaffPage'
 import SettingsPage from './admin/SettingsPage'
 import InventoryPage from './admin/InventoryPage'
 import NotificationsAdminPage from './admin/NotificationsAdminPage'
+import QRManagement from './admin/QRManagement'
 
 export default function MainRouter() {
   return (
@@ -26,6 +27,7 @@ export default function MainRouter() {
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Dashboard />} />
             <Route path="users" element={<UsersPage />} />
+            <Route path="qr-portal" element={<QRManagement />} />
             <Route path="surveys" element={<SurveysPage />} />
             <Route path="survey-tracking" element={<DailySurveyTracking />} />
             <Route path="inventory" element={<InventoryPage />} />

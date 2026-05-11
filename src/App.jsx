@@ -10,8 +10,9 @@ import {
   Mail, Lock, Eye, EyeOff, AlertCircle, ChevronDown, ChevronUp,
   ClipboardList, ChevronLeft, ChevronRight, Phone, MapPin,
   Users, Wallet, Bell, LifeBuoy, Info, MessageCircle, Upload, Utensils,
-  Sun, Moon, Medal, Package, Shield
+  Sun, Moon, Medal, Package, Shield, Menu, QrCode
 } from 'lucide-react'
+import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from './admin/supabaseClient'
 import { useWeeklyMenu } from './common/useWeeklyMenu'
 import { AuthCtx, ThemeCtx, useAuth, useTheme } from './admin/context'
@@ -19,6 +20,8 @@ import { updateSystemTheme } from './admin/ui'
 import KhidmatPortal from './admin/KhidmatPortal'
 import InventoryManagerPortal from './admin/InventoryManagerPortal'
 import LoginPage from './LoginPage'
+import PushManager from './lib/PushManager'
+import { Toaster } from 'react-hot-toast'
 const THEMES = {
   dark: {
     id: 'dark', name: 'Deep Topaz', icon: '🌾',
@@ -80,10 +83,10 @@ const getTodayKey = () => {
 // Survey window: Saturday 8PM to Monday 11AM
 const isSurveyOpen = () => {
   const now = new Date()
-  const day = now.getDay() // 0=Sun,1=Mon,...,6=Sat
+  const day = now.getDay() // 0=Sun,1=Mon,6=Sat
   const hour = now.getHours()
   if (day === 6 && hour >= 20) return true  // Sat 8PM+
-  if (day === 0) return true                 // All Sunday
+  if (day === 0) return true                // Sun all day
   if (day === 1 && hour < 11) return true   // Mon before 11AM
   return false
 }
@@ -95,11 +98,10 @@ const getSurveyWindowMessage = () => {
 
 const getWeekDate = () => {
   const now = new Date()
-  const day = now.getDay() // 0=Sun
+  const day = now.getDay()
   const hour = now.getHours()
-  // Normal Monday of current week
   let diff = now.getDate() - day + (day === 0 ? -6 : 1)
-  // If we are in the weekend survey window (Sat 8PM+ or Sun), we shift to NEXT week
+  // If we are in the Saturday 8PM+ or Sunday window, we are filling for the Monday coming in next week
   if (day === 0 || (day === 6 && hour >= 20)) {
     diff += 7
   }
@@ -119,31 +121,37 @@ const mapDishToCol = (day, meal, dish) => {
   return `${d}_${m}_${dishKey}`
 }
 
-const canEditMeal = (dayName, weekId) => {
+const canEditMeal = (dayName, weekId, mealType) => {
   if (isSurveyOpen()) return true
   const now = new Date()
   const weekStart = new Date(weekId) // Monday
   const dayIdx = DAYS.indexOf(dayName)
   if (dayIdx === -1) return false
-  
+
   const mealDate = new Date(weekStart)
   mealDate.setDate(mealDate.getDate() + dayIdx)
-  mealDate.setHours(0, 0, 0, 0)
-  
-  const limit = new Date(mealDate)
-  limit.setHours(limit.getHours() - 48)
-  return now < limit
+
+  // Edit window for a specific day: Opens 9 PM the night before
+  const openDate = new Date(mealDate)
+  openDate.setDate(openDate.getDate() - 1)
+  openDate.setHours(21, 0, 0, 0)
+
+  // Closes: 11:00 AM for lunch, 3:30 PM (15:30) for dinner on the day
+  const closeDate = new Date(mealDate)
+  if (mealType === 'lunch') {
+    closeDate.setHours(11, 0, 0, 0)
+  } else {
+    closeDate.setHours(15, 30, 0, 0)
+  }
+
+  return now >= openDate && now < closeDate
 }
 
 
 // ══════════════════════════════════════════════════════════════
 // SHARED UI PRIMITIVES
 // ══════════════════════════════════════════════════════════════
-const WhatsAppLogo = ({ size = 16 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path fill="currentColor" d="M19.05 4.91A9.82 9.82 0 0012.03 2c-5.46 0-9.9 4.44-9.9 9.9 0 1.74.45 3.43 1.31 4.92L2 22l5.33-1.4a9.86 9.86 0 004.7 1.2h.01c5.46 0 9.9-4.44 9.9-9.9a9.83 9.83 0 00-2.89-6.99Zm-7.02 15.22h-.01a8.2 8.2 0 01-4.18-1.14l-.3-.18-3.16.83.84-3.08-.2-.31a8.18 8.18 0 01-1.25-4.35c0-4.53 3.69-8.22 8.23-8.22a8.16 8.16 0 015.82 2.41 8.16 8.16 0 012.41 5.82c0 4.54-3.69 8.22-8.2 8.22Zm4.51-6.16c-.25-.13-1.47-.72-1.7-.8-.23-.08-.4-.13-.57.12-.17.25-.65.8-.8.96-.15.17-.3.19-.55.07-.25-.13-1.07-.39-2.03-1.23-.75-.67-1.26-1.49-1.41-1.74-.15-.25-.02-.38.11-.5.11-.11.25-.29.38-.43.13-.15.17-.25.25-.42.08-.17.04-.31-.02-.44-.06-.13-.57-1.37-.78-1.88-.21-.5-.43-.43-.57-.43h-.49c-.17 0-.44.06-.67.31-.23.25-.88.86-.88 2.1 0 1.24.9 2.44 1.02 2.61.13.17 1.77 2.7 4.29 3.79.6.26 1.07.42 1.43.54.6.19 1.15.16 1.58.1.48-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.15-1.18-.06-.1-.23-.17-.48-.29Z" />
-  </svg>
-)
+
 
 const GeoBg = ({ t: tProp }) => {
   const ctx = useTheme(); const t = tProp || ctx
@@ -296,6 +304,8 @@ const GlobalStyles = () => {
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=DM+Sans:wght@400;500;600;700;800&family=Amiri:wght@400;700&family=Outfit:wght@400;600;700;800&display=swap');
       @keyframes spin { to { transform: rotate(360deg); } }
+      @keyframes slideDown { from { opacity: 0; transform: translateX(-50%) translateY(-20px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+      @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.15); } }
       .spin { animation: spin 0.8s linear infinite; }
       * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
       body { background: ${t.bg}; color: ${t.text}; margin: 0; transition: background 0.3s ease; }
@@ -306,21 +316,54 @@ const GlobalStyles = () => {
       ::-webkit-scrollbar-thumb { background: ${t.borderActive}; border-radius: 10px; }
       ::-webkit-scrollbar-thumb:hover { background: ${t.accent}; }
 
-      @media (min-width: 1025px) {
-        .mobile-bottom-nav {
-          padding: 16px 24px 24px !important;
-          height: 96px;
-          border-radius: 32px 32px 0 0 !important;
-          max-width: 800px !important;
-          left: 50% !important;
-          transform: translateX(-50%) !important;
-        }
-        .mobile-bottom-nav button {
-          gap: 8px !important;
-        }
-        .mobile-bottom-nav span {
-          fontSize: 10px !important;
-        }
+      .mobile-bottom-nav {
+        position: fixed; 
+        bottom: calc(16px + env(safe-area-inset-bottom, 0px)); 
+        left: 50%; 
+        transform: translateX(-50%);
+        width: min(450px, calc(100% - 40px));
+        height: 74px;
+        background: ${t.navBg};
+        backdrop-filter: blur(30px) saturate(1.5);
+        border: 1.5px solid ${t.accentBorder};
+        display: flex; align-items: center; justify-content: space-around;
+        padding: 0 12px;
+        z-index: 9000;
+        border-radius: 30px;
+        box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7), inset 0 1px 1px rgba(255,255,255,0.1);
+      }
+      .mobile-bottom-nav button {
+        flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        background: none; border: none; cursor: pointer; color: ${t.textSub};
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        height: 100%;
+        position: relative;
+      }
+      .mobile-bottom-nav button.active { 
+        color: ${t.accent}; 
+      }
+      .mobile-bottom-nav button div {
+        width: 44px; height: 44px; border-radius: 16px;
+        display: flex; align-items: center; justify-content: center;
+        transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      }
+      .mobile-bottom-nav button.active div { 
+        background: ${t.accentGrad}; 
+        color: #000;
+        box-shadow: 0 8px 20px ${t.accent}40;
+        transform: translateY(-6px) scale(1.05);
+        border-radius: 18px;
+      }
+      .mobile-bottom-nav button span {
+        font-size: 10px; font-weight: 800; text-transform: uppercase;
+        margin-top: 4px; opacity: 0.6; letter-spacing: 0.05em;
+        transition: all 0.3s;
+      }
+      .mobile-bottom-nav button.active span {
+        transform: translateY(-2px);
+        opacity: 1;
+        color: ${t.accent};
+        font-weight: 900;
       }
     `}</style>
   )
@@ -330,13 +373,13 @@ const GlobalStyles = () => {
 // SURVEY MODAL
 // ══════════════════════════════════════════════════════════════
 function SurveyModal({ startDay, onClose }) {
-  const t = useTheme()
+  const t = THEMES.bright
   const { user } = useAuth()
   const weeklyMenu = useWeeklyMenu() || {}
-  
+
   const currentWeekId = getWeekDate()
-  const visibleDays = isSurveyOpen() ? DAYS : DAYS.filter(d => canEditMeal(d, currentWeekId))
-  
+  const visibleDays = isSurveyOpen() ? DAYS : DAYS.filter(d => canEditMeal(d, currentWeekId, 'lunch') || canEditMeal(d, currentWeekId, 'dinner'))
+
   const [currentDay, setCurrentDay] = useState(startDay || (visibleDays[0] || 'monday'))
   const [currentMeal, setCurrentMeal] = useState('lunch')
   const [wantsFood, setWantsFood] = useState(null)
@@ -349,9 +392,9 @@ function SurveyModal({ startDay, onClose }) {
   const menu = weeklyMenu[currentDay] || { lunch: [], dinner: [] }
   const dayKey = currentDay.substring(0, 3).toLowerCase()
   const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
-  const isEditable = canEditMeal(currentDay, currentWeekId)
+  const isEditable = canEditMeal(currentDay, currentWeekId, currentMeal)
   const editCount = (existingResponse && !existingResponse.is_template) ? (existingResponse.edit_metadata?.[`${dayKey}_${mealKey}`] || 0) : 0
-  const editBlocked = !isEditable || (!isSurveyOpen() && editCount >= 1)
+  const editBlocked = !isEditable || (!isSurveyOpen() && editCount >= 100) // Setting to 100 to allow unlimited edits within window as per request "pop up days survey... and they can edit"
 
   useEffect(() => { loadExisting() }, [currentDay, currentMeal])
 
@@ -384,7 +427,10 @@ function SurveyModal({ startDay, onClose }) {
           activeDishes.forEach((dish, idx) => {
             const val = data[`${dayKey}_${mealKey}_dish_${idx + 1}`]
             if (val !== undefined && val !== null) {
-              dishRes[dish] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : parseInt(val)
+              if (val === 'Yes') dishRes[dish] = 'yes'
+              else if (val === 'No') dishRes[dish] = 'no'
+              else if (typeof val === 'string' && val.includes('Skip')) dishRes[dish] = 'Skipped'
+              else dishRes[dish] = parseInt(val) || 0
             }
           })
           setResponses(dishRes)
@@ -485,8 +531,8 @@ function SurveyModal({ startDay, onClose }) {
   const progress = ((currentDayIndexInVisible * 2 + (currentMeal === 'lunch' ? 1 : 2)) / (visibleDays.length * 2)) * 100
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.82)', padding: 16, backdropFilter: 'blur(12px)', overflowY: 'auto' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: t.card, borderRadius: 32, padding: 22, maxWidth: 500, width: '100%', border: `1px solid ${t.borderActive}`, boxShadow: '0 28px 70px rgba(0,0,0,0.55)', maxHeight: '92vh', overflowY: 'auto' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.82)', padding: 16, backdropFilter: 'blur(12px)', overflowY: 'auto' }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: t.card, borderRadius: 32, padding: 22, maxWidth: 500, width: '100%', border: `1px solid ${t.borderActive}`, boxShadow: '0 28px 70px rgba(0,0,0,0.55)', maxHeight: '92vh', overflowY: 'auto', paddingBottom: 40 }}>
         {/* Progress bar */}
         <div style={{ height: 3, background: t.inputBg, borderRadius: 2, marginBottom: 16, overflow: 'hidden' }}>
           <div style={{ height: '100%', width: `${progress}%`, background: t.accentGrad, borderRadius: 2, transition: 'width 0.4s ease' }} />
@@ -519,7 +565,7 @@ function SurveyModal({ startDay, onClose }) {
 
         {editBlocked && (
           <div style={{ marginBottom: 12, padding: 11, borderRadius: 10, background: 'rgba(220,140,40,0.10)', border: '1px solid rgba(220,140,40,0.28)', color: '#d4882a', fontSize: 12, fontFamily: "'DM Sans',sans-serif" }}>
-            {!isEditable ? '⚠️ This meal is locked (less than 48h until serving) — view only.' : '⚠️ Edit limit reached (1 edit allowed post-window) — view only.'}
+            {!isEditable ? `⚠️ This meal is locked (${currentMeal === 'lunch' ? 'passed 11am' : 'passed 4pm'}) — view only.` : '⚠️ Edit limit reached — view only.'}
           </div>
         )}
 
@@ -540,9 +586,11 @@ function SurveyModal({ startDay, onClose }) {
           <div style={{ padding: 14, background: t.inputBg, borderRadius: 12, border: `1px solid ${t.border}` }}>
             <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{wantsFood ? 'Responded: Yes' : 'Responded: No (skipped)'}</p>
             {wantsFood && Object.entries(responses).map(([dish, val]) => (
-              <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: `1px solid ${t.border}` }}>
-                <span style={{ fontSize: 13, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{val === 'yes' ? '✅' : val === 'no' ? '❌' : `${val}%`}</span>
+              <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${t.border}` }}>
+                <span style={{ fontSize: 15, fontWeight: 500, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>
+                  {val === 'yes' ? '✅' : val === 'no' ? '❌' : (val === 0 ? '0%' : (val === 'Skipped' ? 'SKIP' : `${val}%`))}
+                </span>
               </div>
             ))}
           </div>
@@ -574,10 +622,10 @@ function SurveyModal({ startDay, onClose }) {
                     ))}
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', gap: 5 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
                     {[0, 25, 50, 100].map(pct => (
                       <button key={pct} onClick={() => setResponses(prev => ({ ...prev, [dish]: pct }))}
-                        style={{ flex: 1, padding: '7px 2px', borderRadius: 9, border: `1.5px solid ${responses[dish] === pct ? t.accent : t.border}`, background: responses[dish] === pct ? t.accentBg : 'transparent', color: responses[dish] === pct ? t.accent : t.text, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>
+                        style={{ padding: '16px 4px', borderRadius: 14, border: `2px solid ${responses[dish] === pct ? t.accent : t.border}`, background: responses[dish] === pct ? t.accentBg : 'transparent', color: responses[dish] === pct ? t.accent : t.text, fontSize: 18, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: '0.2s' }}>
                         {pct}%
                       </button>
                     ))}
@@ -602,7 +650,7 @@ function SurveyModal({ startDay, onClose }) {
 // DAILY SURVEY MODAL (NEW)
 // ══════════════════════════════════════════════════════════════
 function DailySurveyModal({ onClose }) {
-  const t = useTheme()
+  const t = THEMES.bright
   const { user } = useAuth()
   const weeklyMenu = useWeeklyMenu() || {}
   const [step, setStep] = useState(1) // 1: Lunch Yes/No, 2: Lunch Dishes, 3: Dinner Yes/No, 4: Roti (if any), 5: Dinner Dishes
@@ -726,8 +774,8 @@ function DailySurveyModal({ onClose }) {
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.85)', padding: 'clamp(12px, 3vw, 24px)', backdropFilter: 'blur(15px)' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: t.card, borderRadius: 32, padding: 'clamp(18px, 4vw, 32px)', maxWidth: 500, width: '100%', border: `1.5px solid ${t.borderActive}`, boxShadow: '0 30px 80px rgba(0,0,0,0.6)', maxHeight: '90vh', overflowY: 'auto' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.85)', padding: 'clamp(12px, 3vw, 24px)', backdropFilter: 'blur(15px)' }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: t.card, borderRadius: 32, padding: 'clamp(18px, 4vw, 32px)', maxWidth: 500, width: '100%', border: `1.5px solid ${t.borderActive}`, boxShadow: '0 30px 80px rgba(0,0,0,0.6)', maxHeight: '90vh', overflowY: 'auto', paddingBottom: 40 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 40, height: 40, borderRadius: 12, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -830,14 +878,61 @@ function DailySurveyModal({ onClose }) {
 // THALI USER APP
 // ══════════════════════════════════════════════════════════════
 function ThaliUserApp() {
+  const { user } = useAuth()
   const [activeTab, setActiveTab] = useState('home')
   const [showDailySurvey, setShowDailySurvey] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('almawaid_theme') || 'dark')
   const t = THEMES[theme] || THEMES.dark
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [toastNotice, setToastNotice] = useState(null)
 
   useEffect(() => {
     updateSystemTheme(theme)
   }, [theme])
+
+  // ── Native Notification System (Supabase Realtime) ──
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+    const loadUnread = async () => {
+      if (!user) return
+      const lastRead = localStorage.getItem('almawaid_last_notice_read') || '1970-01-01T00:00:00.000Z'
+      const { count, error } = await supabase
+        .from('notices')
+        .select('*', { count: 'exact', head: true })
+        .or(`target_user_id.is.null,target_user_id.eq.${user.id}`)
+        .gt('created_at', lastRead)
+
+      if (!error) setUnreadCount(count || 0)
+    }
+    loadUnread()
+
+    const channel = supabase
+      .channel('global-notices')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notices' }, (payload) => {
+        const notice = payload.new
+        const isForMe = !notice.target_user_id || notice.target_user_id === user?.id
+
+        if (isForMe) {
+          setToastNotice(notice)
+          setUnreadCount(prev => prev + 1)
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(notice.title || 'Al-Mawaid Alert', {
+              body: notice.body || '', icon: '/al-mawaid.png', badge: '/al-mawaid.png'
+            })
+          }
+          setTimeout(() => setToastNotice(null), 8000)
+        }
+      })
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [user])
+
+  const markNotificationsRead = useCallback(() => {
+    localStorage.setItem('almawaid_last_notice_read', new Date().toISOString())
+    setUnreadCount(0)
+  }, [])
 
   const handleSetTheme = (id) => { setTheme(id); localStorage.setItem('almawaid_theme', id) }
 
@@ -847,7 +942,7 @@ function ThaliUserApp() {
   const tabs = [
     { id: 'home', label: 'Home', Icon: Home },
     { id: 'menu', label: 'Menu', Icon: Utensils },
-    { id: 'post', label: 'Requests', Icon: LogoIcon },
+    { id: 'post', label: 'Requests', Icon: FileText },
     { id: 'profile', label: 'Profile', Icon: User },
   ]
   const tabLabels = { home: 'AL-MAWAID', menu: 'WEEKLY MENU', survey: 'DAILY SURVEY', post: 'REQUESTS', profile: 'PROFILE' }
@@ -859,13 +954,23 @@ function ThaliUserApp() {
           <GeoBg t={t} />
           <div style={{ position: 'relative', zIndex: 1, maxWidth: 1200, margin: '0 auto', padding: '0 clamp(16px, 4vw, 32px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <img src="/al-mawaid.png" alt="" style={{ width: 22, height: 22, objectFit: 'contain', filter: 'drop-shadow(0 2px 6px rgba(196,156,90,0.5))' }} />
-                <span style={{ fontSize: 9, letterSpacing: '0.24em', textTransform: 'uppercase', color: t.textSub, opacity: .55, fontWeight: 700, fontFamily: "'DM Sans',sans-serif" }}>Al-Mawaid</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <img src="/al-mawaid.png" alt="" style={{ width: 26, height: 26, objectFit: 'contain', filter: 'drop-shadow(0 2px 8px rgba(196,156,90,0.5))' }} />
+                  <span style={{ fontSize: 10, letterSpacing: '0.2em', textTransform: 'uppercase', color: t.accent, fontWeight: 900, fontFamily: "'Cinzel', serif" }}>Al-Mawaid</span>
+                </div>
               </div>
-              <span style={{ fontSize: 10, color: t.textSub, opacity: .4, fontFamily: "'DM Sans',sans-serif" }}>
-                {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 10, color: t.textSub, opacity: .4, fontFamily: "'DM Sans',sans-serif" }}>
+                  {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </span>
+                <button onClick={() => setActiveTab('profile')} style={{ position: 'relative', background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                  <Bell size={18} color={unreadCount > 0 ? t.accent : t.textSub} style={{ opacity: unreadCount > 0 ? 1 : 0.5 }} />
+                  {unreadCount > 0 && (
+                    <div style={{ position: 'absolute', top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, background: '#e05555', color: '#fff', fontSize: 9, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', boxShadow: '0 2px 6px rgba(224,85,85,0.5)', animation: 'pulse 2s infinite' }}>{unreadCount > 9 ? '9+' : unreadCount}</div>
+                  )}
+                </button>
+              </div>
             </div>
             {activeTab === 'home' && (
               <div style={{ textAlign: 'center', marginBottom: 2 }}>
@@ -879,54 +984,50 @@ function ThaliUserApp() {
           {/* Header cleared by removing wave and reducing heights for mobile */}
         </header>
 
-        {activeTab === 'home' && <HomePage setActiveTab={setActiveTab} />}
+        {/* ── Toast Notification Popup ── */}
+        {toastNotice && (
+          <div
+            onClick={() => { setActiveTab('profile'); setToastNotice(null) }}
+            style={{
+              position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)',
+              width: 'calc(100% - 32px)', maxWidth: 400, zIndex: 10000,
+              background: 'rgba(20, 18, 12, 0.95)', border: `1.5px solid ${t.accentBorder}`,
+              borderRadius: 20, padding: 16, display: 'flex', gap: 14,
+              boxShadow: '0 20px 50px rgba(0,0,0,0.5)', cursor: 'pointer',
+              animation: 'slideDown 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+              backdropFilter: 'blur(20px)'
+            }}
+          >
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Bell size={20} color="#000" />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: t.accent, marginBottom: 2 }}>{toastNotice.title}</div>
+              <div style={{ fontSize: 12, color: t.textSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{toastNotice.body}</div>
+            </div>
+            <button onClick={(e) => { e.stopPropagation(); setToastNotice(null) }} style={{ background: 'none', border: 'none', color: t.textSub, padding: 4, cursor: 'pointer' }}>
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'home' && <HomePage setActiveTab={setActiveTab} setShowDailySurvey={setShowDailySurvey} />}
         {activeTab === 'menu' && <WeeklyMenuPage />}
 
         {activeTab === 'post' && <PostPage />}
-        {activeTab === 'profile' && <ProfilePage theme={theme} setTheme={handleSetTheme} />}
+        {activeTab === 'profile' && <ProfilePage theme={theme} setTheme={handleSetTheme} markRead={markNotificationsRead} />}
 
         {showDailySurvey && <DailySurveyModal onClose={() => { setShowDailySurvey(false); setActiveTab('home') }} />}
 
-        <nav className="mobile-bottom-nav" style={{
-          position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-          width: '100%', maxWidth: 1200, zIndex: 30, display: 'flex',
-          justifyContent: 'space-around', alignItems: 'center', 
-          padding: '12px 4px calc(12px + env(safe-area-inset-bottom, 0px))',
-          background: t.navBg, borderTop: `1px solid ${t.navBorder}`,
-          boxShadow: '0 -10px 40px rgba(0,0,0,0.25)',
-          borderRadius: '32px 32px 0 0'
-        }}>
+        <nav className="mobile-bottom-nav">
           {tabs.map(({ id, label, Icon }) => {
             const active = activeTab === id
             return (
-              <button key={id} onClick={() => {
-                if (id === 'survey') {
-                  setShowDailySurvey(true)
-                  return
-                }
-                setActiveTab(id)
-              }}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  gap: 6, padding: '2px 20px', position: 'relative',
-                  WebkitTapHighlightColor: 'transparent', transition: 'all 0.2s'
-                }}>
-                {active && <div style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', width: 36, height: 4, borderRadius: 6, background: t.accent, boxShadow: `0 0 12px ${t.accent}` }} />}
-                <div style={{
-                  width: 38, height: 38, borderRadius: 12, transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                  background: active ? t.accentBg : 'transparent',
-                  border: active ? `2px solid ${t.accentBorder}` : '2px solid transparent',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transform: active ? 'scale(1.15) translateY(-4px)' : 'scale(1)'
-                }}>
-                  <Icon size={22} color={active ? t.accent : '#FFF8E7'} strokeWidth={active ? 2.5 : 1.5} style={{ opacity: active ? 1 : .35 }} />
+              <button key={id} onClick={() => setActiveTab(id)} className={active ? 'active' : ''}>
+                <div>
+                  <Icon size={22} />
                 </div>
-                <span style={{
-                  fontSize: 8.5, fontWeight: 900, letterSpacing: '0.08em',
-                  color: active ? t.accent : '#FFF8E7', opacity: active ? 1 : .3,
-                  fontFamily: "'DM Sans',sans-serif", textTransform: 'uppercase'
-                }}>{label}</span>
+                <span>{label}</span>
               </button>
             )
           })}
@@ -940,12 +1041,14 @@ function ThaliUserApp() {
 // ══════════════════════════════════════════════════════════════
 // HOME PAGE (Thali User)
 // ══════════════════════════════════════════════════════════════
-function HomePage({ setActiveTab }) {
+function HomePage({ setActiveTab, setShowDailySurvey }) {
   const t = useTheme()
-  const weeklyMenu = useWeeklyMenu()
   const { user } = useAuth()
 
+  const [weeklyMenu, setWeeklyMenu] = useState(null)
+  const [menuLoading, setMenuLoading] = useState(true)
   const [showSurvey, setShowSurvey] = useState(false)
+  const [showQR, setShowQR] = useState(false)
   const [profileData, setProfileData] = useState({ name: '', thali_number: '', avatar_url: '' })
   const [statsLoading, setStatsLoading] = useState(true)
   const surveyOpen = isSurveyOpen()
@@ -963,11 +1066,16 @@ function HomePage({ setActiveTab }) {
   useEffect(() => { loadData() }, [user])
 
   const loadData = async () => {
+    setMenuLoading(true)
     try {
+      const { data: menu } = await supabase.from('weekly_menu').select('*').order('week_start', { ascending: false }).limit(1)
+      setWeeklyMenu(menu?.[0] || null)
+
       const { data } = await supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle()
       if (data) setProfileData({ name: data.name || '', thali_number: data.thali_number || '', avatar_url: data.avatar_url || '' })
     } catch { }
     setStatsLoading(false)
+    setMenuLoading(false)
   }
 
   const handleSubmitCombined = async () => {
@@ -987,12 +1095,13 @@ function HomePage({ setActiveTab }) {
   }
 
   const currentWeekId = getWeekDate()
-  const isAnyMealEditable = DAYS.some(d => canEditMeal(d, currentWeekId))
+  // Any meal editable in the current week?
+  const isAnyMealEditable = DAYS.some(d => canEditMeal(d, currentWeekId, 'lunch') || canEditMeal(d, currentWeekId, 'dinner'))
 
-  if (!weeklyMenu) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
+  if (menuLoading) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
 
   return (
-    <main style={{ flex: 1, padding: '16px 16px 96px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       {/* Profile strip */}
       <Card active style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, padding: '14px 16px', borderRadius: 18, position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: -20, left: -20, width: 80, height: 80, background: t.accentGrad, borderRadius: '50%', filter: 'blur(40px)', opacity: 0.08 }} />
@@ -1001,7 +1110,23 @@ function HomePage({ setActiveTab }) {
           <div style={{ fontSize: 19, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>{profileData?.name || 'Thali User'}</div>
           <div style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 2 }}>Thali #{profileData?.thali_number || '—'}</div>
         </div>
+        <button onClick={() => setShowQR(true)} style={{ background: t.accentBg, border: `1px solid ${t.accentBorder}`, borderRadius: 12, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 2, position: 'relative' }}>
+          <QrCode size={22} color={t.accent} />
+        </button>
       </Card>
+
+      {showQR && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, backdropFilter: 'blur(10px)' }} onClick={() => setShowQR(false)}>
+          <div style={{ background: '#fff', padding: 32, borderRadius: 32, textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 20px', color: '#000', fontSize: 22, fontWeight: 800, fontFamily: "'Playfair Display',serif" }}>Member ID</h3>
+            <div style={{ padding: 16, background: '#fff', borderRadius: 20, border: '2px solid #f0f0f0', display: 'inline-block' }}>
+               <QRCodeCanvas value={`ALMAWAID:${user.id}`} size={220} level="H" />
+            </div>
+            <div style={{ marginTop: 20, fontSize: 18, fontWeight: 800, color: '#000', fontFamily: "'DM Sans',sans-serif" }}>#{profileData?.thali_number}</div>
+            <button onClick={() => setShowQR(false)} style={{ marginTop: 24, padding: '12px 32px', borderRadius: 16, background: '#000', color: '#fff', border: 'none', fontWeight: 700, cursor: 'pointer', fontSize: 16, fontFamily: "'DM Sans',sans-serif", width: '100%' }}>Close</button>
+          </div>
+        </div>
+      )}
 
       {/* Weekly Survey Section */}
       <Card organic style={{
@@ -1019,7 +1144,7 @@ function HomePage({ setActiveTab }) {
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? 'SURVEY LIVE' : (isAnyMealEditable ? 'EDITING WINDOW' : 'SURVEY CLOSED')}</div>
             </div>
             <div style={{ fontSize: 24, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>Weekly Food Survey</div>
-            <div style={{ fontSize: 13, color: t.textSub, marginTop: 8, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? getSurveyWindowMessage() : (isAnyMealEditable ? 'You can still edit upcoming meals (48h rule).' : 'Survey is closed for this week.')}</div>
+            <div style={{ fontSize: 13, color: t.textSub, marginTop: 8, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? getSurveyWindowMessage() : (isAnyMealEditable ? 'You can still edit upcoming meals (Today: L < 11am, D < 4pm).' : 'Survey is closed for this week.')}</div>
           </div>
 
           <button
@@ -1034,7 +1159,7 @@ function HomePage({ setActiveTab }) {
               fontFamily: "'DM Sans',sans-serif"
             }}
           >
-            <ClipboardList size={18} /> {surveyOpen ? 'Start Survey' : 'Edit Responses'}
+            <ClipboardList size={18} /> {surveyOpen ? 'Start Weekly Survey' : 'Edit Response'}
           </button>
         </div>
       </Card>
@@ -1043,7 +1168,7 @@ function HomePage({ setActiveTab }) {
       {/* Daily Feedback Section */}
       <Card organic style={{ marginBottom: 24 }}>
         <div style={{ position: 'absolute', top: -30, right: -30, width: 150, height: 150, background: t.accentGrad, borderRadius: '50%', filter: 'blur(60px)', opacity: 0.12 }} />
-        
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
           <div style={{ width: 36, height: 36, borderRadius: 10, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 4px 15px ${t.accentBg}` }}><Utensils size={16} color="#fff" /></div>
           <div style={{ fontSize: 18, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif" }}>Today's Menu & Feedback</div>
@@ -1063,8 +1188,8 @@ function HomePage({ setActiveTab }) {
               <div key={meal} style={{ background: 'rgba(255, 255, 255, 0.03)', padding: 20, borderRadius: 20, border: `1px solid ${stars > 0 ? t.accentBorder : t.border}`, transition: 'border-color 0.3s', boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.05), 0 8px 20px rgba(0,0,0,0.1)' }}>
                 {/* Menu Part */}
                 <div style={{ marginBottom: 16 }}>
-                   <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: 6 }}><Icon size={14}/> {meal} Menu</div>
-                   <div style={{ fontSize: 16, fontWeight: 600, color: t.textBody }}>{menuText}</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', gap: 6 }}><Icon size={14} /> {meal} Menu</div>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: t.textBody }}>{menuText}</div>
                 </div>
 
                 <hr style={{ border: 'none', borderTop: `1px solid ${t.border}`, margin: '0 0 16px' }} />
@@ -1125,7 +1250,7 @@ function WeeklyMenuPage() {
   }
 
   return (
-    <main style={{ flex: 1, padding: '16px 16px 100px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       {/* Dynamic Header with Dropdown */}
       <div style={{
         marginBottom: 24, padding: '24px', borderRadius: 32,
@@ -1287,7 +1412,7 @@ function PostPage() {
   const t = useTheme()
   const [subTab, setSubTab] = useState('requests')
   return (
-    <main style={{ flex: 1, padding: '16px 16px 100px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', gap: 6, marginBottom: 18, background: t.card, borderRadius: 13, padding: 5, border: `1px solid ${t.border}` }}>
         {[{ id: 'requests', label: '📋 Requests' }, { id: 'queries', label: '❓ Queries' }].map(({ id, label }) => (
           <button key={id} onClick={() => setSubTab(id)}
@@ -1420,6 +1545,63 @@ function ThaliRequestsSection() {
           </div>
         )}
       </RCard>
+
+      <div style={{ marginTop: 24 }}>
+        <SectionLabel>Recent Requests</SectionLabel>
+        <RecentRequestsList />
+      </div>
+    </div>
+  )
+}
+
+function RecentRequestsList() {
+  const t = useTheme(), { user } = useAuth()
+  const [requests, setRequests] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetch = async () => {
+      // Fetch more than needed to account for filtering
+      const { data } = await supabase.from('thali_requests')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(15)
+
+      const now = new Date()
+      const filtered = (data || []).filter(r => {
+        if (r.status === 'pending' || !r.status) return true
+        const updateTime = new Date(r.updated_at || r.created_at)
+        const diffHours = (now - updateTime) / (1000 * 60 * 60)
+        return diffHours < 24
+      }).slice(0, 5)
+
+      setRequests(filtered)
+      setLoading(false)
+    }
+    fetch()
+  }, [user.id])
+
+  const statusColor = (s) => s === 'pending' ? '#d4882a' : s === 'approved' ? '#5eba82' : '#e05555'
+
+  if (loading) return <Spinner />
+  if (requests.length === 0) return <div style={{ textAlign: 'center', padding: 20, color: t.textSub, fontSize: 13, opacity: 0.6 }}>No recent requests.</div>
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {requests.map(r => (
+        <div key={r.id} style={{ padding: 14, borderRadius: 14, background: t.card, border: `1px solid ${t.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>
+              {r.request_type === 'resume' ? '▶️ Resume' : r.request_type === 'stop' ? '⏹️ Stop' : r.request_type === 'extra' ? '➕ Extra' : '🕌 Miqaat'}
+            </div>
+            <div style={{ fontSize: 11, color: t.textSub, marginTop: 2, fontFamily: "'DM Sans',sans-serif" }}>{new Date(r.created_at).toLocaleDateString()}</div>
+          </div>
+          <div style={{ fontSize: 10, fontWeight: 800, padding: '4px 10px', borderRadius: 20, background: `${statusColor(r.status)}15`, color: statusColor(r.status), border: `1px solid ${statusColor(r.status)}30`, textTransform: 'uppercase' }}>
+            {r.status || 'PENDING'}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -1433,12 +1615,33 @@ function QueriesSection() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [helpline, setHelpline] = useState('')
   const fileInputRef = useRef(null)
-  const almawaidHelplineWhatsApp = '917737151253'
+
+  useEffect(() => {
+    supabase.from('app_settings').select('*').eq('key', 'helpline_number').maybeSingle()
+      .then(({ data }) => { if (data) setHelpline(data.value) })
+  }, [])
 
   useEffect(() => { loadQueries() }, [])
   const loadQueries = async () => {
-    try { const { data } = await supabase.from('queries').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20); setQueries(data || []) } catch { } finally { setLoading(false) }
+    try {
+      const { data } = await supabase.from('queries')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(30)
+
+      const now = new Date()
+      const filtered = (data || []).filter(q => {
+        if (q.status === 'open' || !q.status) return true
+        const updateTime = new Date(q.updated_at || q.created_at)
+        const diffHours = (now - updateTime) / (1000 * 60 * 60)
+        return diffHours < 24
+      }).slice(0, 20)
+
+      setQueries(filtered)
+    } catch { } finally { setLoading(false) }
   }
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files).filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'))
@@ -1458,22 +1661,31 @@ function QueriesSection() {
         const { error: upErr } = await supabase.storage.from('query-media').upload(path, item.file)
         if (!upErr) { const { data: urlData } = supabase.storage.from('query-media').getPublicUrl(path); uploadedUrls.push({ type: item.type, name: item.file.name, path: urlData.publicUrl }) }
       }
-      const { error: dbErr } = await supabase.from('queries').insert([{ user_id: user.id, comment: comment.trim(), media: uploadedUrls, status: 'open' }])
+      const { error: dbErr } = await supabase.from('queries').insert([{
+        user_id: user.id,
+        subject: comment.substring(0, 50) + (comment.length > 50 ? '...' : ''),
+        comment: comment.trim(),
+        media: uploadedUrls,
+        status: 'open'
+      }])
       if (dbErr) throw dbErr
       setSuccess('✅ Query submitted! Our team will respond shortly.')
       setComment(''); setMediaFiles([]); loadQueries()
     } catch (err) { setError(err.message) } finally { setSubmitting(false) }
   }
   const statusColor = s => s === 'open' ? '#d4882a' : s === 'resolved' ? '#5eba82' : '#7aabb8'
-  const buildQueryShareLink = (query) => {
-    const lines = ['Assalamualaikum Al-Mawaid,', 'I want to share my query details.', `Status: ${(query.status || 'open').toUpperCase()}`, `Query: ${query.comment ? (query.comment) : (query.media?.length ? 'Media attached' : 'No comment')}`, `Created on: ${new Date(query.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`]
-    return `https://wa.me/${almawaidHelplineWhatsApp}?text=${encodeURIComponent(lines.join('\n'))}`
-  }
 
   return (
     <div>
       <Card style={{ marginBottom: 18 }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: t.accent, marginBottom: 12, fontFamily: "'Playfair Display',serif" }}>✉️ New Query</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif" }}>✉️ New Query</div>
+          {helpline && (
+            <a href={`https://wa.me/${helpline.replace(/[^\d]/g, '')}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', borderRadius: 20, background: '#25D366', color: '#fff', fontSize: 10, fontWeight: 800, textDecoration: 'none', boxShadow: '0 4px 10px rgba(37,211,102,0.2)' }}>
+              <MessageCircle size={12} /> WhatsApp Helpline
+            </a>
+          )}
+        </div>
         <textarea value={comment} onChange={e => setComment(e.target.value)} style={{ width: '100%', minHeight: 78, padding: 12, borderRadius: 11, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 14, resize: 'vertical', outline: 'none', fontFamily: "'DM Sans',sans-serif", marginBottom: 10 }} placeholder="Describe your query or issue…" />
         {mediaFiles.length > 0 && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
@@ -1503,7 +1715,7 @@ function QueriesSection() {
               <span style={{ display: 'block', fontSize: 11, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginBottom: 4 }}>{new Date(q.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
               <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 9px', borderRadius: 20, background: `${statusColor(q.status)}20`, color: statusColor(q.status), border: `1px solid ${statusColor(q.status)}38`, fontFamily: "'DM Sans',sans-serif" }}>{q.status?.toUpperCase()}</span>
             </div>
-            <a href={buildQueryShareLink(q)} target="_blank" rel="noreferrer" style={{ width: 38, height: 38, borderRadius: 12, background: 'linear-gradient(135deg,#25D366,#128C7E)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', flexShrink: 0, boxShadow: '0 8px 18px rgba(18,140,126,0.22)' }}><WhatsAppLogo size={18} /></a>
+
           </div>
           {q.comment && <p style={{ margin: '0 0 8px', fontSize: 14, color: t.textBody, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>{q.comment}</p>}
           {q.media && q.media.length > 0 && (
@@ -1521,12 +1733,12 @@ function QueriesSection() {
 // ══════════════════════════════════════════════════════════════
 // PROFILE PAGE (Member)
 // ══════════════════════════════════════════════════════════════
-function ProfilePage({ theme, setTheme }) {
+function ProfilePage({ theme, setTheme, markRead }) {
   const [activeSubPage, setActiveSubPage] = useState('main')
   if (activeSubPage === 'surveys') return <MySurveysPage onBack={() => setActiveSubPage('main')} />
   if (activeSubPage === 'requests') return <MyRequestsPage onBack={() => setActiveSubPage('main')} />
   if (activeSubPage === 'khidmat') return <KhidmatTeamPage onBack={() => setActiveSubPage('main')} />
-  if (activeSubPage === 'notifications') return <NotificationsPage onBack={() => setActiveSubPage('main')} />
+  if (activeSubPage === 'notifications') return <NotificationsPage onBack={() => setActiveSubPage('main')} markRead={markRead} />
   if (activeSubPage === 'support') return <SupportTicketsPage onBack={() => setActiveSubPage('main')} />
   if (activeSubPage === 'about') return <AboutPage onBack={() => setActiveSubPage('main')} />
   if (activeSubPage === 'reset_password') return <ResetPasswordPage onBack={() => setActiveSubPage('main')} />
@@ -1537,6 +1749,7 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
   const t = useTheme(), { user, signOut } = useAuth()
   const [profileData, setProfileData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [showQR, setShowQR] = useState(false)
   useEffect(() => { supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle().then(({ data }) => { if (data) setProfileData(data) }).finally(() => setLoading(false)) }, [])
 
   const NavCard = ({ label, icon, desc, onClick }) => (
@@ -1552,7 +1765,7 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
 
   if (loading) return <Spinner />
   return (
-    <main style={{ flex: 1, padding: '16px 16px 96px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       <Card active style={{ textAlign: 'center', marginBottom: 20 }}>
         <div style={{ width: 84, height: 84, margin: '0 auto 14px' }}><Avatar avatarUrl={profileData?.avatar_url} name={profileData?.name} email={user.email} size={84} /></div>
         <h2 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700, color: t.text, fontFamily: "'Playfair Display',serif" }}>{profileData?.name || 'Thali User'}</h2>
@@ -1564,9 +1777,10 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
         <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 10, background: t.accentBg, border: `1px solid ${t.accentBorder}`, fontSize: 12, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>ℹ️ To update your profile details, contact an admin.</div>
       </Card>
       <SectionLabel>My Activity</SectionLabel>
+      <NavCard label="My Identity QR" icon={<QrCode size={19} color="#fff" />} desc="Show your QR code for thali collection" onClick={() => setShowQR(true)} />
       <NavCard label="My Surveys" icon={<ClipboardList size={19} color="#fff" />} desc="View your weekly survey responses" onClick={() => onNav('surveys')} />
       <NavCard label="My Requests" icon={<img src="/al-mawaid.png" alt="" style={{ width: 22, height: 22, objectFit: 'contain' }} />} desc="Resume, stop & extra food requests" onClick={() => onNav('requests')} />
-      <NavCard label="Khidmat Guzaar" icon={<Users size={19} color="#fff" />} desc="Meet our service team" onClick={() => onNav('khidmat')} />
+      <NavCard label="Khidmat Guzaar" icon={<Users size={19} color="#fff" />} desc="Meet our Al-Mawaid team" onClick={() => onNav('khidmat')} />
       <NavCard label="Alerts" icon={<Bell size={19} color="#fff" />} desc="See notices and important updates" onClick={() => onNav('notifications')} />
       <NavCard label="Support Ticket" icon={<LifeBuoy size={19} color="#fff" />} desc="Raise general, thali, and delivery issues" onClick={() => onNav('support')} />
       <NavCard label="About" icon={<Info size={19} color="#fff" />} desc="Learn more about the app and services" onClick={() => onNav('about')} />
@@ -1586,9 +1800,42 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
           ))}
         </div>
       </div>
-      <button onClick={signOut} style={{ width: '100%', padding: 14, borderRadius: 13, border: '1px solid rgba(220,60,60,0.28)', background: 'rgba(220,60,60,0.07)', color: '#e05555', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: "'DM Sans',sans-serif" }}>
-        <LogOut size={15} /> Sign Out
-      </button>
+      <div style={{ marginTop: 24, marginBottom: 40, paddingBottom: 20 }}>
+        <SectionLabel>Account</SectionLabel>
+        <button
+          onClick={signOut}
+          style={{
+            width: '100%', padding: '18px', borderRadius: 20,
+            border: 'none',
+            background: 'linear-gradient(135deg, #ff5c5c, #d93636)',
+            color: '#fff', fontSize: 16, fontWeight: 900, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
+            fontFamily: "'DM Sans',sans-serif", transition: 'all 0.3s',
+            boxShadow: '0 8px 25px rgba(217, 54, 54, 0.4)',
+            textTransform: 'uppercase', letterSpacing: '0.05em'
+          }}
+          onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+          onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+        >
+          <LogOut size={20} strokeWidth={3} /> Logout from Al-Mawaid
+        </button>
+      </div>
+
+      {showQR && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)', zIndex: 5000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <Card style={{ width: '100%', maxWidth: 360, textAlign: 'center', padding: 32, position: 'relative' }}>
+            <button onClick={() => setShowQR(false)} style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', color: t.textSub, cursor: 'pointer' }}><X size={20}/></button>
+            <div style={{ fontSize: 12, fontWeight: 900, color: t.accent, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 20 }}>Member Identity</div>
+            <div style={{ background: '#fff', padding: 20, borderRadius: 24, display: 'inline-block', marginBottom: 24, boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }}>
+              <QRCodeCanvas value={`ALMAWAID:${user.id}`} size={200} level="H" />
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif" }}>{profileData?.name}</div>
+            <div style={{ fontSize: 14, color: t.accent, fontWeight: 700, marginTop: 4 }}>Thali #{profileData?.thali_number}</div>
+            <p style={{ fontSize: 12, color: t.textSub, marginTop: 16, lineHeight: 1.5 }}>Present this code at the distribution counter to verify your thali collection status.</p>
+            <Btn style={{ width: '100%', marginTop: 24, borderRadius: 14 }} onClick={() => setShowQR(false)}>Close</Btn>
+          </Card>
+        </div>
+      )}
     </main>
   )
 }
@@ -1630,7 +1877,7 @@ function MySurveysPage({ onBack }) {
       }).finally(() => setLoading(false))
   }, [weeklyMenu])
   return (
-    <main style={{ flex: 1, padding: '16px 16px 96px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{ flex: 1, padding: '16px 16px 160px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       <BackHeader title="My Surveys" onBack={onBack} />
       {loading ? <Spinner /> : DAYS.map(day => {
         const dayData = surveys[day]; if (!dayData) return null
@@ -1670,20 +1917,28 @@ function MyRequestsPage({ onBack }) {
   const t = useTheme(), { user } = useAuth()
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
-  const almawaidHelplineWhatsApp = '911234567890'
-  useEffect(() => { supabase.from('thali_requests').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).then(({ data }) => setRequests(data || [])).finally(() => setLoading(false)) }, [])
-  const statusColor = s => s === 'pending' ? '#d4882a' : s === 'approved' ? '#5eba82' : '#e05555'
-  const typeLabel = tp => tp === 'resume' ? '▶️ Resume' : tp === 'stop' ? '⏹️ Stop' : '➕ Extra Food'
-  const buildShareLink = (r) => {
-    const lines = ['Assalamualaikum Al-Mawaid,', 'I want to share my request details.', `Request type: ${typeLabel(r.request_type)}`, `Status: ${(r.status || 'pending').toUpperCase()}`]
-    if (r.from_date) lines.push(`Dates: ${r.from_date} to ${r.to_date}`)
-    if (r.extra_items?.length) lines.push(`Items: ${r.extra_items.map(i => `${i.name} x${i.qty}`).join(', ')}`)
-    if (r.admin_note) lines.push(`Admin note: ${r.admin_note}`)
-    lines.push(`Created on: ${new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`)
-    return `https://wa.me/${almawaidHelplineWhatsApp}?text=${encodeURIComponent(lines.join('\n'))}`
+
+  useEffect(() => {
+    const fetchRequests = async () => {
+      const { data, error } = await supabase
+        .from('thali_requests')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+      if (!error) setRequests(data || [])
+      setLoading(false)
+    }
+    fetchRequests()
+  }, [user.id])
+
+  const typeLabel = (type) => {
+    const labels = { resume: '▶️ Resume Thali', stop: '⏹️ Stop Thali', miqaat: '🕌 Miqaat Pirsu', extra: '➕ Extra Food' }
+    return labels[type] || type
   }
+  const statusColor = (s) => s === 'pending' ? '#d4882a' : s === 'approved' ? '#5eba82' : '#e05555'
+
   return (
-    <main style={{ flex: 1, padding: '16px 16px 96px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{ flex: 1, padding: '16px 16px 160px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       <BackHeader title="My Requests" onBack={onBack} />
       {loading ? <Spinner /> : requests.length === 0 ? <EmptyState msg="No requests yet." /> : requests.map(r => (
         <Card key={r.id} style={{ marginBottom: 10 }}>
@@ -1692,10 +1947,10 @@ function MyRequestsPage({ onBack }) {
               <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{typeLabel(r.request_type)}</div>
               <span style={{ display: 'inline-flex', marginTop: 6, fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: `${statusColor(r.status)}20`, color: statusColor(r.status), border: `1px solid ${statusColor(r.status)}40`, fontFamily: "'DM Sans',sans-serif" }}>{r.status?.toUpperCase()}</span>
             </div>
-            <a href={buildShareLink(r)} target="_blank" rel="noreferrer" style={{ width: 38, height: 38, borderRadius: 12, background: 'linear-gradient(135deg,#25D366,#128C7E)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', flexShrink: 0, boxShadow: '0 8px 18px rgba(18,140,126,0.22)' }}><WhatsAppLogo size={18} /></a>
           </div>
           {r.from_date && <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{r.from_date} → {r.to_date}</div>}
           {r.extra_items && <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{r.extra_items.map(i => `${i.name} x${i.qty}`).join(', ')}</div>}
+          {r.details && <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{r.details}</div>}
           {r.admin_note && <div style={{ marginTop: 8, fontSize: 12, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>Note: {r.admin_note}</div>}
           <div style={{ fontSize: 10, color: t.textSub, marginTop: 6, opacity: .5, fontFamily: "'DM Sans',sans-serif" }}>{new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
         </Card>
@@ -1707,14 +1962,44 @@ function MyRequestsPage({ onBack }) {
 function KhidmatTeamPage({ onBack }) {
   const t = useTheme()
   const [staff, setStaff] = useState([])
+  const [helpline, setHelpline] = useState('')
   const [loading, setLoading] = useState(true)
-  useEffect(() => { supabase.from('khidmat_guzaar').select('*').order('sort_order', { ascending: true }).then(({ data }) => setStaff(data || [])).finally(() => setLoading(false)) }, [])
+  useEffect(() => {
+    Promise.all([
+      supabase.from('khidmat_guzaar').select('*').order('sort_order', { ascending: true }),
+      supabase.from('app_settings').select('*').eq('key', 'helpline_number').maybeSingle()
+    ]).then(([{ data: staffData }, { data: helpData }]) => {
+      setStaff(staffData || [])
+      if (helpData) setHelpline(helpData.value)
+    }).finally(() => setLoading(false))
+  }, [])
   return (
-    <main style={{ flex: 1, padding: '16px 16px 96px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       <BackHeader title="Khidmat Guzaar" onBack={onBack} />
-      <div style={{ marginBottom: 16, padding: '11px 14px', borderRadius: 12, background: t.accentBg, border: `1px solid ${t.accentBorder}`, fontSize: 13, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>🤝 Our dedicated service team — the ones who make every meal possible.</div>
+      
+      {helpline && (
+        <Card active style={{ marginBottom: 16, border: `2px solid ${t.accent}`, background: `${t.accent}10` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 60, height: 60, borderRadius: 16, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 8px 20px ${t.accent}40` }}>
+              <Phone size={30} color="#fff" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif" }}>Al Mawaid Helpline</div>
+              <div style={{ fontSize: 12, color: t.textSub, marginTop: 2 }}>For any queries or assistance</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: t.text, marginTop: 4 }}>{helpline}</div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+             <a href={`https://wa.me/${helpline.replace(/[^\d]/g, '')}`} target="_blank" rel="noreferrer" style={{ flex: 1, padding: '12px', borderRadius: 14, background: '#25D366', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, textDecoration: 'none', fontSize: 14, fontWeight: 800, boxShadow: '0 8px 20px rgba(37,211,102,0.3)' }}>
+               <MessageCircle size={18} /> WhatsApp Helpline
+             </a>
+          </div>
+        </Card>
+      )}
+
+      <div style={{ marginBottom: 16, padding: '11px 14px', borderRadius: 12, background: t.accentBg, border: `1px solid ${t.accentBorder}`, fontSize: 13, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>meet our Al-Mawaid Team</div>
       {loading ? <Spinner /> : staff.length === 0 ? <EmptyState msg="No staff profiles available." /> : staff.map(member => {
-        const rawPhone = member.phone || '', actionPhone = rawPhone.replace(/[^\d+]/g, ''), whatsappPhone = actionPhone.replace(/^\+/, '')
+        const rawPhone = member.phone || '', actionPhone = rawPhone.replace(/[^\d+]/g, '')
         return (
           <Card key={member.id} active style={{ marginBottom: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -1729,7 +2014,7 @@ function KhidmatTeamPage({ onBack }) {
             {actionPhone && (
               <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
                 <a href={`tel:${actionPhone}`} style={{ flex: 1, padding: '10px', borderRadius: 12, background: t.accentGrad, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none', fontSize: 13, fontWeight: 700, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}><Phone size={16} /> Call</a>
-                <a href={`https://wa.me/${whatsappPhone}`} target="_blank" rel="noreferrer" style={{ flex: 1, padding: '10px', borderRadius: 12, background: 'linear-gradient(135deg,#25D366,#128C7E)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none', fontSize: 13, fontWeight: 700, boxShadow: '0 4px 12px rgba(18,140,126,0.2)' }}><WhatsAppLogo size={16} /> WhatsApp</a>
+                <a href={`https://wa.me/${actionPhone.replace(/[^\d]/g, '')}`} target="_blank" rel="noreferrer" style={{ flex: 1, padding: '10px', borderRadius: 12, background: 'rgba(37,211,102,0.1)', color: '#25D366', border: '1px solid rgba(37,211,102,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none', fontSize: 13, fontWeight: 700 }}><MessageCircle size={16} /> WhatsApp</a>
               </div>
             )}
           </Card>
@@ -1739,7 +2024,7 @@ function KhidmatTeamPage({ onBack }) {
   )
 }
 
-function NotificationsPage({ onBack }) {
+function NotificationsPage({ onBack, markRead }) {
   const t = useTheme(), { user } = useAuth()
   const [notices, setNotices] = useState([])
   const [loading, setLoading] = useState(true)
@@ -1757,15 +2042,18 @@ function NotificationsPage({ onBack }) {
 
       setNotices(data || [])
       setLoading(false)
+
+      // Mark as read when page is viewed
+      if (markRead) markRead()
     }
     fetchNotices()
-  }, [user.id])
+  }, [user.id, markRead])
 
   const staticNotices = [
     { id: 'survey-window', title: 'Weekly Survey Window', body: isSurveyOpen() ? 'Your weekly meal survey is open now. Please submit lunch and dinner choices on time.' : getSurveyWindowMessage(), tone: t.accent },
   ]
   return (
-    <main style={{ flex: 1, padding: '16px 16px 96px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       {onBack && <BackHeader title="Alerts" onBack={onBack} />}
       <SectionLabel>System Alerts</SectionLabel>
       {staticNotices.map(item => (
@@ -1824,8 +2112,23 @@ function SupportTicketsPage({ onBack }) {
   useEffect(() => { loadTickets() }, [])
   const loadTickets = async () => {
     try {
-      const { data } = await supabase.from('queries').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20)
-      setTickets((data || []).filter(item => (item.comment || '').startsWith('[Support Ticket]')))
+      const { data } = await supabase.from('queries')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(30)
+
+      const now = new Date()
+      const filtered = (data || []).filter(item => {
+        const isTicket = (item.comment || '').startsWith('[Support Ticket]')
+        if (!isTicket) return false
+        if (item.status === 'open' || !item.status) return true
+        const updateTime = new Date(item.updated_at || item.created_at)
+        const diffHours = (now - updateTime) / (1000 * 60 * 60)
+        return diffHours < 24
+      }).slice(0, 20)
+
+      setTickets(filtered)
     } catch { } finally { setLoading(false) }
   }
   const handleSubmit = async () => {
@@ -1833,7 +2136,13 @@ function SupportTicketsPage({ onBack }) {
     if (!details.trim()) return setError('Please describe your problem')
     setError(''); setSuccess(''); setSubmitting(true)
     try {
-      const { error: dbErr } = await supabase.from('queries').insert([{ user_id: user.id, comment: `[Support Ticket]\nType: ${ticketType}\nSubject: ${subject.trim()}\nIssue: ${details.trim()}`, media: [], status: 'open' }])
+      const { error: dbErr } = await supabase.from('queries').insert([{
+        user_id: user.id,
+        subject: subject.trim(),
+        comment: `[Support Ticket] Type: ${ticketType}\n\n${details.trim()}`,
+        media: [],
+        status: 'open'
+      }])
       if (dbErr) throw dbErr
       setSuccess('Support ticket submitted successfully.')
       setSubject(''); setDetails(''); setTicketType('general'); loadTickets()
@@ -1841,7 +2150,7 @@ function SupportTicketsPage({ onBack }) {
   }
 
   return (
-    <main style={{ flex: 1, padding: '16px 16px 96px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       {onBack && <BackHeader title="Support Ticket" onBack={onBack} />}
       <Card active style={{ marginBottom: 18 }}>
         <div style={{ fontSize: 18, fontWeight: 700, color: t.accent, marginBottom: 6, fontFamily: "'Playfair Display',serif" }}>Raise a Support Ticket</div>
@@ -1883,7 +2192,7 @@ function AboutPage({ onBack }) {
     { title: 'Need Assistance?', body: 'Use the Support tab or the Support Ticket option inside your profile to contact the team.' },
   ]
   return (
-    <main style={{ flex: 1, padding: '16px 16px 96px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       {onBack && <BackHeader title="About" onBack={onBack} />}
       {aboutCards.map(card => (
         <Card key={card.title} style={{ marginBottom: 12 }}>
@@ -1914,7 +2223,7 @@ function ResetPasswordPage({ onBack }) {
     catch (err) { setError(err.message) } finally { setLoading(false) }
   }
   return (
-    <main style={{ flex: 1, padding: '16px 16px 96px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       {onBack && <BackHeader title="Reset Password" onBack={onBack} />}
       <Card>
         <form onSubmit={handleReset}>
@@ -1949,44 +2258,50 @@ function ResetPasswordPage({ onBack }) {
 export default function App() {
   const [session, setSession] = useState(undefined)
   const [mockUser, setMockUser] = useState(() => {
-    const saved = sessionStorage.getItem('al_mawaid_mock_user')
+    const saved = localStorage.getItem('al_mawaid_mock_user')
     return saved ? JSON.parse(saved) : null
   })
-  const [portalRole, setPortalRole] = useState(() => sessionStorage.getItem('al_mawaid_portal') || null)
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_evt, sess) => {
-      setSession(sess)
-      if (!sess) {
-        setPortalRole(null);
-        setMockUser(null);
-        sessionStorage.removeItem('al_mawaid_portal')
-        sessionStorage.removeItem('al_mawaid_mock_user')
-      }
-    })
-    return () => subscription.unsubscribe()
-  }, [])
+  const [portalRole, setPortalRole] = useState(() => localStorage.getItem('al_mawaid_portal') || null)
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut()
     setPortalRole(null)
     setMockUser(null)
-    sessionStorage.removeItem('al_mawaid_portal')
-    sessionStorage.removeItem('al_mawaid_mock_user')
+    localStorage.removeItem('al_mawaid_portal')
+    localStorage.removeItem('al_mawaid_mock_user')
   }, [])
 
-  // Push notifications removed
-
-
   const handleRoleLogin = useCallback((role, sess) => {
-    sessionStorage.setItem('al_mawaid_portal', role)
+    localStorage.setItem('al_mawaid_portal', role)
     if (role === 'inventory_manager' && sess?.user) {
-      sessionStorage.setItem('al_mawaid_mock_user', JSON.stringify(sess.user))
+      localStorage.setItem('al_mawaid_mock_user', JSON.stringify(sess.user))
       setMockUser(sess.user)
     }
     setPortalRole(role)
   }, [])
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error && error.message?.includes('Refresh Token Not Found')) {
+        console.warn('[Auth] Refresh token missing, signing out...');
+        signOut();
+      } else {
+        setSession(session)
+      }
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_evt, sess) => {
+      setSession(sess)
+      if (!sess) {
+        setPortalRole(null);
+        setMockUser(null);
+        localStorage.removeItem('al_mawaid_portal')
+        localStorage.removeItem('al_mawaid_mock_user')
+      }
+    })
+    return () => subscription.unsubscribe()
+  }, [signOut])
+
+  // Push notifications removed
 
   if (session === undefined && !mockUser) {
     return (
@@ -2009,6 +2324,8 @@ export default function App() {
     return (
       <AuthCtx.Provider value={authValue}>
         <ThemeCtx.Provider value={THEMES.royal}>
+          <PushManager />
+          <Toaster position="top-center" />
           <KhidmatPortal signOut={signOut} user={authValue.user} />
         </ThemeCtx.Provider>
       </AuthCtx.Provider>
@@ -2019,13 +2336,21 @@ export default function App() {
     return (
       <AuthCtx.Provider value={authValue}>
         <ThemeCtx.Provider value={THEMES.royal}>
+          <PushManager />
+          <Toaster position="top-center" />
           <InventoryManagerPortal signOut={signOut} user={authValue.user} />
         </ThemeCtx.Provider>
       </AuthCtx.Provider>
     )
   }
 
-  return <AuthCtx.Provider value={authValue}><ThaliUserApp /></AuthCtx.Provider>
+  return (
+    <AuthCtx.Provider value={authValue}>
+      <PushManager />
+      <Toaster position="top-center" />
+      <ThaliUserApp />
+    </AuthCtx.Provider>
+  )
 }
 
 

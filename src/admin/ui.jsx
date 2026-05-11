@@ -108,7 +108,7 @@ export const updateSystemTheme = (themeId) => {
 
 export const PageWrap = ({ children }) => (
   <div style={{ 
-    padding: '0 clamp(12px, 4vw, 40px) 140px', 
+    padding: '0 clamp(12px, 4vw, 40px) 40px', 
     maxWidth: '1400px', 
     margin: '0 auto',
     width: '100%',
@@ -116,7 +116,7 @@ export const PageWrap = ({ children }) => (
   }}>
     <style>{`
       @media (max-width: 768px) {
-        .admin-page-wrap { padding-bottom: 100px !important; }
+        .admin-page-wrap { padding-bottom: 20px !important; }
       }
     `}</style>
     <div className="admin-page-wrap">{children}</div>
@@ -427,7 +427,6 @@ export const fmtTime = (d) => {
   if (!d) return '—'
   return new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
-
 export const fmtDateTime = (d) => {
   if (!d) return '—'
   const dt = new Date(d)
@@ -435,3 +434,236 @@ export const fmtDateTime = (d) => {
     dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
+export const PackingTVView = ({ user, onClose }) => {
+  const responses = user.dishResponses || {}
+  const dishEntries = Object.entries(responses)
+  
+  return (
+    <div style={{ 
+      position: 'fixed', inset: 0, zIndex: 9999, 
+      background: '#000', color: '#fff',
+      display: 'flex', flexDirection: 'column',
+      padding: '4vh 4vw', boxSizing: 'border-box',
+      overflow: 'hidden', animation: 'fadeIn 0.3s ease-out'
+    }}>
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes pulseBorder { 
+          0% { border-color: rgba(212, 175, 55, 0.2); } 
+          50% { border-color: rgba(212, 175, 55, 1); } 
+          100% { border-color: rgba(212, 175, 55, 0.2); } 
+        }
+      `}</style>
+
+      {/* TOP HEADER: USER PROFILE */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4vh' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '3vw' }}>
+           <div style={{ 
+             width: '12vh', height: '12vh', borderRadius: '3vh', background: 'var(--accent-grad)',
+             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '5vh', fontWeight: 900, color: '#000'
+           }}>
+             {user.thali_number?.toString().charAt(0) || 'U'}
+           </div>
+           <div>
+             <div style={{ fontSize: '3.5vh', fontWeight: 800, color: 'var(--accent-gold)', textTransform: 'uppercase', letterSpacing: '0.25em' }}>Thali Dispatch Station</div>
+             <div style={{ fontSize: '10vh', fontWeight: 1000, lineHeight: 1, letterSpacing: '-0.03em' }}>{user.name}</div>
+           </div>
+        </div>
+        
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: '4vh', color: 'var(--text-tertiary)', fontWeight: 700 }}>Thali Reference</div>
+          <div style={{ fontSize: '15vh', fontWeight: 1000, lineHeight: 1, color: '#fff' }}>#{user.thali_number}</div>
+        </div>
+      </div>
+
+      {/* DISH LIST - VERTICAL STACK OF SQUARE BOXES */}
+      {user.status === 'Applied' ? (
+        <div style={{ 
+          flex: 1, display: 'flex', flexDirection: 'column', 
+          gap: '3vh', overflowY: 'auto', paddingRight: '10px'
+        }}>
+          {dishEntries.map(([dish, pct], idx) => {
+            const val = parseInt(pct) || 0
+            const isRoti = dish.toLowerCase().includes('roti') || dish.toLowerCase().includes('naan')
+            
+            return (
+              <div key={dish} style={{ 
+                background: 'rgba(255,255,255,0.04)', 
+                border: `clamp(4px, 0.8vh, 12px) solid ${val > 0 || pct === 'yes' ? '#10b981' : 'rgba(255,255,255,0.1)'}`,
+                borderRadius: '4vh',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '3vh 5vh', position: 'relative', overflow: 'hidden',
+                minHeight: dishEntries.length > 4 ? '15vh' : '18vh',
+                boxShadow: val > 0 || pct === 'yes' ? '0 0 40px rgba(16, 185, 129, 0.15)' : 'none'
+              }}>
+                <div style={{ 
+                  position: 'absolute', left: 0, top: 0, bottom: 0,
+                  width: isRoti ? (pct === 'yes' ? '100%' : '0%') : `${val}%`,
+                  background: val > 75 || pct === 'yes' ? 'rgba(16, 185, 129, 0.3)' : (val > 0 ? 'rgba(212, 175, 55, 0.3)' : 'transparent'),
+                  transition: 'width 1.5s cubic-bezier(0.4, 0, 0.2, 1)',
+                  zIndex: 1
+                }} />
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '3vh', zIndex: 2 }}>
+                  <div style={{ 
+                    width: 'clamp(40px, 8vh, 100px)', height: 'clamp(40px, 8vh, 100px)', borderRadius: '2vh',
+                    background: val > 0 || pct === 'yes' ? '#10b981' : 'rgba(255,255,255,0.05)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 'clamp(20px, 4vh, 40px)', fontWeight: 1000, color: '#fff'
+                  }}>
+                    {idx + 1}
+                  </div>
+                  <div style={{ 
+                    fontSize: `clamp(18px, 4.5vh, 50px)`, 
+                    fontWeight: 1000, color: '#fff', 
+                    textTransform: 'uppercase', letterSpacing: '0.02em'
+                  }}>{dish}</div>
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '3vh', zIndex: 2 }}>
+                  {val > 0 && !isRoti && (
+                     <div style={{ 
+                       padding: '1vh 3vh', borderRadius: '1.5vh', background: 'rgba(255,255,255,0.1)', 
+                       color: 'var(--accent-gold)', fontSize: 'clamp(12px, 3vh, 30px)', fontWeight: 900,
+                       border: '1px solid rgba(255,255,255,0.1)'
+                     }}>
+                       {val === 100 ? 'FULL' : (val === 50 ? 'HALF' : (val === 25 ? 'QUARTER' : `${val}%`))}
+                     </div>
+                  )}
+                  <div style={{ 
+                    fontSize: `clamp(30px, 10vh, 150px)`, 
+                    fontWeight: 1000, color: '#fff', 
+                    textShadow: '0 10px 30px rgba(0,0,0,0.5)', lineHeight: 1 
+                  }}>
+                    {isRoti ? (pct === 'yes' ? 'YES' : 'NO') : `${val}%`}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div style={{ 
+          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(244, 63, 94, 0.1)', border: '15px solid #f43f5e', borderRadius: '5vh'
+        }}>
+           <div style={{ fontSize: 'clamp(80px, 30vh, 500px)', fontWeight: 1000, color: '#f43f5e' }}>NO MEAL</div>
+        </div>
+      )}
+
+
+      {/* FOOTER ACTION */}
+      <div style={{ marginTop: '4vh', display: 'flex', justifyContent: 'center' }}>
+        <button 
+          onClick={onClose}
+          style={{ 
+            background: 'rgba(255,255,255,0.1)', border: '2px solid rgba(255,255,255,0.2)', color: '#fff',
+            padding: '2vh 6vh', borderRadius: '2vh', fontSize: '3vh', fontWeight: 800, cursor: 'pointer'
+          }}
+        >
+          DISMISS (X)
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => {
+  const responses = user.dishResponses || {}
+  const dishEntries = Object.entries(responses)
+  
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, padding: 8 }}>
+      {/* High-Contrast Status Banner */}
+      <div style={{ 
+        padding: '24px', borderRadius: 24, textAlign: 'center',
+        background: user.status === 'Applied' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(244, 63, 94, 0.1)',
+        border: `2px solid ${user.status === 'Applied' ? '#10b981' : '#f43f5e'}`,
+        animation: 'pulse 2s infinite'
+      }}>
+        <div style={{ fontSize: 14, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.2em', opacity: 0.7, marginBottom: 8 }}>Dispatch Decision</div>
+        <div style={{ fontSize: 42, fontWeight: 900, color: user.status === 'Applied' ? '#10b981' : '#f43f5e' }}>
+          {user.status === 'Applied' ? '✅ PROCEED' : '❌ NO MEAL'}
+        </div>
+      </div>
+
+      {user.status === 'Applied' ? (
+        <div style={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+          gap: 20 
+        }}>
+          {dishEntries.map(([dish, pct]) => {
+            const val = parseInt(pct) || 0
+            const isRoti = dish.toLowerCase().includes('roti') || dish.toLowerCase().includes('naan')
+            
+            return (
+              <div key={dish} style={{ 
+                aspectRatio: '1 / 1', 
+                background: 'rgba(255,255,255,0.03)', 
+                border: `2px solid ${val > 0 || pct === 'yes' ? 'var(--accent-gold)' : 'var(--border-glass)'}`,
+                borderRadius: 32,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 24,
+                position: 'relative',
+                overflow: 'hidden',
+                boxShadow: val > 0 || pct === 'yes' ? '0 10px 30px rgba(212, 175, 55, 0.1)' : 'none'
+              }}>
+                <div style={{ 
+                  position: 'absolute', 
+                  bottom: 0, left: 0, right: 0, 
+                  height: isRoti ? (pct === 'yes' ? '100%' : '0%') : `${val}%`,
+                  background: val > 50 || pct === 'yes' ? 'var(--accent-grad)' : 'rgba(212, 175, 55, 0.2)',
+                  opacity: 0.3,
+                  transition: 'height 1s ease-out'
+                }} />
+
+                <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 12, textAlign: 'center', zIndex: 2 }}>{dish}</div>
+                
+                <div style={{ 
+                  fontSize: isRoti ? 48 : 72, 
+                  fontWeight: 950, 
+                  color: val > 0 || pct === 'yes' ? '#fff' : 'var(--text-tertiary)',
+                  textShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                  zIndex: 2,
+                  lineHeight: 1
+                }}>
+                  {isRoti ? (pct === 'yes' ? 'YES' : 'NO') : `${val}%`}
+                </div>
+                
+                {val > 0 && !isRoti && (
+                   <div style={{ 
+                     marginTop: 12, padding: '4px 12px', borderRadius: 10, background: 'var(--accent-gold)', 
+                     color: '#000', fontSize: 12, fontWeight: 900, zIndex: 2 
+                   }}>
+                     {val === 100 ? 'FULL PORTION' : 'HALF PORTION'}
+                   </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <div style={{ textAlign: 'center', padding: '40px 0', opacity: 0.5 }}>
+           No meal data for this session.
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
+        <Btn variant="outline" style={{ flex: 1 }} onClick={onClose}>Dismiss</Btn>
+        {onPrint && <Btn style={{ flex: 1 }} onClick={onPrint}>Print Label</Btn>}
+      </div>
+
+      <style>{`
+        @keyframes pulse {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.02); opacity: 0.9; }
+          100% { transform: scale(1); }
+        }
+      `}</style>
+    </div>
+  )
+}

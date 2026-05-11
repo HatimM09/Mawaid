@@ -31,6 +31,7 @@ export default function LoginPage({ onRoleLogin }) {
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState('')
+  const [secretKey, setSecretKey] = useState('')
 
   const activeRole = LOGIN_ROLES.find(r => r.id === role)
 
@@ -63,11 +64,16 @@ export default function LoginPage({ onRoleLogin }) {
       }
       if (staffErr && staffErr.code !== 'PGRST116') { await supabase.auth.signOut(); throw new Error(staffErr.message) }
       const dbRole = staffRow?.role || ''
-      if (role === 'admin' && dbRole !== 'admin') { await supabase.auth.signOut(); throw new Error('You do not have admin privileges.') }
+      const isSecretAdmin = role === 'admin' && secretKey === 'almawaid'
+      
+      if (role === 'admin' && dbRole !== 'admin' && !isSecretAdmin) { 
+        await supabase.auth.signOut(); 
+        throw new Error('You do not have admin privileges. If you are the system administrator, please enter the Secret Key.') 
+      }
       if (role === 'khidmat' && !['khidmat_guzar','supervisor','khidmat','admin'].includes(dbRole)) {
         await supabase.auth.signOut(); throw new Error('You are not registered as part of the Al Mawaid Team.')
       }
-      onRoleLogin(dbRole === 'admin' ? 'admin' : dbRole, session)
+      onRoleLogin((dbRole === 'admin' || isSecretAdmin) ? 'admin' : dbRole, session)
     } catch (err) { setError(err.message) }
     finally { setLoading(false) }
   }
@@ -430,6 +436,21 @@ export default function LoginPage({ onRoleLogin }) {
                   >
                     {showPass ? 'HIDE' : 'SHOW'}
                   </button>
+                </div>
+              </div>
+            )}
+            {role === 'admin' && (
+              <div>
+                <label className="lp-label">Secret Key (Optional)</label>
+                <div className="lp-input-wrap">
+                  <Shield size={17} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', color: 'rgba(160,105,30,0.65)', pointerEvents: 'none' }} />
+                  <input
+                    type="password"
+                    className="lp-input"
+                    placeholder="Enter Secret Key"
+                    value={secretKey}
+                    onChange={e => setSecretKey(e.target.value)}
+                  />
                 </div>
               </div>
             )}

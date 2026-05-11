@@ -60,6 +60,17 @@ export default function NotificationsAdminPage() {
 
     const { error } = await supabase.from('notices').insert([payload])
     
+    // Trigger Push Notification via Edge Function
+    if (!error) {
+      supabase.functions.invoke('send-push', {
+        body: {
+          title: payload.title,
+          body: payload.body,
+          target_user_id: payload.target_user_id // null means 'all'
+        }
+      }).catch(err => console.error('Push trigger error:', err));
+    }
+    
     if (error) {
       alert('Error saving notice: ' + error.message)
     } else {

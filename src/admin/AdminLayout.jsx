@@ -25,11 +25,18 @@ const NAV = [
 export default function AdminLayout() {
   const [adminName, setAdminName] = useState('Admin')
   const [role, setRole] = useState(localStorage.getItem('al_mawaid_portal') || 'khidmat')
+  const [toastNotice, setToastNotice] = useState(null)
+  const [connStatus, setConnStatus] = useState('connecting')
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const navigate = useNavigate()
 
   useEffect(() => {
     const check = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
+      const { data: { session }, error } = await supabase.auth.getSession()
+      if (error && error.message?.includes('Refresh Token Not Found')) {
+        handleLogout();
+        return;
+      }
       if (session) {
         setAdminName(session.user.user_metadata?.name || 'Admin')
         const { data: staff } = await supabase.from('staff').select('role').eq('user_id', session.user.id).maybeSingle()
@@ -73,6 +80,24 @@ export default function AdminLayout() {
     })
   }, [])
 
+  // ── Native Notification System (Realtime) ──
+  useEffect(() => {
+    const channel = supabase
+      .channel('global-notices')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notices' }, (payload) => {
+        const notice = payload.new
+        setToastNotice(notice)
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(notice.title || 'Broadcast Sent', { body: notice.body || '', icon: '/al-mawaid.png' })
+        }
+        setTimeout(() => setToastNotice(null), 8000)
+      })
+      .subscribe((status) => {
+        setConnStatus(status === 'SUBSCRIBED' ? 'online' : 'offline')
+      })
+    return () => supabase.removeChannel(channel)
+  }, [])
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
     localStorage.removeItem('al_mawaid_portal')
@@ -101,30 +126,91 @@ export default function AdminLayout() {
       }} />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=DM+Sans:wght@400;500;700;900&display=swap');
-        .admin-main { flex: 1; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; padding: 0; position: relative; z-index: 1; }
-        .admin-header { height: 70px; display: flex; align-items: center; padding: 0 30px; background: var(--bg-card); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-glass); z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+        .admin-main { flex: 1; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; padding: 0; position: relative; z-index: 1; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        .admin-header { height: 70px; display: flex; align-items: center; padding: 0 30px; background: var(--bg-card); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-glass); z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+        
+        .admin-sidebar {
+          position: fixed; top: 0; left: 0; bottom: 0;
+          width: 280px; background: rgba(15, 12, 8, 0.95);
+          backdrop-filter: blur(40px); z-index: 2000;
+          border-right: 1px solid rgba(212, 175, 55, 0.2);
+          transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+          transform: translateX(-100%);
+          display: flex; flex-direction: column;
+          padding: 100px 0 40px;
+          /* The UI Curve */
+          border-radius: 0 80px 80px 0;
+          box-shadow: 20px 0 50px rgba(0,0,0,0.5);
+        }
+        .admin-sidebar.open { transform: translateX(0); }
+        
+        .sidebar-nav-item {
+          display: flex; align-items: center; gap: 15px;
+          padding: 14px 30px; text-decoration: none;
+          color: var(--text-tertiary); transition: all 0.3s;
+          position: relative; margin-bottom: 5px;
+          border-radius: 0 30px 30px 0;
+        }
+        /* Lay icons with the UI curve */
+        .sidebar-nav-item:nth-child(1), .sidebar-nav-item:nth-child(11) { padding-left: 20px; }
+        .sidebar-nav-item:nth-child(2), .sidebar-nav-item:nth-child(10) { padding-left: 35px; }
+        .sidebar-nav-item:nth-child(3), .sidebar-nav-item:nth-child(9) { padding-left: 45px; }
+        .sidebar-nav-item:nth-child(4), .sidebar-nav-item:nth-child(8) { padding-left: 52px; }
+        .sidebar-nav-item:nth-child(5), .sidebar-nav-item:nth-child(7) { padding-left: 56px; }
+        .sidebar-nav-item:nth-child(6) { padding-left: 58px; }
+
+        .sidebar-nav-item:hover { background: rgba(212, 175, 55, 0.1); color: var(--text-primary); padding-left: 65px; }
+        .sidebar-nav-item.active { background: var(--accent-grad); color: #000; font-weight: 800; padding-left: 70px; box-shadow: 0 10px 25px rgba(212, 175, 55, 0.3); }
+
         .global-bottom-nav { 
           position: fixed; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: 16px; right: 16px;
-          height: 80px;
-          background: rgba(15, 12, 8, 0.9); backdrop-filter: blur(25px);
-          border: 1px solid rgba(212, 175, 55, 0.3);
-          border-radius: 24px;
+          height: 84px;
+          background: rgba(15, 12, 8, 0.85); backdrop-filter: blur(30px);
+          border: 1px solid rgba(212, 175, 55, 0.25);
+          border-radius: 26px;
           display: flex; align-items: center;
-          padding: 0 8px; z-index: 2000;
-          box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-          overflow: visible;
+          padding: 0; z-index: 2000;
+          box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+          overflow: hidden;
         }
         .bottom-nav-inner {
           display: flex; align-items: center; gap: 4px;
-          padding: 0 16px; min-width: max-content;
+          padding: 0 16px;
+          width: 100%;
+          overflow-x: auto;
+          overflow-y: hidden;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+          scroll-behavior: smooth;
+          -webkit-overflow-scrolling: touch;
+          scroll-snap-type: x mandatory;
+          mask-image: linear-gradient(90deg, transparent 0%, #000 8%, #000 92%, transparent 100%);
+          -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 8%, #000 92%, transparent 100%);
         }
+        .bottom-nav-inner::-webkit-scrollbar { display: none; }
+
         .nav-item {
-          display: flex; flexDirection: column; align-items: center; gap: 4px;
-          text-decoration: none; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          color: var(--text-tertiary); padding: 8px 12px; border-radius: 16px;
+          display: flex; flex-direction: column; align-items: center; gap: 5px;
+          text-decoration: none; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+          color: var(--text-tertiary); padding: 10px 14px; border-radius: 20px;
+          min-width: 68px; flex-shrink: 0;
+          scroll-snap-align: center;
         }
-        .nav-item.active { color: var(--accent-primary); background: var(--accent-bg); text-shadow: 0 0 10px var(--accent-bg); }
-        .nav-item:hover { color: var(--text-primary); background: rgba(255,255,255,0.05); }
+        .nav-item.active { 
+          color: var(--accent-primary); 
+          background: rgba(212, 175, 55, 0.1); 
+          box-shadow: inset 0 0 10px rgba(212, 175, 55, 0.05);
+        }
+        .nav-item:hover { color: var(--text-primary); background: rgba(255,255,255,0.05); transform: translateY(-2px); }
+
+        /* Sidebar overlay backdrop on mobile */
+        .sidebar-backdrop {
+          position: fixed; inset: 0; z-index: 1999;
+          background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+          opacity: 0; pointer-events: none;
+          transition: opacity 0.4s ease;
+        }
+        .sidebar-backdrop.visible { opacity: 1; pointer-events: auto; }
 
         .glass {
           background: var(--bg-card);
@@ -153,45 +239,93 @@ export default function AdminLayout() {
           to { transform: translateY(0); opacity: 1; }
         }
 
-         @media (min-width: 1025px) {
-          .global-bottom-nav {
-            bottom: 24px; left: 50%; transform: translateX(-50%);
-            width: auto; max-width: 90%; height: 88px;
-            border-radius: 26px; border: 1px solid rgba(212, 175, 55, 0.3);
-            background: rgba(10, 13, 20, 0.85);
-            padding: 0 12px; margin: 0 auto;
-            overflow: visible;
-          }
-          .bottom-nav-inner { gap: 12px; }
-          .nav-item {
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            padding: 10px 18px;
-          }
-          .nav-item:hover {
-            transform: translateY(-12px) scale(1.15);
-            background: rgba(255, 255, 255, 0.08);
-            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
-          }
+        @media (min-width: 1025px) {
+          .global-bottom-nav { display: none !important; }
+          .sidebar-backdrop { display: none !important; }
+          .admin-sidebar { transform: translateX(-100%); border-radius: 0; padding-top: 100px; width: 280px; transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+          .admin-sidebar.open { transform: translateX(0); }
+          .admin-main { margin-left: 0; transition: margin-left 0.5s cubic-bezier(0.4, 0, 0.2, 1); min-height: 100dvh; cursor: default; }
+          .admin-main.sidebar-open { margin-left: 280px; }
+          .admin-header { left: 0; transition: left 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+          .admin-main.sidebar-open .admin-header { left: 280px; width: calc(100% - 280px); }
         }
 
         @media (max-width: 1024px) {
+          .admin-sidebar { width: 280px; border-radius: 0 40px 40px 0; padding-top: 80px; z-index: 5000; }
+          .admin-sidebar.open { transform: translateX(0); }
           .admin-right-sidebar { display: none; }
+          .global-bottom-nav { 
+            display: flex !important; 
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: min(450px, calc(100% - 40px));
+            height: 74px;
+            background: rgba(15, 12, 8, 0.95);
+            backdrop-filter: blur(30px);
+            border: 1.5px solid var(--accent-primary);
+            border-radius: 30px;
+            z-index: 9000;
+            padding: 0 12px;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7), inset 0 1px 1px rgba(255,255,255,0.1);
+            align-items: center;
+            justify-content: space-around;
+          }
+          .global-bottom-nav button {
+            flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: none; border: none; cursor: pointer; color: rgba(255,248,225,0.4);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            height: 100%;
+            position: relative;
+          }
+          .global-bottom-nav button.active { color: var(--accent-primary); }
+          .global-bottom-nav button .icon-box {
+            width: 44px; height: 44px; border-radius: 16px;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+          }
+          .global-bottom-nav button.active .icon-box {
+            background: var(--accent-grad);
+            color: #000;
+            box-shadow: 0 10px 25px rgba(212, 175, 55, 0.4);
+            transform: translateY(-22px) scale(1.15) rotate(5deg);
+            border-radius: 18px;
+          }
+          .global-bottom-nav button span {
+            font-size: 9px; font-weight: 900; text-transform: uppercase;
+            margin-top: 4px; opacity: 0.7; letter-spacing: 0.05em;
+            transition: all 0.3s;
+          }
+          .global-bottom-nav button.active span {
+            transform: translateY(-10px);
+            opacity: 1;
+          }
+          .admin-main { padding-bottom: 110px !important; }
         }
+
         @media (max-width: 768px) {
           .admin-header { padding: 0 16px; height: 60px; }
           .admin-search { display: none !important; }
           .desktop-only { display: none !important; }
           .admin-nav-breadcrumb { display: none !important; }
-          .admin-main { padding-bottom: 80px !important; }
           .mobile-only { display: block !important; }
         }
       `}</style>
 
       {/* Main Content Area */}
-      <div className="admin-main">
+      <div 
+        className={`admin-main ${isSidebarOpen && window.innerWidth > 1024 ? 'sidebar-open' : ''}`}
+        onClick={() => { if(isSidebarOpen) setIsSidebarOpen(false) }}
+      >
         {/* Top Navbar */}
         <header className="admin-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button 
+              onClick={(e) => { e.stopPropagation(); setIsSidebarOpen(!isSidebarOpen); }}
+              style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}
+            >
+              <Menu size={24} />
+            </button>
             <div style={{
               width: 32, height: 32, borderRadius: '50%', background: 'var(--accent-grad)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -245,59 +379,102 @@ export default function AdminLayout() {
           </div>
         </header>
 
+        {/* Sidebar backdrop overlay for mobile */}
+        <div className={`sidebar-backdrop ${isSidebarOpen ? 'visible' : ''}`} onClick={() => setIsSidebarOpen(false)} />
+
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
-          {/* Sidebar removed as per request */}
+          {/* Left Sidebar */}
+          <aside className={`admin-sidebar ${isSidebarOpen ? 'open' : ''}`}>
+            <div style={{ padding: '0 30px 40px', display: 'flex', alignItems: 'center', gap: 15 }}>
+              <div style={{ width: 42, height: 42, borderRadius: 14, background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <img src="/al-mawaid.png" alt="" style={{ width: 28, height: 28 }} />
+              </div>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--accent-primary)', letterSpacing: '0.05em' }}>AL-MAWAID</div>
+                <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Management Portal</div>
+              </div>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', paddingRight: 10 }}>
+              {NAV.map(({ to, label, Icon, end }) => (
+                <NavLink key={to} to={to} end={end} className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`} onClick={() => window.innerWidth < 1025 && setIsSidebarOpen(false)}>
+                  <Icon size={20} />
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>{label}</span>
+                </NavLink>
+              ))}
+            </div>
+            <div style={{ padding: '20px 30px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+              <button 
+                onClick={handleLogout} 
+                style={{ 
+                  width: '100%', padding: '16px', borderRadius: 16, 
+                  background: 'linear-gradient(135deg, rgba(255,92,92,0.1), rgba(255,92,92,0.05))', 
+                  color: '#ff5c5c', border: '1.5px solid rgba(255,92,92,0.3)', 
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', 
+                  justifyContent: 'center', gap: 12, fontWeight: 800,
+                  transition: 'all 0.3s',
+                  boxShadow: '0 4px 15px rgba(255, 92, 92, 0.1)'
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,92,92,0.2)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,92,92,0.1)'; e.currentTarget.style.transform = 'translateY(0)' }}
+              >
+                <LogOut size={18} strokeWidth={2.5} /> Logout
+              </button>
+            </div>
+          </aside>
 
           {/* Dynamic content */}
-          <main key={location.pathname} className="smooth-appear scroll-container" style={{ flex: 1, padding: '24px', paddingBottom: 120, overflowY: 'auto', overflowX: 'hidden' }}>
+          <main key={location.pathname} className="smooth-appear scroll-container" style={{ flex: 1, padding: 'clamp(12px, 3vw, 24px)', paddingBottom: 120, overflowY: 'auto', overflowX: 'hidden' }}>
             <Outlet context={{ role }} />
           </main>
         </div>
 
         {/* Global Floating Bottom Nav */}
         <nav className="global-bottom-nav">
-          <div className="bottom-nav-inner" style={{ width: '100%', justifyContent: 'space-around', gap: 0, padding: 0 }}>
-            {/* Show first 5 items for better functionality */}
-            {NAV.slice(0, 5).map(({ to, label, Icon, end }) => (
-              <NavLink key={to} to={to} end={end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} style={{ flex: 1, minWidth: 0, padding: '8px 4px' }}>
-                <Icon size={20} />
-                <span style={{ fontSize: 8, fontWeight: 700 }}>{label}</span>
+          <div className="bottom-nav-inner" ref={el => {
+            if (el) {
+              const active = el.querySelector('.nav-item.active')
+              if (active) active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
+            }
+          }}>
+            {NAV.map(({ to, label, Icon, end }) => (
+              <NavLink key={to} to={to} end={end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+                <div className="icon-box">
+                  <Icon size={20} strokeWidth={2.5} />
+                </div>
+                <span>{label}</span>
               </NavLink>
             ))}
-            
-            {/* More Button */}
-            <button 
-              onClick={() => setShowMore(!showMore)}
-              className={`nav-item ${showMore ? 'active' : ''}`}
-              style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', padding: '8px 4px' }}
-            >
-              <Menu size={20} />
-              <span style={{ fontSize: 8, fontWeight: 700 }}>More</span>
+          </div>
+        </nav>
+
+
+
+        {/* ── Toast Notification Popup ── */}
+        {toastNotice && (
+          <div
+            onClick={() => setToastNotice(null)}
+            style={{
+              position: 'fixed', top: 80, right: 20,
+              width: 'calc(100% - 40px)', maxWidth: 350, zIndex: 10000,
+              background: 'rgba(15, 12, 8, 0.95)', border: '1.5px solid rgba(212, 175, 55, 0.4)',
+              borderRadius: 20, padding: 16, display: 'flex', gap: 14,
+              boxShadow: '0 20px 50px rgba(0,0,0,0.5)', cursor: 'pointer',
+              animation: 'slideDown 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+              backdropFilter: 'blur(20px)'
+            }}
+          >
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Bell size={20} color="#000" />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent-gold)', marginBottom: 2 }}>{toastNotice.title}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{toastNotice.body}</div>
+            </div>
+            <button onClick={(e) => { e.stopPropagation(); setToastNotice(null) }} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', padding: 4, cursor: 'pointer' }}>
+              <X size={16} />
             </button>
           </div>
-
-          {/* More Menu Popup */}
-          {showMore && (
-            <>
-              <div onClick={() => setShowMore(false)} style={{ position: 'fixed', inset: 0, zIndex: 2099 }} />
-              <div className="more-menu-container">
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-                  {NAV.slice(5).map(({ to, label, Icon, end }) => (
-                    <NavLink 
-                      key={to} to={to} end={end} 
-                      onClick={() => setShowMore(false)}
-                      className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                      style={{ padding: '12px 8px' }}
-                    >
-                      <Icon size={18} />
-                      <span style={{ fontSize: 8, fontWeight: 700 }}>{label}</span>
-                    </NavLink>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-        </nav>
+        )}
       </div>
 
       {/* Command Palette */}

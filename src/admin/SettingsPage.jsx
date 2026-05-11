@@ -20,6 +20,7 @@ export default function SettingsPage() {
   const [upiId, setUpiId]       = useState('shydrabadwala53@okhdfcbank')
   const [upiAmt, setUpiAmt]     = useState('400.00')
   const [surveyMsg, setSurveyMsg] = useState('')
+  const [helpline, setHelpline] = useState('')
   const [loading, setLoading]   = useState(true)
   const [saving, setSaving]     = useState(false)
   const [msg, setMsg]           = useState({ text: '', type: 'success' })
@@ -35,6 +36,7 @@ export default function SettingsPage() {
         if (row.key === 'upi_id')        setUpiId(row.value)
         if (row.key === 'upi_amount')    setUpiAmt(row.value)
         if (row.key === 'survey_msg')    setSurveyMsg(row.value)
+        if (row.key === 'helpline_number') setHelpline(row.value)
       })
     }
     // Load weekly menu from dedicated table
@@ -61,6 +63,7 @@ export default function SettingsPage() {
       { key: 'upi_id',       value: upiId },
       { key: 'upi_amount',   value: upiAmt },
       { key: 'survey_msg',   value: surveyMsg },
+      { key: 'helpline_number', value: helpline },
     ]
     const { error: settingsError } = await supabase.from('app_settings').upsert(settingsRows, { onConflict: 'key' })
 
@@ -126,6 +129,22 @@ export default function SettingsPage() {
                 color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit',
               }}
             />
+          </div>
+        </AdminCard>
+
+        {/* Helpline Settings */}
+        <AdminCard>
+          <SectionHeader>📞 Helpline Settings</SectionHeader>
+          <div>
+            <Input 
+              label="Al Mawaid Helpline Number (WhatsApp)" 
+              value={helpline} 
+              onChange={e => setHelpline(e.target.value)} 
+              placeholder="+91 98765 43210" 
+            />
+            <p style={{ fontSize: 11, color: T.textSub, marginTop: 8 }}>
+              This number will be shown on the Khidmat team page for users to contact.
+            </p>
           </div>
         </AdminCard>
 

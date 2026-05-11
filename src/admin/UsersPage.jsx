@@ -1,7 +1,9 @@
 // src/admin/UsersPage.jsx
 import React, { useState, useEffect, useCallback } from 'react'
-import { supabase } from './supabaseClient'
-import { Search, RefreshCw, UserPlus, Edit2, Trash2, X, Shield, Phone, MapPin, UserCheck } from 'lucide-react'
+import { supabase, supabaseUrl, supabaseAnonKey } from './supabaseClient'
+import { createClient } from '@supabase/supabase-js'
+import { Search, RefreshCw, UserPlus, Edit2, Trash2, X, Shield, Phone, MapPin, UserCheck, QrCode } from 'lucide-react'
+import { QRCodeCanvas } from 'qrcode.react'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Input, Grid, SectionHeader, fmtDate, Alert } from './ui'
 import { useOutletContext } from 'react-router-dom'
 
@@ -59,17 +61,46 @@ export default function UsersPage() {
     e.preventDefault()
     setError(''); setSuccess('')
     const isNew = !editForm.id
-    
     try {
+      setLoading(true)
+      if (isNew) {
+        const tempClient = createClient(supabaseUrl, supabaseAnonKey, { 
+          auth: { persistSession: false, autoRefreshToken: false, storageKey: 'dummy-auth-token' } 
+        })
+        const authPassword = editForm.password || `Mawaid@${editForm.thali_number || '123'}`
+        const { data: authData, error: authError } = await tempClient.auth.signUp({
+          email: editForm.email,
+          password: authPassword,
+          options: {
+            data: {
+              name: editForm.name,
+              thali_number: editForm.thali_number,
+              avatar_url: editForm.avatar_url
+            }
+          }
+        })
+
+        if (authError) throw authError
+        
+        // Use the new user ID
+        editForm.id = authData.user.id
+        editForm.user_id = authData.user.id
+      }
+
+      // Create a clean object for the database without the password
+      const { password, ...dataToSave } = editForm
+      
       const { error } = await supabase
         .from('user_stats')
-        .upsert([editForm])
+        .upsert([dataToSave])
       
       if (error) throw error
-      setSuccess(isNew ? 'Member added successfully' : 'Member updated successfully')
-      setTimeout(() => { setEditForm(null); setIsAdding(false); load(true) }, 1000)
+      setSuccess(isNew ? 'Member created & Auth enabled' : 'Member updated successfully')
+      setTimeout(() => { setEditForm(null); setIsAdding(false); load(true) }, 1500)
     } catch (err) {
       setError(err.message)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -129,7 +160,7 @@ export default function UsersPage() {
           <Btn size="sm" variant="danger" onClick={() => handleDelete(u)} title="Delete"><Trash2 size={13} /></Btn>
         </>
       ) : (
-        <span style={{ fontSize: 11, color: T.textSub, opacity: 0.5 }}>View Only</span>
+        <span style={{ fontSize: 11, color: T.textSub, opacity: 0.5, marginLeft: 8 }}>View Only</span>
       )}
     </div>,
   ])
@@ -138,11 +169,16 @@ export default function UsersPage() {
     <PageWrap>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>
         <PageTitle>Thali Users Database</PageTitle>
-        {isAdmin && (
-          <Btn onClick={() => { setEditForm({ name: '', email: '', thali_number: '', phone: '', address: '' }); setIsAdding(true); }}>
-            <UserPlus size={16} /> <span className="desktop-only">Add Thali User</span><span className="mobile-only" style={{ display: 'none' }}>Add</span>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <Btn variant="outline" onClick={() => window.print()}>
+            <QrCode size={16} /> <span className="desktop-only">Print All QR Labels</span>
           </Btn>
-        )}
+          {isAdmin && (
+            <Btn onClick={() => { setEditForm({ name: '', email: '', thali_number: '', phone: '', address: '', password: '', avatar_url: '' }); setIsAdding(true); }}>
+              <UserPlus size={16} /> <span className="desktop-only">Add Thali User</span><span className="mobile-only" style={{ display: 'none' }}>Add</span>
+            </Btn>
+          )}
+        </div>
       </div>
 
       <Grid cols={3} style={{ marginBottom: 24 }}>
@@ -204,6 +240,8 @@ export default function UsersPage() {
       )}
 
       {/* Edit/Add Modal */}
+      {/* ... (existing edit modal) ... */}
+      
       {editForm && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
@@ -230,7 +268,17 @@ export default function UsersPage() {
               </Grid>
               <Input label="Phone Number" value={editForm.phone} onChange={e => setEditForm({...editForm, phone: e.target.value})} />
               <Input label="Residential Address" value={editForm.address} onChange={e => setEditForm({...editForm, address: e.target.value})} />
-              <Input label="City" value={editForm.city} onChange={e => setEditForm({...editForm, city: e.target.value})} />
+              
+              <SectionHeader>Auth & Profile</SectionHeader>
+              <Grid cols={2}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <Input label="Profile Picture URL" value={editForm.avatar_url} onChange={e => setEditForm({...editForm, avatar_url: e.target.value})} placeholder="https://..." />
+                  {editForm.avatar_url && (
+                    <img src={editForm.avatar_url} alt="Preview" style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${T.border}` }} />
+                  )}
+                </div>
+                {isAdding && <Input label="Assign Password" type="password" value={editForm.password} onChange={e => setEditForm({...editForm, password: e.target.value})} placeholder="Min 6 chars" required />}
+              </Grid>
               
               {error && <Alert msg={error} />}
               {success && <Alert msg={success} type="success" />}

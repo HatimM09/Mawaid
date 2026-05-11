@@ -10,8 +10,8 @@ export default function AdminRoute() {
 
   useEffect(() => {
     const check = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return setStatus('denied')
+      const { data: { session }, error } = await supabase.auth.getSession()
+      if (error || !session) return setStatus('denied')
 
       // Check role in staff table
       let role = ''

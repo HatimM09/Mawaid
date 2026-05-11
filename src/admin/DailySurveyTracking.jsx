@@ -4,8 +4,9 @@ import { supabase } from './supabaseClient'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { 
   Search, RefreshCw, ChevronRight, Check, X, Filter, 
-  Calendar, Utensils, User as UserIcon, Clock, ChevronDown, ChevronUp
+  Calendar, Utensils, User as UserIcon, Clock, ChevronDown, ChevronUp, Scan
 } from 'lucide-react'
+import { Html5QrcodeScanner } from 'html5-qrcode'
 import { 
   T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner, Grid, 
   SectionHeader, Modal, fmtDate 
@@ -27,11 +28,47 @@ export default function DailySurveyTracking() {
   const [users, setUsers] = useState([])
   const [selectedUser, setSelectedUser] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [isScanning, setIsScanning] = useState(false)
+
+  // --- WIRELESS SCANNER SUPPORT ---
+  useEffect(() => {
+    let scanBuffer = ''
+    let lastKeyTime = Date.now()
+
+    const handleKeyDown = (e) => {
+      const now = Date.now()
+      if (now - lastKeyTime > 100) scanBuffer = ''
+      lastKeyTime = now
+
+      if (e.key === 'Enter') {
+        if (scanBuffer.startsWith('ALMAWAID:')) {
+          const userId = scanBuffer.split(':')[1]
+          handleWirelessScan(userId)
+          scanBuffer = ''
+        }
+      } else if (e.key.length === 1) {
+        scanBuffer += e.key
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [users])
+
+  const handleWirelessScan = (userId) => {
+    const user = users.find(u => u.user_id === userId)
+    if (user) setSelectedUser(user)
+  }
 
   const getWeekDate = () => {
     const now = new Date()
     const day = now.getDay()
-    const diff = now.getDate() - day + (day === 0 ? -6 : 1)
+    const hour = now.getHours()
+    let diff = now.getDate() - day + (day === 0 ? -6 : 1)
+    // Saturday 8PM+ or Sunday: surveys target next week's Monday
+    if (day === 0 || (day === 6 && hour >= 20)) {
+      diff += 7
+    }
     const monday = new Date(now.setDate(diff))
     return monday.toISOString().split('T')[0]
   }
@@ -56,7 +93,8 @@ export default function DailySurveyTracking() {
       const statusKey = `${dayKey}_${mealKey}_status`
       
       const results = (resultsRaw || []).map(u => {
-        const resp = (u.survey_submissions_flat || []).find(r => r.week_id === currentWeekId)
+        const submissionData = Array.isArray(u.survey_submissions_flat) ? u.survey_submissions_flat : (u.survey_submissions_flat ? [u.survey_submissions_flat] : [])
+        const resp = submissionData.find(r => r.week_id === currentWeekId)
         const status = resp ? resp[statusKey] : null
         const dishResponses = {}
         if (status === 'Applied') {
@@ -84,7 +122,39 @@ export default function DailySurveyTracking() {
 
   useEffect(() => {
     load()
+
+    // REALTIME SUBSCRIPTION
+    const surveySub = supabase
+      .channel('survey_tracking')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_submissions_flat' }, () => {
+        load(true)
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(surveySub)
+    }
   }, [load])
+
+  useEffect(() => {
+    if (isScanning) {
+      const scanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: 250 });
+      scanner.render((decodedText) => {
+        if (decodedText.startsWith('ALMAWAID:')) {
+          const userId = decodedText.split(':')[1];
+          const user = users.find(u => u.user_id === userId);
+          if (user) {
+            setSelectedUser(user);
+            setIsScanning(false);
+            scanner.clear();
+          }
+        }
+      }, (error) => {
+        // console.warn(error);
+      });
+      return () => scanner.clear();
+    }
+  }, [isScanning, users])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -95,8 +165,22 @@ export default function DailySurveyTracking() {
   }, [users, search])
 
   const yesMembers = filtered.filter(u => u.status === 'Applied')
-  const noMembers = filtered.filter(u => u.status === 'Not Applied')
+  const noMembers = filtered.filter(u => u.status === 'Skipped')
   const noResponse = filtered.filter(u => !u.status)
+
+  const dishStats = {}
+  yesMembers.forEach(u => {
+    Object.entries(u.dishResponses || {}).forEach(([dish, val]) => {
+      if (!dishStats[dish]) dishStats[dish] = { totalPct: 0, count: 0, yesNoCount: 0, yesCount: 0 }
+      if (val === 'yes' || val === 'no') {
+        dishStats[dish].yesNoCount++
+        if (val === 'yes') dishStats[dish].yesCount++
+      } else {
+        dishStats[dish].count++
+        dishStats[dish].totalPct += (parseInt(val) || 0)
+      }
+    })
+  })
 
   if (loading && users.length === 0) return <Spinner />
 
@@ -104,10 +188,15 @@ export default function DailySurveyTracking() {
     <PageWrap>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, gap: 16, flexWrap: 'wrap' }}>
         <PageTitle>Daily Survey Tracker</PageTitle>
-        <Btn variant="outline" onClick={() => load(true)} disabled={refreshing}>
-          <RefreshCw size={15} className={refreshing ? 'spin' : ''} />
-          {refreshing ? 'Syncing...' : 'Sync Now'}
-        </Btn>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <Btn variant="primary" onClick={() => setIsScanning(true)}>
+            <Scan size={16} /> Scan Tiffin
+          </Btn>
+          <Btn variant="outline" onClick={() => load(true)} disabled={refreshing}>
+            <RefreshCw size={15} className={refreshing ? 'spin' : ''} />
+            {refreshing ? 'Syncing...' : 'Sync Now'}
+          </Btn>
+        </div>
       </div>
 
       {/* Day & Meal Filters */}
@@ -154,6 +243,38 @@ export default function DailySurveyTracking() {
           />
         </div>
       </div>
+
+      {/* Aggregate Dish Stats */}
+      {Object.keys(dishStats).length > 0 && (
+        <AdminCard style={{ marginBottom: 24, background: 'rgba(212, 175, 55, 0.04)' }}>
+          <SectionHeader style={{ marginTop: 0 }}>📊 OVERALL MENU SURVEY PERCENTAGE</SectionHeader>
+          <Grid cols={4}>
+            {Object.entries(dishStats).map(([dish, stat]) => {
+              const isYesNo = stat.yesNoCount > 0
+              const avg = isYesNo 
+                ? (stat.yesNoCount ? Math.round((stat.yesCount / stat.yesNoCount) * 100) : 0)
+                : (stat.count ? Math.round(stat.totalPct / stat.count) : 0)
+              
+              return (
+                <div key={dish} style={{ 
+                  padding: '16px', borderRadius: 16, background: T.inputBg, border: `1px solid ${T.border}`,
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: 24, fontWeight: 900, color: T.accent, marginBottom: 4 }}>
+                    {avg}%
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: T.textSub, textTransform: 'uppercase' }}>
+                    {dish}
+                  </div>
+                  <div style={{ fontSize: 9, color: T.textSub, opacity: 0.7, marginTop: 4 }}>
+                    {isYesNo ? `${stat.yesCount} of ${stat.yesNoCount} Yes` : `Avg of ${stat.count} responses`}
+                  </div>
+                </div>
+              )
+            })}
+          </Grid>
+        </AdminCard>
+      )}
 
       <Grid cols={2}>
         {/* YES List */}
@@ -202,63 +323,136 @@ export default function DailySurveyTracking() {
         </div>
       </AdminCard>
 
+      {/* QR Scanner Modal */}
+      {isScanning && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)',
+          zIndex: 3000, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', padding: 20
+        }}>
+          <div style={{ position: 'relative', width: '100%', maxWidth: 400 }}>
+            <button 
+              onClick={() => setIsScanning(false)}
+              style={{ position: 'absolute', top: -50, right: 0, background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}
+            >
+              <X size={32} />
+            </button>
+            <AdminCard style={{ padding: 10, background: '#fff' }}>
+              <div id="qr-reader" style={{ width: '100%' }}></div>
+            </AdminCard>
+            <p style={{ color: '#fff', textAlign: 'center', marginTop: 20, fontWeight: 600 }}>
+              Scan Tiffin QR Code
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* User Details Modal */}
       <Modal 
         isOpen={!!selectedUser} 
         onClose={() => setSelectedUser(null)}
-        title={`${selectedUser?.name}'s Survey Details`}
-        maxWidth={500}
+        title="Survey Response"
+        maxWidth={460}
       >
         {selectedUser && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              <div style={{ width: 60, height: 60, borderRadius: 14, background: T.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, fontWeight: 900, color: '#fff' }}>
-                {selectedUser.name.charAt(0)}
-              </div>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 800, color: T.text }}>{selectedUser.name}</div>
-                <div style={{ fontSize: 13, color: T.textSub }}>Thali #{selectedUser.thali_number} • {selectedUser.email}</div>
-              </div>
-            </div>
-
-            <div style={{ padding: 16, borderRadius: 14, background: T.inputBg, border: `1px solid ${T.border}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: T.textSub }}>MEAL STATUS</span>
-                <Badge color={selectedUser.status === 'Applied' ? T.success : T.danger}>
-                  {selectedUser.status === 'Applied' ? 'YES (TAKING THALI)' : 'NO (SKIPPING)'}
-                </Badge>
-              </div>
-
-              {selectedUser.status === 'Applied' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, borderBottom: `1px solid ${T.border}`, paddingBottom: 6 }}>DISH-WISE PORTIONS</div>
-                  {Object.entries(selectedUser.dishResponses || {}).map(([dish, val]) => (
-                    <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-                      <span style={{ color: T.text }}>{dish}</span>
-                      <span style={{ fontWeight: 800, color: T.accent }}>
-                        {val === 'yes' ? '✅ YES' : val === 'no' ? '❌ NO' : `${val}%`}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ textAlign: 'center', padding: '20px 0', color: T.textSub, fontStyle: 'italic' }}>
-                  Member has opted out of this meal.
-                </div>
-              )}
-            </div>
-
-            <div style={{ fontSize: 11, color: T.textSub, textAlign: 'center' }}>
-              Last updated: {selectedUser.updated_at ? new Date(selectedUser.updated_at).toLocaleString() : 'N/A'}
-            </div>
-
-            <Btn style={{ width: '100%' }} onClick={() => setSelectedUser(null)}>Close Details</Btn>
-          </div>
+          <SurveyResponseDisplay 
+            user={selectedUser} 
+            meal={meal} 
+            day={day} 
+            onClose={() => setSelectedUser(null)} 
+          />
         )}
       </Modal>
 
       <style>{`.spin { animation: spin 1s linear infinite } @keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </PageWrap>
+  )
+}
+
+function SurveyResponseDisplay({ user, meal, day, onClose }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Header Info */}
+      <div style={{ 
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+        padding: '12px 16px', borderRadius: 16, background: T.accentBg, border: `1px solid ${T.accentBorder}`
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ 
+            width: 44, height: 44, borderRadius: 12, background: T.accentGrad, 
+            display: 'flex', alignItems: 'center', justifyContent: 'center', 
+            fontSize: 18, fontWeight: 900, color: '#fff', boxShadow: '0 4px 12px rgba(197, 160, 89, 0.3)'
+          }}>
+            {user.thali_number}
+          </div>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>{user.name}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.accent, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              {day} • {meal}
+            </div>
+            {user.updated_at && (
+              <div style={{ fontSize: 9, color: T.textSub, marginTop: 4, fontWeight: 600 }}>
+                📅 {new Date(user.updated_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              </div>
+            )}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <Badge color={user.status === 'Applied' ? T.success : T.danger}>
+            {user.status === 'Applied' ? 'CONFIRMED' : 'SKIPPED'}
+          </Badge>
+          {user.status === 'Applied' && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 20, fontWeight: 900, color: T.accent, lineHeight: 1 }}>
+                {(Object.values(user.dishResponses || {}).reduce((acc, v) => acc + (parseInt(v) || 0), 0) / 100).toFixed(1)}
+              </div>
+              <div style={{ fontSize: 9, fontWeight: 800, color: T.textSub, textTransform: 'uppercase' }}>Portions</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Main Content: Rectangle with Squares as requested */}
+      <div style={{ 
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 12,
+        padding: 20, borderRadius: 20, background: T.card, border: `1px solid ${T.border}`,
+        boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)'
+      }}>
+        {user.status === 'Applied' ? (
+          Object.entries(user.dishResponses || {}).map(([dish, val]) => (
+            <div key={dish} style={{ 
+              aspectRatio: '1/1', borderRadius: 18, background: T.inputBg, border: `1px solid ${T.border}`,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              textAlign: 'center', padding: 10, transition: 'all 0.3s'
+            }}>
+              <div style={{ 
+                fontSize: 18, fontWeight: 900, color: T.accent, marginBottom: 4,
+                textShadow: '0 0 10px rgba(197, 160, 89, 0.2)'
+              }}>
+                {val === 'yes' ? '100%' : val === 'no' ? '0%' : `${val}%`}
+              </div>
+              <div style={{ 
+                fontSize: 9, fontWeight: 800, color: T.textSub, 
+                textTransform: 'uppercase', letterSpacing: '0.02em',
+                lineHeight: 1.2, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis'
+              }}>
+                {dish}
+              </div>
+            </div>
+          ))
+        ) : (
+          <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '40px 0', color: T.textSub }}>
+            <X size={40} style={{ opacity: 0.1, marginBottom: 12 }} />
+            <div style={{ fontWeight: 700 }}>No response for this meal</div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+        <Btn variant="outline" style={{ flex: 1 }} onClick={onClose}>Close</Btn>
+        <Btn style={{ flex: 1 }} onClick={() => window.print()}>Print Label</Btn>
+      </div>
+    </div>
   )
 }
 

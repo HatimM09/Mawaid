@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import {
-  Users, Star, Calendar, Zap, RefreshCw, Package, ArrowUpRight, ChevronRight, AlertCircle, FileText, Check, Bell, AlertTriangle
+  Users, Star, Calendar, Zap, RefreshCw, Package, ArrowUpRight, ChevronRight, AlertCircle, FileText, Check, Bell, AlertTriangle, QrCode
 } from 'lucide-react'
 import {
   T, PageWrap, StatCard, AdminCard, Badge, Spinner, SectionHeader, Btn, SlideDrawer
@@ -32,7 +32,12 @@ export default function Dashboard() {
   const getWeekDate = () => {
     const now = new Date()
     const day = now.getDay()
-    const diff = now.getDate() - day + (day === 0 ? -6 : 1)
+    const hour = now.getHours()
+    let diff = now.getDate() - day + (day === 0 ? -6 : 1)
+    // Saturday 8PM+ or Sunday: surveys target next week's Monday
+    if (day === 0 || (day === 6 && hour >= 20)) {
+      diff += 7
+    }
     const monday = new Date(now.setDate(diff))
     return monday.toISOString().split('T')[0]
   }
@@ -52,6 +57,31 @@ export default function Dashboard() {
   useEffect(() => {
     loadAll()
   }, [loadAll])
+
+  // --- WIRELESS SCANNER REDIRECT ---
+  useEffect(() => {
+    let scanBuffer = ''
+    let lastKeyTime = Date.now()
+
+    const handleKeyDown = (e) => {
+      const now = Date.now()
+      if (now - lastKeyTime > 100) scanBuffer = ''
+      lastKeyTime = now
+
+      if (e.key === 'Enter') {
+        if (scanBuffer.startsWith('ALMAWAID:')) {
+          const userId = scanBuffer.split(':')[1]
+          navigate(`/admin/surveys?userId=${userId}`)
+          scanBuffer = ''
+        }
+      } else if (e.key.length === 1) {
+        scanBuffer += e.key
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [navigate])
 
   const loadStats = async () => {
     const currentWeekId = getWeekDate()
@@ -118,11 +148,19 @@ export default function Dashboard() {
 
         {/* Stat Cards */}
         <AdminCard style={{ gridArea: 'stat1', background: 'rgba(212, 175, 55, 0.05)', border: '1px solid rgba(212, 175, 55, 0.1)' }}>
-          <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Users size={16} color="var(--accent-gold)" />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Users size={16} color="var(--accent-gold)" />
+            </div>
+            <QrCode 
+              size={14} 
+              color="var(--accent-gold)" 
+              style={{ opacity: 0.5, cursor: 'pointer' }} 
+              onClick={() => navigate('/admin/qr-portal')}
+            />
           </div>
           <div style={{ fontSize: 32, fontWeight: 900, marginTop: 12 }}>{stats.users}</div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)' }}>Members</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)' }}>Members (QR Ready)</div>
         </AdminCard>
 
         <AdminCard style={{ gridArea: 'stat2', background: 'rgba(212, 175, 55, 0.05)', border: '1px solid rgba(212, 175, 55, 0.1)' }}>
@@ -180,7 +218,7 @@ export default function Dashboard() {
               </tbody>
             </table>
           </div>
-          <div style={{ padding: 16, background: 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', gap: 12 }} onClick={() => setDrawerOpen(true)} cursor="pointer">
+          <div style={{ padding: 16, background: 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={() => setDrawerOpen(true)}>
             <Zap size={16} color="var(--accent-gold)" />
             <span style={{ fontSize: 12, fontWeight: 800 }}>Open Command Center</span>
           </div>
@@ -279,11 +317,12 @@ export default function Dashboard() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               {[
                 { label: 'Refill Stock', icon: <Package size={20} />, color: 'var(--accent-green)' },
+                { label: 'QR Portal', icon: <QrCode size={20} />, color: 'var(--accent-gold)', onClick: () => navigate('/admin/qr-portal') },
                 { label: 'Approve All', icon: <Check size={20} />, color: 'var(--accent-cyan)' },
                 { label: 'Send Alert', icon: <Bell size={20} />, color: 'var(--accent-orange)' },
                 { label: 'Export Data', icon: <FileText size={20} />, color: 'var(--accent-purple)' },
               ].map((item, i) => (
-                <button key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '20px', borderRadius: 18, border: '1px solid var(--border-glass)', background: 'rgba(255,255,255,0.03)', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                <button key={i} onClick={item.onClick} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '20px', borderRadius: 18, border: '1px solid var(--border-glass)', background: 'rgba(255,255,255,0.03)', color: 'var(--text-primary)', cursor: 'pointer' }}>
                   <div style={{ color: item.color }}>{item.icon}</div>
                   <span style={{ fontSize: 12, fontWeight: 700 }}>{item.label}</span>
                 </button>

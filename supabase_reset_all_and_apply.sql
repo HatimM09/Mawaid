@@ -223,11 +223,12 @@ CREATE TABLE IF NOT EXISTS public.daily_feedback (
 CREATE TABLE IF NOT EXISTS public.thali_requests (
   id            BIGSERIAL PRIMARY KEY,
   user_id       UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  request_type  TEXT NOT NULL CHECK (request_type IN ('resume', 'stop', 'extra')),
+  request_type  TEXT NOT NULL CHECK (request_type IN ('resume', 'stop', 'extra', 'miqaat')),
   status        TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
   from_date     DATE DEFAULT NULL,
   to_date       DATE DEFAULT NULL,
   extra_items   JSONB DEFAULT NULL,
+  details       TEXT DEFAULT '',
   admin_note    TEXT DEFAULT '',
   created_at    TIMESTAMPTZ DEFAULT now()
 );

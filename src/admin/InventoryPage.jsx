@@ -114,11 +114,26 @@ export default function InventoryPage({ role: roleProp }) {
   const [txNote, setTxNote] = useState('')
   const [viewMode, setViewMode] = useState('grid') // Default to grid for 'dynamic' feel
   const [newProduct, setNewProduct] = useState({
-    name: '', category_id: 1, subcategory: '', unit: 'kg', stock: 0, low_stock_threshold: 10
+    name: '', category_id: 1, subcategory: '', unit: 'kg', stock: 0, low_stock: 10
   })
 
   useEffect(() => {
     fetchData()
+
+    // REALTIME SUBSCRIPTION
+    const inventorySub = supabase
+      .channel('inventory_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => {
+        fetchData()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_log' }, () => {
+        fetchData()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(inventorySub)
+    }
   }, [])
 
   const fetchData = async () => {
@@ -141,10 +156,13 @@ export default function InventoryPage({ role: roleProp }) {
     const p = showTx.product
     const newStock = showTx.type === 'in' ? p.stock + qty : Math.max(0, p.stock - qty)
     const logEntry = {
-      product_id: p.id,
-      type: showTx.type,
-      qty,
-      note: txNote || ''
+      item_id: p.id,
+      item_name: p.name,
+      action: showTx.type === 'in' ? 'add' : 'remove',
+      quantity: qty,
+      old_stock: p.stock,
+      new_stock: newStock,
+      notes: txNote || ''
     }
     setShowTx(null); setTxQty(''); setTxNote('')
     
@@ -168,7 +186,7 @@ export default function InventoryPage({ role: roleProp }) {
     delete itemToInsert.id // ensure no ID is sent
     
     setShowAdd(false)
-    setNewProduct({ name: '', category_id: 1, subcategory: '', unit: 'kg', stock: 0, low_stock_threshold: 10 })
+    setNewProduct({ name: '', category_id: 1, subcategory: '', unit: 'kg', stock: 0, low_stock: 10 })
     
     const { error } = await supabase.from('inventory').insert([itemToInsert])
     if (error) {
@@ -183,10 +201,10 @@ export default function InventoryPage({ role: roleProp }) {
     const exportNow = (logs) => {
       const headers = ['Product', 'Type', 'Quantity', 'Note', 'Date']
       const rows = logs.map(l => [
-        l.product_name, 
-        l.type.toUpperCase(), 
-        l.qty, 
-        l.note || '', 
+        l.item_name, 
+        l.action?.toUpperCase(), 
+        l.quantity, 
+        l.notes || '', 
         new Date(l.created_at).toLocaleString('en-GB')
       ])
       const csvContent = [headers, ...rows].map(e => e.join(',')).join('\n')
@@ -235,7 +253,7 @@ export default function InventoryPage({ role: roleProp }) {
 
   const stockRows = filtered.map(p => {
     const cat = CATEGORIES.find(c => c.id === p.category_id)
-    const isLow = p.stock <= p.low_stock_threshold
+    const isLow = p.stock <= p.low_stock
     return [
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', border: '1px solid rgba(212, 175, 55, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
@@ -258,14 +276,14 @@ export default function InventoryPage({ role: roleProp }) {
         <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 10, overflow: 'hidden', position: 'relative', border: '1px solid var(--border-glass)' }}>
           <div style={{ 
             height: '100%', 
-            width: `${Math.min(100, (p.stock / (p.low_stock_threshold * 2)) * 100)}%`, 
+            width: `${Math.min(100, (p.stock / (p.low_stock * 2)) * 100)}%`, 
             background: p.stock === 0 ? T.danger : isLow ? T.warn : T.success,
             boxShadow: `0 0 10px ${p.stock === 0 ? T.danger : isLow ? T.warn : T.success}40`,
             transition: 'width 0.5s ease-out'
           }} />
         </div>
         <div style={{ fontSize: 10, fontWeight: 600, color: T.textSub, marginTop: 4 }}>
-          Threshold: {p.low_stock_threshold} {p.unit}
+          Threshold: {p.low_stock} {p.unit}
         </div>
       </div>,
       <div style={{ 
@@ -309,12 +327,11 @@ export default function InventoryPage({ role: roleProp }) {
   })
 
   const logRows = auditLog.map((l) => {
-    const p = products.find(prod => prod.id === l.product_id)
     return [
-      <div style={{ fontWeight: 600 }}>{l.product_name || p?.name || `Product #${l.product_id}`}</div>,
-      <Badge color={l.type === 'in' ? T.success : T.danger}>{l.type.toUpperCase()}</Badge>,
-      <div style={{ fontWeight: 700 }}>{l.qty}</div>,
-      <div style={{ fontSize: 12, color: T.textSub }}>{l.note || '—'}</div>,
+      <div style={{ fontWeight: 600 }}>{l.item_name || `Item #${l.item_id}`}</div>,
+      <Badge color={l.action === 'add' ? T.success : T.danger}>{l.action?.toUpperCase()}</Badge>,
+      <div style={{ fontWeight: 700 }}>{l.quantity}</div>,
+      <div style={{ fontSize: 12, color: T.textSub }}>{l.notes || '—'}</div>,
       <div style={{ fontSize: 11, color: T.textSub }}>{new Date(l.created_at).toLocaleString('en-GB')}</div>
     ]
   })
@@ -416,12 +433,12 @@ export default function InventoryPage({ role: roleProp }) {
                        <div style={{ fontSize: 28, fontWeight: 900, color: p.stock === 0 ? T.danger : isLow ? T.warn : T.accent, lineHeight: 1 }}>
                         {p.stock}
                       </div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: T.textSub }}>Min: {p.low_stock_threshold}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: T.textSub }}>Min: {p.low_stock}</div>
                     </div>
                     <div style={{ height: 8, background: 'rgba(0,0,0,0.3)', borderRadius: 10, overflow: 'hidden', border: '1px solid var(--border-glass)' }}>
                       <div style={{ 
                         height: '100%', 
-                        width: `${Math.min(100, (p.stock / (p.low_stock_threshold * 2)) * 100)}%`, 
+                        width: `${Math.min(100, (p.stock / (p.low_stock * 2)) * 100)}%`, 
                         background: p.stock === 0 ? T.danger : isLow ? T.warn : T.success,
                         boxShadow: `0 0 10px ${p.stock === 0 ? T.danger : isLow ? T.warn : T.success}40`,
                         transition: 'width 0.6s cubic-bezier(0.4, 0, 0.2, 1)'
@@ -506,7 +523,7 @@ export default function InventoryPage({ role: roleProp }) {
                 <option value="bag">bag</option>
                 <option value="box">box</option>
               </Select>
-              <Input label="Min Quantity" type="number" value={newProduct.low_stock_threshold} onChange={e => setNewProduct({ ...newProduct, low_stock_threshold: parseFloat(e.target.value) })} />
+              <Input label="Min Quantity" type="number" value={newProduct.low_stock} onChange={e => setNewProduct({ ...newProduct, low_stock: parseFloat(e.target.value) })} />
             </div>
             <Btn style={{ width: '100%', marginTop: 8 }} onClick={handleAddProduct}>Create Inventory Item</Btn>
           </div>

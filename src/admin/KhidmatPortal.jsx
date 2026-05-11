@@ -5,11 +5,13 @@ import {
   ChevronRight, Calendar, Star, Utensils, MessageSquare,
   TrendingUp, Check, Info, ArrowUpRight, Search, Clock,
   ChevronLeft, Phone, MapPin, LifeBuoy, Lock, MessageCircle,
-  AlertCircle, Wallet, ClipboardList
+  AlertCircle, Wallet, ClipboardList, Menu
 } from 'lucide-react'
 import { supabase } from './supabaseClient'
 import { AuthCtx, ThemeCtx, useAuth, useTheme } from './context'
-import { T as SharedT, updateSystemTheme } from './ui'
+import { T as SharedT, updateSystemTheme, Modal, SurveyResponseDisplay, Btn as SharedBtn, PackingTVView } from './ui'
+import { Html5QrcodeScanner } from 'html5-qrcode'
+import { Scan, X } from 'lucide-react'
 import UsersPage from './UsersPage'
 import RequestsAdminPage from './RequestsAdminPage'
 import QueriesAdminPage from './QueriesAdminPage'
@@ -64,6 +66,97 @@ export default function KhidmatPortal({ signOut, user }) {
   const [activeTab, setActiveTab] = useState('home')
   const [staffInfo, setStaffInfo] = useState({ name: 'Staff Member', role: 'Team Member' })
   const [loading, setLoading] = useState(true)
+  const [isScanning, setIsScanning] = useState(false)
+  const [scannedUser, setScannedUser] = useState(null)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+
+  // --- WIRELESS SCANNER SUPPORT ---
+  useEffect(() => {
+    let scanBuffer = ''
+    let lastKeyTime = Date.now()
+
+    const handleKeyDown = (e) => {
+      const now = Date.now()
+      if (now - lastKeyTime > 100) scanBuffer = ''
+      lastKeyTime = now
+
+      if (e.key === 'Enter') {
+        if (scanBuffer.startsWith('ALMAWAID:')) {
+          const userId = scanBuffer.split(':')[1]
+          processScan(userId)
+          scanBuffer = ''
+        }
+      } else if (e.key.length === 1) {
+        scanBuffer += e.key
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  const processScan = async (userId) => {
+    try {
+      const { data: u } = await supabase.from('user_stats').select('*').eq('user_id', userId).single()
+      if (!u) return
+      
+      const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+      const today = days[new Date().getDay()]
+      const meal = new Date().getHours() < 16 ? 'lunch' : 'dinner'
+      const dayKey = today.substring(0, 3).toLowerCase()
+      const mealKey = meal === 'lunch' ? 'l' : 'd'
+      
+      // Get current week Monday (matching user-side getWeekDate logic)
+      const now2 = new Date()
+      const wd = now2.getDay()
+      const wh = now2.getHours()
+      let diff = now2.getDate() - wd + (wd === 0 ? -6 : 1)
+      if (wd === 0 || (wd === 6 && wh >= 20)) {
+        diff += 7
+      }
+      const weekId = new Date(new Date().setDate(diff)).toISOString().split('T')[0]
+      
+      const { data: row } = await supabase.from('survey_submissions_flat')
+        .select('*').eq('user_id', userId).eq('week_id', weekId).single()
+      
+      const { data: menuRow } = await supabase.from('weekly_menu').select('*').eq('day_name', today.charAt(0).toUpperCase() + today.slice(1)).maybeSingle()
+      let dishRes = {}
+      if (row && row[`${dayKey}_${mealKey}_status`] === 'Applied' && menuRow) {
+        const dishList = (menuRow[meal] || '').split(',').map(s => s.trim()).filter(Boolean)
+        dishList.forEach((dish, idx) => {
+          const val = row[`${dayKey}_${mealKey}_dish_${idx + 1}`]
+          if (val !== undefined && val !== null) {
+            dishRes[dish] = val === 'Yes' ? 'yes' : (val === 'No' ? 'no' : (parseInt(val) || 0))
+          }
+        })
+      }
+
+      setScannedUser({
+        ...u,
+        status: row ? row[`${dayKey}_${mealKey}_status`] : 'Not Submitted',
+        dishResponses: dishRes,
+        currentDay: today,
+        currentMeal: meal
+      })
+    } catch (e) { console.error(e) }
+  }
+
+  // --- CAMERA SCANNER ---
+  useEffect(() => {
+    if (isScanning) {
+      const qrBoxSize = window.innerWidth < 600 ? 200 : 250;
+      const scanner = new Html5QrcodeScanner("portal-reader", { fps: 10, qrbox: qrBoxSize });
+      scanner.render((decodedText) => {
+        if (decodedText.startsWith('ALMAWAID:')) {
+          const userId = decodedText.split(':')[1];
+          processScan(userId);
+          setIsScanning(false);
+          scanner.clear();
+        }
+      }, (error) => {});
+      return () => scanner.clear();
+    }
+  }, [isScanning])
 
   useEffect(() => {
     updateSystemTheme('royal')
@@ -101,7 +194,7 @@ export default function KhidmatPortal({ signOut, user }) {
 
   return (
     <div style={{
-      minHeight: '100vh', background: 'var(--bg-grad)',
+      minHeight: '100dvh', background: 'var(--bg-grad)',
       color: 'var(--text-primary)', overflowX: 'hidden', fontFamily: "'Inter', sans-serif"
     }}>
       <style>{`
@@ -109,16 +202,59 @@ export default function KhidmatPortal({ signOut, user }) {
         @keyframes spin { to { transform: rotate(360deg); } }
         .spin { animation: spin 0.8s linear infinite; }
         ::-webkit-scrollbar { width: 0; }
+        .kh-nav-inner { 
+          display: flex; align-items: center; gap: 4px; 
+          width: 100%; padding: 0 10px;
+        }
+        
+        .khidmat-sidebar {
+          position: fixed; top: 0; left: 0; bottom: 0;
+          width: 280px; background: rgba(15, 12, 8, 0.98);
+          backdrop-filter: blur(40px); z-index: 3000;
+          border-right: 1px solid var(--accent-border);
+          transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+          transform: translateX(-100%);
+          display: flex; flex-direction: column;
+          padding: 40px 0;
+          border-radius: 0 60px 60px 0;
+          box-shadow: 20px 0 60px rgba(0,0,0,0.8);
+        }
+        .khidmat-sidebar.open { transform: translateX(0); }
+        
+        .kh-sidebar-item {
+          display: flex; align-items: center; gap: 15px;
+          padding: 16px 30px; cursor: pointer;
+          color: var(--text-tertiary); transition: all 0.3s;
+          border-radius: 0 30px 30px 0;
+          margin-bottom: 5px;
+        }
+        /* Curve layout */
+        .kh-sidebar-item:nth-child(1), .kh-sidebar-item:nth-child(5) { padding-left: 25px; }
+        .kh-sidebar-item:nth-child(2), .kh-sidebar-item:nth-child(4) { padding-left: 45px; }
+        .kh-sidebar-item:nth-child(3) { padding-left: 55px; }
+
+        .kh-sidebar-item:hover { background: var(--accent-bg); color: var(--accent-primary); padding-left: 65px; }
+        .kh-sidebar-item.active { background: var(--accent-grad); color: #000; font-weight: 800; padding-left: 75px; }
+
+        @media (min-width: 1025px) {
+          .global-portal-nav { display: none !important; }
+        }
       `}</style>
 
       {/* Header */}
-      <header style={{ textAlign: 'center', padding: '40px 20px 20px' }}>
+      <header style={{ textAlign: 'center', padding: '40px 20px 20px', position: 'relative' }}>
+        <button 
+          onClick={() => setIsSidebarOpen(true)}
+          style={{ position: 'absolute', left: 25, top: 45, background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer' }}
+        >
+          <Menu size={28} />
+        </button>
         <p style={{ fontFamily: "'Inter', sans-serif, 'Amiri', serif", fontSize: 16, color: 'var(--accent-primary)', margin: '0 0 4px' }}>بِسْمِ اللَّهِ الرَّحْمَنِ الرَّحِيمِ</p>
         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 900, letterSpacing: '0.15em', color: 'var(--accent-primary)', fontFamily: "'Inter', sans-serif" }}>AL-MAWAID</h1>
         <div style={{ fontSize: 9, letterSpacing: '0.3em', textTransform: 'uppercase', color: 'var(--border-active)', marginTop: 4 }}>Khidmat Team Portal</div>
       </header>
 
-      <main style={{ maxWidth: 1200, margin: '0 auto', padding: '20px clamp(16px, 4vw, 32px) 120px' }}>
+      <main style={{ maxWidth: 1200, margin: '0 auto', padding: '20px clamp(16px, 4vw, 32px) 160px' }}>
         {activeTab === 'home' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
@@ -135,12 +271,37 @@ export default function KhidmatPortal({ signOut, user }) {
                 <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--accent-primary)', fontFamily: "'Inter', sans-serif" }}>{staffInfo.name}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{staffInfo.role}</div>
               </div>
-              <button
-                onClick={() => setActiveTab('notices')}
-                style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)', borderRadius: 12, padding: 10, cursor: 'pointer', color: 'var(--accent-primary)' }}>
-                <Bell size={20} />
-              </button>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  onClick={() => setIsScanning(true)}
+                  style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)', borderRadius: 12, padding: 10, cursor: 'pointer', color: 'var(--accent-primary)' }}>
+                  <Scan size={20} />
+                </button>
+                <button
+                  onClick={() => setActiveTab('notices')}
+                  style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)', borderRadius: 12, padding: 10, cursor: 'pointer', color: 'var(--accent-primary)' }}>
+                  <Bell size={20} />
+                </button>
+              </div>
             </Card>
+
+            {/* MODALS */}
+            {isScanning && (
+              <div style={{ position: 'fixed', inset: 0, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.9)', padding: 20 }}>
+                <div style={{ position: 'relative', width: '100%', maxWidth: 400 }}>
+                  <button onClick={() => setIsScanning(false)} style={{ position: 'absolute', top: -50, right: 0, background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}><X size={32} /></button>
+                  <Card style={{ padding: 10, background: '#fff' }}><div id="portal-reader" style={{ width: '100%' }}></div></Card>
+                  <p style={{ color: '#fff', textAlign: 'center', marginTop: 20, fontWeight: 600 }}>Scan Member QR Code</p>
+                </div>
+              </div>
+            )}
+
+            {scannedUser && (
+              <PackingTVView 
+                user={scannedUser} 
+                onClose={() => setScannedUser(null)} 
+              />
+            )}
 
             <NoThaliTracker />
 
@@ -186,49 +347,44 @@ export default function KhidmatPortal({ signOut, user }) {
         ) : null}
       </main>
 
-      {/* Global Portal Nav - Pill Shape */}
-      <nav style={{
-        position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
-        width: '94%', maxWidth: 720, height: 84,
-        background: 'var(--bg-card)', backdropFilter: 'blur(40px)',
-        border: '1.5px solid var(--border-active)', borderRadius: 100,
-        display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-        padding: '0 20px', zIndex: 1000,
-        boxShadow: '0 24px 60px rgba(0,0,0,0.7), 0 0 40px var(--accent-bg)'
-      }}>
-        {[
-          { id: 'home', icon: Home, label: 'Home' },
-          { id: 'users', icon: Users, label: 'Users' },
-          { id: 'requests', icon: Star, label: 'Requests' },
-          { id: 'queries', icon: MessageCircle, label: 'Tickets' },
-          { id: 'survey', icon: Calendar, label: 'Stats' },
-        ].map(({ id, icon: Icon, label }) => {
-          const active = activeTab === id
-          return (
-            <button key={id} onClick={() => setActiveTab(id)} style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-              color: active ? 'var(--accent-primary)' : 'var(--text-tertiary)',
-              transition: 'all 0.3s',
-              minWidth: 50
-            }}>
-              <div style={{
-                width: 52, height: 52, borderRadius: '50%',
-                background: active ? 'var(--accent-bg)' : 'transparent',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: active ? 'inset 0 0 15px var(--border-light)' : 'none',
-                border: active ? '1px solid var(--accent-border)' : '1px solid transparent'
-              }}>
-                <Icon size={24} strokeWidth={active ? 2.5 : 1.5} />
-              </div>
-              <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
-            </button>
-          )
-        })}
-        <button onClick={signOut} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 12, color: '#e05555', opacity: 0.8 }}>
-          <LogOut size={24} />
-        </button>
-      </nav>
+      {/* Left Sidebar */}
+      <aside className={`khidmat-sidebar ${isSidebarOpen ? 'open' : ''}`}>
+        <div style={{ padding: '20px 30px 40px', display: 'flex', alignItems: 'center', gap: 15 }}>
+          <div style={{ width: 45, height: 45, borderRadius: 12, background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <img src="/al-mawaid.png" alt="" style={{ width: 30, height: 30 }} />
+          </div>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: 'var(--accent-primary)' }}>KHIDMAT</h2>
+          <div style={{ flex: 1 }} />
+          <button onClick={() => setIsSidebarOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={24} /></button>
+        </div>
+
+        <div style={{ flex: 1 }}>
+          {[
+            { id: 'home', icon: Home, label: 'Home' },
+            { id: 'users', icon: Users, label: 'Thali Users' },
+            { id: 'requests', icon: Star, label: 'Requests' },
+            { id: 'queries', icon: MessageCircle, label: 'Tickets' },
+            { id: 'survey', icon: Calendar, label: 'Stats' },
+          ].map(({ id, icon: Icon, label }) => (
+            <div 
+              key={id} 
+              onClick={() => { setActiveTab(id); setIsSidebarOpen(false); }} 
+              className={`kh-sidebar-item ${activeTab === id ? 'active' : ''}`}
+            >
+              <Icon size={22} />
+              <span style={{ fontSize: 15, fontWeight: 600 }}>{label}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ padding: '20px 30px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+          <button onClick={signOut} style={{ width: '100%', padding: '14px', borderRadius: 12, background: 'rgba(255,92,92,0.1)', color: '#ff5c5c', border: '1px solid rgba(255,92,92,0.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontWeight: 700 }}>
+            <LogOut size={20} /> Logout
+          </button>
+        </div>
+      </aside>
+
+
     </div>
   )
 }
