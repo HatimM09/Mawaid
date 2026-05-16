@@ -286,24 +286,37 @@ export default function DailySurveyTracking() {
       {/* QR Scanner Modal */}
       {isScanning && (
         <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)',
-          zIndex: 3000, display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', padding: 20
+          position: 'fixed', inset: 0, background: '#000',
+          zIndex: 9999, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', padding: 16,
+          height: '100dvh', width: '100vw', overflow: 'hidden'
         }}>
-          <div style={{ position: 'relative', width: '100%', maxWidth: 400 }}>
+          <div style={{ position: 'relative', width: '100%', maxWidth: 500, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <button 
               onClick={() => setIsScanning(false)}
-              style={{ position: 'absolute', top: -50, right: 0, background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}
+              style={{ 
+                position: 'absolute', top: -60, right: 0, 
+                background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', 
+                width: 44, height: 44, borderRadius: '50%', cursor: 'pointer', 
+                display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10
+              }}
             >
-              <X size={32} />
+              <X size={24} />
             </button>
-            <AdminCard style={{ padding: 10, background: '#fff' }}>
-              <div id="qr-reader" style={{ width: '100%' }}></div>
-            </AdminCard>
-            <p style={{ color: '#fff', textAlign: 'center', marginTop: 20, fontWeight: 600 }}>
+            <div style={{ width: '100%', borderRadius: 24, overflow: 'hidden', background: '#000', display: 'flex', justifyContent: 'center' }}>
+              <div id="qr-reader" style={{ width: '100%', border: 'none' }}></div>
+            </div>
+            <p style={{ color: '#fff', textAlign: 'center', marginTop: 24, fontSize: 18, fontWeight: 700, fontFamily: "'DM Sans', sans-serif" }}>
               Scan Tiffin QR Code
             </p>
           </div>
+          <style>{`
+            body { overflow: hidden; }
+            #qr-reader { border: none !important; }
+            #qr-reader video { object-fit: cover !important; border-radius: 24px !important; max-height: 65vh !important; }
+            #qr-reader__dashboard_section_csr { display: none !important; }
+            #qr-reader__dashboard_section_swaplink { margin-top: 10px !important; color: ${T.accent} !important; text-decoration: none !important; }
+          `}</style>
         </div>
       )}
 

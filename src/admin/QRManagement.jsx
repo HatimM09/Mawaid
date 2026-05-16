@@ -486,15 +486,43 @@ export default function QRManagement() {
           )}
 
           {isScanning && (
-            <AdminCard style={{ padding: 0, overflow: 'hidden', position: 'relative', borderRadius: 24, border: '2px solid var(--border-glass)' }}>
-              <div id="reader" style={{ width: '100%', minHeight: 400 }}></div>
-              <div style={{ padding: 24, textAlign: 'center', background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(12px)' }}>
-                <Btn variant="outline" size="sm" onClick={() => {
-                  if (scannerRef.current) scannerRef.current.clear().catch(e => console.error(e))
-                  setIsScanning(false)
-                }}>Close Scanner</Btn>
+            <div style={{
+              position: 'fixed', inset: 0, background: '#000',
+              zIndex: 9999, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', padding: 16,
+              height: '100dvh', width: '100vw', overflow: 'hidden'
+            }}>
+              <div style={{ position: 'relative', width: '100%', maxWidth: 500, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <button 
+                  onClick={() => {
+                    if (scannerRef.current) scannerRef.current.clear().catch(e => console.error(e))
+                    setIsScanning(false)
+                  }}
+                  style={{ 
+                    position: 'absolute', top: -60, right: 0, 
+                    background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', 
+                    width: 44, height: 44, borderRadius: '50%', cursor: 'pointer', 
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10
+                  }}
+                >
+                  <X size={24} />
+                </button>
+                <div style={{ width: '100%', borderRadius: 24, overflow: 'hidden', background: '#000', display: 'flex', justifyContent: 'center' }}>
+                  <div id="reader" style={{ width: '100%', border: 'none' }}></div>
+                </div>
+                <div style={{ color: '#fff', textAlign: 'center', marginTop: 24 }}>
+                   <h3 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 900, fontFamily: "'DM Sans', sans-serif" }}>Scan Member QR</h3>
+                   <p style={{ opacity: 0.7, fontSize: 14, fontFamily: "'DM Sans', sans-serif", margin: 0 }}>Align the thali QR code within the frame</p>
+                </div>
               </div>
-            </AdminCard>
+              <style>{`
+                body { overflow: hidden; }
+                #reader { border: none !important; }
+                #reader video { object-fit: cover !important; border-radius: 24px !important; max-height: 65vh !important; }
+                #reader__dashboard_section_csr { display: none !important; }
+                #reader__dashboard_section_swaplink { margin-top: 10px !important; color: ${T.accent} !important; text-decoration: none !important; }
+              `}</style>
+            </div>
           )}
 
           {scanResult && (

@@ -682,17 +682,39 @@ export default function SurveysPage() {
       
       {/* SCANNER MODAL */}
       {isScanning && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.95)', backdropFilter: 'blur(10px)', padding: 20 }}>
-          <div style={{ position: 'relative', width: '100%', maxWidth: 450 }}>
-            <button onClick={() => setIsScanning(false)} style={{ position: 'absolute', top: -60, right: 0, background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', width: 44, height: 44, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={24} /></button>
-            <div style={{ background: '#fff', borderRadius: 32, padding: 20, overflow: 'hidden', boxShadow: '0 50px 100px rgba(0,0,0,0.5)' }}>
-              <div id="qr-reader" style={{ width: '100%' }}></div>
+        <div style={{
+          position: 'fixed', inset: 0, background: '#000',
+          zIndex: 9999, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', padding: 16,
+          height: '100dvh', width: '100vw', overflow: 'hidden'
+        }}>
+          <div style={{ position: 'relative', width: '100%', maxWidth: 500, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <button 
+              onClick={() => setIsScanning(false)}
+              style={{ 
+                position: 'absolute', top: -60, right: 0, 
+                background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', 
+                width: 44, height: 44, borderRadius: '50%', cursor: 'pointer', 
+                display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10
+              }}
+            >
+              <X size={24} />
+            </button>
+            <div style={{ width: '100%', borderRadius: 24, overflow: 'hidden', background: '#000', display: 'flex', justifyContent: 'center' }}>
+              <div id="qr-reader" style={{ width: '100%', border: 'none' }}></div>
             </div>
-            <div style={{ color: '#fff', textAlign: 'center', marginTop: 32 }}>
-               <h3 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 900 }}>Scan Member QR</h3>
-               <p style={{ opacity: 0.7, fontSize: 14 }}>Align the thali QR code within the frame</p>
+            <div style={{ color: '#fff', textAlign: 'center', marginTop: 24 }}>
+               <h3 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 900, fontFamily: "'DM Sans', sans-serif" }}>Scan Member QR</h3>
+               <p style={{ opacity: 0.7, fontSize: 14, fontFamily: "'DM Sans', sans-serif", margin: 0 }}>Align the thali QR code within the frame</p>
             </div>
           </div>
+          <style>{`
+            body { overflow: hidden; }
+            #qr-reader { border: none !important; }
+            #qr-reader video { object-fit: cover !important; border-radius: 24px !important; max-height: 65vh !important; }
+            #qr-reader__dashboard_section_csr { display: none !important; }
+            #qr-reader__dashboard_section_swaplink { margin-top: 10px !important; color: ${T.accent} !important; text-decoration: none !important; }
+          `}</style>
         </div>
       )}
 
