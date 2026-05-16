@@ -1303,8 +1303,11 @@ function HomePage({ setActiveTab, setShowSurvey, setShowDailySurvey, appSettings
   const [showQR, setShowQR] = useState(false)
   const [profileData, setProfileData] = useState({ name: '', thali_number: '', avatar_url: '' })
   const [statsLoading, setStatsLoading] = useState(true)
+  const [mySurvey, setMySurvey] = useState(null)
+  const [surveyLoading, setSurveyLoading] = useState(true)
   const surveyOpen = isSurveyOpen(appSettings, user?.id)
   const todayKey = getTodayKey()
+  const currentWeekId = getWeekDate()
 
   // Feedback State
   const [submittingFeedback, setSubmittingFeedback] = useState(false)
@@ -1315,7 +1318,22 @@ function HomePage({ setActiveTab, setShowSurvey, setShowDailySurvey, appSettings
   const [dinnerComment, setDinnerComment] = useState('')
   const STAR_LABELS = { 1: '😞 Poor', 2: '😐 Fair', 3: '🙂 Good', 4: '😄 Great', 5: '🤩 Excellent' }
 
-  useEffect(() => { loadData() }, [user])
+  useEffect(() => { 
+    loadData()
+    fetchSurvey()
+    
+    // Real-time subscription to survey updates
+    const channel = supabase.channel(`user-survey-${user.id}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'survey_submissions_flat', 
+        filter: `user_id=eq.${user.id}` 
+      }, () => fetchSurvey())
+      .subscribe()
+    
+    return () => supabase.removeChannel(channel)
+  }, [user])
 
   const loadData = async () => {
     try {
@@ -1323,6 +1341,18 @@ function HomePage({ setActiveTab, setShowSurvey, setShowDailySurvey, appSettings
       if (data) setProfileData({ name: data.name || '', thali_number: data.thali_number || '', avatar_url: data.avatar_url || '' })
     } catch { }
     setStatsLoading(false)
+  }
+
+  const fetchSurvey = async () => {
+    setSurveyLoading(true)
+    try {
+      const { data } = await supabase.from('survey_submissions_flat')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('week_id', currentWeekId)
+        .maybeSingle()
+      setMySurvey(data)
+    } catch { } finally { setSurveyLoading(false) }
   }
 
   const handleSubmitCombined = async () => {
@@ -1341,7 +1371,6 @@ function HomePage({ setActiveTab, setShowSurvey, setShowDailySurvey, appSettings
     } catch { } finally { setSubmittingFeedback(false) }
   }
 
-  const currentWeekId = getWeekDate()
   // Any meal editable in the current week?
   const isAnyMealEditable = DAYS.some(d => 
     canEditMeal(d, currentWeekId, 'lunch', appSettings, user?.id) || 
@@ -1397,7 +1426,21 @@ function HomePage({ setActiveTab, setShowSurvey, setShowDailySurvey, appSettings
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? 'SURVEY LIVE' : (isAnyMealEditable ? 'EDITING WINDOW' : 'SURVEY CLOSED')}</div>
             </div>
             <div style={{ fontSize: 24, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>Weekly Food Survey</div>
-            <div style={{ fontSize: 13, color: t.textSub, marginTop: 8, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? getSurveyWindowMessage(appSettings) : (isAnyMealEditable ? 'Daily edit window is live.' : 'Weekly survey is closed. You can still view your responses.')}</div>
+            {mySurvey && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                {mySurvey[`${todayKey.substring(0,3)}_l_status`] && (
+                  <Badge color={mySurvey[`${todayKey.substring(0,3)}_l_status`] === 'Applied' ? t.successText : '#e05555'} style={{ fontSize: 10, padding: '2px 8px' }}>
+                    Lunch: {mySurvey[`${todayKey.substring(0,3)}_l_status`]}
+                  </Badge>
+                )}
+                {mySurvey[`${todayKey.substring(0,3)}_d_status`] && (
+                  <Badge color={mySurvey[`${todayKey.substring(0,3)}_d_status`] === 'Applied' ? t.successText : '#e05555'} style={{ fontSize: 10, padding: '2px 8px' }}>
+                    Dinner: {mySurvey[`${todayKey.substring(0,3)}_d_status`]}
+                  </Badge>
+                )}
+              </div>
+            )}
+            <div style={{ fontSize: 13, color: t.textSub, marginTop: mySurvey ? 8 : 8, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? getSurveyWindowMessage(appSettings) : (isAnyMealEditable ? 'Daily edit window is live.' : 'Weekly survey is closed. You can still view your responses.')}</div>
           </div>
 
           <button
@@ -1436,7 +1479,13 @@ function HomePage({ setActiveTab, setShowSurvey, setShowDailySurvey, appSettings
                </>
             ) : (
                <>
-                 <ClipboardList size={18} /> {surveyOpen ? 'Start Weekly Survey' : (isAnyMealEditable ? 'Fill Daily Survey' : 'View Responses')}
+                 <ClipboardList size={18} /> 
+                 {surveyOpen 
+                   ? (mySurvey ? 'Edit Weekly Survey' : 'Start Weekly Survey') 
+                   : (isAnyMealEditable 
+                       ? (mySurvey?.[`${todayKey.substring(0,3)}_l_status`] || mySurvey?.[`${todayKey.substring(0,3)}_d_status`] ? 'Edit Daily Survey' : 'Fill Daily Survey') 
+                       : 'View Responses'
+                     )}
                </>
             )}
           </button>
