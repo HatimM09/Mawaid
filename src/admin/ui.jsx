@@ -726,7 +726,6 @@ export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => 
 
       <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
         <Btn variant="outline" style={{ flex: 1 }} onClick={onClose}>Dismiss</Btn>
-        {onPrint && <Btn style={{ flex: 1 }} onClick={onPrint}>Print Label</Btn>}
       </div>
 
       <style>{`

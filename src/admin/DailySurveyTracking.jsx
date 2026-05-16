@@ -353,15 +353,18 @@ function MemberRow({ user, onClick }) {
 
       {user.status === 'Applied' && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto', marginRight: 4 }}>
-          {Object.entries(user.dishResponses || {}).map(([dish, val]) => (
+          {Object.entries(user.dishResponses || {}).map(([dish, val]) => {
+            const isRoti = dish.toLowerCase().includes('roti') || dish.toLowerCase().includes('naan') || dish.toLowerCase().includes('paratha') || dish.toLowerCase().includes('chapati') || dish.toLowerCase().includes('puri')
+            return (
             <div key={dish} style={{ 
               fontSize: 9, fontWeight: 800, color: T.accent, 
               background: 'rgba(212, 175, 55, 0.1)', padding: '2px 6px', borderRadius: 6,
               border: '1px solid rgba(212, 175, 55, 0.2)', whiteSpace: 'nowrap'
             }}>
-              {val === 'yes' ? '100%' : val === 'no' ? '0%' : `${val}%`}
+              {isRoti ? (val === 'yes' ? 'YES' : 'NO') : (val === 'yes' ? '100%' : val === 'no' ? '0%' : `${val}%`)}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
 

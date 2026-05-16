@@ -291,6 +291,62 @@ export default function QRManagement() {
     }
   }
 
+  const downloadUserPDF = async (u) => {
+    const toastId = toast.loading(`Generating PDF for ${u.name}...`)
+    try {
+      if (!window.jspdf) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script')
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+          script.onload = resolve
+          script.onerror = reject
+          document.head.appendChild(script)
+        })
+      }
+
+      const { jsPDF } = window.jspdf
+      const doc = new jsPDF('p', 'mm', [100, 100])
+      const stickerSize = 90
+      
+      const canvas = document.createElement('canvas')
+      const canvasSize = 1062
+      canvas.width = canvasSize; canvas.height = canvasSize
+      const ctx = canvas.getContext('2d')
+      
+      // Draw sticker on canvas (reuse logic from downloadSticker but without the link click)
+      ctx.fillStyle = '#ffffff'
+      ctx.beginPath(); ctx.arc(canvasSize/2, canvasSize/2, canvasSize/2, 0, Math.PI*2); ctx.fill()
+      
+      const logo = new Image()
+      logo.src = '/al-mawaid.png'
+      await new Promise(r => { logo.onload = r; logo.onerror = r })
+      const scale = Math.max(canvasSize / logo.width, canvasSize / logo.height)
+      ctx.drawImage(logo, (canvasSize - logo.width*scale)/2, (canvasSize - logo.height*scale)/2, logo.width*scale, logo.height*scale)
+      
+      const qrCanvas = document.getElementById(`qr-canvas-${u.user_id}`) || document.getElementById('hidden-qr-canvas')
+      if (qrCanvas) {
+        const qrSize = 295, quietZone = 35, boxSize = qrSize + quietZone*2
+        ctx.fillStyle = '#ffffff'
+        ctx.beginPath(); ctx.roundRect((canvasSize-boxSize)/2, canvasSize*0.35, boxSize, boxSize, 40); ctx.fill()
+        ctx.drawImage(qrCanvas, (canvasSize-qrSize)/2, canvasSize*0.35 + quietZone, qrSize, qrSize)
+      }
+      
+      const thaliText = `#${u.thali_number}`
+      ctx.font = '900 130px "DM Sans", sans-serif'
+      const tw = ctx.measureText(thaliText).width
+      ctx.fillStyle = '#ffffff'
+      ctx.beginPath(); ctx.roundRect((canvasSize-tw-100)/2, canvasSize*0.75, tw+100, 180, 90); ctx.fill()
+      ctx.fillStyle = '#000000'; ctx.textAlign = 'center'
+      ctx.fillText(thaliText, canvasSize/2, canvasSize*0.88)
+      
+      doc.addImage(canvas.toDataURL('image/jpeg', 1.0), 'JPEG', 5, 5, stickerSize, stickerSize)
+      doc.save(`Sticker_${u.thali_number}.pdf`)
+      toast.success("PDF Downloaded!", { id: toastId })
+    } catch (e) {
+      toast.error("Failed to generate PDF", { id: toastId })
+    }
+  }
+
   const downloadSticker = (u) => {
     const canvas = document.createElement('canvas');
     const size = 1062; // ~9cm at 300 DPI
@@ -390,10 +446,18 @@ export default function QRManagement() {
       </div>
 
       {activeTab === 'generate' && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
-           <Btn onClick={triggerBulkPDF} disabled={isGeneratingPDF} variant="outline" style={{ border: `1.5px solid ${T.accent}`, minWidth: 220 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginBottom: 20 }}>
+           <Btn onClick={triggerBulkPDF} disabled={isGeneratingPDF} variant="outline" style={{ border: `1.5px solid ${T.accent}`, flex: 1, maxWidth: 300 }}>
              {isGeneratingPDF ? <RefreshCw size={18} className="spin" /> : <FileDown size={18} />}
-             {isGeneratingPDF ? 'Generating PDF...' : 'Download Bulk PDF (2 per Page)'}
+             {isGeneratingPDF ? 'Generating PDF...' : 'Download Bulk PDF (A4)'}
+           </Btn>
+           <Btn onClick={() => {
+             toast.success("Starting sequence download of all QR images...")
+             filteredUsers.forEach((u, i) => {
+               setTimeout(() => downloadSticker(u), i * 300)
+             })
+           }} variant="outline" style={{ flex: 1, maxWidth: 300 }}>
+             <LayoutGrid size={18} /> Download All Images
            </Btn>
         </div>
       )}
@@ -545,12 +609,17 @@ export default function QRManagement() {
                </div>
             </div>
             
-            <div style={{ marginTop: 20, display: 'flex', gap: 12 }}>
-              <Btn variant="outline" style={{ flex: 1, borderRadius: 16 }} onClick={() => setSelectedUser(null)}>Dismiss</Btn>
-              <Btn variant="outline" style={{ flex: 1, borderRadius: 16 }} onClick={() => downloadSticker(selectedUser)}>
-                <FileDown size={18} /> Download
-              </Btn>
-              <Btn style={{ flex: 1, borderRadius: 16, background: T.accentGrad }} onClick={printQR}><Printer size={18} /> Print Sticker</Btn>
+            <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <Btn variant="outline" style={{ flex: 1, borderRadius: 16 }} onClick={() => downloadSticker(selectedUser)}>
+                  <Smartphone size={18} /> Download Image
+                </Btn>
+                <Btn variant="outline" style={{ flex: 1, borderRadius: 16 }} onClick={() => downloadUserPDF(selectedUser)}>
+                  <FileDown size={18} /> Download PDF
+                </Btn>
+              </div>
+              <Btn style={{ width: '100%', borderRadius: 16, background: T.accentGrad }} onClick={printQR}><Printer size={18} /> Print Sticker</Btn>
+              <Btn variant="ghost" style={{ width: '100%', marginTop: 8 }} onClick={() => setSelectedUser(null)}>Dismiss</Btn>
             </div>
             
       {/* Hidden QR codes for PDF generation */}

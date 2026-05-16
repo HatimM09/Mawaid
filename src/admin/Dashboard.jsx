@@ -227,6 +227,22 @@ export default function Dashboard() {
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)' }}>Low Stock Items</div>
         </AdminCard>
 
+        {/* QR Code Hub Tile */}
+        <AdminCard 
+          onClick={() => navigate('/admin/qr-portal')} 
+          style={{ gridArea: 'qr', background: T.accentGrad, border: 'none', cursor: 'pointer', transition: 'transform 0.2s', animation: 'popIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.28s both', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: '#fff', gap: 12 }}
+          onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-4px)'}
+          onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+        >
+          <div style={{ width: 50, height: 50, borderRadius: 15, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <QrCode size={28} color="#fff" />
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 18, fontWeight: 900 }}>QR HUB</div>
+            <div style={{ fontSize: 11, opacity: 0.8, fontWeight: 700 }}>Scan & Identify</div>
+          </div>
+        </AdminCard>
+
         {/* Quick Nav */}
         <AdminCard onClick={() => navigate('/admin/users')} style={{ gridArea: 'nav', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', cursor: 'pointer', animation: 'popIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both' }}>
           <div style={{ padding: '24px' }}>
@@ -409,8 +425,8 @@ export default function Dashboard() {
           grid-template-areas: 
             "header header header header"
             "stat1 stat2 stat3 stat4"
+            "nav nav inventory qr"
             "nav nav inventory thali"
-            "nav nav inventory reports"
             "nav nav actionable reports";
         }
 
@@ -435,8 +451,9 @@ export default function Dashboard() {
               "stat1 stat2"
               "stat3 stat4"
               "nav nav"
-              "inventory thali"
-              "actionable reports";
+              "inventory qr"
+              "thali actionable"
+              "reports reports";
           }
         }
 
@@ -447,7 +464,7 @@ export default function Dashboard() {
               "header header"
               "stat1 stat2"
               "stat3 stat4"
-              "nav nav"
+              "qr nav"
               "inventory inventory"
               "thali actionable"
               "reports reports";
