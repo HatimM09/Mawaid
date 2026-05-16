@@ -16,13 +16,19 @@ export const AuthProvider = ({ children }) => {
   const [portalRole, setPortalRole] = useState(() => localStorage.getItem('al_mawaid_portal') || null)
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut()
-    localStorage.removeItem('al_mawaid_portal')
-    localStorage.removeItem('al_mawaid_mock_user')
-    localStorage.removeItem('al_mawaid_restricted')
-    setSession(null)
-    setMockUser(null)
-    setPortalRole(null)
+    try {
+      await supabase.auth.signOut()
+    } catch (err) {
+      console.warn('SignOut server error, clearing local session anyway:', err.message)
+    } finally {
+      localStorage.removeItem('al_mawaid_portal')
+      localStorage.removeItem('al_mawaid_mock_user')
+      localStorage.removeItem('al_mawaid_restricted')
+      localStorage.removeItem('al-mawaid-auth-token') // The custom storageKey
+      setSession(null)
+      setMockUser(null)
+      setPortalRole(null)
+    }
   }, [])
 
   const handleRoleLogin = useCallback((role, sess) => {
@@ -36,10 +42,23 @@ export const AuthProvider = ({ children }) => {
   }, [])
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_evt, sess) => {
+    supabase.auth.getSession()
+      .then(({ data: { session }, error }) => {
+        if (error) {
+          console.error("Auth Session Error:", error.message)
+          signOut()
+        } else {
+          setSession(session)
+        }
+      })
+      .catch(err => {
+        console.error("Caught Auth Error:", err)
+        signOut()
+      })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, sess) => {
       setSession(sess)
-      if (!sess) {
+      if (event === 'SIGNED_OUT' || event === 'USER_DELETED' || !sess) {
         setMockUser(null)
         setPortalRole(null)
         localStorage.removeItem('al_mawaid_mock_user')
@@ -48,7 +67,7 @@ export const AuthProvider = ({ children }) => {
       }
     })
     return () => subscription.unsubscribe()
-  }, [])
+  }, [signOut])
 
   const authValue = { 
     user: session?.user || mockUser, 
