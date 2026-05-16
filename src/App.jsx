@@ -2250,9 +2250,10 @@ function MySurveysPage({ onBack }) {
   const [surveys, setSurveys] = useState({})
   const [loading, setLoading] = useState(true)
   useEffect(() => {
-    supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id).maybeSingle()
-      .then(({ data }) => {
-        if (!data) return setSurveys({})
+    const currentWeekId = getWeekDate()
+    supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id).eq('week_id', currentWeekId).maybeSingle()
+      .then(({ data, error }) => {
+        if (error || !data) return setSurveys({})
         const grouped = {}
         DAYS.forEach(day => {
           const dayKey = day.substring(0, 3).toLowerCase()
