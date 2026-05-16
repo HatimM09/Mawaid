@@ -376,7 +376,7 @@ export default function QRManagement() {
       ctx.drawImage(logo, drawX, drawY, drawWidth, drawHeight);
 
       // Draw QR Code in a clear white box for perfect scanning
-      const qrCanvas = document.getElementById('hidden-qr-canvas');
+      const qrCanvas = document.getElementById(`qr-canvas-${u.user_id}`) || document.getElementById('hidden-qr-canvas');
       if (qrCanvas) {
         const qrSize = 295;
         const quietZone = 35; // ~3mm
