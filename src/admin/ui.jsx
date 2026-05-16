@@ -545,24 +545,26 @@ export const PackingTVView = ({ user, onClose }) => {
         </div>
       </div>
 
-      {/* DISH LIST - VERTICAL STACK OF SQUARE BOXES */}
+      {/* DISH LIST - 2-COLUMN GRID (ADJUSTS FOR 4 OR 5 DISHES) */}
       {user.status === 'Applied' ? (
         <div style={{ 
-          flex: 1, display: 'flex', flexDirection: 'column', 
-          gap: '3vh', overflowY: 'auto', paddingRight: '10px'
+          flex: 1, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', 
+          gap: '3vh', overflowY: 'auto', paddingRight: '10px', alignContent: 'start'
         }}>
           {dishEntries.map(([dish, pct], idx) => {
             const val = parseInt(pct) || 0
             const isRoti = dish.toLowerCase().includes('roti') || dish.toLowerCase().includes('naan')
+            const isOddLast = dishEntries.length % 2 !== 0 && idx === dishEntries.length - 1
             
             return (
               <div key={dish} style={{ 
+                gridColumn: isOddLast ? '1 / -1' : 'auto',
                 background: 'rgba(255,255,255,0.04)', 
                 border: `clamp(4px, 0.8vh, 12px) solid ${val > 0 || pct === 'yes' ? '#10b981' : 'rgba(255,255,255,0.1)'}`,
                 borderRadius: '4vh',
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '3vh 5vh', position: 'relative', overflow: 'hidden',
-                minHeight: dishEntries.length > 4 ? '15vh' : '18vh',
+                padding: '3vh 4vh', position: 'relative', overflow: 'hidden',
+                minHeight: '15vh',
                 boxShadow: val > 0 || pct === 'yes' ? '0 0 40px rgba(16, 185, 129, 0.15)' : 'none',
                 animation: `popIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) ${0.1 + idx * 0.1}s both`
               }}>
@@ -575,34 +577,35 @@ export const PackingTVView = ({ user, onClose }) => {
                   zIndex: 1
                 }} />
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '3vh', zIndex: 2 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '2vh', zIndex: 2 }}>
                   <div style={{ 
-                    width: 'clamp(40px, 8vh, 100px)', height: 'clamp(40px, 8vh, 100px)', borderRadius: '2vh',
+                    width: 'clamp(30px, 6vh, 80px)', height: 'clamp(30px, 6vh, 80px)', borderRadius: '1.5vh',
                     background: val > 0 || pct === 'yes' ? '#10b981' : 'rgba(255,255,255,0.05)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 'clamp(20px, 4vh, 40px)', fontWeight: 1000, color: '#fff'
+                    fontSize: 'clamp(16px, 3vh, 30px)', fontWeight: 1000, color: '#fff'
                   }}>
                     {idx + 1}
                   </div>
                   <div style={{ 
-                    fontSize: `clamp(18px, 4.5vh, 50px)`, 
+                    fontSize: `clamp(14px, 3.5vh, 40px)`, 
                     fontWeight: 1000, color: '#fff', 
-                    textTransform: 'uppercase', letterSpacing: '0.02em'
-                  }}>{dish}</div>
+                    textTransform: 'uppercase', letterSpacing: '0.02em',
+                    maxWidth: isOddLast ? 'none' : '20vw', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                  }} title={dish}>{dish}</div>
                 </div>
                 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '3vh', zIndex: 2 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '2vh', zIndex: 2 }}>
                   {val > 0 && !isRoti && (
                      <div style={{ 
-                       padding: '1vh 3vh', borderRadius: '1.5vh', background: 'rgba(255,255,255,0.1)', 
-                       color: 'var(--accent-gold)', fontSize: 'clamp(12px, 3vh, 30px)', fontWeight: 900,
+                       padding: '0.8vh 2vh', borderRadius: '1.5vh', background: 'rgba(255,255,255,0.1)', 
+                       color: 'var(--accent-gold)', fontSize: 'clamp(10px, 2.5vh, 24px)', fontWeight: 900,
                        border: '1px solid rgba(255,255,255,0.1)'
                      }}>
-                       {val === 100 ? 'FULL' : (val === 50 ? 'HALF' : (val === 25 ? 'QUARTER' : `${val}%`))}
+                       {val === 100 ? 'FULL' : (val === 50 ? 'HALF' : (val === 25 ? 'QTR' : `${val}%`))}
                      </div>
                   )}
                   <div style={{ 
-                    fontSize: `clamp(30px, 10vh, 150px)`, 
+                    fontSize: `clamp(24px, 7vh, 100px)`, 
                     fontWeight: 1000, color: '#fff', 
                     textShadow: '0 10px 30px rgba(0,0,0,0.5)', lineHeight: 1 
                   }}>
