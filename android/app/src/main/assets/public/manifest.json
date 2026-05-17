@@ -1,0 +1,75 @@
+{
+  "gcm_sender_id": "333277268731",
+  "name": "Al-Mawaid | المَوَائِد",
+  "short_name": "Al-Mawaid",
+  "description": "Premium Daily Tiffin Menu, Survey & Service Management System",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "background_color": "#060d1a",
+  "theme_color": "#D4AF37",
+  "orientation": "portrait-primary",
+  "categories": ["food", "lifestyle", "productivity"],
+  "lang": "en",
+  "dir": "ltr",
+  "scope": "/",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/al-mawaid.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/al-mawaid.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/al-mawaid.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Today's Menu",
+      "short_name": "Menu",
+      "url": "/?tab=menu",
+      "description": "View today's lunch and dinner menu",
+      "icons": [{ "src": "/al-mawaid.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Weekly Survey",
+      "short_name": "Survey",
+      "url": "/?tab=survey",
+      "description": "Fill your weekly food survey",
+      "icons": [{ "src": "/al-mawaid.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "My Profile",
+      "short_name": "Profile",
+      "url": "/?tab=profile",
+      "description": "View your profile and settings",
+      "icons": [{ "src": "/al-mawaid.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Admin Portal",
+      "short_name": "Admin",
+      "url": "/admin",
+      "description": "Access Admin Dashboard",
+      "icons": [{ "src": "/al-mawaid.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Khidmat Portal",
+      "short_name": "Khidmat",
+      "url": "/?portal=khidmat",
+      "description": "Access Khidmat Team Portal",
+      "icons": [{ "src": "/al-mawaid.png", "sizes": "192x192" }]
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 import { Save, RefreshCw, Info } from 'lucide-react'
-import { T, PageWrap, PageTitle, AdminCard, Btn, Alert, Input, SectionHeader } from './ui'
+import { T, PageWrap, PageTitle, AdminCard, Btn, Alert, Input, Select, SectionHeader } from './ui'
 
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 
@@ -15,10 +15,41 @@ const DEFAULT_MENU = {
   Saturday:  { lunch: 'Chana Bateta, Dal Makhni, Chawal', dinner: 'Roti, Chicken Tarkari, Veg Coconut Rice, Kung Pao Gravy' },
 }
 
+const StatusToggle = ({ label, value, onChange }) => {
+  const isOpen = value === 'open'
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <label style={{ color: T.textSub, fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{label}</label>
+      <button 
+        type="button"
+        onClick={() => onChange(isOpen ? 'closed' : 'open')}
+        style={{
+          padding: '14px 20px',
+          borderRadius: 12,
+          border: `2px solid ${isOpen ? '#10b981' : '#ef4444'}`,
+          background: isOpen ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+          color: isOpen ? '#10b981' : '#ef4444',
+          fontSize: 15,
+          fontWeight: 800,
+          cursor: 'pointer',
+          transition: 'all 0.3s ease',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 10
+        }}
+      >
+        {isOpen ? '✅ OPEN' : '🔒 CLOSED'}
+      </button>
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   const [menu, setMenu]         = useState(DEFAULT_MENU)
-  const [upiId, setUpiId]       = useState('shydrabadwala53@okhdfcbank')
-  const [upiAmt, setUpiAmt]     = useState('400.00')
+  const [surveyStatus, setSurveyStatus] = useState('open')
+  const [lunchEditStatus, setLunchEditStatus] = useState('closed')
+  const [dinnerEditStatus, setDinnerEditStatus] = useState('closed')
   const [surveyMsg, setSurveyMsg] = useState('')
   const [helpline, setHelpline] = useState('')
   const [loading, setLoading]   = useState(true)
@@ -33,8 +64,9 @@ export default function SettingsPage() {
     const { data: settings } = await supabase.from('app_settings').select('*')
     if (settings) {
       settings.forEach(row => {
-        if (row.key === 'upi_id')        setUpiId(row.value)
-        if (row.key === 'upi_amount')    setUpiAmt(row.value)
+        if (row.key === 'survey_status') setSurveyStatus(row.value)
+        if (row.key === 'lunch_edit_status') setLunchEditStatus(row.value)
+        if (row.key === 'dinner_edit_status') setDinnerEditStatus(row.value)
         if (row.key === 'survey_msg')    setSurveyMsg(row.value)
         if (row.key === 'helpline_number') setHelpline(row.value)
       })
@@ -60,8 +92,9 @@ export default function SettingsPage() {
 
     // 1. Save general settings
     const settingsRows = [
-      { key: 'upi_id',       value: upiId },
-      { key: 'upi_amount',   value: upiAmt },
+      { key: 'survey_status', value: surveyStatus },
+      { key: 'lunch_edit_status', value: lunchEditStatus },
+      { key: 'dinner_edit_status', value: dinnerEditStatus },
       { key: 'survey_msg',   value: surveyMsg },
       { key: 'helpline_number', value: helpline },
     ]
@@ -101,12 +134,13 @@ export default function SettingsPage() {
 
       <form onSubmit={save} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-        {/* Payment */}
+        {/* Survey Controls */}
         <AdminCard>
-          <SectionHeader>💳 Payment Settings</SectionHeader>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <Input label="UPI ID" value={upiId} onChange={e => setUpiId(e.target.value)} placeholder="yourname@bank" />
-            <Input label="Fixed Amount (₹)" type="number" value={upiAmt} onChange={e => setUpiAmt(e.target.value)} placeholder="400" />
+          <SectionHeader>🛠️ Survey Access Controls</SectionHeader>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+            <StatusToggle label="Global Survey Status" value={surveyStatus} onChange={setSurveyStatus} />
+            <StatusToggle label="Lunch Edits" value={lunchEditStatus} onChange={setLunchEditStatus} />
+            <StatusToggle label="Dinner Edits" value={dinnerEditStatus} onChange={setDinnerEditStatus} />
           </div>
         </AdminCard>
 

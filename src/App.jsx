@@ -81,7 +81,10 @@ const getTodayKey = () => {
 }
 
 // Survey window: Saturday 8PM to Monday 11AM
-const isSurveyOpen = () => {
+const isSurveyOpen = (appSettings = {}) => {
+  if (appSettings.survey_status === 'open') return true;
+  if (appSettings.survey_status === 'closed') return false;
+
   const now = new Date()
   const day = now.getDay() // 0=Sun,1=Mon,6=Sat
   const hour = now.getHours()
@@ -121,8 +124,14 @@ const mapDishToCol = (day, meal, dish) => {
   return `${d}_${m}_${dishKey}`
 }
 
-const canEditMeal = (dayName, weekId, mealType) => {
-  if (isSurveyOpen()) return true
+const canEditMeal = (dayName, weekId, mealType, appSettings = {}) => {
+  if (isSurveyOpen(appSettings)) return true
+
+  if (mealType === 'lunch' && appSettings.lunch_edit_status === 'closed') return false;
+  if (mealType === 'lunch' && appSettings.lunch_edit_status === 'open') return true;
+  if (mealType === 'dinner' && appSettings.dinner_edit_status === 'closed') return false;
+  if (mealType === 'dinner' && appSettings.dinner_edit_status === 'open') return true;
+
   const now = new Date()
   const weekStart = new Date(weekId) // Monday
   const dayIdx = DAYS.indexOf(dayName)
@@ -373,7 +382,7 @@ const GlobalStyles = () => {
 // ══════════════════════════════════════════════════════════════
 // SURVEY MODAL
 // ══════════════════════════════════════════════════════════════
-function SurveyModal({ startDay, onClose }) {
+function SurveyModal({ startDay, onClose, appSettings = {} }) {
   const t = THEMES.bright
   const { user } = useAuth()
   const weeklyMenu = useWeeklyMenu() || {}
@@ -387,15 +396,16 @@ function SurveyModal({ startDay, onClose }) {
   const [responses, setResponses] = useState({})
   const [loading, setLoading] = useState(false)
   const [existingResponse, setExistingResponse] = useState(null)
+  const [hasInitialized, setHasInitialized] = useState(false)
 
   const [userData, setUserData] = useState({ thali_no: '', email: user.email })
   const currentDayIndexInVisible = visibleDays.indexOf(currentDay)
   const menu = weeklyMenu[currentDay] || { lunch: [], dinner: [] }
   const dayKey = currentDay.substring(0, 3).toLowerCase()
   const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
-  const isEditable = canEditMeal(currentDay, currentWeekId, currentMeal)
+  const isEditable = canEditMeal(currentDay, currentWeekId, currentMeal, appSettings)
   const editCount = (existingResponse && !existingResponse.is_template) ? (existingResponse.edit_metadata?.[`${dayKey}_${mealKey}`] || 0) : 0
-  const editBlocked = !isEditable || (!isSurveyOpen() && editCount >= 100) // Setting to 100 to allow unlimited edits within window as per request "pop up days survey... and they can edit"
+  const editBlocked = !isEditable || (!isSurveyOpen(appSettings) && editCount >= 100) // Setting to 100 to allow unlimited edits within window as per request "pop up days survey... and they can edit"
 
   useEffect(() => { loadExisting() }, [currentDay, currentMeal])
 
@@ -413,6 +423,24 @@ function SurveyModal({ startDay, onClose }) {
       if (data) {
         const currentWeekId = getWeekDate()
         const isFromOldWeek = data.week_id !== currentWeekId
+
+        if (!hasInitialized && !isFromOldWeek) {
+          let foundDay = startDay || visibleDays[0] || 'monday'
+          let foundMeal = 'lunch'
+          for (let day of visibleDays) {
+            const dKey = day.substring(0, 3).toLowerCase()
+            if (!data[`${dKey}_l_status`]) { foundDay = day; foundMeal = 'lunch'; break; }
+            if (!data[`${dKey}_d_status`]) { foundDay = day; foundMeal = 'dinner'; break; }
+          }
+          setHasInitialized(true)
+          if (foundDay !== currentDay || foundMeal !== currentMeal) {
+            setCurrentDay(foundDay)
+            setCurrentMeal(foundMeal)
+            return // let effect re-run
+          }
+        } else if (!hasInitialized) {
+          setHasInitialized(true)
+        }
 
         const dayKey = currentDay.substring(0, 3).toLowerCase()
         const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
@@ -886,6 +914,17 @@ function ThaliUserApp() {
   const t = THEMES[theme] || THEMES.dark
   const [unreadCount, setUnreadCount] = useState(0)
   const [toastNotice, setToastNotice] = useState(null)
+  const [appSettings, setAppSettings] = useState({})
+
+  useEffect(() => {
+    supabase.from('app_settings').select('*').then(({ data }) => {
+      if (data) {
+        const settings = {}
+        data.forEach(row => settings[row.key] = row.value)
+        setAppSettings(settings)
+      }
+    })
+  }, [])
 
   useEffect(() => {
     updateSystemTheme(theme)
@@ -1012,7 +1051,7 @@ function ThaliUserApp() {
           </div>
         )}
 
-        {activeTab === 'home' && <HomePage setActiveTab={setActiveTab} setShowDailySurvey={setShowDailySurvey} />}
+        {activeTab === 'home' && <HomePage setActiveTab={setActiveTab} setShowDailySurvey={setShowDailySurvey} appSettings={appSettings} />}
         {activeTab === 'menu' && <WeeklyMenuPage />}
 
         {activeTab === 'post' && <PostPage />}
@@ -1042,7 +1081,7 @@ function ThaliUserApp() {
 // ══════════════════════════════════════════════════════════════
 // HOME PAGE (Thali User)
 // ══════════════════════════════════════════════════════════════
-function HomePage({ setActiveTab, setShowDailySurvey }) {
+function HomePage({ setActiveTab, setShowDailySurvey, appSettings = {} }) {
   const t = useTheme()
   const { user } = useAuth()
 
@@ -1051,7 +1090,7 @@ function HomePage({ setActiveTab, setShowDailySurvey }) {
   const [showQR, setShowQR] = useState(false)
   const [profileData, setProfileData] = useState({ name: '', thali_number: '', avatar_url: '' })
   const [statsLoading, setStatsLoading] = useState(true)
-  const surveyOpen = isSurveyOpen()
+  const surveyOpen = isSurveyOpen(appSettings)
   const todayKey = getTodayKey()
 
   // Feedback State
@@ -1091,7 +1130,7 @@ function HomePage({ setActiveTab, setShowDailySurvey }) {
 
   const currentWeekId = getWeekDate()
   // Any meal editable in the current week?
-  const isAnyMealEditable = DAYS.some(d => canEditMeal(d, currentWeekId, 'lunch') || canEditMeal(d, currentWeekId, 'dinner'))
+  const isAnyMealEditable = DAYS.some(d => canEditMeal(d, currentWeekId, 'lunch', appSettings) || canEditMeal(d, currentWeekId, 'dinner', appSettings))
 
   if (!weeklyMenu || statsLoading) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
 
@@ -1225,7 +1264,7 @@ function HomePage({ setActiveTab, setShowDailySurvey }) {
         </Btn>
       </Card>
 
-      {showSurvey && <SurveyModal startDay="monday" onClose={() => { setShowSurvey(false); loadData() }} />}
+      {showSurvey && <SurveyModal startDay="monday" onClose={() => { setShowSurvey(false); loadData() }} appSettings={appSettings} />}
     </main>
   )
 }
@@ -1422,6 +1461,21 @@ function PostPage() {
   )
 }
 
+const RCard = ({ activeRequest, type, t, children }) => (
+  <div style={{ marginBottom: 10, borderRadius: 14, border: `1px solid ${activeRequest === type ? t.borderActive : t.border}`, background: activeRequest === type ? t.cardActive : t.card, overflow: 'hidden' }}>{children}</div>
+)
+
+const HdrBtn = ({ type, emoji, label, desc, activeRequest, openRequest, t }) => (
+  <button onClick={() => openRequest(type)} style={{ width: '100%', padding: 15, background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left' }}>
+    <div style={{ width: 44, height: 44, borderRadius: 12, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{emoji}</div>
+    <div style={{ flex: 1 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: activeRequest === type ? t.accent : t.text, fontFamily: "'DM Sans',sans-serif" }}>{label}</div>
+      <div style={{ fontSize: 12, color: t.textSub, marginTop: 1, fontFamily: "'DM Sans',sans-serif" }}>{desc}</div>
+    </div>
+    {activeRequest === type ? <ChevronUp size={14} color={t.accent} /> : <ChevronDown size={14} color={t.accent} />}
+  </button>
+)
+
 function ThaliRequestsSection() {
   const t = useTheme(), { user } = useAuth()
   const [activeRequest, setActiveRequest] = useState(null)
@@ -1458,25 +1512,13 @@ function ThaliRequestsSection() {
     } catch (err) { setError(err.message) } finally { setSubmitting(false) }
   }
 
-  const RCard = ({ type, children }) => (
-    <div style={{ marginBottom: 10, borderRadius: 14, border: `1px solid ${activeRequest === type ? t.borderActive : t.border}`, background: activeRequest === type ? t.cardActive : t.card, overflow: 'hidden' }}>{children}</div>
-  )
-  const HdrBtn = ({ type, emoji, label, desc }) => (
-    <button onClick={() => openRequest(type)} style={{ width: '100%', padding: 15, background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, textAlign: 'left' }}>
-      <div style={{ width: 44, height: 44, borderRadius: 12, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{emoji}</div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: activeRequest === type ? t.accent : t.text, fontFamily: "'DM Sans',sans-serif" }}>{label}</div>
-        <div style={{ fontSize: 12, color: t.textSub, marginTop: 1, fontFamily: "'DM Sans',sans-serif" }}>{desc}</div>
-      </div>
-      {activeRequest === type ? <ChevronUp size={14} color={t.accent} /> : <ChevronDown size={14} color={t.accent} />}
-    </button>
-  )
+
 
   return (
     <div>
       {success && <div style={{ marginBottom: 12, padding: 13, borderRadius: 12, background: t.successBg, border: `1px solid ${t.successBorder}`, color: t.successText, fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>{success}</div>}
-      <RCard type="resume">
-        <HdrBtn type="resume" emoji="▶️" label="Resume Thali" desc="Restart your thali service" />
+      <RCard activeRequest={activeRequest} type="resume" t={t}>
+        <HdrBtn activeRequest={activeRequest} openRequest={openRequest} t={t} type="resume" emoji="▶️" label="Resume Thali" desc="Restart your thali service" />
         {activeRequest === 'resume' && (
           <div style={{ padding: '0 16px 16px' }}>
             <div style={{ marginBottom: 12 }}>
@@ -1488,8 +1530,8 @@ function ThaliRequestsSection() {
           </div>
         )}
       </RCard>
-      <RCard type="stop">
-        <HdrBtn type="stop" emoji="⏹️" label="Stop Thali" desc="Pause your thali service" />
+      <RCard activeRequest={activeRequest} type="stop" t={t}>
+        <HdrBtn activeRequest={activeRequest} openRequest={openRequest} t={t} type="stop" emoji="⏹️" label="Stop Thali" desc="Pause your thali service" />
         {activeRequest === 'stop' && (
           <div style={{ padding: '0 16px 16px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
@@ -1501,8 +1543,8 @@ function ThaliRequestsSection() {
           </div>
         )}
       </RCard>
-      <RCard type="miqaat">
-        <HdrBtn type="miqaat" emoji="" label="Miqaat Pirsu" desc="Select your Miqaat option" />
+      <RCard activeRequest={activeRequest} type="miqaat" t={t}>
+        <HdrBtn activeRequest={activeRequest} openRequest={openRequest} t={t} type="miqaat" emoji="🕌" label="Miqaat Pirsu" desc="Select your Miqaat option" />
         {activeRequest === 'miqaat' && (
           <div style={{ padding: '0 16px 16px' }}>
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
@@ -1518,8 +1560,8 @@ function ThaliRequestsSection() {
           </div>
         )}
       </RCard>
-      <RCard type="extra">
-        <HdrBtn type="extra" emoji="➕" label="Add Extra Food" desc="Request additional items" />
+      <RCard activeRequest={activeRequest} type="extra" t={t}>
+        <HdrBtn activeRequest={activeRequest} openRequest={openRequest} t={t} type="extra" emoji="➕" label="Add Extra Food" desc="Request additional items" />
         {activeRequest === 'extra' && (
           <div style={{ padding: '0 16px 16px' }}>
             {extraItems.map((item, i) => (
