@@ -37,6 +37,22 @@ export default function RequestsAdminPage() {
   }
 
   const updateStatus = async (id, status) => {
+    const reqObj = requests.find(r => r.id === id)
+    if (status === 'approved' && reqObj) {
+      try {
+        if (reqObj.request_type === 'change' && reqObj.details) {
+          const thaliMatch = reqObj.details.match(/#?(\d+)/)
+          if (thaliMatch) {
+            const newThaliNum = parseInt(thaliMatch[1])
+            await supabase.from('user_stats').update({ thali_number: newThaliNum }).eq('user_id', reqObj.user_id)
+          }
+        } else if (reqObj.request_type === 'stop') {
+          await supabase.from('user_stats').update({ thali_number: null }).eq('user_id', reqObj.user_id)
+        }
+      } catch (e) {
+        console.error('Auto profile update failed:', e)
+      }
+    }
     await supabase.from('thali_requests').update({ status }).eq('id', id)
     setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r))
   }

@@ -101,7 +101,8 @@ export default function KhidmatPortal({ signOut, user }) {
       if (!u) return
       
       const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-      const today = days[new Date().getDay()]
+      let today = days[new Date().getDay()]
+      if (today === 'sunday') today = 'monday'
       const meal = new Date().getHours() < 16 ? 'lunch' : 'dinner'
       const dayKey = today.substring(0, 3).toLowerCase()
       const mealKey = meal === 'lunch' ? 'l' : 'd'
@@ -305,32 +306,6 @@ export default function KhidmatPortal({ signOut, user }) {
 
             <NoThaliTracker />
 
-
-            {/* Weekly Menu Preview */}
-            <div style={{ marginTop: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, padding: '0 10px' }}>
-                <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--accent-primary)', letterSpacing: '0.2em', textTransform: 'uppercase', opacity: 0.7 }}>WHOLE WEEK MENU</div>
-                <div onClick={() => setActiveTab('survey')} style={{ fontSize: 10, color: 'var(--accent-primary)', fontWeight: 700, cursor: 'pointer' }}>VIEW ALL</div>
-              </div>
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', 
-                gap: 16, 
-                paddingBottom: 10 
-              }}>
-                {weeklyMenu.map(day => (
-                  <div key={day.name} style={{ padding: 16, borderRadius: 24, background: 'var(--border-light)', border: '1px solid var(--accent-bg)', backdropFilter: 'blur(10px)', transition: 'transform 0.3s ease' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-5px)'} onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}>
-                    <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--accent-primary)', marginBottom: 10, borderBottom: '1px solid var(--border-light)', paddingBottom: 4 }}>{day.name}</div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', opacity: 0.8, marginBottom: 4 }}>LUNCH</div>
-                    <div style={{ fontSize: 10, color: 'var(--text-tertiary)', lineHeight: 1.4, marginBottom: 10 }}>{day.lunch_1 || '—'}</div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#5eba82', opacity: 0.8, marginBottom: 4 }}>DINNER</div>
-                    <div style={{ fontSize: 10, color: 'var(--text-tertiary)', lineHeight: 1.4 }}>{day.dinner_1 || '—'}</div>
-                  </div>
-                ))}
-                {weeklyMenu.length === 0 && <div style={{ fontSize: 12, color: 'rgba(255,248,225,0.3)', padding: 20 }}>Loading menu...</div>}
-              </div>
-            </div>
-
           </div>
         ) : activeTab === 'users' ? (
           <UsersPage />
@@ -364,7 +339,7 @@ export default function KhidmatPortal({ signOut, user }) {
             { id: 'users', icon: Users, label: 'Thali Users' },
             { id: 'requests', icon: Star, label: 'Requests' },
             { id: 'queries', icon: MessageCircle, label: 'Tickets' },
-            { id: 'survey', icon: Calendar, label: 'Stats' },
+            { id: 'survey', icon: ClipboardList, label: 'Surveys' },
           ].map(({ id, icon: Icon, label }) => (
             <div 
               key={id} 

@@ -9,6 +9,7 @@ import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Grid, Mo
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
 } from 'recharts'
+import SurveyAccessManager from './SurveyAccessManager'
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 const MEALS = ['lunch', 'dinner']
@@ -39,6 +40,7 @@ export default function SurveysPage() {
   const [chartData, setChartData] = useState([])
   const [selectedUser, setSelectedUser] = useState(null)
   const [isScanning, setIsScanning] = useState(false)
+  const [isAccessManagerOpen, setIsAccessManagerOpen] = useState(false)
 
   // --- AUTO LOAD URL USER ---
   useEffect(() => {
@@ -89,7 +91,9 @@ export default function SurveysPage() {
       setSelectedUser({
         ...u,
         status: resp.wants_food ? 'Applied' : 'Skipped',
-        dishResponses: resp.dish_responses
+        dishResponses: resp.dish_responses,
+        currentDay: dayFilter,
+        currentMeal: mealFilter
       })
     } else {
       // Fallback: try to fetch from DB if not in current view
@@ -121,7 +125,9 @@ export default function SurveysPage() {
       setSelectedUser({
         ...u,
         status: row ? row[`${dayKey}_${mealKey}_status`] : 'Not Submitted',
-        dishResponses: dishRes
+        dishResponses: dishRes,
+        currentDay: dayFilter,
+        currentMeal: mealFilter
       })
     } catch (e) { console.error(e) }
   }
@@ -332,6 +338,9 @@ export default function SurveysPage() {
           <Btn variant="primary" onClick={() => setIsScanning(true)} style={{ height: 48, padding: '0 24px', borderRadius: 14 }}>
             <Scan size={18} /> <span className="desktop-only">Launch Scanner</span><span className="mobile-only">Scan</span>
           </Btn>
+          <Btn variant="outline" onClick={() => setIsAccessManagerOpen(true)} style={{ height: 48, padding: '0 24px', borderRadius: 14 }}>
+            <UserIcon size={18} /> <span className="desktop-only">Manage Access</span><span className="mobile-only">Access</span>
+          </Btn>
           <Btn variant="outline" onClick={() => {
             const csv = dailyHeaders.join(',') + "\n" +
               filtered.map(r => {
@@ -490,6 +499,8 @@ export default function SurveysPage() {
           />
         )}
       </Modal>
+
+      <SurveyAccessManager isOpen={isAccessManagerOpen} onClose={() => setIsAccessManagerOpen(false)} />
     </PageWrap>
   )
 }

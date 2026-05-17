@@ -147,7 +147,11 @@ export default function Dashboard() {
         </div>
 
         {/* Stat Cards */}
-        <AdminCard style={{ gridArea: 'stat1', background: 'rgba(212, 175, 55, 0.05)', border: '1px solid rgba(212, 175, 55, 0.1)' }}>
+        <AdminCard 
+          onClick={() => navigate('/admin/users')}
+          style={{ gridArea: 'stat1', background: 'rgba(212, 175, 55, 0.05)', border: '1px solid rgba(212, 175, 55, 0.1)', cursor: 'pointer', transition: 'all 0.3s' }}
+          className="hover-lift"
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Users size={16} color="var(--accent-gold)" />
@@ -156,14 +160,21 @@ export default function Dashboard() {
               size={14} 
               color="var(--accent-gold)" 
               style={{ opacity: 0.5, cursor: 'pointer' }} 
-              onClick={() => navigate('/admin/qr-portal')}
+              onClick={(e) => {
+                e.stopPropagation()
+                navigate('/admin/qr')
+              }} 
             />
           </div>
           <div style={{ fontSize: 32, fontWeight: 900, marginTop: 12 }}>{stats.users}</div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)' }}>Members (QR Ready)</div>
         </AdminCard>
 
-        <AdminCard style={{ gridArea: 'stat2', background: 'rgba(212, 175, 55, 0.05)', border: '1px solid rgba(212, 175, 55, 0.1)' }}>
+        <AdminCard 
+          onClick={() => navigate('/admin/surveys')}
+          style={{ gridArea: 'stat2', background: 'rgba(212, 175, 55, 0.05)', border: '1px solid rgba(212, 175, 55, 0.1)', cursor: 'pointer', transition: 'all 0.3s' }}
+          className="hover-lift"
+        >
           <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ fontSize: 16 }}>🍱</span>
           </div>
@@ -171,7 +182,11 @@ export default function Dashboard() {
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)' }}>Thalis for {new Date().getHours() < 16 ? 'Lunch' : 'Dinner'}</div>
         </AdminCard>
 
-        <AdminCard style={{ gridArea: 'stat3', background: 'rgba(212, 175, 55, 0.05)', border: '1px solid rgba(212, 175, 55, 0.1)' }}>
+        <AdminCard 
+          onClick={() => navigate('/admin/queries')}
+          style={{ gridArea: 'stat3', background: 'rgba(212, 175, 55, 0.05)', border: '1px solid rgba(212, 175, 55, 0.1)', cursor: 'pointer', transition: 'all 0.3s' }}
+          className="hover-lift"
+        >
           <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ color: 'var(--accent-gold)', fontWeight: 900, fontSize: 18 }}>?</span>
           </div>
@@ -179,7 +194,11 @@ export default function Dashboard() {
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)' }}>Open Queries</div>
         </AdminCard>
 
-        <AdminCard onClick={() => navigate('/admin/inventory')} style={{ gridArea: 'stat4', background: 'rgba(212, 175, 55, 0.05)', border: '1px solid rgba(212, 175, 55, 0.1)', cursor: 'pointer' }}>
+        <AdminCard 
+          onClick={() => navigate('/admin/inventory')} 
+          style={{ gridArea: 'stat4', background: 'rgba(212, 175, 55, 0.05)', border: '1px solid rgba(212, 175, 55, 0.1)', cursor: 'pointer', transition: 'all 0.3s' }}
+          className="hover-lift"
+        >
           <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <AlertTriangle size={16} color="var(--accent-gold)" />
           </div>
@@ -187,40 +206,41 @@ export default function Dashboard() {
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)' }}>Low Stock Items</div>
         </AdminCard>
 
-        {/* Quick Nav */}
-        <AdminCard onClick={() => navigate('/admin/users')} style={{ gridArea: 'nav', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', cursor: 'pointer' }}>
-          <div style={{ padding: '24px' }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 20 }}>QUICK NAVIGATION</div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 12, background: 'rgba(212, 175, 55, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Users size={20} color="var(--accent-gold)" />
-                </div>
-                <div>
-                  <div style={{ fontSize: 18, fontWeight: 800 }}>Members</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Manage all members</div>
-                </div>
-              </div>
-              <ChevronRight size={20} color="var(--text-tertiary)" />
+        {/* QR Identity Hub Card */}
+        <AdminCard style={{ gridArea: 'qr-hub', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 800 }}>QR Identity Hub</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Stickers & scan dispatch controls</div>
             </div>
+            <QrCode size={20} color="var(--accent-gold)" />
           </div>
-          <div style={{ flex: 1, borderTop: '1px solid var(--border-light)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <tbody>
-                <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
-                  <td style={{ padding: '16px 24px', color: 'var(--text-tertiary)' }}>Team Availability</td>
-                  <td style={{ padding: '16px 24px', textAlign: 'right', fontWeight: 700, color: 'var(--accent-green)' }}>Tomorrow</td>
-                </tr>
-                <tr style={{ borderBottom: '1px solid var(--border-light)' }}>
-                  <td style={{ padding: '16px 24px', color: 'var(--text-tertiary)' }}>Team Logistics</td>
-                  <td style={{ padding: '16px 24px', textAlign: 'right', fontWeight: 700, color: 'var(--accent-green)' }}>Active</td>
-                </tr>
-              </tbody>
-            </table>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <Btn variant="primary" style={{ flex: 1, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => navigate('/admin/qr')}>
+              <QrCode size={14} /> Open Hub
+            </Btn>
+            <Btn variant="outline" style={{ flex: 1, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => setDrawerOpen(true)}>
+              <Zap size={14} /> Command Center
+            </Btn>
           </div>
-          <div style={{ padding: 16, background: 'rgba(0,0,0,0.2)', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={() => setDrawerOpen(true)}>
-            <Zap size={16} color="var(--accent-gold)" />
-            <span style={{ fontSize: 12, fontWeight: 800 }}>Open Command Center</span>
+          <div style={{ flex: 1, borderTop: '1px solid var(--border-light)', paddingTop: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>Pending Survey Members</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', maxHeight: 150 }} className="custom-scroll">
+              {(missingSurveys || []).slice(0, 3).map(u => (
+                <div key={u.user_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(212, 175, 55, 0.08)', color: 'var(--accent-gold)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900 }}>
+                      #{u.thali_number || '—'}
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{u.name || 'Anonymous'}</div>
+                  </div>
+                  <Btn variant="ghost" size="sm" onClick={() => navigate(`/admin/qr?userId=${u.user_id}`)} style={{ padding: 4 }}><ArrowUpRight size={14} /></Btn>
+                </div>
+              ))}
+              {(!missingSurveys || missingSurveys.length === 0) && (
+                <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 12, color: 'var(--text-tertiary)' }}>No missing surveys ✓</div>
+              )}
+            </div>
           </div>
         </AdminCard>
 
@@ -261,7 +281,7 @@ export default function Dashboard() {
         </AdminCard>
 
         {/* Missing Surveys */}
-        <AdminCard onClick={() => navigate('/admin/survey-tracking')} style={{ gridArea: 'actionable', display: 'flex', flexDirection: 'column', gap: 12, cursor: 'pointer' }}>
+        <AdminCard onClick={() => navigate('/admin/surveys')} style={{ gridArea: 'actionable', display: 'flex', flexDirection: 'column', gap: 12, cursor: 'pointer' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent-pink)' }}>PENDING SURVEYS</div>
             <Badge color="var(--accent-pink)">{missingSurveys.length}</Badge>
@@ -278,30 +298,6 @@ export default function Dashboard() {
                 <ArrowUpRight size={14} color="var(--text-tertiary)" />
               </div>
             ))}
-          </div>
-        </AdminCard>
-
-        {/* Reports */}
-        <AdminCard style={{ gridArea: 'reports', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ fontSize: 16, fontWeight: 800 }}>Reports</div>
-          <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <div style={{ height: 140 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={feedbackByDay}>
-                  <Bar dataKey="lunch" fill="var(--accent-purple)" radius={[4, 4, 0, 0]} barSize={8} />
-                  <Bar dataKey="dinner" fill="var(--accent-cyan)" radius={[4, 4, 0, 0]} barSize={8} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <div style={{ height: 140 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={[{ v: 40 }, { v: 30 }, { v: 20 }, { v: 10 }]} dataKey="v" innerRadius={35} outerRadius={50} paddingAngle={5}>
-                    {CHART_COLORS.map((c, i) => <Cell key={i} fill={c} />)}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
           </div>
         </AdminCard>
       </div>
@@ -360,9 +356,8 @@ export default function Dashboard() {
           grid-template-areas: 
             "header header header header"
             "stat1 stat2 stat3 stat4"
-            "nav nav inventory thali"
-            "nav nav inventory reports"
-            "nav nav actionable reports";
+            "qr-hub qr-hub inventory thali"
+            "qr-hub qr-hub inventory actionable";
         }
 
         .bento-grid > * {
@@ -385,9 +380,9 @@ export default function Dashboard() {
               "header header"
               "stat1 stat2"
               "stat3 stat4"
-              "nav nav"
+              "qr-hub qr-hub"
               "inventory thali"
-              "actionable reports";
+              "actionable actionable";
           }
         }
 
@@ -398,10 +393,9 @@ export default function Dashboard() {
               "header header"
               "stat1 stat2"
               "stat3 stat4"
-              "nav nav"
+              "qr-hub qr-hub"
               "inventory inventory"
-              "thali actionable"
-              "reports reports";
+              "thali actionable";
             gap: 12px;
           }
           

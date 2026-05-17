@@ -80,8 +80,34 @@ const getTodayKey = () => {
   return map[new Date().getDay()] || 'monday'
 }
 
+const hasUserOverride = (appSettings, userId, dayName, mealType) => {
+  if (!userId || !appSettings.user_overrides) return false;
+  try {
+    const overrides = typeof appSettings.user_overrides === 'string'
+      ? JSON.parse(appSettings.user_overrides)
+      : appSettings.user_overrides;
+    const userOverride = overrides[userId];
+    if (!userOverride) return false;
+    
+    if (userOverride.all) return true;
+    
+    if (dayName) {
+      const dayOverride = userOverride[dayName.toLowerCase()];
+      if (dayOverride) {
+         return !!(dayOverride.lunch || dayOverride.dinner || dayOverride.all);
+      }
+    } else {
+      return Object.keys(userOverride).length > 0;
+    }
+  } catch (e) {
+    return false;
+  }
+  return false;
+}
+
 // Survey window: Saturday 8PM to Monday 11AM
-const isSurveyOpen = (appSettings = {}) => {
+const isSurveyOpen = (appSettings = {}, userId = null) => {
+  if (userId && hasUserOverride(appSettings, userId)) return true;
   if (appSettings.survey_status === 'open') return true;
   if (appSettings.survey_status === 'closed') return false;
 
@@ -94,8 +120,8 @@ const isSurveyOpen = (appSettings = {}) => {
   return false
 }
 
-const getSurveyWindowMessage = () => {
-  if (isSurveyOpen()) return 'Survey window is open! (Sat 8PM – Mon 11AM)'
+const getSurveyWindowMessage = (appSettings = {}, userId = null) => {
+  if (isSurveyOpen(appSettings, userId)) return 'Survey window is open! (Sat 8PM – Mon 11AM)'
   return 'Survey window opens Saturday 8:00 PM and closes Monday 11:00 AM.'
 }
 
@@ -124,8 +150,9 @@ const mapDishToCol = (day, meal, dish) => {
   return `${d}_${m}_${dishKey}`
 }
 
-const canEditMeal = (dayName, weekId, mealType, appSettings = {}) => {
-  if (isSurveyOpen(appSettings)) return true
+const canEditMeal = (dayName, weekId, mealType, appSettings = {}, userId = null) => {
+  if (hasUserOverride(appSettings, userId, dayName, mealType)) return true;
+  if (isSurveyOpen(appSettings)) return true;
 
   if (mealType === 'lunch' && appSettings.lunch_edit_status === 'closed') return false;
   if (mealType === 'lunch' && appSettings.lunch_edit_status === 'open') return true;
@@ -403,9 +430,9 @@ function SurveyModal({ startDay, onClose, appSettings = {} }) {
   const menu = weeklyMenu[currentDay] || { lunch: [], dinner: [] }
   const dayKey = currentDay.substring(0, 3).toLowerCase()
   const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
-  const isEditable = canEditMeal(currentDay, currentWeekId, currentMeal, appSettings)
+  const isEditable = canEditMeal(currentDay, currentWeekId, currentMeal, appSettings, user.id)
   const editCount = (existingResponse && !existingResponse.is_template) ? (existingResponse.edit_metadata?.[`${dayKey}_${mealKey}`] || 0) : 0
-  const editBlocked = !isEditable || (!isSurveyOpen(appSettings) && editCount >= 100) // Setting to 100 to allow unlimited edits within window as per request "pop up days survey... and they can edit"
+  const editBlocked = !isEditable || (!isSurveyOpen(appSettings, user.id) && editCount >= 100) // Setting to 100 to allow unlimited edits within window as per request "pop up days survey... and they can edit"
 
   useEffect(() => { loadExisting() }, [currentDay, currentMeal])
 
@@ -424,22 +451,28 @@ function SurveyModal({ startDay, onClose, appSettings = {} }) {
         const currentWeekId = getWeekDate()
         const isFromOldWeek = data.week_id !== currentWeekId
 
-        if (!hasInitialized && !isFromOldWeek) {
-          let foundDay = startDay || visibleDays[0] || 'monday'
-          let foundMeal = 'lunch'
-          for (let day of visibleDays) {
-            const dKey = day.substring(0, 3).toLowerCase()
-            if (!data[`${dKey}_l_status`]) { foundDay = day; foundMeal = 'lunch'; break; }
-            if (!data[`${dKey}_d_status`]) { foundDay = day; foundMeal = 'dinner'; break; }
+        if (!hasInitialized) {
+          // For current-week data, find the first incomplete day/meal
+          // For old-week templates, start fresh from monday/lunch
+          if (!isFromOldWeek) {
+            let foundDay = visibleDays[0] || 'monday'
+            let foundMeal = 'lunch'
+            let foundIncomplete = false
+            for (let day of visibleDays) {
+              const dKey = day.substring(0, 3).toLowerCase()
+              if (!data[`${dKey}_l_status`]) { foundDay = day; foundMeal = 'lunch'; foundIncomplete = true; break; }
+              if (!data[`${dKey}_d_status`]) { foundDay = day; foundMeal = 'dinner'; foundIncomplete = true; break; }
+            }
+            // If everything is filled, stay on the first day so user can review/edit
+            setHasInitialized(true)
+            if (foundIncomplete && (foundDay !== currentDay || foundMeal !== currentMeal)) {
+              setCurrentDay(foundDay)
+              setCurrentMeal(foundMeal)
+              return // let effect re-run with new day/meal
+            }
+          } else {
+            setHasInitialized(true)
           }
-          setHasInitialized(true)
-          if (foundDay !== currentDay || foundMeal !== currentMeal) {
-            setCurrentDay(foundDay)
-            setCurrentMeal(foundMeal)
-            return // let effect re-run
-          }
-        } else if (!hasInitialized) {
-          setHasInitialized(true)
         }
 
         const dayKey = currentDay.substring(0, 3).toLowerCase()
@@ -935,24 +968,93 @@ function ThaliUserApp() {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission()
     }
+
+    const getMonday = (d) => {
+      d = new Date(d)
+      const day = d.getDay()
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1)
+      return new Date(d.setDate(diff))
+    }
+
     const loadUnread = async () => {
       if (!user) return
       const lastRead = localStorage.getItem('almawaid_last_notice_read') || '1970-01-01T00:00:00.000Z'
-      const { count, error } = await supabase
+      const { data, error } = await supabase
         .from('notices')
-        .select('*', { count: 'exact', head: true })
+        .select('*')
         .or(`target_user_id.is.null,target_user_id.eq.${user.id}`)
         .gt('created_at', lastRead)
 
-      if (!error) setUnreadCount(count || 0)
+      if (!error && data) {
+        try {
+          const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+          const today = days[new Date().getDay()]
+          const h = new Date().getHours()
+          const mealName = h < 15 ? 'lunch' : 'dinner'
+          const dayKey = today.substring(0, 3).toLowerCase()
+          const mealKey = mealName === 'lunch' ? 'l' : 'd'
+          const weekId = getMonday(new Date()).toISOString().split('T')[0]
+          
+          const { data: subData } = await supabase
+            .from('survey_submissions_flat')
+            .select(`${dayKey}_${mealKey}_status`)
+            .eq('user_id', user.id)
+            .eq('week_id', weekId)
+            .maybeSingle()
+            
+          const status = subData ? subData[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
+          const isEating = status === 'Applied'
+          
+          const filtered = data.filter(notice => {
+            const toneStr = notice.tone || ''
+            if (toneStr.includes(':opt_in')) return isEating
+            if (toneStr.includes(':opt_out')) return !isEating
+            return true
+          })
+          setUnreadCount(filtered.length)
+        } catch {
+          setUnreadCount(data.length)
+        }
+      }
     }
     loadUnread()
 
     const channel = supabase
       .channel('global-notices')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notices' }, (payload) => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notices' }, async (payload) => {
         const notice = payload.new
-        const isForMe = !notice.target_user_id || notice.target_user_id === user?.id
+        let isForMe = !notice.target_user_id || notice.target_user_id === user?.id
+
+        if (isForMe && notice.tone) {
+          const toneStr = notice.tone || ''
+          if (toneStr.includes(':opt_in') || toneStr.includes(':opt_out')) {
+            const isOptInTarget = toneStr.includes(':opt_in')
+            try {
+              const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+              const today = days[new Date().getDay()]
+              const h = new Date().getHours()
+              const mealName = h < 15 ? 'lunch' : 'dinner'
+              const dayKey = today.substring(0, 3).toLowerCase()
+              const mealKey = mealName === 'lunch' ? 'l' : 'd'
+              const weekId = getMonday(new Date()).toISOString().split('T')[0]
+              
+              const { data } = await supabase
+                .from('survey_submissions_flat')
+                .select(`${dayKey}_${mealKey}_status`)
+                .eq('user_id', user.id)
+                .eq('week_id', weekId)
+                .maybeSingle()
+                
+              const status = data ? data[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
+              const isEating = status === 'Applied'
+              
+              if (isOptInTarget && !isEating) isForMe = false
+              if (!isOptInTarget && isEating) isForMe = false
+            } catch (e) {
+              console.error(e)
+            }
+          }
+        }
 
         if (isForMe) {
           setToastNotice(notice)
@@ -1090,7 +1192,7 @@ function HomePage({ setActiveTab, setShowDailySurvey, appSettings = {} }) {
   const [showQR, setShowQR] = useState(false)
   const [profileData, setProfileData] = useState({ name: '', thali_number: '', avatar_url: '' })
   const [statsLoading, setStatsLoading] = useState(true)
-  const surveyOpen = isSurveyOpen(appSettings)
+  const surveyOpen = isSurveyOpen(appSettings, user.id)
   const todayKey = getTodayKey()
 
   // Feedback State
@@ -1130,7 +1232,7 @@ function HomePage({ setActiveTab, setShowDailySurvey, appSettings = {} }) {
 
   const currentWeekId = getWeekDate()
   // Any meal editable in the current week?
-  const isAnyMealEditable = DAYS.some(d => canEditMeal(d, currentWeekId, 'lunch', appSettings) || canEditMeal(d, currentWeekId, 'dinner', appSettings))
+  const isAnyMealEditable = DAYS.some(d => canEditMeal(d, currentWeekId, 'lunch', appSettings, user.id) || canEditMeal(d, currentWeekId, 'dinner', appSettings, user.id))
 
   if (!weeklyMenu || statsLoading) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
 
@@ -1178,7 +1280,7 @@ function HomePage({ setActiveTab, setShowDailySurvey, appSettings = {} }) {
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? 'SURVEY LIVE' : (isAnyMealEditable ? 'EDITING WINDOW' : 'SURVEY CLOSED')}</div>
             </div>
             <div style={{ fontSize: 24, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>Weekly Food Survey</div>
-            <div style={{ fontSize: 13, color: t.textSub, marginTop: 8, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? getSurveyWindowMessage() : (isAnyMealEditable ? 'Daily edit window is live (L < 11am, D < 3:30pm).' : 'Weekly survey is closed. You can still view your responses.')}</div>
+            <div style={{ fontSize: 13, color: t.textSub, marginTop: 8, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? getSurveyWindowMessage(appSettings, user.id) : (isAnyMealEditable ? 'Daily edit window is live (L < 11am, D < 3:30pm).' : 'Weekly survey is closed. You can still view your responses.')}</div>
           </div>
 
           <button
@@ -2067,6 +2169,13 @@ function NotificationsPage({ onBack, markRead }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    const getMonday = (d) => {
+      d = new Date(d)
+      const day = d.getDay()
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1)
+      return new Date(d.setDate(diff))
+    }
+
     const fetchNotices = async () => {
       // Fetch notices targeted at everyone or specifically at this user
       const { data } = await supabase
@@ -2075,9 +2184,41 @@ function NotificationsPage({ onBack, markRead }) {
         .or(`target_user_id.is.null,target_user_id.eq.${user.id}`)
         .lte('scheduled_at', new Date().toISOString())
         .order('created_at', { ascending: false })
-        .limit(10)
+        .limit(20)
 
-      setNotices(data || [])
+      if (data) {
+        try {
+          const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+          const today = days[new Date().getDay()]
+          const h = new Date().getHours()
+          const mealName = h < 15 ? 'lunch' : 'dinner'
+          const dayKey = today.substring(0, 3).toLowerCase()
+          const mealKey = mealName === 'lunch' ? 'l' : 'd'
+          const weekId = getMonday(new Date()).toISOString().split('T')[0]
+          
+          const { data: subData } = await supabase
+            .from('survey_submissions_flat')
+            .select(`${dayKey}_${mealKey}_status`)
+            .eq('user_id', user.id)
+            .eq('week_id', weekId)
+            .maybeSingle()
+            
+          const status = subData ? subData[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
+          const isEating = status === 'Applied'
+          
+          const filtered = data.filter(notice => {
+            const toneStr = notice.tone || ''
+            if (toneStr.includes(':opt_in')) return isEating
+            if (toneStr.includes(':opt_out')) return !isEating
+            return true
+          })
+          setNotices(filtered)
+        } catch {
+          setNotices(data)
+        }
+      } else {
+        setNotices([])
+      }
       setLoading(false)
 
       // Mark as read when page is viewed
@@ -2106,28 +2247,31 @@ function NotificationsPage({ onBack, markRead }) {
       ))}
 
       <SectionLabel>Recent Broadcasts</SectionLabel>
-      {loading ? <Spinner /> : notices.length === 0 ? <EmptyState msg="No recent broadcasts found." /> : notices.map(item => (
-        <Card key={item.id} style={{ marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 12, background: `${item.tone || t.accent}20`, border: `1px solid ${item.tone || t.accent}45`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Bell size={18} color={item.tone || t.accent} /></div>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{item.title}</div>
-                <div style={{ fontSize: 10, color: t.textSub }}>{item.sender_name}</div>
+      {loading ? <Spinner /> : notices.length === 0 ? <EmptyState msg="No recent broadcasts found." /> : notices.map(item => {
+        const displayColor = (item.tone || '').split(':')[0] || t.accent
+        return (
+          <Card key={item.id} style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+              <div style={{ width: 42, height: 42, borderRadius: 12, background: `${displayColor}20`, border: `1px solid ${displayColor}45`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Bell size={18} color={displayColor} /></div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{item.title}</div>
+                  <div style={{ fontSize: 10, color: t.textSub }}>{item.sender_name}</div>
+                </div>
+                <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.6, marginTop: 4, fontFamily: "'DM Sans',sans-serif" }}>{item.body}</div>
+                {item.media && item.media[0] && (
+                  <img
+                    src={item.media[0]}
+                    alt=""
+                    style={{ width: '100%', borderRadius: 12, marginTop: 12, border: `1px solid ${t.border}` }}
+                  />
+                )}
+                <div style={{ fontSize: 10, color: t.accent, marginTop: 10, fontWeight: 600 }}>{new Date(item.created_at).toLocaleString()}</div>
               </div>
-              <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.6, marginTop: 4, fontFamily: "'DM Sans',sans-serif" }}>{item.body}</div>
-              {item.media && item.media[0] && (
-                <img
-                  src={item.media[0]}
-                  alt=""
-                  style={{ width: '100%', borderRadius: 12, marginTop: 12, border: `1px solid ${t.border}` }}
-                />
-              )}
-              <div style={{ fontSize: 10, color: t.accent, marginTop: 10, fontWeight: 600 }}>{new Date(item.created_at).toLocaleString()}</div>
             </div>
-          </div>
-        </Card>
-      ))}
+          </Card>
+        )
+      })}
     </main>
   )
 }

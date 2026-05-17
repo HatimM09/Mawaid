@@ -173,6 +173,8 @@ export default function QRManagement() {
         ...user,
         status: submission ? submission[`${dayKey}_${mealKey}_status`] : 'Not Submitted',
         dishResponses: dishRes,
+        currentDay: today,
+        currentMeal: mealName,
         meal: mealName,
         day: today
       })

@@ -35,8 +35,13 @@ export default function QueriesAdminPage() {
   }
 
   const updateStatus = async (id, status) => {
-    await supabase.from('queries').update({ status }).eq('id', id)
-    setQueries(prev => prev.map(q => q.id === id ? { ...q, status } : q))
+    const updateObj = { status }
+    if (status === 'resolved') {
+      updateObj.admin_reply = 'Resolved by Al-Mawaid Administration.'
+      updateObj.replied_at = new Date().toISOString()
+    }
+    await supabase.from('queries').update(updateObj).eq('id', id)
+    setQueries(prev => prev.map(q => q.id === id ? { ...q, ...updateObj } : q))
   }
 
   const sendReply = async (q) => {

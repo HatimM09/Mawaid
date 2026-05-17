@@ -259,17 +259,23 @@ export const Table = ({ headers, rows, emptyMsg = 'No data found.' }) => (
   </div>
 )
 
-export const Badge = ({ children, color = 'var(--accent-cyan)' }) => (
-  <span style={{
-    display: 'inline-flex', alignItems: 'center',
-    padding: '3px 10px', borderRadius: 20,
-    background: `${color}18`, border: `1px solid ${color}40`,
-    color, fontSize: 10, fontWeight: 800, letterSpacing: '0.05em',
-    whiteSpace: 'nowrap',
-  }}>
-    {children}
-  </span>
-)
+export const Badge = ({ children, color = 'var(--accent-cyan)', style = {} }) => {
+  const isVar = String(color).startsWith('var(')
+  const bg = isVar ? `rgba(167, 139, 250, 0.1)` : `${color}18`
+  const border = isVar ? `1px solid ${color}` : `1px solid ${color}40`
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      padding: '4px 10px', borderRadius: 20,
+      background: bg, border: border,
+      color, fontSize: 10, fontWeight: 800, letterSpacing: '0.05em',
+      whiteSpace: 'nowrap',
+      ...style
+    }}>
+      {children}
+    </span>
+  )
+}
 
 export const Input = ({ label, ...props }) => (
   <div style={{ width: '100%' }}>
@@ -465,8 +471,15 @@ export const PackingTVView = ({ user, onClose }) => {
              {user.thali_number?.toString().charAt(0) || 'U'}
            </div>
            <div>
-             <div style={{ fontSize: '3.5vh', fontWeight: 800, color: 'var(--accent-gold)', textTransform: 'uppercase', letterSpacing: '0.25em' }}>Thali Dispatch Station</div>
-             <div style={{ fontSize: '10vh', fontWeight: 1000, lineHeight: 1, letterSpacing: '-0.03em' }}>{user.name}</div>
+             <div style={{ fontSize: '3.5vh', fontWeight: 800, color: 'var(--accent-gold)', textTransform: 'uppercase', letterSpacing: '0.25em', display: 'flex', alignItems: 'center', gap: '2vh' }}>
+               Thali Dispatch Station
+               {user.currentDay && (
+                 <span style={{ fontSize: '2.5vh', background: 'rgba(212, 175, 55, 0.15)', padding: '0.5vh 2vh', borderRadius: '1vh', color: '#fff', fontWeight: 900 }}>
+                   {user.currentDay.toUpperCase()} • {user.currentMeal.toUpperCase()}
+                 </span>
+               )}
+             </div>
+             <div style={{ fontSize: '10vh', fontWeight: 1000, lineHeight: 1, letterSpacing: '-0.03em', marginTop: '1vh' }}>{user.name}</div>
            </div>
         </div>
         
@@ -476,73 +489,124 @@ export const PackingTVView = ({ user, onClose }) => {
         </div>
       </div>
 
-      {/* DISH LIST - VERTICAL STACK OF SQUARE BOXES */}
-      {user.status === 'Applied' ? (
-        <div style={{ 
-          flex: 1, display: 'flex', flexDirection: 'column', 
-          gap: '3vh', overflowY: 'auto', paddingRight: '10px'
-        }}>
-          {dishEntries.map(([dish, pct], idx) => {
-            const val = parseInt(pct) || 0
-            const isRoti = dish.toLowerCase().includes('roti') || dish.toLowerCase().includes('naan')
-            
-            return (
-              <div key={dish} style={{ 
-                background: 'rgba(255,255,255,0.04)', 
-                border: `clamp(4px, 0.8vh, 12px) solid ${val > 0 || pct === 'yes' ? '#10b981' : 'rgba(255,255,255,0.1)'}`,
-                borderRadius: '4vh',
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '3vh 5vh', position: 'relative', overflow: 'hidden',
-                minHeight: dishEntries.length > 4 ? '15vh' : '18vh',
-                boxShadow: val > 0 || pct === 'yes' ? '0 0 40px rgba(16, 185, 129, 0.15)' : 'none'
-              }}>
-                <div style={{ 
-                  position: 'absolute', left: 0, top: 0, bottom: 0,
-                  width: isRoti ? (pct === 'yes' ? '100%' : '0%') : `${val}%`,
-                  background: val > 75 || pct === 'yes' ? 'rgba(16, 185, 129, 0.3)' : (val > 0 ? 'rgba(212, 175, 55, 0.3)' : 'transparent'),
-                  transition: 'width 1.5s cubic-bezier(0.4, 0, 0.2, 1)',
-                  zIndex: 1
-                }} />
+      {/* DISH LIST - AUTOMATICALLY ADJUSTS GRID & FONT SIZES FOR 1-6 DISHES */}
+      {user.status === 'Applied' ? (() => {
+        const totalDishes = dishEntries.length
+        const isMultiRow = totalDishes > 3
+        
+        // Define dynamic grid rows/columns
+        let gridCols = 'repeat(3, 1fr)'
+        if (totalDishes === 1) gridCols = '1fr'
+        else if (totalDishes === 2) gridCols = 'repeat(2, 1fr)'
+        else if (totalDishes === 3) gridCols = 'repeat(3, 1fr)'
+        else if (totalDishes === 4) gridCols = 'repeat(2, 1fr)'
+        else if (totalDishes >= 5) gridCols = 'repeat(3, 1fr)'
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '3vh', zIndex: 2 }}>
+        const gridRows = isMultiRow ? 'repeat(2, 1fr)' : '1fr'
+
+        // Scale styles dynamically
+        const cardPadding = isMultiRow ? '2.5vh 2vw' : '5vh 2.5vw'
+        const badgeSize = isMultiRow ? '7.5vh' : '10vh'
+        const badgeFontSize = isMultiRow ? '3vh' : '4.5vh'
+        const dishFontSize = isMultiRow ? 'clamp(14px, 3vh, 32px)' : 'clamp(20px, 4.5vh, 50px)'
+        const dishMargin = isMultiRow ? '1.5vh 0' : '3vh 0'
+        const tagPadding = isMultiRow ? '0.5vh 1.8vh' : '0.8vh 2.5vh'
+        const tagFontSize = isMultiRow ? '1.8vh' : '2.5vh'
+        const amountFontSize = isMultiRow ? 'clamp(26px, 6.5vh, 85px)' : 'clamp(36px, 9vh, 120px)'
+        const labelFontSize = isMultiRow ? '1.5vh' : '1.8vh'
+
+        return (
+          <div style={{ 
+            flex: 1, 
+            display: 'grid', 
+            gridTemplateColumns: gridCols,
+            gridTemplateRows: gridRows,
+            gap: isMultiRow ? '2vh 2vw' : '0 2.5vw', 
+            width: '100%', 
+            boxSizing: 'border-box',
+            marginBottom: '2vh'
+          }}>
+            {dishEntries.map(([dish, pct], idx) => {
+              const val = parseInt(pct) || 0
+              const isRoti = dish.toLowerCase().includes('roti') || dish.toLowerCase().includes('naan')
+              
+              return (
+                <div key={dish} style={{ 
+                  background: 'rgba(255,255,255,0.03)', 
+                  border: `clamp(4px, 0.8vh, 12px) solid ${val > 0 || pct === 'yes' ? '#10b981' : 'rgba(255,255,255,0.1)'}`,
+                  borderRadius: '4vh',
+                  display: 'flex', flexDirection: 'column', 
+                  alignItems: 'center', justifyContent: 'space-between',
+                  padding: cardPadding, position: 'relative', overflow: 'hidden',
+                  boxShadow: val > 0 || pct === 'yes' ? '0 0 50px rgba(16, 185, 129, 0.15)' : 'none',
+                  textAlign: 'center',
+                  minWidth: 0
+                }}>
+                  {/* Vertical Fill Animation */}
                   <div style={{ 
-                    width: 'clamp(40px, 8vh, 100px)', height: 'clamp(40px, 8vh, 100px)', borderRadius: '2vh',
+                    position: 'absolute', left: 0, right: 0, bottom: 0,
+                    height: isRoti ? (pct === 'yes' ? '100%' : '0%') : `${val}%`,
+                    background: val > 75 || pct === 'yes' ? 'rgba(16, 185, 129, 0.2)' : (val > 0 ? 'rgba(212, 175, 55, 0.2)' : 'transparent'),
+                    transition: 'height 1.5s cubic-bezier(0.4, 0, 0.2, 1)',
+                    zIndex: 1
+                  }} />
+
+                  {/* Index Badge */}
+                  <div style={{ 
+                    width: badgeSize, height: badgeSize, borderRadius: '2.5vh',
                     background: val > 0 || pct === 'yes' ? '#10b981' : 'rgba(255,255,255,0.05)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 'clamp(20px, 4vh, 40px)', fontWeight: 1000, color: '#fff'
+                    fontSize: badgeFontSize, fontWeight: 1000, color: '#fff', zIndex: 2
                   }}>
                     {idx + 1}
                   </div>
+
+                  {/* Dish Name */}
                   <div style={{ 
-                    fontSize: `clamp(18px, 4.5vh, 50px)`, 
+                    fontSize: dishFontSize, 
                     fontWeight: 1000, color: '#fff', 
-                    textTransform: 'uppercase', letterSpacing: '0.02em'
+                    textTransform: 'uppercase', letterSpacing: '0.01em',
+                    margin: dishMargin, zIndex: 2,
+                    lineHeight: 1.1,
+                    wordBreak: 'break-word',
+                    maxWidth: '100%'
                   }}>{dish}</div>
-                </div>
-                
-                <div style={{ display: 'flex', alignItems: 'center', gap: '3vh', zIndex: 2 }}>
-                  {val > 0 && !isRoti && (
-                     <div style={{ 
-                       padding: '1vh 3vh', borderRadius: '1.5vh', background: 'rgba(255,255,255,0.1)', 
-                       color: 'var(--accent-gold)', fontSize: 'clamp(12px, 3vh, 30px)', fontWeight: 900,
-                       border: '1px solid rgba(255,255,255,0.1)'
-                     }}>
-                       {val === 100 ? 'FULL' : (val === 50 ? 'HALF' : (val === 25 ? 'QUARTER' : `${val}%`))}
-                     </div>
-                  )}
-                  <div style={{ 
-                    fontSize: `clamp(30px, 10vh, 150px)`, 
-                    fontWeight: 1000, color: '#fff', 
-                    textShadow: '0 10px 30px rgba(0,0,0,0.5)', lineHeight: 1 
-                  }}>
-                    {isRoti ? (pct === 'yes' ? 'YES' : 'NO') : `${val}%`}
+                  
+                  {/* Portion/Quantity display */}
+                  <div style={{ zIndex: 2, width: '100%' }}>
+                    {val > 0 && !isRoti && (
+                       <div style={{ 
+                         display: 'inline-block', padding: tagPadding, borderRadius: '1.2vh', 
+                         background: 'rgba(255,255,255,0.1)', color: 'var(--accent-gold)', 
+                         fontSize: tagFontSize, fontWeight: 900, marginBottom: isMultiRow ? '0.8vh' : '1.5vh',
+                         border: '1px solid rgba(255,255,255,0.1)'
+                       }}>
+                         {val === 100 ? 'FULL' : (val === 50 ? 'HALF' : (val === 25 ? 'QUARTER' : `${val}%`))}
+                       </div>
+                    )}
+                    
+                    <div style={{ 
+                      fontSize: amountFontSize, 
+                      fontWeight: 1000, color: '#fff', 
+                      textShadow: '0 10px 30px rgba(0,0,0,0.5)', lineHeight: 1 
+                    }}>
+                      {isRoti ? (pct === 'yes' ? 'YES' : 'NO') : `${val}%`}
+                    </div>
+
+                    <div style={{ 
+                      fontSize: labelFontSize, fontWeight: 800, 
+                      color: 'var(--text-tertiary)', textTransform: 'uppercase', 
+                      marginTop: '0.8vh', letterSpacing: '0.1em' 
+                    }}>
+                      {isRoti ? 'Response' : 'Portion'}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )
-          })}
-        </div>
-      ) : (
+              )
+            })}
+          </div>
+        )
+      })() : (
         <div style={{ 
           flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: 'rgba(244, 63, 94, 0.1)', border: '15px solid #f43f5e', borderRadius: '5vh'

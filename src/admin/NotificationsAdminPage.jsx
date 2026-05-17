@@ -47,6 +47,13 @@ export default function NotificationsAdminPage() {
     if (!form.title || !form.body) return alert('Title and Message are required')
     
     setSubmitting(true)
+    let finalTone = form.tone
+    if (form.target_type === 'opt_in') {
+      finalTone = `${form.tone}:opt_in`
+    } else if (form.target_type === 'opt_out') {
+      finalTone = `${form.tone}:opt_out`
+    }
+
     const payload = {
       title: form.title,
       body: form.body,
@@ -54,7 +61,7 @@ export default function NotificationsAdminPage() {
       media: form.media_url ? [form.media_url] : [],
       scheduled_at: form.scheduled_at || new Date().toISOString(),
       target_user_id: form.target_type === 'specific' ? form.target_user_id : null,
-      tone: form.tone,
+      tone: finalTone,
       created_at: new Date().toISOString()
     }
 
@@ -169,6 +176,8 @@ export default function NotificationsAdminPage() {
                   onChange={e => setForm({...form, target_type: e.target.value})}
                 >
                   <option value="all">All Thali Users</option>
+                  <option value="opt_in">In Users (Eating Today)</option>
+                  <option value="opt_out">Out Users (Skipping Today)</option>
                   <option value="specific">Specific User Only</option>
                 </Select>
 
