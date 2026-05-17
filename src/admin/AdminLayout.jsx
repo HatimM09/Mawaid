@@ -326,12 +326,16 @@ export default function AdminLayout() {
             >
               <Menu size={24} />
             </button>
-            <div style={{
-              width: 32, height: 32, borderRadius: '50%', background: 'var(--accent-grad)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 0 15px rgba(184, 134, 11, 0.4)',
-              border: '1px solid rgba(212, 175, 55, 0.3)'
-            }}>
+            <div 
+              onClick={() => navigate('/admin')}
+              style={{
+                width: 32, height: 32, borderRadius: '50%', background: 'var(--accent-grad)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 0 15px rgba(184, 134, 11, 0.4)',
+                border: '1px solid rgba(212, 175, 55, 0.3)',
+                cursor: 'pointer'
+              }}
+            >
               <img src="/al-mawaid.png" alt="" style={{ width: 20, height: 20, objectFit: 'contain' }} />
             </div>
             <div className="admin-nav-breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255, 248, 225, 0.6)', fontSize: 13, fontWeight: 600 }}>
@@ -385,7 +389,10 @@ export default function AdminLayout() {
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
           {/* Left Sidebar */}
           <aside className={`admin-sidebar ${isSidebarOpen ? 'open' : ''}`}>
-            <div style={{ padding: '0 30px 40px', display: 'flex', alignItems: 'center', gap: 15 }}>
+            <div 
+              onClick={() => { navigate('/admin'); if (window.innerWidth < 1025) setIsSidebarOpen(false) }}
+              style={{ padding: '0 30px 40px', display: 'flex', alignItems: 'center', gap: 15, cursor: 'pointer' }}
+            >
               <div style={{ width: 42, height: 42, borderRadius: 14, background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <img src="/al-mawaid.png" alt="" style={{ width: 28, height: 28 }} />
               </div>

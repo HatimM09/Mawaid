@@ -461,6 +461,25 @@ export const PackingTVView = ({ user, onClose }) => {
         }
       `}</style>
 
+      {/* Absolute Top-Right Dismiss Button */}
+      <button 
+        onClick={onClose}
+        style={{
+          position: 'absolute', top: '3vh', right: '3vw',
+          background: 'rgba(244, 63, 94, 0.15)', border: '2px solid rgba(244, 63, 94, 0.4)',
+          color: '#f43f5e', width: '7vh', height: '7vh', borderRadius: '50%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '3.5vh', fontWeight: 900, cursor: 'pointer', zIndex: 10005,
+          boxShadow: '0 0 20px rgba(244, 63, 94, 0.2)',
+          transition: 'all 0.2s',
+          lineHeight: 1
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(244, 63, 94, 0.3)'; e.currentTarget.style.transform = 'scale(1.1)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(244, 63, 94, 0.15)'; e.currentTarget.style.transform = 'scale(1)' }}
+      >
+        ✕
+      </button>
+
       {/* TOP HEADER: USER PROFILE */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4vh' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '3vw' }}>
