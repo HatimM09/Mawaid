@@ -16,44 +16,69 @@ const DEFAULT_MENU = {
 }
 
 const StatusToggle = ({ label, value, onChange }) => {
-  const isOpen = value === 'open'
+  const options = [
+    { id: 'closed', label: '🔒 CLOSED', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)', border: 'rgba(239, 68, 68, 0.3)' },
+    { id: 'auto', label: '📅 AUTO', color: '#6366f1', bg: 'rgba(99, 102, 241, 0.1)', border: 'rgba(99, 102, 241, 0.3)' },
+    { id: 'open', label: '✅ OPEN', color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.3)' }
+  ]
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <label style={{ color: T.textSub, fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{label}</label>
-      <button 
-        type="button"
-        onClick={() => onChange(isOpen ? 'closed' : 'open')}
-        style={{
-          padding: '14px 20px',
-          borderRadius: 12,
-          border: `2px solid ${isOpen ? '#10b981' : '#ef4444'}`,
-          background: isOpen ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-          color: isOpen ? '#10b981' : '#ef4444',
-          fontSize: 15,
-          fontWeight: 800,
-          cursor: 'pointer',
-          transition: 'all 0.3s ease',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 10
-        }}
-      >
-        {isOpen ? '✅ OPEN' : '🔒 CLOSED'}
-      </button>
+      <label style={{ color: T.textSub, fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase' }}>{label}</label>
+      <div style={{ 
+        display: 'flex', 
+        background: T.inputBg, 
+        padding: 4, 
+        borderRadius: 14, 
+        border: `1px solid ${T.inputBorder}`, 
+        gap: 6,
+        boxSizing: 'border-box'
+      }}>
+        {options.map(opt => {
+          const active = value === opt.id
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => onChange(opt.id)}
+              style={{
+                flex: 1,
+                padding: '12px 14px',
+                borderRadius: 10,
+                border: active ? `1px solid ${opt.color}` : '1px solid transparent',
+                background: active ? opt.bg : 'transparent',
+                color: active ? opt.color : T.textSub,
+                fontSize: 13,
+                fontWeight: active ? 900 : 700,
+                cursor: 'pointer',
+                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                outline: 'none',
+                fontFamily: 'inherit'
+              }}
+            >
+              {opt.label}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
 export default function SettingsPage() {
   const [menu, setMenu]         = useState(DEFAULT_MENU)
-  const [surveyStatus, setSurveyStatus] = useState('open')
-  const [lunchEditStatus, setLunchEditStatus] = useState('closed')
-  const [dinnerEditStatus, setDinnerEditStatus] = useState('closed')
+  const [surveyStatus, setSurveyStatus] = useState('auto')
+  const [lunchEditStatus, setLunchEditStatus] = useState('auto')
+  const [dinnerEditStatus, setDinnerEditStatus] = useState('auto')
   const [surveyMsg, setSurveyMsg] = useState('')
   const [helpline, setHelpline] = useState('')
   const [loading, setLoading]   = useState(true)
   const [saving, setSaving]     = useState(false)
+  const [quickSaving, setQuickSaving] = useState(false)
   const [msg, setMsg]           = useState({ text: '', type: 'success' })
 
   useEffect(() => { load() }, [])
@@ -90,15 +115,30 @@ export default function SettingsPage() {
     setSaving(true)
     setMsg({ text: '', type: 'success' })
 
-    // 1. Save general settings
-    const settingsRows = [
-      { key: 'survey_status', value: surveyStatus },
+    // 1. Save general settings — update each key individually for reliability
+    const settingsToSave = [
+      { key: 'survey_status',    value: surveyStatus },
       { key: 'lunch_edit_status', value: lunchEditStatus },
       { key: 'dinner_edit_status', value: dinnerEditStatus },
-      { key: 'survey_msg',   value: surveyMsg },
-      { key: 'helpline_number', value: helpline },
+      { key: 'survey_msg',       value: surveyMsg },
+      { key: 'helpline_number',  value: helpline },
     ]
-    const { error: settingsError } = await supabase.from('app_settings').upsert(settingsRows, { onConflict: 'key' })
+
+    let settingsError = null
+    for (const row of settingsToSave) {
+      // Try UPDATE first; if no rows matched, INSERT
+      const { data: existing } = await supabase
+        .from('app_settings').select('id').eq('key', row.key).maybeSingle()
+      if (existing) {
+        const { error } = await supabase
+          .from('app_settings').update({ value: row.value, updated_at: new Date().toISOString() }).eq('key', row.key)
+        if (error) { settingsError = error; break }
+      } else {
+        const { error } = await supabase
+          .from('app_settings').insert({ key: row.key, value: row.value })
+        if (error) { settingsError = error; break }
+      }
+    }
 
     // 2. Save weekly menu
     const menuRows = Object.entries(menu).map(([day, val]) => ({
@@ -111,14 +151,39 @@ export default function SettingsPage() {
 
     setSaving(false)
     const error = settingsError || menuError
+    const now = new Date().toLocaleTimeString()
     setMsg(error
-      ? { text: error.message, type: 'error' }
-      : { text: 'Settings saved successfully!', type: 'success' }
+      ? { text: `Save failed: ${error.message}`, type: 'error' }
+      : { text: `✅ Settings saved at ${now}`, type: 'success' }
     )
   }
 
   const updateMenu = (day, meal, val) => {
     setMenu(prev => ({ ...prev, [day]: { ...prev[day], [meal]: val } }))
+  }
+
+  // Quick-save just the survey toggles (no page scroll needed)
+  const quickSaveSurveySettings = async () => {
+    setQuickSaving(true)
+    const toSave = [
+      { key: 'survey_status',     value: surveyStatus },
+      { key: 'lunch_edit_status', value: lunchEditStatus },
+      { key: 'dinner_edit_status', value: dinnerEditStatus },
+    ]
+    let err = null
+    for (const row of toSave) {
+      const { error } = await supabase.from('app_settings')
+        .update({ value: row.value, updated_at: new Date().toISOString() })
+        .eq('key', row.key)
+      if (error) { err = error; break }
+    }
+    setQuickSaving(false)
+    if (err) {
+      setMsg({ text: `Quick save failed: ${err.message}`, type: 'error' })
+    } else {
+      const now = new Date().toLocaleTimeString()
+      setMsg({ text: `✅ Survey settings applied at ${now}`, type: 'success' })
+    }
   }
 
   if (loading) return (
@@ -136,12 +201,44 @@ export default function SettingsPage() {
 
         {/* Survey Controls */}
         <AdminCard>
-          <SectionHeader>🛠️ Survey Access Controls</SectionHeader>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap', gap: 10 }}>
+            <SectionHeader style={{ marginBottom: 0 }}>🛠️ Survey Access Controls</SectionHeader>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {/* Live status pill */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 800,
+                background: surveyStatus === 'open' ? 'rgba(16,185,129,0.12)' : surveyStatus === 'closed' ? 'rgba(239,68,68,0.12)' : 'rgba(99,102,241,0.12)',
+                color: surveyStatus === 'open' ? '#10b981' : surveyStatus === 'closed' ? '#ef4444' : '#6366f1',
+                border: `1px solid ${surveyStatus === 'open' ? 'rgba(16,185,129,0.3)' : surveyStatus === 'closed' ? 'rgba(239,68,68,0.3)' : 'rgba(99,102,241,0.3)'}`,
+              }}>
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', animation: surveyStatus === 'open' ? 'pulse 2s infinite' : 'none' }} />
+                Survey: {surveyStatus.toUpperCase()}
+              </div>
+              <button
+                type="button"
+                onClick={quickSaveSurveySettings}
+                disabled={quickSaving}
+                style={{
+                  padding: '8px 18px', borderRadius: 10, border: 'none',
+                  background: 'var(--accent-grad)', color: '#000',
+                  fontSize: 12, fontWeight: 900, cursor: quickSaving ? 'not-allowed' : 'pointer',
+                  opacity: quickSaving ? 0.6 : 1, transition: 'all 0.2s',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                {quickSaving ? '⏳ Saving…' : '⚡ Apply Now'}
+              </button>
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginTop: 16 }}>
             <StatusToggle label="Global Survey Status" value={surveyStatus} onChange={setSurveyStatus} />
             <StatusToggle label="Lunch Edits" value={lunchEditStatus} onChange={setLunchEditStatus} />
             <StatusToggle label="Dinner Edits" value={dinnerEditStatus} onChange={setDinnerEditStatus} />
           </div>
+          <p style={{ fontSize: 11, color: T.textSub, margin: '12px 0 0', opacity: 0.7 }}>
+            💡 Click <strong>⚡ Apply Now</strong> to instantly push survey toggle changes to all users — no page reload needed.
+          </p>
         </AdminCard>
 
         {/* Survey Banner */}

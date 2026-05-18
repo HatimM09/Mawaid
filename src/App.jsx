@@ -121,6 +121,7 @@ const isSurveyOpen = (appSettings = {}, userId = null) => {
 }
 
 const getSurveyWindowMessage = (appSettings = {}, userId = null) => {
+  if (appSettings.survey_status === 'open') return 'Survey window is open (Admin Override)!'
   if (isSurveyOpen(appSettings, userId)) return 'Survey window is open! (Sat 8PM – Mon 11AM)'
   return 'Survey window opens Saturday 8:00 PM and closes Monday 11:00 AM.'
 }
@@ -949,15 +950,26 @@ function ThaliUserApp() {
   const [toastNotice, setToastNotice] = useState(null)
   const [appSettings, setAppSettings] = useState({})
 
-  useEffect(() => {
-    supabase.from('app_settings').select('*').then(({ data }) => {
-      if (data) {
-        const settings = {}
-        data.forEach(row => settings[row.key] = row.value)
-        setAppSettings(settings)
-      }
-    })
+  const loadAppSettings = useCallback(async () => {
+    const { data } = await supabase.from('app_settings').select('*')
+    if (data) {
+      const settings = {}
+      data.forEach(row => settings[row.key] = row.value)
+      setAppSettings(settings)
+    }
   }, [])
+
+  useEffect(() => {
+    loadAppSettings()
+    // Realtime subscription so admin survey toggle changes take effect immediately
+    const channel = supabase
+      .channel('app-settings-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, () => {
+        loadAppSettings()
+      })
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [loadAppSettings])
 
   useEffect(() => {
     updateSystemTheme(theme)
@@ -1157,7 +1169,7 @@ function ThaliUserApp() {
         {activeTab === 'menu' && <WeeklyMenuPage />}
 
         {activeTab === 'post' && <PostPage />}
-        {activeTab === 'profile' && <ProfilePage theme={theme} setTheme={handleSetTheme} markRead={markNotificationsRead} />}
+        {activeTab === 'profile' && <ProfilePage theme={theme} setTheme={handleSetTheme} markRead={markNotificationsRead} appSettings={appSettings} />}
 
         {showDailySurvey && <DailySurveyModal onClose={() => { setShowDailySurvey(false); setActiveTab('home') }} />}
 
@@ -1872,12 +1884,12 @@ function QueriesSection() {
 // ══════════════════════════════════════════════════════════════
 // PROFILE PAGE (Member)
 // ══════════════════════════════════════════════════════════════
-function ProfilePage({ theme, setTheme, markRead }) {
+function ProfilePage({ theme, setTheme, markRead, appSettings }) {
   const [activeSubPage, setActiveSubPage] = useState('main')
   if (activeSubPage === 'surveys') return <MySurveysPage onBack={() => setActiveSubPage('main')} />
   if (activeSubPage === 'requests') return <MyRequestsPage onBack={() => setActiveSubPage('main')} />
   if (activeSubPage === 'khidmat') return <KhidmatTeamPage onBack={() => setActiveSubPage('main')} />
-  if (activeSubPage === 'notifications') return <NotificationsPage onBack={() => setActiveSubPage('main')} markRead={markRead} />
+  if (activeSubPage === 'notifications') return <NotificationsPage onBack={() => setActiveSubPage('main')} markRead={markRead} appSettings={appSettings} />
   if (activeSubPage === 'support') return <SupportTicketsPage onBack={() => setActiveSubPage('main')} />
   if (activeSubPage === 'about') return <AboutPage onBack={() => setActiveSubPage('main')} />
   if (activeSubPage === 'reset_password') return <ResetPasswordPage onBack={() => setActiveSubPage('main')} />
@@ -2032,7 +2044,7 @@ function MySurveysPage({ onBack }) {
                 <div key={meal} style={{ marginBottom: 8, padding: 11, background: t.inputBg, borderRadius: 10, border: `1px solid ${t.border}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{meal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}</span>
-                    <span style={{ fontSize: 10, color: (r.edit_count || 0) < 1 ? t.accent : '#e05555', fontFamily: "'DM Sans',sans-serif", fontWeight: 600 }}>{(r.edit_count || 0) < 1 ? '1 edit left' : 'no edits left'}</span>
+                    <span style={{ fontSize: 10, color: (r.edit_count || 0) < 1 ? t.accent : t.textSub, fontFamily: "'DM Sans',sans-serif", fontWeight: 600 }}>{(r.edit_count || 0) === 0 ? 'Not edited yet' : `Edited ${r.edit_count} time(s)`}</span>
                   </div>
                   <div style={{ fontSize: 13, color: r.wants_food ? t.successText : '#e05555', fontWeight: 700, fontFamily: "'DM Sans',sans-serif", marginBottom: r.wants_food ? 6 : 0 }}>{r.wants_food ? '✅ Requested Food' : '❌ Skipped'}</div>
                   {r.wants_food && r.dish_responses && Object.entries(r.dish_responses).map(([dish, val]) => (
@@ -2163,7 +2175,7 @@ function KhidmatTeamPage({ onBack }) {
   )
 }
 
-function NotificationsPage({ onBack, markRead }) {
+function NotificationsPage({ onBack, markRead, appSettings }) {
   const t = useTheme(), { user } = useAuth()
   const [notices, setNotices] = useState([])
   const [loading, setLoading] = useState(true)
@@ -2228,7 +2240,7 @@ function NotificationsPage({ onBack, markRead }) {
   }, [user.id, markRead])
 
   const staticNotices = [
-    { id: 'survey-window', title: 'Weekly Survey Window', body: isSurveyOpen() ? 'Your weekly meal survey is open now. Please submit lunch and dinner choices on time.' : getSurveyWindowMessage(), tone: t.accent },
+    { id: 'survey-window', title: 'Weekly Survey Window', body: isSurveyOpen(appSettings, user.id) ? 'Your weekly meal survey is open now. Please submit lunch and dinner choices on time.' : getSurveyWindowMessage(appSettings, user.id), tone: t.accent },
   ]
   return (
     <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
