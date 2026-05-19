@@ -10,7 +10,7 @@ import {
 import { supabase } from './supabaseClient'
 import { AuthCtx, ThemeCtx, useAuth, useTheme } from './context'
 import { T as SharedT, updateSystemTheme, Modal, SurveyResponseDisplay, Btn as SharedBtn, PackingTVView } from './ui'
-import { Html5QrcodeScanner } from 'html5-qrcode'
+import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { Scan, X } from 'lucide-react'
 import UsersPage from './UsersPage'
 import RequestsAdminPage from './RequestsAdminPage'
@@ -146,7 +146,15 @@ export default function KhidmatPortal({ signOut, user }) {
   useEffect(() => {
     if (isScanning) {
       const qrBoxSize = window.innerWidth < 600 ? 200 : 250;
-      const scanner = new Html5QrcodeScanner("portal-reader", { fps: 10, qrbox: qrBoxSize });
+      const scanner = new Html5QrcodeScanner("portal-reader", {
+        fps: 10,
+        qrbox: qrBoxSize,
+        supportedScanTypes: [
+          Html5QrcodeScanType.SCAN_TYPE_CAMERA,
+          Html5QrcodeScanType.SCAN_TYPE_FILE
+        ],
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+      });
       
       const handleScan = async (decodedText) => {
         if (decodedText.startsWith('ALMAWAID:')) {

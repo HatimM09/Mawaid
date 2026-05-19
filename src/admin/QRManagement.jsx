@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabaseClient'
 import { QRCodeSVG, QRCodeCanvas } from 'qrcode.react'
-import { Html5QrcodeScanner } from 'html5-qrcode'
+import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { 
   Users, QrCode, Search, Printer, CheckCircle, XCircle, 
   ArrowLeft, RefreshCw, Smartphone, Scan, User, Clock,
@@ -94,7 +94,12 @@ export default function QRManagement() {
         aspectRatio: 1.0,
         showTorchButtonIfSupported: true,
         showZoomSliderIfSupported: true,
-        defaultZoomValueIfSupported: 2
+        defaultZoomValueIfSupported: 2,
+        supportedScanTypes: [
+          Html5QrcodeScanType.SCAN_TYPE_CAMERA,
+          Html5QrcodeScanType.SCAN_TYPE_FILE
+        ],
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true }
       }, false)
       
       scanner.render(onScanSuccess, onScanFailure)

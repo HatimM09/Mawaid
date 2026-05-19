@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { RefreshCw, Search, Filter, Utensils, Download, User as UserIcon, Calendar as CalendarIcon, Scan, X } from 'lucide-react'
-import { Html5QrcodeScanner } from 'html5-qrcode'
+import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Grid, Modal, SectionHeader, SurveyResponseDisplay, PackingTVView, fmtDate, fmtDateTime } from './ui'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
@@ -135,7 +135,15 @@ export default function SurveysPage() {
   // --- CAMERA SCANNER ---
   useEffect(() => {
     if (isScanning) {
-      const scanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: 250 });
+      const scanner = new Html5QrcodeScanner("qr-reader", {
+        fps: 10,
+        qrbox: 250,
+        supportedScanTypes: [
+          Html5QrcodeScanType.SCAN_TYPE_CAMERA,
+          Html5QrcodeScanType.SCAN_TYPE_FILE
+        ],
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+      });
       const handleScan = async (decodedText) => {
         if (decodedText.startsWith('ALMAWAID:')) {
           const userId = decodedText.split(':')[1];

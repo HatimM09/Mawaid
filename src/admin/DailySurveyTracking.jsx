@@ -6,7 +6,7 @@ import {
   Search, RefreshCw, ChevronRight, Check, X, Filter, 
   Calendar, Utensils, User as UserIcon, Clock, ChevronDown, ChevronUp, Scan
 } from 'lucide-react'
-import { Html5QrcodeScanner } from 'html5-qrcode'
+import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { 
   T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner, Grid,
   SectionHeader, Modal, PackingTVView, fmtDate 
@@ -179,7 +179,15 @@ export default function DailySurveyTracking() {
 
   useEffect(() => {
     if (isScanning) {
-      const scanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: 250 });
+      const scanner = new Html5QrcodeScanner("qr-reader", {
+        fps: 10,
+        qrbox: 250,
+        supportedScanTypes: [
+          Html5QrcodeScanType.SCAN_TYPE_CAMERA,
+          Html5QrcodeScanType.SCAN_TYPE_FILE
+        ],
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+      });
       const handleScan = async (decodedText) => {
         if (decodedText.startsWith('ALMAWAID:')) {
           const userId = decodedText.split(':')[1];
