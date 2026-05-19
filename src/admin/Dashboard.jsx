@@ -6,8 +6,10 @@ import {
   Users, Star, Calendar, Zap, RefreshCw, Package, ArrowUpRight, ChevronRight, AlertCircle, FileText, Check, Bell, AlertTriangle, QrCode
 } from 'lucide-react'
 import {
-  T, PageWrap, StatCard, AdminCard, Badge, Spinner, SectionHeader, Btn, SlideDrawer
+  T, PageWrap, StatCard, AdminCard, Badge, Spinner, SectionHeader, Btn, SlideDrawer, Modal
 } from './ui'
+import { QRCodeCanvas } from 'qrcode.react'
+import { jsPDF } from 'jspdf'
 import {
   BarChart, Bar, XAxis, Tooltip, ResponsiveContainer,
   AreaChart, Area, PieChart, Pie, Cell,
@@ -27,7 +29,177 @@ export default function Dashboard() {
   const [inventoryTrend, setInventoryTrend] = useState([
     { name: '1', count: 40 }, { name: '2', count: 30 }, { name: '3', count: 55 }, { name: '4', count: 35 }, { name: '5', count: 70 }, { name: '6', count: 45 }, { name: '7', count: 50 },
   ])
+  const [qrHubOpen, setQrHubOpen] = useState(false)
+  const [selectedQRUser, setSelectedQRUser] = useState(null)
+  const [qrSearch, setQrSearch] = useState('')
+  const [usersList, setUsersList] = useState([])
   const navigate = useNavigate()
+
+  const downloadSticker = (u, format = 'png') => {
+    const canvas = document.createElement('canvas');
+    const size = 1062; // ~9cm at 300 DPI
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Background Circle
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Load Logo
+    const logo = new Image();
+    logo.src = '/al-mawaid.png';
+    logo.onload = () => {
+      const scale = Math.max(size / logo.width, size / logo.height);
+      const drawWidth = logo.width * scale;
+      const drawHeight = logo.height * scale;
+      const drawX = (size - drawWidth) / 2;
+      const drawY = (size - drawHeight) / 2;
+      
+      ctx.drawImage(logo, drawX, drawY, drawWidth, drawHeight);
+
+      // Draw QR Code in a clear white box for perfect scanning
+      const qrCanvas = document.getElementById(`qr-canvas-${u.user_id}`);
+      if (qrCanvas) {
+        const qrSize = 295;
+        const quietZone = 35; // ~3mm
+        ctx.fillStyle = '#ffffff';
+        const boxSize = qrSize + quietZone * 2;
+        const boxX = (size - boxSize) / 2;
+        const boxY = size * 0.35;
+        
+        ctx.beginPath();
+        ctx.roundRect(boxX, boxY, boxSize, boxSize, 40);
+        ctx.fill();
+        ctx.drawImage(qrCanvas, (size - qrSize) / 2, boxY + quietZone, qrSize, qrSize);
+      }
+
+      // Draw Thali Number in a white capsule
+      const thaliText = `#${u.thali_number || '—'}`;
+      ctx.font = '900 130px "DM Sans", sans-serif';
+      const textWidth = ctx.measureText(thaliText).width;
+      
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.roundRect((size - textWidth - 100) / 2, size * 0.75, textWidth + 100, 180, 90);
+      ctx.fill();
+      
+      ctx.fillStyle = '#000000';
+      ctx.textAlign = 'center';
+      ctx.fillText(thaliText, size / 2, size * 0.88);
+
+      if (format === 'pdf') {
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF({
+          orientation: 'portrait',
+          unit: 'mm',
+          format: [90, 90]
+        });
+        pdf.addImage(imgData, 'PNG', 0, 0, 90, 90);
+        pdf.save(`Sticker_${u.thali_number}_${u.name}.pdf`);
+      } else {
+        const link = document.createElement('a');
+        link.download = `Sticker_${u.thali_number}_${u.name}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      }
+    };
+  }
+
+  const printSticker = (u) => {
+    const canvas = document.createElement('canvas');
+    const size = 1062;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    const logo = new Image();
+    logo.src = '/al-mawaid.png';
+    logo.onload = () => {
+      const scale = Math.max(size / logo.width, size / logo.height);
+      const drawWidth = logo.width * scale;
+      const drawHeight = logo.height * scale;
+      ctx.drawImage(logo, (size - drawWidth) / 2, (size - drawHeight) / 2, drawWidth, drawHeight);
+
+      const qrCanvas = document.getElementById(`qr-canvas-${u.user_id}`);
+      if (qrCanvas) {
+        const qrSize = 295;
+        const quietZone = 35;
+        ctx.fillStyle = '#ffffff';
+        const boxSize = qrSize + quietZone * 2;
+        ctx.beginPath();
+        ctx.roundRect((size - boxSize) / 2, size * 0.35, boxSize, boxSize, 40);
+        ctx.fill();
+        ctx.drawImage(qrCanvas, (size - qrSize) / 2, size * 0.35 + quietZone, qrSize, qrSize);
+      }
+
+      const thaliText = `#${u.thali_number || '—'}`;
+      ctx.font = '900 130px "DM Sans", sans-serif';
+      const textWidth = ctx.measureText(thaliText).width;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.roundRect((size - textWidth - 100) / 2, size * 0.75, textWidth + 100, 180, 90);
+      ctx.fill();
+      ctx.fillStyle = '#000000';
+      ctx.textAlign = 'center';
+      ctx.fillText(thaliText, size / 2, size * 0.88);
+
+      const imgData = canvas.toDataURL('image/png');
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        alert("Please allow popups to print the sticker.");
+        return;
+      }
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Print Sticker - Thali #${u.thali_number || '—'}</title>
+            <style>
+              @page {
+                size: 9cm 9cm;
+                margin: 0;
+              }
+              body {
+                margin: 0;
+                padding: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100vh;
+                width: 100vw;
+                background: #ffffff;
+              }
+              img {
+                width: 9cm;
+                height: 9cm;
+                display: block;
+                border-radius: 50%;
+              }
+            </style>
+          </head>
+          <body>
+            <img src="${imgData}" />
+            <script>
+              window.onload = () => {
+                window.print();
+                setTimeout(() => { window.close(); }, 500);
+              };
+            </script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    };
+  }
 
   const getWeekDate = () => {
     const now = new Date()
@@ -116,6 +288,8 @@ export default function Dashboard() {
       lowStock: lowStockCount
     })
 
+    setUsersList(allUsers.data || [])
+
     const submittedIds = new Set(submissions.map(row => row.user_id))
     const missing = (allUsers.data || []).filter(user => !submittedIds.has(user.user_id))
     setMissingSurveys(missing)
@@ -162,7 +336,7 @@ export default function Dashboard() {
               style={{ opacity: 0.5, cursor: 'pointer' }} 
               onClick={(e) => {
                 e.stopPropagation()
-                navigate('/admin/qr')
+                setQrHubOpen(true)
               }} 
             />
           </div>
@@ -216,7 +390,7 @@ export default function Dashboard() {
             <QrCode size={20} color="var(--accent-gold)" />
           </div>
           <div style={{ display: 'flex', gap: 12 }}>
-            <Btn variant="primary" style={{ flex: 1, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => navigate('/admin/qr')}>
+            <Btn variant="primary" style={{ flex: 1, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => setQrHubOpen(true)}>
               <QrCode size={14} /> Open Hub
             </Btn>
             <Btn variant="outline" style={{ flex: 1, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => setDrawerOpen(true)}>
@@ -234,7 +408,10 @@ export default function Dashboard() {
                     </div>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{u.name || 'Anonymous'}</div>
                   </div>
-                  <Btn variant="ghost" size="sm" onClick={() => navigate(`/admin/qr?userId=${u.user_id}`)} style={{ padding: 4 }}><ArrowUpRight size={14} /></Btn>
+                  <Btn variant="ghost" size="sm" onClick={() => {
+                    setSelectedQRUser(u)
+                    setQrHubOpen(true)
+                  }} style={{ padding: 4 }}><ArrowUpRight size={14} /></Btn>
                 </div>
               ))}
               {(!missingSurveys || missingSurveys.length === 0) && (
@@ -407,6 +584,132 @@ export default function Dashboard() {
         .custom-scroll::-webkit-scrollbar { width: 4px; }
         .custom-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
       `}</style>
+
+      {/* QR Identity Hub Modal */}
+      <Modal
+        isOpen={qrHubOpen}
+        onClose={() => {
+          setQrHubOpen(false)
+          setSelectedQRUser(null)
+        }}
+        title="QR Identity Hub"
+        maxWidth={700}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div style={{ position: 'relative', width: '100%' }}>
+            <input 
+              type="text" 
+              placeholder="Search member by name or thali..." 
+              value={qrSearch}
+              onChange={e => setQrSearch(e.target.value)}
+              style={{
+                width: '100%', padding: '12px 16px', borderRadius: 12,
+                background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
+                color: 'var(--text-primary)', outline: 'none', fontSize: 14,
+                boxSizing: 'border-box'
+              }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: 20, minHeight: 350, maxHeight: 450 }}>
+            {/* User List */}
+            <div style={{ flex: 1, overflowY: 'auto', borderRight: '1px solid var(--border-light)', paddingRight: 16 }} className="custom-scroll">
+              {usersList
+                .filter(u => 
+                  (u.name || '').toLowerCase().includes(qrSearch.toLowerCase()) || 
+                  (u.thali_number || '').toString().includes(qrSearch)
+                )
+                .map(u => (
+                  <div 
+                    key={u.user_id}
+                    onClick={() => setSelectedQRUser(u)}
+                    style={{
+                      padding: '12px 14px', borderRadius: 12,
+                      background: selectedQRUser?.user_id === u.user_id ? 'rgba(212,175,55,0.08)' : 'rgba(255,255,255,0.01)',
+                      border: `1px solid ${selectedQRUser?.user_id === u.user_id ? 'var(--accent-gold)' : 'var(--border-glass)'}`,
+                      marginBottom: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{u.name}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>Thali #{u.thali_number}</div>
+                    </div>
+                    <ChevronRight size={16} color="var(--text-tertiary)" />
+                  </div>
+                ))}
+            </div>
+
+            {/* Sticker Preview */}
+            <div style={{ flex: 1.2, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              {selectedQRUser ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+                  {/* Sticker Container */}
+                  <div style={{ 
+                    width: '180px', height: '180px', 
+                    background: '#fff', borderRadius: '50%', 
+                    color: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    boxSizing: 'border-box', border: '1px solid #eee', position: 'relative',
+                    overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
+                  }}>
+                    <img src="/al-mawaid.png" alt="Al Mawaid" style={{ 
+                      position: 'absolute', width: '100%', height: '100%', 
+                      objectFit: 'cover', opacity: 1, top: 0, left: 0, zIndex: 1
+                    }} />
+                    
+                    <div style={{ 
+                      background: '#fff', padding: '6px', borderRadius: '8px',
+                      border: '1px solid #eee', display: 'inline-block',
+                      position: 'relative', zIndex: 2, marginBottom: '6px',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                    }}>
+                      <QRCodeCanvas value={`ALMAWAID:${selectedQRUser.user_id}`} size={64} level="H" includeMargin={false} />
+                    </div>
+                    
+                    <div style={{ 
+                      position: 'relative', zIndex: 2, background: '#fff', 
+                      padding: '2px 14px', borderRadius: '20px',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                    }}>
+                      <div style={{ fontSize: '16pt', fontWeight: 900, color: '#000' }}>#{selectedQRUser.thali_number}</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <Btn variant="outline" size="sm" style={{ flex: 1 }} onClick={() => downloadSticker(selectedQRUser, 'png')}>
+                        Save PNG
+                      </Btn>
+                      <Btn variant="outline" size="sm" style={{ flex: 1 }} onClick={() => downloadSticker(selectedQRUser, 'pdf')}>
+                        Save PDF
+                      </Btn>
+                    </div>
+                    <Btn size="sm" style={{ background: T.accentGrad, width: '100%', color: '#fff', border: 'none' }} onClick={() => printSticker(selectedQRUser)}>
+                      Print Sticker
+                    </Btn>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ color: 'var(--text-tertiary)', fontSize: 13, textAlign: 'center' }}>
+                  <QrCode size={48} style={{ opacity: 0.2, marginBottom: 12 }} />
+                  <div>Select a member to view, save, or print their QR Identity Sticker</div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Hidden QR code canvas for printing/downloading */}
+        {selectedQRUser && (
+          <div style={{ display: 'none' }}>
+            <QRCodeCanvas
+              id={`qr-canvas-${selectedQRUser.user_id}`}
+              value={`ALMAWAID:${selectedQRUser.user_id}`}
+              size={295}
+              level="H"
+            />
+          </div>
+        )}
+      </Modal>
     </PageWrap>
   )
 }

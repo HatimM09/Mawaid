@@ -136,15 +136,23 @@ export default function SurveysPage() {
   useEffect(() => {
     if (isScanning) {
       const scanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: 250 });
-      scanner.render((decodedText) => {
+      const handleScan = async (decodedText) => {
         if (decodedText.startsWith('ALMAWAID:')) {
           const userId = decodedText.split(':')[1];
-          handleWirelessScan(userId);
+          try {
+            await scanner.clear();
+          } catch (e) {
+            console.error("Failed to clear scanner", e);
+          }
           setIsScanning(false);
-          scanner.clear();
+          handleWirelessScan(userId);
         }
-      }, (error) => {});
-      return () => scanner.clear();
+      };
+
+      scanner.render(handleScan, (error) => {});
+      return () => {
+        scanner.clear().catch(e => console.error("Scanner cleanup failed", e));
+      };
     }
   }, [isScanning, responses])
 

@@ -14,7 +14,7 @@ export default function RequestsAdminPage() {
   const [loading, setLoading]   = useState(true)
   const [requests, setRequests] = useState([])
   const [users, setUsers]       = useState({})
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('pending')
   const [typeFilter, setTypeFilter]     = useState('all')
   const [search, setSearch]             = useState('')
   const [types, setTypes]               = useState([])
@@ -30,9 +30,15 @@ export default function RequestsAdminPage() {
     const uMap = {}
     ;(us || []).forEach(u => { uMap[u.user_id] = u })
     setUsers(uMap)
-    const data = req || []
+    const now = new Date()
+    const data = (req || []).filter(r => {
+      if (r.status === 'pending' || !r.status) return true
+      const updateTime = new Date(r.updated_at || r.created_at)
+      const diffHours = (now - updateTime) / (1000 * 60 * 60)
+      return diffHours < 24
+    })
     setRequests(data)
-    setTypes([...new Set(data.map(r => r.request_type).filter(Boolean))])
+    setTypes([...new Set((req || []).map(r => r.request_type).filter(Boolean))])
     setLoading(false)
   }
 
@@ -41,27 +47,51 @@ export default function RequestsAdminPage() {
     if (status === 'approved' && reqObj) {
       try {
         if (reqObj.request_type === 'change' && reqObj.details) {
-          const thaliMatch = reqObj.details.match(/#?(\d+)/)
+          const thaliMatch = reqObj.details.match(/#?([A-Za-z0-9/_-]+)/)
           if (thaliMatch) {
-            const newThaliNum = parseInt(thaliMatch[1])
+            const newThaliNum = thaliMatch[1]
             await supabase.from('user_stats').update({ thali_number: newThaliNum }).eq('user_id', reqObj.user_id)
           }
         } else if (reqObj.request_type === 'stop') {
+          const userThali = users[reqObj.user_id]?.thali_number
+          if (userThali) {
+            await supabase.from('thali_requests').update({ details: `Thali: ${userThali} (Paused)` }).eq('id', id)
+          }
           await supabase.from('user_stats').update({ thali_number: null }).eq('user_id', reqObj.user_id)
+        } else if (reqObj.request_type === 'resume') {
+          // Find the last stop request for this user that has the thali number stored
+          const { data: lastStopReq } = await supabase
+            .from('thali_requests')
+            .select('details')
+            .eq('user_id', reqObj.user_id)
+            .eq('request_type', 'stop')
+            .eq('status', 'approved')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          
+          if (lastStopReq && lastStopReq.details) {
+            const thaliMatch = lastStopReq.details.match(/Thali:\s*([^\s(]+)/)
+            if (thaliMatch) {
+              const oldThali = thaliMatch[1].trim()
+              await supabase.from('user_stats').update({ thali_number: oldThali }).eq('user_id', reqObj.user_id)
+            }
+          }
         }
       } catch (e) {
         console.error('Auto profile update failed:', e)
       }
     }
-    await supabase.from('thali_requests').update({ status }).eq('id', id)
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r))
+    const updated_at = new Date().toISOString()
+    await supabase.from('thali_requests').update({ status, updated_at }).eq('id', id)
+    setRequests(prev => prev.map(r => r.id === id ? { ...r, status, updated_at } : r))
   }
 
   const filtered = requests.filter(r => {
     const u = users[r.user_id] || {}
     const q = search.toLowerCase()
     const matchSearch = !q || (u.name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q) || String(u.thali_number||'').includes(q)
-    const matchStatus = statusFilter === 'all' || r.status === statusFilter
+    const matchStatus = statusFilter === 'all' || (r.status || 'pending') === statusFilter
     const matchType   = typeFilter   === 'all' || r.request_type === typeFilter
     return matchSearch && matchStatus && matchType
   })

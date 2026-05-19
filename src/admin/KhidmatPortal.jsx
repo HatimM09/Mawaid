@@ -147,15 +147,24 @@ export default function KhidmatPortal({ signOut, user }) {
     if (isScanning) {
       const qrBoxSize = window.innerWidth < 600 ? 200 : 250;
       const scanner = new Html5QrcodeScanner("portal-reader", { fps: 10, qrbox: qrBoxSize });
-      scanner.render((decodedText) => {
+      
+      const handleScan = async (decodedText) => {
         if (decodedText.startsWith('ALMAWAID:')) {
           const userId = decodedText.split(':')[1];
-          processScan(userId);
+          try {
+            await scanner.clear();
+          } catch (e) {
+            console.error("Failed to clear scanner", e);
+          }
           setIsScanning(false);
-          scanner.clear();
+          processScan(userId);
         }
-      }, (error) => {});
-      return () => scanner.clear();
+      };
+
+      scanner.render(handleScan, (error) => {});
+      return () => {
+        scanner.clear().catch(e => console.error("Scanner cleanup failed", e));
+      };
     }
   }, [isScanning])
 

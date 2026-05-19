@@ -7,8 +7,8 @@ const supabaseAnonKey = [_p1, _p2, _p3].join('.')
 const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 async function test() {
-  const { data, error } = await supabase.from('app_settings').select('*')
-  console.log("CURRENT DB SETTINGS:", data, error)
+  const { data: users, error: err } = await supabase.from('user_stats').select('email, thali_number')
+  console.log("USERS:", users, err)
   process.exit(0)
 }
 

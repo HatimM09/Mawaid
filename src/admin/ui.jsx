@@ -443,6 +443,7 @@ export const fmtDateTime = (d) => {
 export const PackingTVView = ({ user, onClose }) => {
   const responses = user.dishResponses || {}
   const dishEntries = Object.entries(responses)
+  const [imgError, setImgError] = React.useState(false)
   
   return (
     <div style={{ 
@@ -450,7 +451,8 @@ export const PackingTVView = ({ user, onClose }) => {
       background: '#000', color: '#fff',
       display: 'flex', flexDirection: 'column',
       padding: '4vh 4vw', boxSizing: 'border-box',
-      overflow: 'hidden', animation: 'fadeIn 0.3s ease-out'
+      overflow: 'hidden', animation: 'fadeIn 0.3s ease-out',
+      height: '100vh', width: '100vw'
     }}>
       <style>{`
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -458,6 +460,34 @@ export const PackingTVView = ({ user, onClose }) => {
           0% { border-color: rgba(212, 175, 55, 0.2); } 
           50% { border-color: rgba(212, 175, 55, 1); } 
           100% { border-color: rgba(212, 175, 55, 0.2); } 
+        }
+        .tv-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 3vh;
+        }
+        .tv-grid {
+          display: grid;
+          width: 100%;
+          box-sizing: border-box;
+          margin-bottom: 2vh;
+        }
+        @media (max-width: 768px) {
+          .tv-header {
+            flex-direction: row !important;
+            justify-content: space-between !important;
+            align-items: center !important;
+            margin-bottom: 2vh !important;
+            gap: 12px;
+          }
+          .tv-header-right {
+            text-align: right !important;
+          }
+          .tv-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 12px !important;
+          }
         }
       `}</style>
 
@@ -467,9 +497,9 @@ export const PackingTVView = ({ user, onClose }) => {
         style={{
           position: 'absolute', top: '3vh', right: '3vw',
           background: 'rgba(244, 63, 94, 0.15)', border: '2px solid rgba(244, 63, 94, 0.4)',
-          color: '#f43f5e', width: '7vh', height: '7vh', borderRadius: '50%',
+          color: '#f43f5e', width: 'clamp(50px, 7vh, 80px)', height: 'clamp(50px, 7vh, 80px)', borderRadius: '50%',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '3.5vh', fontWeight: 900, cursor: 'pointer', zIndex: 10005,
+          fontSize: 'clamp(20px, 3.5vh, 36px)', fontWeight: 900, cursor: 'pointer', zIndex: 10005,
           boxShadow: '0 0 20px rgba(244, 63, 94, 0.2)',
           transition: 'all 0.2s',
           lineHeight: 1
@@ -480,31 +510,51 @@ export const PackingTVView = ({ user, onClose }) => {
         ✕
       </button>
 
-      {/* TOP HEADER: USER PROFILE */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4vh' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '3vw' }}>
-           <div style={{ 
-             width: '12vh', height: '12vh', borderRadius: '3vh', background: 'var(--accent-grad)',
-             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '5vh', fontWeight: 900, color: '#000'
-           }}>
-             {user.thali_number?.toString().charAt(0) || 'U'}
-           </div>
+      {/* TOP HEADER: USER PROFILE WITH PIC */}
+      <div className="tv-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '2vw' }}>
+           {user.avatar_url && !imgError ? (
+             <img 
+               src={user.avatar_url} 
+               alt={user.name} 
+               onError={() => setImgError(true)}
+               style={{ 
+                 width: 'clamp(60px, 12vh, 120px)', 
+                 height: 'clamp(60px, 12vh, 120px)', 
+                 borderRadius: '3vh', 
+                 objectFit: 'cover',
+                 border: '3px solid var(--accent-gold)',
+                 boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                 flexShrink: 0 
+               }} 
+             />
+           ) : (
+             <div style={{ 
+               width: 'clamp(60px, 12vh, 120px)', height: 'clamp(60px, 12vh, 120px)', borderRadius: '3vh', background: 'var(--accent-grad)',
+               display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'clamp(24px, 5vh, 48px)', fontWeight: 900, color: '#000',
+               flexShrink: 0,
+               border: '3px solid var(--accent-gold)',
+               boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
+             }}>
+               {(user.name || 'U').charAt(0).toUpperCase()}
+             </div>
+           )}
            <div>
-             <div style={{ fontSize: '3.5vh', fontWeight: 800, color: 'var(--accent-gold)', textTransform: 'uppercase', letterSpacing: '0.25em', display: 'flex', alignItems: 'center', gap: '2vh' }}>
+             <div style={{ fontSize: 'clamp(12px, 2.5vh, 24px)', fontWeight: 800, color: 'var(--accent-gold)', textTransform: 'uppercase', letterSpacing: '0.15em', display: 'flex', alignItems: 'center', gap: '1.5vh', flexWrap: 'wrap' }}>
                Thali Dispatch Station
                {user.currentDay && (
-                 <span style={{ fontSize: '2.5vh', background: 'rgba(212, 175, 55, 0.15)', padding: '0.5vh 2vh', borderRadius: '1vh', color: '#fff', fontWeight: 900 }}>
+                 <span style={{ fontSize: 'clamp(9px, 2vh, 15px)', background: 'rgba(212, 175, 55, 0.15)', padding: '2px 8px', borderRadius: '0.8vh', color: '#fff', fontWeight: 900 }}>
                    {user.currentDay.toUpperCase()} • {user.currentMeal.toUpperCase()}
                  </span>
                )}
              </div>
-             <div style={{ fontSize: '10vh', fontWeight: 1000, lineHeight: 1, letterSpacing: '-0.03em', marginTop: '1vh' }}>{user.name}</div>
+             <div style={{ fontSize: 'clamp(24px, 6vh, 64px)', fontWeight: 1000, lineHeight: 1.1, letterSpacing: '-0.02em', marginTop: '0.5vh' }}>{user.name}</div>
            </div>
         </div>
         
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '4vh', color: 'var(--text-tertiary)', fontWeight: 700 }}>Thali Reference</div>
-          <div style={{ fontSize: '15vh', fontWeight: 1000, lineHeight: 1, color: '#fff' }}>#{user.thali_number}</div>
+        <div className="tv-header-right" style={{ textAlign: 'right', marginRight: '60px' }}>
+          <div style={{ fontSize: 'clamp(13px, 3vh, 24px)', color: 'var(--text-tertiary)', fontWeight: 700 }}>Thali Reference</div>
+          <div style={{ fontSize: 'clamp(36px, 9vh, 90px)', fontWeight: 1000, lineHeight: 1, color: '#fff' }}>#{user.thali_number}</div>
         </div>
       </div>
 
@@ -524,26 +574,24 @@ export const PackingTVView = ({ user, onClose }) => {
         const gridRows = isMultiRow ? 'repeat(2, 1fr)' : '1fr'
 
         // Scale styles dynamically
-        const cardPadding = isMultiRow ? '2.5vh 2vw' : '5vh 2.5vw'
-        const badgeSize = isMultiRow ? '7.5vh' : '10vh'
-        const badgeFontSize = isMultiRow ? '3vh' : '4.5vh'
-        const dishFontSize = isMultiRow ? 'clamp(14px, 3vh, 32px)' : 'clamp(20px, 4.5vh, 50px)'
-        const dishMargin = isMultiRow ? '1.5vh 0' : '3vh 0'
-        const tagPadding = isMultiRow ? '0.5vh 1.8vh' : '0.8vh 2.5vh'
-        const tagFontSize = isMultiRow ? '1.8vh' : '2.5vh'
-        const amountFontSize = isMultiRow ? 'clamp(26px, 6.5vh, 85px)' : 'clamp(36px, 9vh, 120px)'
-        const labelFontSize = isMultiRow ? '1.5vh' : '1.8vh'
+        // Scale styles dynamically - made larger for visibility
+        const cardPadding = isMultiRow ? '1.5vh 2vw' : '2.5vh 2.5vw'
+        const badgeSize = isMultiRow ? 'clamp(45px, 7.5vh, 85px)' : 'clamp(60px, 11vh, 120px)'
+        const badgeFontSize = isMultiRow ? 'clamp(16px, 3vh, 30px)' : 'clamp(24px, 4.5vh, 44px)'
+        const dishFontSize = isMultiRow ? 'clamp(20px, 3.8vh, 48px)' : 'clamp(28px, 5.5vh, 64px)'
+        const dishMargin = isMultiRow ? '0.8vh 0' : '1.5vh 0'
+        const tagPadding = isMultiRow ? '0.4vh 1.4vh' : '0.6vh 2vh'
+        const tagFontSize = isMultiRow ? '1.4vh' : '2vh'
+        const amountFontSize = isMultiRow ? 'clamp(28px, 6.5vh, 85px)' : 'clamp(44px, 9.5vh, 130px)'
+        const labelFontSize = isMultiRow ? '1.3vh' : '1.8vh'
 
         return (
-          <div style={{ 
+          <div className="tv-grid" style={{ 
             flex: 1, 
-            display: 'grid', 
+            minHeight: 0,
             gridTemplateColumns: gridCols,
             gridTemplateRows: gridRows,
             gap: isMultiRow ? '2vh 2vw' : '0 2.5vw', 
-            width: '100%', 
-            boxSizing: 'border-box',
-            marginBottom: '2vh'
           }}>
             {dishEntries.map(([dish, pct], idx) => {
               const val = parseInt(pct) || 0
@@ -552,27 +600,29 @@ export const PackingTVView = ({ user, onClose }) => {
               return (
                 <div key={dish} style={{ 
                   background: 'rgba(255,255,255,0.03)', 
-                  border: `clamp(4px, 0.8vh, 12px) solid ${val > 0 || pct === 'yes' ? '#10b981' : 'rgba(255,255,255,0.1)'}`,
-                  borderRadius: '4vh',
+                  border: `clamp(3px, 0.6vh, 8px) solid ${val > 0 || pct === 'yes' ? '#10b981' : 'rgba(255,255,255,0.1)'}`,
+                  borderRadius: '3vh',
                   display: 'flex', flexDirection: 'column', 
                   alignItems: 'center', justifyContent: 'space-between',
                   padding: cardPadding, position: 'relative', overflow: 'hidden',
-                  boxShadow: val > 0 || pct === 'yes' ? '0 0 50px rgba(16, 185, 129, 0.15)' : 'none',
+                  boxShadow: val > 0 || pct === 'yes' ? '0 0 30px rgba(16, 185, 129, 0.12)' : 'none',
                   textAlign: 'center',
-                  minWidth: 0
+                  minWidth: 0,
+                  height: '100%',
+                  boxSizing: 'border-box'
                 }}>
                   {/* Vertical Fill Animation */}
                   <div style={{ 
                     position: 'absolute', left: 0, right: 0, bottom: 0,
                     height: isRoti ? (pct === 'yes' ? '100%' : '0%') : `${val}%`,
-                    background: val > 75 || pct === 'yes' ? 'rgba(16, 185, 129, 0.2)' : (val > 0 ? 'rgba(212, 175, 55, 0.2)' : 'transparent'),
+                    background: val > 75 || pct === 'yes' ? 'rgba(16, 185, 129, 0.15)' : (val > 0 ? 'rgba(212, 175, 55, 0.15)' : 'transparent'),
                     transition: 'height 1.5s cubic-bezier(0.4, 0, 0.2, 1)',
                     zIndex: 1
                   }} />
 
                   {/* Index Badge */}
                   <div style={{ 
-                    width: badgeSize, height: badgeSize, borderRadius: '2.5vh',
+                    width: badgeSize, height: badgeSize, borderRadius: '50%',
                     background: val > 0 || pct === 'yes' ? '#10b981' : 'rgba(255,255,255,0.05)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: badgeFontSize, fontWeight: 1000, color: '#fff', zIndex: 2
@@ -595,19 +645,19 @@ export const PackingTVView = ({ user, onClose }) => {
                   <div style={{ zIndex: 2, width: '100%' }}>
                     {val > 0 && !isRoti && (
                        <div style={{ 
-                         display: 'inline-block', padding: tagPadding, borderRadius: '1.2vh', 
+                         display: 'inline-block', padding: tagPadding, borderRadius: '1vh', 
                          background: 'rgba(255,255,255,0.1)', color: 'var(--accent-gold)', 
-                         fontSize: tagFontSize, fontWeight: 900, marginBottom: isMultiRow ? '0.8vh' : '1.5vh',
+                         fontSize: tagFontSize, fontWeight: 900, marginBottom: '0.5vh',
                          border: '1px solid rgba(255,255,255,0.1)'
                        }}>
                          {val === 100 ? 'FULL' : (val === 50 ? 'HALF' : (val === 25 ? 'QUARTER' : `${val}%`))}
                        </div>
-                    )}
-                    
+                     )}
+                     
                     <div style={{ 
                       fontSize: amountFontSize, 
                       fontWeight: 1000, color: '#fff', 
-                      textShadow: '0 10px 30px rgba(0,0,0,0.5)', lineHeight: 1 
+                      textShadow: '0 5px 15px rgba(0,0,0,0.5)', lineHeight: 1 
                     }}>
                       {isRoti ? (pct === 'yes' ? 'YES' : 'NO') : `${val}%`}
                     </div>
@@ -615,7 +665,7 @@ export const PackingTVView = ({ user, onClose }) => {
                     <div style={{ 
                       fontSize: labelFontSize, fontWeight: 800, 
                       color: 'var(--text-tertiary)', textTransform: 'uppercase', 
-                      marginTop: '0.8vh', letterSpacing: '0.1em' 
+                      marginTop: '0.4vh', letterSpacing: '0.1em' 
                     }}>
                       {isRoti ? 'Response' : 'Portion'}
                     </div>
@@ -628,20 +678,20 @@ export const PackingTVView = ({ user, onClose }) => {
       })() : (
         <div style={{ 
           flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(244, 63, 94, 0.1)', border: '15px solid #f43f5e', borderRadius: '5vh'
+          background: 'rgba(244, 63, 94, 0.1)', border: 'clamp(6px, 1.2vh, 16px) solid #f43f5e', borderRadius: '4vh',
+          padding: '20px'
         }}>
-           <div style={{ fontSize: 'clamp(80px, 30vh, 500px)', fontWeight: 1000, color: '#f43f5e' }}>NO MEAL</div>
+           <div style={{ fontSize: 'clamp(36px, 12vh, 150px)', fontWeight: 1000, color: '#f43f5e', textAlign: 'center' }}>NO MEAL</div>
         </div>
       )}
 
-
       {/* FOOTER ACTION */}
-      <div style={{ marginTop: '4vh', display: 'flex', justifyContent: 'center' }}>
+      <div style={{ marginTop: '2vh', display: 'flex', justifyContent: 'center', paddingBottom: '1vh' }}>
         <button 
           onClick={onClose}
           style={{ 
             background: 'rgba(255,255,255,0.1)', border: '2px solid rgba(255,255,255,0.2)', color: '#fff',
-            padding: '2vh 6vh', borderRadius: '2vh', fontSize: '3vh', fontWeight: 800, cursor: 'pointer'
+            padding: '1.5vh 5vh', borderRadius: '1.5vh', fontSize: 'clamp(14px, 2.2vh, 24px)', fontWeight: 800, cursor: 'pointer'
           }}
         >
           DISMISS (X)

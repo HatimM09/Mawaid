@@ -13,7 +13,7 @@ export default function QueriesAdminPage() {
   const [loading, setLoading]   = useState(true)
   const [queries, setQueries]   = useState([])
   const [users, setUsers]       = useState({})
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('open')
   const [search, setSearch]     = useState('')
   const [expanded, setExpanded] = useState(null)
   const [reply, setReply]       = useState('')
@@ -30,12 +30,19 @@ export default function QueriesAdminPage() {
     const uMap = {}
     ;(us || []).forEach(u => { uMap[u.user_id] = u })
     setUsers(uMap)
-    setQueries(q || [])
+    const now = new Date()
+    const data = (q || []).filter(item => {
+      if (item.status === 'open' || !item.status) return true
+      const updateTime = new Date(item.updated_at || item.created_at)
+      const diffHours = (now - updateTime) / (1000 * 60 * 60)
+      return diffHours < 24
+    })
+    setQueries(data)
     setLoading(false)
   }
 
   const updateStatus = async (id, status) => {
-    const updateObj = { status }
+    const updateObj = { status, updated_at: new Date().toISOString() }
     if (status === 'resolved') {
       updateObj.admin_reply = 'Resolved by Al-Mawaid Administration.'
       updateObj.replied_at = new Date().toISOString()
@@ -47,14 +54,17 @@ export default function QueriesAdminPage() {
   const sendReply = async (q) => {
     if (!reply.trim()) return
     setSending(true)
-    const { error } = await supabase.from('queries').update({
+    const updated_at = new Date().toISOString()
+    const updateObj = {
       admin_reply: reply.trim(),
       status: 'resolved',
       replied_at: new Date().toISOString(),
-    }).eq('id', q.id)
+      updated_at
+    }
+    const { error } = await supabase.from('queries').update(updateObj).eq('id', q.id)
     setSending(false)
     if (!error) {
-      setQueries(prev => prev.map(item => item.id === q.id ? { ...item, admin_reply: reply.trim(), status: 'resolved' } : item))
+      setQueries(prev => prev.map(item => item.id === q.id ? { ...item, ...updateObj } : item))
       setReply('')
       setExpanded(null)
     }
@@ -64,7 +74,7 @@ export default function QueriesAdminPage() {
     const u = users[q.user_id] || {}
     const s = search.toLowerCase()
     const matchSearch = !s || (u.name||'').toLowerCase().includes(s) || (q.comment||'').toLowerCase().includes(s)
-    const matchStatus = statusFilter === 'all' || q.status === statusFilter
+    const matchStatus = statusFilter === 'all' || (q.status || 'open') === statusFilter
     return matchSearch && matchStatus
   })
 

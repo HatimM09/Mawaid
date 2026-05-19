@@ -122,7 +122,7 @@ export default function DailySurveyTracking() {
       const { data: resultsRaw, error } = await supabase
         .from('user_stats')
         .select(`
-          user_id, name, thali_number, email,
+          user_id, name, thali_number, email, avatar_url,
           survey_submissions_flat (*)
         `)
       
@@ -180,17 +180,23 @@ export default function DailySurveyTracking() {
   useEffect(() => {
     if (isScanning) {
       const scanner = new Html5QrcodeScanner("qr-reader", { fps: 10, qrbox: 250 });
-      scanner.render(async (decodedText) => {
+      const handleScan = async (decodedText) => {
         if (decodedText.startsWith('ALMAWAID:')) {
           const userId = decodedText.split(':')[1];
+          try {
+            await scanner.clear();
+          } catch (e) {
+            console.error("Failed to clear scanner", e);
+          }
           setIsScanning(false);
-          scanner.clear();
           await processDirectScan(userId);
         }
-      }, (error) => {
-        // console.warn(error);
-      });
-      return () => scanner.clear();
+      };
+
+      scanner.render(handleScan, (error) => {});
+      return () => {
+        scanner.clear().catch(e => console.error("Scanner cleanup failed", e));
+      };
     }
   }, [isScanning, day, meal, weeklyMenu])
 

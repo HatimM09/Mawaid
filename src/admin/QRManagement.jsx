@@ -200,9 +200,115 @@ export default function QRManagement() {
     (u.thali_number || '').toString().includes(search)
   )
 
-  const printQR = () => {
-    window.print()
-  }
+  const printQR = (u) => {
+    const canvas = document.createElement('canvas');
+    const size = 1062; // ~9cm at 300 DPI
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Background Circle
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Load Logo
+    const logo = new Image();
+    logo.src = '/al-mawaid.png';
+    logo.onload = () => {
+      // Draw Logo
+      const scale = Math.max(size / logo.width, size / logo.height);
+      const drawWidth = logo.width * scale;
+      const drawHeight = logo.height * scale;
+      const drawX = (size - drawWidth) / 2;
+      const drawY = (size - drawHeight) / 2;
+      
+      ctx.globalAlpha = 1.0;
+      ctx.drawImage(logo, drawX, drawY, drawWidth, drawHeight);
+
+      // Draw QR Code
+      const qrCanvas = document.getElementById(`qr-canvas-${u.user_id}`);
+      if (qrCanvas) {
+        const qrSize = 295;
+        const quietZone = 35;
+        ctx.fillStyle = '#ffffff';
+        const boxSize = qrSize + quietZone * 2;
+        const boxX = (size - boxSize) / 2;
+        const boxY = size * 0.35;
+        
+        ctx.beginPath();
+        ctx.roundRect(boxX, boxY, boxSize, boxSize, 40);
+        ctx.fill();
+        ctx.drawImage(qrCanvas, (size - qrSize) / 2, boxY + quietZone, qrSize, qrSize);
+      }
+
+      // Draw Thali Number
+      const thaliText = `#${u.thali_number}`;
+      ctx.font = '900 130px "DM Sans", sans-serif';
+      const textWidth = ctx.measureText(thaliText).width;
+      
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.roundRect((size - textWidth - 100) / 2, size * 0.75, textWidth + 100, 180, 90);
+      ctx.fill();
+      
+      ctx.fillStyle = '#000000';
+      ctx.textAlign = 'center';
+      ctx.fillText(thaliText, size / 2, size * 0.88);
+
+      // Get image data
+      const dataUrl = canvas.toDataURL('image/png');
+      
+      const printWindow = window.open('', '_blank', 'width=800,height=800');
+      if (!printWindow) {
+        toast.error("Popup blocked! Please allow popups to print.");
+        return;
+      }
+      
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Print Thali Sticker #${u.thali_number}</title>
+            <style>
+              @page {
+                size: 90mm 90mm;
+                margin: 0;
+              }
+              html, body {
+                margin: 0;
+                padding: 0;
+                width: 90mm;
+                height: 90mm;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #fff;
+              }
+              img {
+                width: 90mm;
+                height: 90mm;
+                display: block;
+              }
+            </style>
+          </head>
+          <body>
+            <img src="${dataUrl}" />
+            <script>
+              window.onload = () => {
+                setTimeout(() => {
+                  window.print();
+                  window.close();
+                }, 300);
+              };
+            </script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    };
+  };
 
   const triggerBulkPDF = async () => {
     if (users.length === 0) {
@@ -293,7 +399,7 @@ export default function QRManagement() {
     }
   }
 
-  const downloadSticker = (u) => {
+  const downloadSticker = (u, format = 'png') => {
     const canvas = document.createElement('canvas');
     const size = 1062; // ~9cm at 300 DPI
     canvas.width = size;
@@ -322,7 +428,7 @@ export default function QRManagement() {
       ctx.drawImage(logo, drawX, drawY, drawWidth, drawHeight);
 
       // Draw QR Code in a clear white box for perfect scanning
-      const qrCanvas = document.getElementById('hidden-qr-canvas');
+      const qrCanvas = document.getElementById(`qr-canvas-${u.user_id}`);
       if (qrCanvas) {
         const qrSize = 295;
         const quietZone = 35; // ~3mm
@@ -352,11 +458,34 @@ export default function QRManagement() {
       ctx.textAlign = 'center';
       ctx.fillText(thaliText, size / 2, size * 0.88);
 
-      // Download
-      const link = document.createElement('a');
-      link.download = `Sticker_${u.thali_number}_${u.name}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
+      if (format === 'pdf') {
+        // Load jsPDF if not loaded
+        const generatePDF = async () => {
+          if (!window.jspdf) {
+            await new Promise((resolve, reject) => {
+              const script = document.createElement('script')
+              script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+              script.onload = resolve
+              script.onerror = reject
+              document.head.appendChild(script)
+            })
+          }
+          const { jsPDF } = window.jspdf
+          const doc = new jsPDF('p', 'mm', [90, 90]) // exactly 90mm x 90mm page
+          doc.addImage(canvas.toDataURL('image/jpeg', 1.0), 'JPEG', 0, 0, 90, 90)
+          doc.save(`Sticker_${u.thali_number}_${u.name}.pdf`)
+        }
+        generatePDF().catch(err => {
+          console.error(err)
+          toast.error("Failed to generate PDF")
+        })
+      } else {
+        // Download PNG
+        const link = document.createElement('a');
+        link.download = `Sticker_${u.thali_number}_${u.name}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      }
     };
   }
 
@@ -547,12 +676,17 @@ export default function QRManagement() {
                </div>
             </div>
             
-            <div style={{ marginTop: 20, display: 'flex', gap: 12 }}>
-              <Btn variant="outline" style={{ flex: 1, borderRadius: 16 }} onClick={() => setSelectedUser(null)}>Dismiss</Btn>
-              <Btn variant="outline" style={{ flex: 1, borderRadius: 16 }} onClick={() => downloadSticker(selectedUser)}>
-                <FileDown size={18} /> Download
+            <div style={{ marginTop: 20, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <Btn variant="outline" style={{ flex: 1, minWidth: '100px', borderRadius: 16 }} onClick={() => setSelectedUser(null)}>Dismiss</Btn>
+              <Btn variant="outline" style={{ flex: 1, minWidth: '110px', borderRadius: 16 }} onClick={() => downloadSticker(selectedUser, 'png')}>
+                Save PNG
               </Btn>
-              <Btn style={{ flex: 1, borderRadius: 16, background: T.accentGrad }} onClick={printQR}><Printer size={18} /> Print Sticker</Btn>
+              <Btn variant="outline" style={{ flex: 1, minWidth: '110px', borderRadius: 16 }} onClick={() => downloadSticker(selectedUser, 'pdf')}>
+                Save PDF
+              </Btn>
+              <Btn style={{ flex: 1, minWidth: '130px', borderRadius: 16, background: T.accentGrad }} onClick={() => printQR(selectedUser)}>
+                <Printer size={18} /> Print Sticker
+              </Btn>
             </div>
             
       {/* Hidden QR codes for PDF generation */}

@@ -1719,14 +1719,7 @@ function RecentRequestsList() {
         .order('created_at', { ascending: false })
         .limit(15)
 
-      const now = new Date()
-      const filtered = (data || []).filter(r => {
-        if (r.status === 'pending' || !r.status) return true
-        const updateTime = new Date(r.updated_at || r.created_at)
-        const diffHours = (now - updateTime) / (1000 * 60 * 60)
-        return diffHours < 24
-      }).slice(0, 5)
-
+      const filtered = (data || []).slice(0, 5)
       setRequests(filtered)
       setLoading(false)
     }
@@ -1783,14 +1776,7 @@ function QueriesSection() {
         .order('created_at', { ascending: false })
         .limit(30)
 
-      const now = new Date()
-      const filtered = (data || []).filter(q => {
-        if (q.status === 'open' || !q.status) return true
-        const updateTime = new Date(q.updated_at || q.created_at)
-        const diffHours = (now - updateTime) / (1000 * 60 * 60)
-        return diffHours < 24
-      }).slice(0, 20)
-
+      const filtered = (data || []).slice(0, 20)
       setQueries(filtered)
     } catch { } finally { setLoading(false) }
   }
