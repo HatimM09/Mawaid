@@ -1,5 +1,9 @@
 // supabase/functions/send-push/index.ts
-// Uses FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY secrets (no JSON parsing)
+// Sends push notifications to both FCM tokens (PWA) and Expo push tokens (native app).
+//
+// Token types:
+//   - "fcm":  Firebase Cloud Messaging token (from PWA web app)
+//   - "expo": Expo Push Token (from React Native app via expo-notifications)
 //
 // Deploy: npx supabase functions deploy send-push
 
@@ -11,8 +15,9 @@ const FIREBASE_PROJECT_ID = 'al-mawaid-8ffef'
 const CLIENT_EMAIL = Deno.env.get('FIREBASE_CLIENT_EMAIL')!
 const PRIVATE_KEY = Deno.env.get('FIREBASE_PRIVATE_KEY')!
 
-// ── Get OAuth2 access token ───────────────────────────────────────────────────
-async function getAccessToken(): Promise<string> {
+// ── Auth helpers ──────────────────────────────────────────────────────────────
+
+async function getFcmAccessToken(): Promise<string> {
   const now = Math.floor(Date.now() / 1000)
 
   const encode = (obj: any) =>
@@ -30,7 +35,6 @@ async function getAccessToken(): Promise<string> {
 
   const signingInput = `${headerB64}.${payloadB64}`
 
-  // Clean up private key — handle both literal \n and real newlines
   const pemKey = PRIVATE_KEY.replace(/\\n/g, '\n')
   const pemContents = pemKey
     .replace('-----BEGIN PRIVATE KEY-----', '')
@@ -71,7 +75,8 @@ async function getAccessToken(): Promise<string> {
   return tokenData.access_token
 }
 
-// ── Send one FCM message ──────────────────────────────────────────────────────
+// ── Send via FCM (for PWA web tokens) ─────────────────────────────────────────
+
 async function sendFcmMessage(
   accessToken: string,
   fcmToken: string,
@@ -111,15 +116,43 @@ async function sendFcmMessage(
   return res.json()
 }
 
-// ── Handler ───────────────────────────────────────────────────────────────────
+// ── Send via Expo Push Service (for native app tokens) ────────────────────────
+
+async function sendExpoPushMessage(
+  expoToken: string,
+  title: string,
+  body: string,
+  url: string
+) {
+  const res = await fetch('https://exp.host/--/api/v2/push/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      to: expoToken,
+      sound: 'default',
+      title,
+      body,
+      data: { url },
+      _displayInForeground: true,
+    }),
+  })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.errors?.[0]?.message || 'Expo push send failed')
+  }
+  return res.json()
+}
+
+// ── Main handler ──────────────────────────────────────────────────────────────
+
 Deno.serve(async (req) => {
   try {
     const { user_id, title, body, url, type = 'info' } = await req.json()
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-    // 1. Fetch FCM tokens
-    let query = supabase.from('push_subscriptions').select('user_id, fcm_token')
+    // 1. Fetch push subscriptions (both FCM and Expo tokens)
+    let query = supabase.from('push_subscriptions').select('user_id, fcm_token, token_type')
     if (user_id) query = query.eq('user_id', user_id)
     const { data: subs, error } = await query
     if (error) throw error
@@ -131,9 +164,11 @@ Deno.serve(async (req) => {
     }
 
     // 2. Insert notification rows (triggers Realtime in-app toasts)
+    // Deduplicate by user_id so users don't get duplicate toasts
+    const uniqueUserIds = [...new Set(subs.map((s) => s.user_id))]
     await supabase.from('notifications').insert(
-      subs.map((s) => ({
-        user_id: s.user_id,
+      uniqueUserIds.map((uid) => ({
+        user_id: uid,
         title,
         message: body,
         type,
@@ -141,21 +176,44 @@ Deno.serve(async (req) => {
       }))
     )
 
-    // 3. Get OAuth token once
-    const accessToken = await getAccessToken()
+    // 3. Separate tokens by type
+    const fcmTokens = subs.filter((s) => s.token_type === 'fcm' || !s.token_type).map((s) => s.fcm_token)
+    const expoTokens = subs.filter((s) => s.token_type === 'expo').map((s) => s.fcm_token)
 
-    // 4. Send push to all tokens
-    const results = await Promise.allSettled(
-      subs.map(({ fcm_token }) =>
-        sendFcmMessage(accessToken, fcm_token, title, body, url || '/')
+    let sent = 0
+    let failed = 0
+
+    // 4a. Send via FCM for PWA tokens
+    if (fcmTokens.length > 0) {
+      const accessToken = await getFcmAccessToken()
+      const fcmResults = await Promise.allSettled(
+        fcmTokens.map((token) =>
+          sendFcmMessage(accessToken, token, title, body, url || '/')
+        )
       )
-    )
+      sent += fcmResults.filter((r) => r.status === 'fulfilled').length
+      failed += fcmResults.filter((r) => r.status === 'rejected').length
+      for (const r of fcmResults) {
+        if (r.status === 'rejected') console.error('[send-push] FCM failed:', r.reason)
+      }
+    }
 
-    const sent = results.filter((r) => r.status === 'fulfilled').length
-    const failed = results.filter((r) => r.status === 'rejected').length
+    // 4b. Send via Expo Push Service for native app tokens
+    if (expoTokens.length > 0) {
+      const expoResults = await Promise.allSettled(
+        expoTokens.map((token) =>
+          sendExpoPushMessage(token, title, body, url || '/')
+        )
+      )
+      sent += expoResults.filter((r) => r.status === 'fulfilled').length
+      failed += expoResults.filter((r) => r.status === 'rejected').length
+      for (const r of expoResults) {
+        if (r.status === 'rejected') console.error('[send-push] Expo push failed:', r.reason)
+      }
+    }
 
     return new Response(
-      JSON.stringify({ ok: true, sent, failed }),
+      JSON.stringify({ ok: true, sent, failed, fcm: fcmTokens.length, expo: expoTokens.length }),
       { headers: { 'Content-Type': 'application/json' } }
     )
   } catch (err) {

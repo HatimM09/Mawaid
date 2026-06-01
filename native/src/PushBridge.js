@@ -1,21 +1,19 @@
 // src/PushBridge.js
-// Bridges native push notifications (via expo-notifications) into the PWA WebView.
+// Bridges native push notifications into the PWA WebView using Expo's push service.
 //
-// TWO PUSH PATHS AVAILABLE:
-//   Path A (Recommended): Expo Push Token → expo-notifications → Expo Push Service →
-//                          FCM (Android) / APNs (iOS)
-//   Path B (Optional):     Raw FCM Token → Direct FCM send (uses your existing
-//                          supabase/functions/send-push edge function)
+// Architecture:
+//   Native App → expo-notifications → Expo Push Service → FCM (Android) / APNs (iOS)
 //
-// Path A is simpler and works out of the box in Expo managed workflow.
-// Path B requires `npx expo prebuild` + google-services.json for raw FCM access.
+// The Expo Push Service handles routing to the correct platform natively.
+// Tokens are injected into the PWA WebView, where PushManager saves them to Supabase.
+// The backend send-push edge function sends via Expo Push Service API for these tokens.
 
 import { useEffect, useRef } from 'react'
 import { Platform } from 'react-native'
 import * as Notifications from 'expo-notifications'
 import Constants from 'expo-constants'
 
-// Configure notification handler — show system notification when app is in foreground
+// Show system notification even when app is in foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -25,8 +23,8 @@ Notifications.setNotificationHandler({
 })
 
 /**
- * Get the Expo push token (works on both Android & iOS via Expo's push service).
- * This is the recommended path for Expo managed workflow.
+ * Get an Expo push token (works on both Android & iOS via Expo's managed push service).
+ * No native module linking or prebuild required.
  */
 async function getExpoPushToken() {
   const { status: existingStatus } = await Notifications.getPermissionsAsync()
@@ -42,38 +40,16 @@ async function getExpoPushToken() {
     return null
   }
 
-  const tokenData = await Notifications.getExpoPushTokenAsync({
-    projectId: Constants.expoConfig?.extra?.eas?.projectId,
-  })
-
+  const projectId = Constants.expoConfig?.extra?.eas?.projectId
+  const tokenData = await Notifications.getExpoPushTokenAsync({ projectId })
   return tokenData.data
-}
-
-/**
- * Get the raw FCM token for direct FCM delivery.
- * This is OPTIONAL — only works after `npx expo prebuild` + google-services.json setup.
- * Falls back gracefully to null if @react-native-firebase is not available.
- */
-async function getFcmToken() {
-  try {      // Dynamic import — gracefully fails if @react-native-firebase is not linked
-      // (which requires npx expo prebuild + google-services.json)
-      const { default: messaging } = await import('@react-native-firebase/messaging')
-    await messaging().registerDeviceForRemoteMessages()
-    const token = await messaging().getToken()
-    return token
-  } catch (e) {
-    // Graceful fallback — @react-native-firebase/messaging requires prebuild
-    console.log('[PushBridge] Raw FCM unavailable (expected if no prebuild):', e.message)
-    return null
-  }
 }
 
 /**
  * Hook that bridges native push tokens into the WebView.
  *
- * @param {object}   webViewRef         - React ref to the WebView component
- * @param {function} onDeepLink         - Callback fired with (url) when a notification
- *                                        tap launches the app (for navigating WebView)
+ * @param {object}   webViewRef - React ref to the WebView component
+ * @param {function} onDeepLink - Callback with (url) when notification tap launches the app
  */
 export function usePushBridge(webViewRef, onDeepLink) {
   const notificationResponseListener = useRef(null)
@@ -83,22 +59,19 @@ export function usePushBridge(webViewRef, onDeepLink) {
     let cancelled = false
 
     async function init() {
-      // ── 1. Get push tokens ─────────────────────────────────────────────────
+      // ── 1. Get Expo push token ────────────────────────────────────────────
       const expoToken = await getExpoPushToken()
-      const fcmToken = await getFcmToken()
-
       if (cancelled) return
 
-      console.log('[PushBridge] Expo token:', expoToken ? expoToken.slice(0, 20) + '...' : 'none')
-      console.log('[PushBridge] FCM token:', fcmToken ? fcmToken.slice(0, 20) + '...' : 'none')
+      console.log('[PushBridge] Expo push token:', expoToken ? expoToken.slice(0, 30) + '...' : 'none')
 
       // ── 2. Inject tokens into the WebView when it loads ────────────────────
       const injectTokensScript = `
         (function() {
-          window.__nativePushToken = ${JSON.stringify(expoToken || fcmToken)};
+          window.__nativePushToken = ${JSON.stringify(expoToken)};
           window.__nativePlatform = ${JSON.stringify(Platform.OS)};
-          window.__nativeFcmToken = ${JSON.stringify(fcmToken)};
           window.__nativeExpoToken = ${JSON.stringify(expoToken)};
+          window.__nativeTokenType = 'expo';
           // Dispatch event so PushManager can pick up tokens even if it mounted early
           window.dispatchEvent(new Event('native-push-ready'));
           console.log('[WebView] Native push tokens injected ✅');
@@ -132,7 +105,6 @@ export function usePushBridge(webViewRef, onDeepLink) {
         const url = data?.url || data?.link || '/'
         console.log('[PushBridge] Notification tapped — opening:', url)
 
-        // Navigate the WebView to the deep link
         if (webViewRef.current) {
           webViewRef.current.injectJavaScript(`
             window.location.href = ${JSON.stringify(url)};
@@ -141,16 +113,13 @@ export function usePushBridge(webViewRef, onDeepLink) {
         }
       })
 
-    // ── 5. Handle notification that launched the app from a killed state ─────
+    // ── 5. Handle notification that launched the app from killed state ───────
     Notifications.getLastNotificationResponseAsync().then((response) => {
       if (response && !cancelled) {
         const data = response.notification.request.content.data
         const url = data?.url || data?.link || '/'
         console.log('[PushBridge] App launched from notification — URL:', url)
-        // Pass back to App.js so it can navigate WebView once mounted
-        if (onDeepLink) {
-          onDeepLink(url)
-        }
+        if (onDeepLink) onDeepLink(url)
       }
     })
 
@@ -167,18 +136,13 @@ export function usePushBridge(webViewRef, onDeepLink) {
 }
 
 /**
- * Send a push notification via the Expo Push Service.
+ * Send a push notification via the Expo Push Service API.
+ * Use this in your backend to send to Expo push tokens.
  *
- * ╔══════════════════════════════════════════════════════════════════╗
- * ║   Path A — Use this in your backend if going Expo-native.       ║
- * ║   Path B — Keep using supabase/functions/send-push (FCM)        ║
- * ║            if you want direct FCM control.                      ║
- * ╚══════════════════════════════════════════════════════════════════╝
- *
- * @param {string} expoPushToken - Recipient's Expo push token
+ * @param {string} expoPushToken - Recipient's Expo push token (ExponentPushToken[...])
  * @param {string} title         - Notification title
  * @param {string} body          - Notification body
- * @param {string} url           - Deep link URL to open on tap
+ * @param {string} url           - Deep link to open on tap
  */
 export async function sendExpoPush(expoPushToken, title, body, url = '/') {
   const message = {

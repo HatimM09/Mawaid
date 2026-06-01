@@ -26,15 +26,15 @@ function getFirebaseApp() {
   return getApps().length ? getApps()[0] : initializeApp(firebaseConfig)
 }
 
-async function saveFcmToken(userId, token) {
+async function saveFcmToken(userId, token, tokenType = 'fcm') {
   const { error } = await supabase
     .from('push_subscriptions')
     .upsert(
-      { user_id: userId, fcm_token: token, updated_at: new Date().toISOString() },
-      { onConflict: 'user_id' }
+      { user_id: userId, fcm_token: token, token_type: tokenType, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id, token_type' }
     )
-  if (error) console.error('[PushManager] Failed to save FCM token:', error.message)
-  else console.log('[PushManager] FCM token saved to Supabase ✅')
+  if (error) console.error('[PushManager] Failed to save push token:', error.message)
+  else console.log('[PushManager] Push token saved to Supabase ✅ (' + tokenType + ')')
 }
 
 function showToast(title, body, url) {
@@ -107,16 +107,15 @@ export default function PushManager() {
     async function handleNativeTokens(user) {
       const nativePlatform = window.__nativePlatform
       const nativeToken = window.__nativePushToken
-      const nativeFcmToken = window.__nativeFcmToken
+      const tokenType = window.__nativeTokenType || 'expo'
 
-      if (nativePlatform && (nativeToken || nativeFcmToken) && !nativeTokensHandled) {
+      if (nativePlatform && nativeToken && !nativeTokensHandled) {
         nativeTokensHandled = true
-        console.log('[PushManager] Running inside React Native shell:', nativePlatform)
-        const tokenToSave = nativeFcmToken || nativeToken
+        console.log('[PushManager] Running inside React Native shell:', nativePlatform, 'token type:', tokenType)
         console.log('[PushManager] Using native push token ✅')
 
         if (!cancelledRef.current) {
-          await saveFcmToken(user.id, tokenToSave)
+          await saveFcmToken(user.id, nativeToken, tokenType)
           subscribeRealtime(realtimeChannel, user, cancelledRef)
           return true
         }

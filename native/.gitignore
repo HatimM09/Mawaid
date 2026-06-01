@@ -36,8 +36,7 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
-# Firebase config (secrets)
-google-services.json
+# Firebase iOS config (secret)
 GoogleService-Info.plist
 
 # generated native folders
