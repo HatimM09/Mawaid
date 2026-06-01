@@ -51,7 +51,7 @@
       "expo-build-properties",
       {
         "android": {
-          "googleServicesFile": "./google-services.json"
+          "enableProguardInReleaseBuilds": true
         }
       }
     ]

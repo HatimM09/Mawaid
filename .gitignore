@@ -30,7 +30,6 @@ native/.expo
 native/dist
 native/android
 native/ios
-native/google-services.json
 native/GoogleService-Info.plist
 native/*.jks
 native/*.p8
