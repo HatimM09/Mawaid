@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "Al-Mawaid | المَوَائِد",
+    "slug": "al-mawaid-native",
+    "owner": "hatim09s-organization",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "almawaid",
+    "backgroundColor": "#060d1a",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#060d1a"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.almawaid.app",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
+      }
+    },
+    "android": {
+      "googleServicesFile": "./google-services.json",
+      "package": "com.almawaid.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#060d1a",
+        "foregroundImage": "./assets/icon.png"
+      },
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "POST_NOTIFICATIONS"
+      ],
+      "intentFilters": []
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#D4AF37",
+          "sounds": []
+        }
+      ],
+      "expo-splash-screen"
+    ],
+    "extra": {
+      "pwaUrl": "https://al-mawaid.vercel.app",
+      "eas": {
+        "projectId": "d2d689b4-cc9b-4086-84fe-2e31b4f2885a"
+      }
+    }
+  }
+}

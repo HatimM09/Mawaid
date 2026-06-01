@@ -2013,6 +2013,47 @@ function MySurveysPage({ onBack }) {
         setSurveys(grouped)
       }).finally(() => setLoading(false))
   }, [weeklyMenu])
+
+  // Realtime subscription: refresh surveys on insert/update
+  useEffect(() => {
+    const subscription = supabase.channel('survey_changes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'survey_submissions_flat' }, payload => {
+        // Simple refetch
+        const fetchData = async () => {
+          const { data: all } = await supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id);
+          if (!all) return setSurveys({});
+          const grouped = {};
+          DAYS.forEach(day => {
+            const dayKey = day.substring(0, 3).toLowerCase();
+            ['lunch', 'dinner'].forEach(meal => {
+              const mealKey = meal === 'lunch' ? 'l' : 'd';
+              const status = all[`${dayKey}_${mealKey}_status`];
+              if (status) {
+                const dishResponses = {};
+                const dishes = weeklyMenu[day]?.[meal] || [];
+                dishes.forEach((d, i) => {
+                  const val = all[`${dayKey}_${mealKey}_dish_${i + 1}`];
+                  if (val !== undefined && val !== null) {
+                    dishResponses[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : parseInt(val);
+                  }
+                });
+                if (!grouped[day]) grouped[day] = {};
+                grouped[day][meal] = {
+                  wants_food: status === 'Applied',
+                  dish_responses: dishResponses,
+                  edit_count: (all.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0
+                };
+              }
+            });
+          });
+          setSurveys(grouped);
+        };
+        fetchData();
+      })
+      .subscribe();
+    return () => supabase.removeChannel(subscription);
+  }, [user.id, weeklyMenu]);
+
   return (
     <main style={{ flex: 1, padding: '16px 16px 160px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       <BackHeader title="My Surveys" onBack={onBack} />

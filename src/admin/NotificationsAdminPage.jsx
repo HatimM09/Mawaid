@@ -73,7 +73,7 @@ export default function NotificationsAdminPage() {
         body: {
           title: payload.title,
           body: payload.body,
-          target_user_id: payload.target_user_id // null means 'all'
+          user_id: payload.target_user_id // null means 'all'
         }
       }).catch(err => console.error('Push trigger error:', err));
     }

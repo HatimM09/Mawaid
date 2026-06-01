@@ -11,7 +11,8 @@ export default defineConfig({
     enabled: false
   },
       registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      injectRegister: null,
+      selfDestroying: true,
       includeAssets: ['al-mawaid.png', 'wheat_bg.png', 'icons.svg'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,json,woff2}'],

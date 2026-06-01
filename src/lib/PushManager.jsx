@@ -19,7 +19,8 @@ const firebaseConfig = {
   appId: '1:333277268731:web:9f7ba7f8f279a47f94be5e',
 }
 
-const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY || ''
+// VAPID key from env (set in .env and Vercel env vars), with hardcoded fallback for safety
+const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY || 'BIEVWJ3bbYO2OZW--9AD-uDEevFUa4GNC2BuU6gtopIq0BTSLXVMTWh8EI6SIubsp2_s2o6lckRZDwtNzlYrZKY'
 
 function getFirebaseApp() {
   return getApps().length ? getApps()[0] : initializeApp(firebaseConfig)
@@ -63,21 +64,94 @@ function showToast(title, body, url) {
   )
 }
 
+// ── Subscribe to Supabase Realtime notification channel ───────────────────────
+function subscribeRealtime(realtimeChannel, user, cancelledRef) {
+  if (cancelledRef.current) return
+
+  console.log('[PushManager] Subscribing to Realtime notifications...')
+  realtimeChannel.current = supabase
+    .channel(`notifications:${user.id}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'notifications',
+        filter: `user_id=eq.${user.id}`,
+      },
+      (payload) => {
+        console.log('[PushManager] Realtime notification received:', payload.new)
+        const { message, type, title, url } = payload.new
+        showToast(title || 'Al-Mawaid', message, url)
+      }
+    )
+    .subscribe((status) => {
+      console.log('[PushManager] Realtime status:', status)
+    })
+}
+
 export default function PushManager() {
   const realtimeChannel = useRef(null)
+  const cancelledRef = useRef(false)
 
   useEffect(() => {
     console.log('[PushManager] mounted ✅')
     console.log('[PushManager] VAPID key:', VAPID_KEY ? '✅ loaded' : '❌ missing')
-    let cancelled = false
+    cancelledRef.current = false
+
+    // ═══════════════════════════════════════════════════════════════════
+    // NATIVE SHELL DETECTION — used both at init() and via event listener
+    // ═══════════════════════════════════════════════════════════════════
+    let nativeTokensHandled = false
+
+    async function handleNativeTokens(user) {
+      const nativePlatform = window.__nativePlatform
+      const nativeToken = window.__nativePushToken
+      const nativeFcmToken = window.__nativeFcmToken
+
+      if (nativePlatform && (nativeToken || nativeFcmToken) && !nativeTokensHandled) {
+        nativeTokensHandled = true
+        console.log('[PushManager] Running inside React Native shell:', nativePlatform)
+        const tokenToSave = nativeFcmToken || nativeToken
+        console.log('[PushManager] Using native push token ✅')
+
+        if (!cancelledRef.current) {
+          await saveFcmToken(user.id, tokenToSave)
+          subscribeRealtime(realtimeChannel, user, cancelledRef)
+          return true
+        }
+      }
+      return false
+    }
+
+    // Listen for tokens injected by React Native shell (race condition guard).
+    // Runs if PushBridge injects tokens AFTER PushManager has already mounted.
+    // Note: this event fires only once, so we fetch user ourselves if not cached yet.
+    const onNativeReady = async () => {
+      if (nativeTokensHandled || cancelledRef.current) return
+      const user = window.__pushManagerUser ||
+        (await supabase.auth.getUser()).data?.user
+      if (!user) return
+      const handled = await handleNativeTokens(user)
+      if (handled) window.removeEventListener('native-push-ready', onNativeReady)
+    }
+    window.addEventListener('native-push-ready', onNativeReady)
 
     async function init() {
       // 1. Get current user
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       console.log('[PushManager] user:', user?.id || 'none', userError?.message || '')
-      if (!user || cancelled) return
+      if (!user || cancelledRef.current) return
 
-      // ── Firebase Push ────────────────────────────────────────────────────
+      // Cache user on window so the event listener can use it
+      window.__pushManagerUser = user
+
+      // Try native tokens first (they may have been injected already)
+      if (await handleNativeTokens(user)) return
+
+      // ═══════════════════════════════════════════════════════════════════
+      // WEB PUSH (PWA) — Firebase Cloud Messaging via browser
+      // ═══════════════════════════════════════════════════════════════════
       try {
         if (!('Notification' in window)) throw new Error('Notifications not supported in this browser')
 
@@ -118,7 +192,7 @@ export default function PushManager() {
 
         console.log('[PushManager] FCM token obtained ✅')
 
-        if (!cancelled) {
+        if (!cancelledRef.current) {
           await saveFcmToken(user.id, token)
 
           onMessage(messaging, (payload) => {
@@ -132,35 +206,15 @@ export default function PushManager() {
         console.warn('[PushManager] Firebase push unavailable:', err.message)
       }
 
-      // ── Supabase Realtime ────────────────────────────────────────────────
-      if (cancelled) return
-
-      console.log('[PushManager] Subscribing to Realtime notifications...')
-      realtimeChannel.current = supabase
-        .channel(`notifications:${user.id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'notifications',
-            filter: `user_id=eq.${user.id}`,
-          },
-          (payload) => {
-            console.log('[PushManager] Realtime notification received:', payload.new)
-            const { message, type, title, url } = payload.new
-            showToast(title || 'Al-Mawaid', message, url)
-          }
-        )
-        .subscribe((status) => {
-          console.log('[PushManager] Realtime status:', status)
-        })
+      // ── Supabase Realtime (in-app toasts) ─────────────────────────────
+      subscribeRealtime(realtimeChannel, user, cancelledRef)
     }
 
     init()
 
     return () => {
-      cancelled = true
+      cancelledRef.current = true
+      window.removeEventListener('native-push-ready', onNativeReady)
       if (realtimeChannel.current) {
         supabase.removeChannel(realtimeChannel.current)
       }
