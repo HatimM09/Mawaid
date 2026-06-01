@@ -57,7 +57,7 @@
     ]
     ],
     "extra": {
-      "pwaUrl": "https://al-mawaid.vercel.app",
+      "pwaUrl": "https://al-mawaid-fixed.vercel.app",
       "eas": {
         "projectId": "d2d689b4-cc9b-4086-84fe-2e31b4f2885a"
       }
