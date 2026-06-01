@@ -46,7 +46,15 @@
           "sounds": []
         }
       ],
-      "expo-splash-screen"
+      "expo-splash-screen",
+      [
+      "expo-build-properties",
+      {
+        "android": {
+          "googleServicesFile": "./google-services.json"
+        }
+      }
+    ]
     ],
     "extra": {
       "pwaUrl": "https://al-mawaid.vercel.app",
