@@ -2,7 +2,7 @@ import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.almawaid.app',
-  appName: 'AlMawaid',
+  appName: 'Al-Mawaid | المَوَائِد',
   webDir: 'dist',
   bundledWebRuntime: false,
   server: {
