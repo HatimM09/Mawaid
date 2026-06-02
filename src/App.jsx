@@ -403,6 +403,31 @@ const GlobalStyles = () => {
         color: ${t.accent};
         font-weight: 900;
       }
+      /* Mobile Responsive Improvements */
+      @media (max-width: 480px) {
+        main { padding-left: 12px !important; padding-right: 12px !important; }
+        h1 { font-size: clamp(18px, 5vw, 24px) !important; }
+        h2 { font-size: clamp(16px, 4.5vw, 20px) !important; }
+        .mobile-bottom-nav { height: 64px !important; border-radius: 20px !important; width: calc(100% - 24px) !important; bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important; }
+        .mobile-bottom-nav button div { width: 38px !important; height: 38px !important; border-radius: 12px !important; }
+        .mobile-bottom-nav button span { font-size: 8px !important; }
+        .mobile-bottom-nav button.active div { border-radius: 14px !important; }
+      }
+      @media (max-width: 360px) {
+        main { padding-left: 8px !important; padding-right: 8px !important; }
+        .mobile-bottom-nav { height: 58px !important; width: calc(100% - 16px) !important; }
+        .mobile-bottom-nav button div { width: 34px !important; height: 34px !important; }
+      }
+      /* Ensure content is never hidden behind bottom nav */
+      main { padding-bottom: max(110px, calc(80px + env(safe-area-inset-bottom, 20px))) !important; }
+      /* Smooth touch scrolling */
+      * { -webkit-overflow-scrolling: touch; }
+      html { overflow-x: hidden; }
+      body { overflow-x: hidden; width: 100%; max-width: 100vw; }
+      img { max-width: 100%; height: auto; }
+      /* Fix for 100vh on mobile (addresses browser chrome) */
+      .vh-fix { min-height: 100dvh; min-height: -webkit-fill-available; }
+
     `}</style>
   )
 }
@@ -1887,7 +1912,8 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
   const [profileData, setProfileData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showQR, setShowQR] = useState(false)
-  useEffect(() => { supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle().then(({ data }) => { if (data) setProfileData(data) }).finally(() => setLoading(false)) }, [])
+  const [helpline, setHelpline] = useState('')
+  useEffect(() => { supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle().then(({ data }) => { if (data) setProfileData(data) }).finally(() => setLoading(false)) }, []); supabase.from("app_settings").select("*").eq("key", "helpline_number").maybeSingle().then(({ data }) => { if (data) setHelpline(data.value) })
 
   const NavCard = ({ label, icon, desc, onClick }) => (
     <button onClick={onClick} style={{ width: '100%', padding: '13px 16px', borderRadius: 14, border: `1px solid ${t.border}`, background: t.card, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10, textAlign: 'left', transition: 'all 0.2s' }}>
@@ -1920,6 +1946,21 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
       <NavCard label="Khidmat Guzaar" icon={<Users size={19} color="#fff" />} desc="Meet our Al-Mawaid team" onClick={() => onNav('khidmat')} />
       <NavCard label="Alerts" icon={<Bell size={19} color="#fff" />} desc="See notices and important updates" onClick={() => onNav('notifications')} />
       <NavCard label="Support Ticket" icon={<LifeBuoy size={19} color="#fff" />} desc="Raise general, thali, and delivery issues" onClick={() => onNav('support')} />
+      {helpline && (
+        <a href={`https://wa.me/${helpline.replace(/[^\d]/g, '')}`} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', display: 'block', marginBottom: 10 }}>
+          <button style={{ width: '100%', padding: '13px 16px', borderRadius: 14, border: '1px solid rgba(37,211,102,0.3)', background: 'rgba(37,211,102,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, transition: 'all 0.2s', textAlign: 'left' }}>
+            <div style={{ width: 42, height: 42, borderRadius: 12, background: '#25D366', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <MessageCircle size={19} color="#fff" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>WhatsApp Helpline</div>
+              <div style={{ fontSize: 12, color: '#25D366', marginTop: 1, fontFamily: "'DM Sans',sans-serif", fontWeight: 600 }}>{helpline} — Tap to chat</div>
+            </div>
+            <MessageCircle size={15} color="#25D366" />
+          </button>
+        </a>
+      )}
+
       <NavCard label="About" icon={<Info size={19} color="#fff" />} desc="Learn more about the app and services" onClick={() => onNav('about')} />
       <NavCard label="Reset Password" icon={<Lock size={19} color="#fff" />} desc="Update your account password" onClick={() => onNav('reset_password')} />
       <div style={{ marginTop: 20, marginBottom: 20 }}>
