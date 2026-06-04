@@ -74,30 +74,29 @@ export default defineConfig({
       manifest: {
         name: 'Al-Mawaid | المَوَائِد',
         short_name: 'Al-Mawaid',
-        description: 'Premium Daily Tiffin Menu, Survey & Service Management System',
+        description: ' Daily Tiffin Menu, Survey & Service Management System',
         theme_color: '#D4AF37',
         background_color: '#060d1a',
         display: 'standalone',
-        orientation: 'portrait-primary',
-        id: '/',
-        scope: '/',
-        start_url: '/',
+        id: './',
+        scope: './',
+        start_url: './',
         categories: ['food', 'lifestyle'],
         icons: [
           {
-            src: '/al-mawaid.png',
+            src: './al-mawaid.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any'
           },
           {
-            src: '/al-mawaid.png',
+            src: './al-mawaid.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any'
           },
           {
-            src: '/al-mawaid.png',
+            src: './al-mawaid.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable'

@@ -66,7 +66,7 @@ function showToast(title, body, url) {
 
 // ── Subscribe to Supabase Realtime notification channel ───────────────────────
 function subscribeRealtime(realtimeChannel, user, cancelledRef) {
-  if (cancelledRef.current) return
+  if (cancelledRef.current || realtimeChannel.current) return
 
   console.log('[PushManager] Subscribing to Realtime notifications...')
   realtimeChannel.current = supabase

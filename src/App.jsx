@@ -541,8 +541,18 @@ function SurveyModal({ startDay, onClose, appSettings = {} }) {
     setResponses({})
   }
 
+  // Auto submit when all dishes are selected
+  useEffect(() => {
+    if (!editBlocked && wantsFood === true) {
+      const dishes = currentMeal === 'lunch' ? menu.lunch : menu.dinner
+      if (dishes.length > 0 && Object.keys(responses).length === dishes.length && !loading) {
+        handleNext()
+      }
+    }
+  }, [responses, wantsFood, editBlocked, loading])
+
   const handleNext = async () => {
-    if (wantsFood !== null) {
+    if (wantsFood !== null && !loading) {
       setLoading(true)
       try {
         const dayKey = currentDay.substring(0, 3).toLowerCase()
@@ -1413,14 +1423,37 @@ function WeeklyMenuPage() {
   const weeklyMenu = useWeeklyMenu()
   const todayKey = getTodayKey()
   const [expandedDay, setExpandedDay] = useState(todayKey)
+  const { user } = useAuth()
+  const [userSurvey, setUserSurvey] = useState(null)
 
-  if (!weeklyMenu) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
+  // Fetch user survey response
+  useEffect(() => {
+    const fetchSurvey = async () => {
+      const { data } = await supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id).eq('week_id', getWeekDate()).maybeSingle()
+      setUserSurvey(data)
+    }
+    fetchSurvey()
+  }, [user.id])
+
+  const getDishResp = (day, meal, idx) => {
+    if (!userSurvey) return null
+    const dayKey = day.substring(0, 3).toLowerCase()
+    const mealKey = meal === 'lunch' ? 'l' : 'd'
+    const col = `${dayKey}_${mealKey}_dish_${idx + 1}`
+    const val = userSurvey[col]
+    if (val === 'Yes') return 'yes'
+    if (val === 'No') return 'no'
+    if (typeof val === 'string' && val.endsWith('%')) return parseInt(val.replace('%', ''))
+    return null
+  }
 
   const jumpToDay = (day) => {
     setExpandedDay(day)
     const el = document.getElementById(`day-card-${day}`)
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
+
+  if (!weeklyMenu) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
 
   return (
     <main style={{ flex: 1, padding: '16px 16px calc(110px + env(safe-area-inset-bottom, 20px))', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
@@ -1536,13 +1569,25 @@ function WeeklyMenuPage() {
                       <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.1em', color: t.text }}>LUNCH FEAST</span>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {menu.lunch.length > 0 ? menu.lunch.map(dish => (
-                        <div key={dish} style={{
-                          padding: '8px 16px', borderRadius: 14,
-                          background: t.inputBg, border: `1px solid ${t.border}`,
-                          fontSize: 13, fontWeight: 600, color: t.textBody
-                        }}>{dish}</div>
-                      )) : <div style={{ fontSize: 12, color: t.textSub, fontStyle: 'italic' }}>Preparation in progress...</div>}
+                      {menu.lunch.length > 0 ? menu.lunch.map((dish, idx) => {
+                        const resp = getDishResp(day, 'lunch', idx)
+                        return (
+                          <div key={dish} style={{
+                            padding: '8px 16px', borderRadius: 14,
+                            background: resp === 'yes' ? 'rgba(76, 175, 80, 0.1)' : resp === 'no' ? 'rgba(244, 67, 54, 0.1)' : t.inputBg,
+                            border: `1px solid ${resp === 'yes' ? '#4CAF50' : resp === 'no' ? '#F44336' : t.border}`,
+                            fontSize: 13, fontWeight: 600, color: t.textBody,
+                            display: 'flex', alignItems: 'center', gap: '8px'
+                          }}>
+                            {dish}
+                            {resp !== null && (
+                              <span style={{ fontWeight: '800', color: resp === 'yes' ? '#4CAF50' : resp === 'no' ? '#F44336' : t.accent }}>
+                                {resp === 'yes' ? '✅' : resp === 'no' ? '❌' : `${resp}%`}
+                              </span>
+                            )}
+                          </div>
+                        )
+                      }) : <div style={{ fontSize: 12, color: t.textSub, fontStyle: 'italic' }}>Preparation in progress...</div>}
                     </div>
                   </div>
 
@@ -1559,13 +1604,25 @@ function WeeklyMenuPage() {
                       <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.1em', color: t.text }}>DINNER DELIGHT</span>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {menu.dinner.length > 0 ? menu.dinner.map(dish => (
-                        <div key={dish} style={{
-                          padding: '8px 16px', borderRadius: 14,
-                          background: t.inputBg, border: `1px solid ${t.border}`,
-                          fontSize: 13, fontWeight: 600, color: t.textBody
-                        }}>{dish}</div>
-                      )) : <div style={{ fontSize: 12, color: t.textSub, fontStyle: 'italic' }}>Stay tuned for the menu...</div>}
+                      {menu.dinner.length > 0 ? menu.dinner.map((dish, idx) => {
+                        const resp = getDishResp(day, 'dinner', idx)
+                        return (
+                          <div key={dish} style={{
+                            padding: '8px 16px', borderRadius: 14,
+                            background: resp === 'yes' ? 'rgba(76, 175, 80, 0.1)' : resp === 'no' ? 'rgba(244, 67, 54, 0.1)' : t.inputBg,
+                            border: `1px solid ${resp === 'yes' ? '#4CAF50' : resp === 'no' ? '#F44336' : t.border}`,
+                            fontSize: 13, fontWeight: 600, color: t.textBody,
+                            display: 'flex', alignItems: 'center', gap: '8px'
+                          }}>
+                            {dish}
+                            {resp !== null && (
+                              <span style={{ fontWeight: '800', color: resp === 'yes' ? '#4CAF50' : resp === 'no' ? '#F44336' : t.accent }}>
+                                {resp === 'yes' ? '✅' : resp === 'no' ? '❌' : `${resp}%`}
+                              </span>
+                            )}
+                          </div>
+                        )
+                      }) : <div style={{ fontSize: 12, color: t.textSub, fontStyle: 'italic' }}>Stay tuned for the menu...</div>}
                     </div>
                   </div>
                 </div>

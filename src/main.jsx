@@ -8,7 +8,7 @@ import MainRouter from './MainRouter.jsx'
 // Also detects new SW versions for the 'Update Available' banner
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/firebase-messaging-sw.js').then(reg => {
+    navigator.serviceWorker.register('./firebase-messaging-sw.js').then(reg => {
       console.log('[SW] Firebase messaging SW registered:', reg.scope)
 
       // ── Check for updates on every page load ─────────────────────────
