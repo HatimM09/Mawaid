@@ -14,11 +14,36 @@ const T = {
   goldBar: SharedT.accentGrad || 'var(--accent-grad)'
 }
 
+const Skl = ({ w = '100%', h = 14, style = {} }) => (
+  <div style={{
+    height: h, width: w, borderRadius: h / 2,
+    background: 'var(--border-light)',
+    animation: 'skeletonPulse 1.5s ease-in-out infinite',
+    ...style
+  }} />
+)
+
 const Spinner = ({ fullPage = true }) => (
-  <div style={fullPage ? { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 20px' } : {}}>
-    <div className="spin" style={{ width: 34, height: 34, border: `2.5px solid var(--border-light)`, borderTop: `2.5px solid var(--accent-primary)`, borderRadius: '50%' }} />
-    <style>{`@keyframes spin { to { transform: rotate(360deg); } }.spin { animation: spin 0.8s linear infinite; }`}</style>
-  </div>
+  fullPage ? (
+    <div style={{ flex: 1, padding: '40px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Skl w='50%' h={24} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+        {[1,2,3].map(i => (
+          <div key={i} style={{ padding: 20, borderRadius: 16, background: 'var(--bg-surface)', border: '1px solid var(--border-light)' }}>
+            <Skl w='40%' h={10} style={{ marginBottom: 12 }} />
+            <Skl w='60%' h={28} />
+          </div>
+        ))}
+      </div>
+      <Skl w='100%' h={60} style={{ borderRadius: 12 }} />
+      <Skl w='100%' h={60} style={{ borderRadius: 12 }} />
+    </div>
+  ) : (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12 }}>
+      <Skl w={16} h={16} style={{ borderRadius: '50%' }} />
+      <Skl w='60%' h={12} />
+    </div>
+  )
 )
 
 const PortalCard = ({ title, value, icon, color = 'var(--accent-primary)', sub, organic }) => (

@@ -13,6 +13,7 @@ import {
 } from './ui'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'react-hot-toast'
+import { getWeekDate } from '../common/utils'
 
 export default function QRManagement() {
   const [activeTab, setActiveTab] = useState('scan') // 'scan' | 'generate'
@@ -135,7 +136,7 @@ export default function QRManagement() {
         .from('user_stats')
         .select('*')
         .eq('user_id', userId)
-        .single()
+        .maybeSingle()
       
       if (uError || !user) {
         toast.error("User not found")
@@ -151,7 +152,7 @@ export default function QRManagement() {
       const dayKey = today.substring(0, 3).toLowerCase()
       const mealKey = mealName === 'lunch' ? 'l' : 'd'
       
-      const weekId = getMonday(new Date()).toISOString().split('T')[0]
+      const weekId = getWeekDate()
       const { data: submission } = await supabase
         .from('survey_submissions_flat')
         .select('*')
@@ -162,13 +163,13 @@ export default function QRManagement() {
       const dishRes = {}
       if (submission && submission[`${dayKey}_${mealKey}_status`] === 'Applied') {
         // Simple mapping for display
-        const { data: menuRow } = await supabase.from('weekly_menu').select('*').eq('day_name', today.charAt(0).toUpperCase() + today.slice(1)).maybeSingle()
+        const { data: menuRow } = await supabase.from('weekly_menu').select('*').eq('day_name', today.charAt(0).toUpperCase() + today.slice(1)).eq('week_start', getWeekDate()).maybeSingle()
         if (menuRow) {
           const dishList = (menuRow[mealName] || '').split(',').map(s => s.trim()).filter(Boolean)
           dishList.forEach((dish, idx) => {
             const val = submission[`${dayKey}_${mealKey}_dish_${idx + 1}`]
             if (val !== undefined && val !== null) {
-              dishRes[dish] = val === 'Yes' ? 'yes' : (val === 'No' ? 'no' : (parseInt(val) || 0))
+              dishRes[dish] = val === 'Yes' ? 'yes' : (val === 'No' ? 'no' : val)
             }
           })
         }
@@ -193,12 +194,7 @@ export default function QRManagement() {
     }
   }
 
-  const getMonday = (d) => {
-    d = new Date(d)
-    const day = d.getDay()
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-    return new Date(d.setDate(diff))
-  }
+
 
   const filteredUsers = users.filter(u => 
     (u.name || '').toLowerCase().includes(search.toLowerCase()) || 
@@ -207,66 +203,44 @@ export default function QRManagement() {
 
   const printQR = (u) => {
     const canvas = document.createElement('canvas');
-    const size = 1062; // ~9cm at 300 DPI
-    canvas.width = size;
-    canvas.height = size;
+    const w = 1500, h = 798;
+    canvas.width = w;
+    canvas.height = h;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Background Circle
     ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillRect(0, 0, w, h);
 
-    // Load Logo
     const logo = new Image();
     logo.src = '/al-mawaid.png';
     logo.onload = () => {
-      // Draw Logo
-      const scale = Math.max(size / logo.width, size / logo.height);
-      const drawWidth = logo.width * scale;
-      const drawHeight = logo.height * scale;
-      const drawX = (size - drawWidth) / 2;
-      const drawY = (size - drawHeight) / 2;
-      
-      ctx.globalAlpha = 1.0;
-      ctx.drawImage(logo, drawX, drawY, drawWidth, drawHeight);
-
-      // Draw QR Code
-      const qrCanvas = document.getElementById(`qr-canvas-${u.user_id}`);
-      if (qrCanvas) {
-        const qrSize = 295;
-        const quietZone = 35;
-        ctx.fillStyle = '#ffffff';
-        const boxSize = qrSize + quietZone * 2;
-        const boxX = (size - boxSize) / 2;
-        const boxY = size * 0.35;
-        
-        ctx.beginPath();
-        ctx.roundRect(boxX, boxY, boxSize, boxSize, 40);
-        ctx.fill();
-        ctx.drawImage(qrCanvas, (size - qrSize) / 2, boxY + quietZone, qrSize, qrSize);
-      }
-
-      // Draw Thali Number
-      const thaliText = `#${u.thali_number}`;
-      ctx.font = '900 130px "DM Sans", sans-serif';
-      const textWidth = ctx.measureText(thaliText).width;
-      
-      ctx.fillStyle = '#ffffff';
+      const logoCx = 250, logoCy = 220, logoR = 170;
+      ctx.save();
       ctx.beginPath();
-      ctx.roundRect((size - textWidth - 100) / 2, size * 0.75, textWidth + 100, 180, 90);
-      ctx.fill();
-      
+      ctx.arc(logoCx, logoCy, logoR, 0, Math.PI * 2);
+      ctx.clip();
+      const s = Math.max((logoR * 2) / logo.width, (logoR * 2) / logo.height);
+      const dw = logo.width * s, dh = logo.height * s;
+      ctx.drawImage(logo, logoCx - dw / 2, logoCy - dh / 2, dw, dh);
+      ctx.restore();
+
+      const thaliText = `${u.thali_number || '—'}`;
+      ctx.font = '900 120px "DM Sans", sans-serif';
       ctx.fillStyle = '#000000';
       ctx.textAlign = 'center';
-      ctx.fillText(thaliText, size / 2, size * 0.88);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(thaliText, 250, 520);
 
-      // Get image data
+      const qrCanvas = document.getElementById(`qr-canvas-${u.user_id}`);
+      if (qrCanvas) {
+        const qrSize = 480;
+        ctx.drawImage(qrCanvas, w - qrSize - 120, (h - qrSize) / 2, qrSize, qrSize);
+      }
+
       const dataUrl = canvas.toDataURL('image/png');
       
-      const printWindow = window.open('', '_blank', 'width=800,height=800');
+      const printWindow = window.open('', '_blank', 'width=1500,height=798');
       if (!printWindow) {
         toast.error("Popup blocked! Please allow popups to print.");
         return;
@@ -278,22 +252,22 @@ export default function QRManagement() {
             <title>Print Thali Sticker #${u.thali_number}</title>
             <style>
               @page {
-                size: 90mm 90mm;
+                size: 150mm 79.8mm;
                 margin: 0;
               }
               html, body {
                 margin: 0;
                 padding: 0;
-                width: 90mm;
-                height: 90mm;
+                width: 150mm;
+                height: 79.8mm;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 background: #fff;
               }
               img {
-                width: 90mm;
-                height: 90mm;
+                width: 150mm;
+                height: 79.8mm;
                 display: block;
               }
             </style>
@@ -325,7 +299,6 @@ export default function QRManagement() {
     const toastId = toast.loading("Generating Bulk PDF...")
     
     try {
-      // Load jsPDF dynamically if not already loaded
       if (!window.jspdf) {
         await new Promise((resolve, reject) => {
           const script = document.createElement('script')
@@ -337,60 +310,55 @@ export default function QRManagement() {
       }
 
       const { jsPDF } = window.jspdf
-      const doc = new jsPDF('p', 'mm', 'a4')
-      const stickerSize = 90 // 9cm
+      const doc = new jsPDF('l', 'mm', 'a4')
+      const stickerW = 150, stickerH = 79.8
       
       for (let i = 0; i < users.length; i++) {
         const u = users[i]
-        const pageIndex = Math.floor(i / 2)
-        const itemOnPage = i % 2 // 0 or 1
+        const pageIndex = Math.floor(i / 3)
+        const itemOnPage = i % 3
         
         if (i > 0 && itemOnPage === 0) doc.addPage()
         
-        // Draw Sticker on Canvas
         const canvas = document.createElement('canvas')
-        const canvasSize = 1062 // 300 DPI approx
-        canvas.width = canvasSize
-        canvas.height = canvasSize
+        const w = 1500, h = 798
+        canvas.width = w
+        canvas.height = h
         const ctx = canvas.getContext('2d')
         
-        // 1. BG Circle
         ctx.fillStyle = '#ffffff'
-        ctx.beginPath(); ctx.arc(canvasSize/2, canvasSize/2, canvasSize/2, 0, Math.PI*2); ctx.fill()
+        ctx.fillRect(0, 0, w, h)
         
-        // 2. Logo Spread
         const logo = new Image()
         logo.src = '/al-mawaid.png'
         await new Promise(r => { logo.onload = r; logo.onerror = r })
-        const scale = Math.max(canvasSize / logo.width, canvasSize / logo.height)
-        ctx.drawImage(logo, (canvasSize - logo.width*scale)/2, (canvasSize - logo.height*scale)/2, logo.width*scale, logo.height*scale)
+        const logoCx = 250, logoCy = 220, logoR = 170
+        ctx.save()
+        ctx.beginPath()
+        ctx.arc(logoCx, logoCy, logoR, 0, Math.PI * 2)
+        ctx.clip()
+        const s = Math.max((logoR * 2) / logo.width, (logoR * 2) / logo.height)
+        ctx.drawImage(logo, logoCx - (logo.width * s) / 2, logoCy - (logo.height * s) / 2, logo.width * s, logo.height * s)
+        ctx.restore()
         
-        // 3. QR Code
+        ctx.font = '900 120px "DM Sans", sans-serif'
+        ctx.fillStyle = '#000000'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(`${u.thali_number || '—'}`, 250, 520)
+        
         const qrCanvas = document.getElementById(`qr-canvas-${u.user_id}`)
         if (qrCanvas) {
-          const qrSize = 295, quietZone = 35, boxSize = qrSize + quietZone*2
-          ctx.fillStyle = '#ffffff'
-          ctx.beginPath(); ctx.roundRect((canvasSize-boxSize)/2, canvasSize*0.35, boxSize, boxSize, 40); ctx.fill()
-          ctx.drawImage(qrCanvas, (canvasSize-qrSize)/2, canvasSize*0.35 + quietZone, qrSize, qrSize)
+          const qrSize = 480
+          ctx.drawImage(qrCanvas, w - qrSize - 120, (h - qrSize) / 2, qrSize, qrSize)
         }
         
-        // 4. Thali Number
-        const thaliText = `#${u.thali_number}`
-        ctx.font = '900 130px "DM Sans", sans-serif'
-        const tw = ctx.measureText(thaliText).width
-        ctx.fillStyle = '#ffffff'
-        ctx.beginPath(); ctx.roundRect((canvasSize-tw-100)/2, canvasSize*0.75, tw+100, 180, 90); ctx.fill()
-        ctx.fillStyle = '#000000'; ctx.textAlign = 'center'
-        ctx.fillText(thaliText, canvasSize/2, canvasSize*0.88)
+        const stickerY = 10 + itemOnPage * (stickerH + 5)
+        doc.addImage(canvas.toDataURL('image/jpeg', 0.9), 'JPEG', (297 - stickerW) / 2, stickerY, stickerW, stickerH)
         
-        // Add to PDF
-        const stickerY = itemOnPage === 0 ? 30 : 160
-        doc.addImage(canvas.toDataURL('image/jpeg', 0.9), 'JPEG', (210-stickerSize)/2, stickerY, stickerSize, stickerSize)
-        
-        // Draw Cut Line
-        if (itemOnPage === 0) {
+        if (itemOnPage < 2) {
           doc.setLineDash([2, 2], 0)
-          doc.line(10, 148.5, 200, 148.5)
+          doc.line(10, stickerY + stickerH + 2.5, 287, stickerY + stickerH + 2.5)
         }
       }
       
@@ -406,65 +374,42 @@ export default function QRManagement() {
 
   const downloadSticker = (u, format = 'png') => {
     const canvas = document.createElement('canvas');
-    const size = 1062; // ~9cm at 300 DPI
-    canvas.width = size;
-    canvas.height = size;
+    const w = 1500, h = 798;
+    canvas.width = w;
+    canvas.height = h;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Background Circle
     ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillRect(0, 0, w, h);
 
-    // Load Logo
     const logo = new Image();
     logo.src = '/al-mawaid.png';
     logo.onload = () => {
-      // Draw Logo as BG - Full Spread (Full Bleed)
-      const scale = Math.max(size / logo.width, size / logo.height);
-      const drawWidth = logo.width * scale;
-      const drawHeight = logo.height * scale;
-      const drawX = (size - drawWidth) / 2;
-      const drawY = (size - drawHeight) / 2;
-      
-      ctx.globalAlpha = 1.0;
-      ctx.drawImage(logo, drawX, drawY, drawWidth, drawHeight);
-
-      // Draw QR Code in a clear white box for perfect scanning
-      const qrCanvas = document.getElementById(`qr-canvas-${u.user_id}`);
-      if (qrCanvas) {
-        const qrSize = 295;
-        const quietZone = 35; // ~3mm
-        ctx.fillStyle = '#ffffff';
-        // Rounded box for QR
-        const boxSize = qrSize + quietZone * 2;
-        const boxX = (size - boxSize) / 2;
-        const boxY = size * 0.35;
-        
-        ctx.beginPath();
-        ctx.roundRect(boxX, boxY, boxSize, boxSize, 40);
-        ctx.fill();
-        ctx.drawImage(qrCanvas, (size - qrSize) / 2, boxY + quietZone, qrSize, qrSize);
-      }
-
-      // Draw Thali Number in a white capsule
-      const thaliText = `#${u.thali_number}`;
-      ctx.font = '900 130px "DM Sans", sans-serif';
-      const textWidth = ctx.measureText(thaliText).width;
-      
-      ctx.fillStyle = '#ffffff';
+      const logoCx = 250, logoCy = 220, logoR = 170;
+      ctx.save();
       ctx.beginPath();
-      ctx.roundRect((size - textWidth - 100) / 2, size * 0.75, textWidth + 100, 180, 90);
-      ctx.fill();
-      
+      ctx.arc(logoCx, logoCy, logoR, 0, Math.PI * 2);
+      ctx.clip();
+      const s = Math.max((logoR * 2) / logo.width, (logoR * 2) / logo.height);
+      const dw = logo.width * s, dh = logo.height * s;
+      ctx.drawImage(logo, logoCx - dw / 2, logoCy - dh / 2, dw, dh);
+      ctx.restore();
+
+      const thaliText = `${u.thali_number || '—'}`;
+      ctx.font = '900 120px "DM Sans", sans-serif';
       ctx.fillStyle = '#000000';
       ctx.textAlign = 'center';
-      ctx.fillText(thaliText, size / 2, size * 0.88);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(thaliText, 250, 520);
+
+      const qrCanvas = document.getElementById(`qr-canvas-${u.user_id}`);
+      if (qrCanvas) {
+        const qrSize = 480;
+        ctx.drawImage(qrCanvas, w - qrSize - 120, (h - qrSize) / 2, qrSize, qrSize);
+      }
 
       if (format === 'pdf') {
-        // Load jsPDF if not loaded
         const generatePDF = async () => {
           if (!window.jspdf) {
             await new Promise((resolve, reject) => {
@@ -476,8 +421,8 @@ export default function QRManagement() {
             })
           }
           const { jsPDF } = window.jspdf
-          const doc = new jsPDF('p', 'mm', [90, 90]) // exactly 90mm x 90mm page
-          doc.addImage(canvas.toDataURL('image/jpeg', 1.0), 'JPEG', 0, 0, 90, 90)
+          const doc = new jsPDF('l', 'mm', [150, 79.8])
+          doc.addImage(canvas.toDataURL('image/jpeg', 1.0), 'JPEG', 0, 0, 150, 79.8)
           doc.save(`Sticker_${u.thali_number}_${u.name}.pdf`)
         }
         generatePDF().catch(err => {
@@ -485,7 +430,6 @@ export default function QRManagement() {
           toast.error("Failed to generate PDF")
         })
       } else {
-        // Download PNG
         const link = document.createElement('a');
         link.download = `Sticker_${u.thali_number}_${u.name}.png`;
         link.href = canvas.toDataURL('image/png');
@@ -586,6 +530,7 @@ export default function QRManagement() {
               <Search style={{ position: 'absolute', left: 18, top: '50%', transform: 'translateY(-50%)', color: T.textSub }} size={20} />
               <input 
                 type="text" 
+                name="searchQR"
                 placeholder="Search by name or thali number..." 
                 value={search}
                 onChange={e => setSearch(e.target.value)}
@@ -647,36 +592,33 @@ export default function QRManagement() {
           <div style={{ textAlign: 'center' }}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
                <div id="printable-area" style={{ 
-                 width: '9cm', height: '9cm', 
-                 background: '#fff', borderRadius: '50%', 
-                 color: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                 width: '375px', height: '200px', 
+                 background: '#fff', 
+                 color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                  boxSizing: 'border-box', border: '1px solid #eee', position: 'relative',
-                 overflow: 'hidden'
+                 overflow: 'hidden', padding: '0 30px', borderRadius: 12
                }}>
-                 {/* Al Mawaid Logo - Full Spread Background */}
-                 <img src="/al-mawaid.png" alt="Al Mawaid" style={{ 
-                   position: 'absolute', width: '100%', height: '100%', 
-                   objectFit: 'cover', opacity: 1,
-                   top: 0, left: 0, zIndex: 1
-                 }} />
+                 {/* Left: Logo + Thali */}
+                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, zIndex: 2 }}>
+                   <div style={{ 
+                     width: 110, height: 110, borderRadius: '50%', overflow: 'hidden',
+                     border: '1px solid #eee', flexShrink: 0
+                   }}>
+                     <img src="/al-mawaid.png" alt="Al Mawaid" style={{ 
+                       width: '100%', height: '100%', objectFit: 'cover'
+                     }} />
+                   </div>
+                   <div style={{ fontSize: '22pt', fontWeight: 900, color: '#000' }}>{selectedUser.thali_number || '—'}</div>
+                 </div>
                  
-                 {/* QR Code Container on top */}
+                 {/* Right: QR Code */}
                  <div style={{ 
                    background: '#fff', padding: '3mm', borderRadius: '4mm',
                    border: '1px solid #eee', display: 'inline-block',
-                   position: 'relative', zIndex: 2, marginBottom: '0.4cm',
+                   position: 'relative', zIndex: 2,
                    boxShadow: '0 8px 24px rgba(0,0,0,0.1)'
                  }}>
                    <QRCodeSVG value={`ALMAWAID:${selectedUser.user_id}`} size={94.5} level="H" includeMargin={false} />
-                 </div>
-                 
-                 {/* Thali Number Capsule */}
-                 <div style={{ 
-                   position: 'relative', zIndex: 2, background: '#fff', 
-                   padding: '4px 24px', borderRadius: '40px',
-                   boxShadow: '0 8px 24px rgba(0,0,0,0.1)'
-                 }}>
-                   <div style={{ fontSize: '28pt', fontWeight: 900, color: '#000' }}>#{selectedUser.thali_number}</div>
                  </div>
                </div>
             </div>
@@ -701,7 +643,7 @@ export default function QRManagement() {
             key={`qr-${u.user_id}`}
             id={`qr-canvas-${u.user_id}`}
             value={`ALMAWAID:${u.user_id}`} 
-            size={295} 
+            size={512} 
             level="H" 
           />
         ))}
@@ -714,13 +656,11 @@ export default function QRManagement() {
       <div id="bulk-print-area" className={isBulkPrinting ? 'active' : ''}>
         {users.map((u, idx) => (
           <div key={u.user_id} className="bulk-sticker-item">
-            <div className="sticker-circle">
+            <div className="sticker-landscape">
                <img src="/al-mawaid.png" alt="" className="sticker-bg" />
+               <div className="thali-label">#{u.thali_number || '—'}</div>
                <div className="qr-container">
                  <QRCodeSVG value={`ALMAWAID:${u.user_id}`} size={94.5} level="H" />
-               </div>
-               <div className="thali-capsule">
-                 #{u.thali_number}
                </div>
             </div>
           </div>
@@ -750,13 +690,11 @@ export default function QRManagement() {
         }
         
         @media print {
-          @page { size: A4; margin: 0; }
+          @page { size: A4 landscape; margin: 0; }
           html, body { height: 100%; margin: 0 !important; padding: 0 !important; overflow: hidden; }
           
-          /* Hide everything by default */
           body * { display: none !important; }
           
-          /* Show bulk print area if active */
           #bulk-print-area.active, 
           #bulk-print-area.active * { 
             display: block !important; 
@@ -767,7 +705,7 @@ export default function QRManagement() {
             display: flex !important;
             flex-direction: column;
             align-items: center;
-            width: 210mm;
+            width: 297mm;
             background: white !important;
             position: absolute;
             top: 0;
@@ -775,20 +713,18 @@ export default function QRManagement() {
           }
           
           .bulk-sticker-item {
-            width: 210mm;
-            height: 148.5mm; /* Half of A4 height */
+            width: 297mm;
+            height: 93mm;
             display: flex !important;
             align-items: center;
             justify-content: center;
             page-break-inside: avoid;
             position: relative;
-            border-bottom: 0.1mm dashed #eee; /* Cut line */
           }
 
-          /* Show single printable area if it exists */
           #printable-area, 
           #printable-area * { 
-            display: block !important; 
+            display: flex !important; 
             visibility: visible !important;
           }
           
@@ -797,46 +733,44 @@ export default function QRManagement() {
             left: 50%;
             top: 50%;
             transform: translate(-50%, -50%);
-            width: 9cm !important;
-            height: 9cm !important;
-            display: flex !important;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
+            width: 150mm !important;
+            height: 79.8mm !important;
           }
           
-          .bulk-sticker-item {
-            width: 90mm;
-            height: 90mm;
+          .sticker-landscape {
+            width: 150mm;
+            height: 79.8mm;
             display: flex !important;
             align-items: center;
-            justify-content: center;
-            page-break-inside: avoid;
-            position: relative;
-          }
-          
-          .sticker-circle {
-            width: 90mm;
-            height: 90mm;
-            border-radius: 50%;
-            overflow: hidden;
+            justify-content: space-between;
+            padding: 0 8mm;
             position: relative;
             background: #fff;
             border: 0.1mm solid #eee;
-            display: flex !important;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
+            page-break-inside: avoid;
+            overflow: hidden;
           }
 
           .sticker-bg {
             position: absolute;
-            width: 100%;
-            height: 100%;
+            width: 80mm;
+            height: 80mm;
             object-fit: cover;
-            top: 0;
-            left: 0;
+            top: 50%;
+            left: 15mm;
+            transform: translateY(-50%);
+            border-radius: 50%;
             z-index: 1;
+            display: block !important;
+            clip-path: circle(50%);
+          }
+
+          .thali-label {
+            position: relative;
+            z-index: 2;
+            font-size: 24pt;
+            font-weight: 900;
+            margin-top: 30mm;
             display: block !important;
           }
 
@@ -846,21 +780,8 @@ export default function QRManagement() {
             border-radius: 4mm;
             position: relative;
             z-index: 2;
-            margin-bottom: 4mm;
             display: block !important;
           }
-
-          .thali-capsule {
-            background: #fff;
-            padding: 2mm 8mm;
-            border-radius: 10mm;
-            font-size: 28pt;
-            font-weight: 900;
-            position: relative;
-            z-index: 2;
-            display: block !important;
-          }
-        }
       `}</style>
     </PageWrap>
   )

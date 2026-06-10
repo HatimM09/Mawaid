@@ -1,28 +1,33 @@
 import { useEffect, useState } from 'react';
-import { getMessaging, getToken } from 'firebase/messaging';
-import { supabase } from '../admin/supabaseClient';
 
 export function PushStatus() {
   const [status, setStatus] = useState('pending');
 
   useEffect(() => {
-    const messaging = getMessaging();
     const checkStatus = async () => {
       try {
-        const token = await getToken(messaging, {
-          vapidKey: 'BIEVWJ3bbYO2OZW--9AD-uDEevFUa4GNC2BuU6gtopIq0BTSLXVMTWh8EI6SIubsp2_s2o6lckRZDwtNzlYrZKY',
-        });
-        setStatus(token ? (navigator.serviceWorker.controller ? 'enabled' : 'blocked') : 'offline');
+        if (!('Notification' in window) || !('PushManager' in window)) {
+          setStatus('blocked');
+          return;
+        }
+
+        const swReg = await navigator.serviceWorker.ready;
+        const subscription = await swReg.pushManager.getSubscription();
+        
+        if (subscription) {
+          setStatus('enabled');
+        } else if (Notification.permission === 'granted') {
+          setStatus('offline');
+        } else if (Notification.permission === 'denied') {
+          setStatus('blocked');
+        } else {
+          setStatus('offline');
+        }
       } catch {
         setStatus('blocked');
       }
     };
     checkStatus();
-
-    messaging.onMessage(() => setStatus('enabled'));
-    if (Notification.permission !== 'default') {
-      setStatus(Notification.permission === 'granted' ? 'enabled' : 'blocked');
-    }
   }, []);
 
   const color = {

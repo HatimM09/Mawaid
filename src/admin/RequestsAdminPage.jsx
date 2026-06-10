@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import { RefreshCw, Search, CheckCircle, Clock, XCircle, ShieldAlert, Lock } from 'lucide-react'
@@ -13,15 +13,15 @@ export default function RequestsAdminPage() {
   const isAdmin = role === 'admin'
   const [loading, setLoading]   = useState(true)
   const [requests, setRequests] = useState([])
+  const [allRequests, setAllRequests] = useState([])
   const [users, setUsers]       = useState({})
   const [statusFilter, setStatusFilter] = useState('pending')
   const [typeFilter, setTypeFilter]     = useState('all')
   const [search, setSearch]             = useState('')
+  const [showAll, setShowAll]           = useState(false)
   const [types, setTypes]               = useState([])
 
-  useEffect(() => { load() }, [])
-
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     const [{ data: req }, { data: us }] = await Promise.all([
       supabase.from('thali_requests').select('*').order('created_at', { ascending: false }),
@@ -30,20 +30,35 @@ export default function RequestsAdminPage() {
     const uMap = {}
     ;(us || []).forEach(u => { uMap[u.user_id] = u })
     setUsers(uMap)
-    const now = new Date()
-    const data = (req || []).filter(r => {
-      if (r.status === 'pending' || !r.status) return true
-      const updateTime = new Date(r.updated_at || r.created_at)
-      const diffHours = (now - updateTime) / (1000 * 60 * 60)
-      return diffHours < 24
-    })
+    const data = req || []
+    setAllRequests(data)
     setRequests(data)
-    setTypes([...new Set((req || []).map(r => r.request_type).filter(Boolean))])
+    setTypes([...new Set(data.map(r => r.request_type).filter(Boolean))])
     setLoading(false)
-  }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  // --- REAL-TIME SUBSCRIPTION ---
+  useEffect(() => {
+    const channel = supabase
+      .channel('requests-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'thali_requests' }, () => {
+        load()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [load])
 
   const updateStatus = async (id, status) => {
     const reqObj = requests.find(r => r.id === id)
+    const userId = reqObj?.user_id
+    const userName = users[userId]?.name || 'User'
+    const userThali = users[userId]?.thali_number
+
     if (status === 'approved' && reqObj) {
       try {
         if (reqObj.request_type === 'change' && reqObj.details) {
@@ -53,13 +68,11 @@ export default function RequestsAdminPage() {
             await supabase.from('user_stats').update({ thali_number: newThaliNum }).eq('user_id', reqObj.user_id)
           }
         } else if (reqObj.request_type === 'stop') {
-          const userThali = users[reqObj.user_id]?.thali_number
           if (userThali) {
             await supabase.from('thali_requests').update({ details: `Thali: ${userThali} (Paused)` }).eq('id', id)
           }
           await supabase.from('user_stats').update({ thali_number: null }).eq('user_id', reqObj.user_id)
         } else if (reqObj.request_type === 'resume') {
-          // Find the last stop request for this user that has the thali number stored
           const { data: lastStopReq } = await supabase
             .from('thali_requests')
             .select('details')
@@ -69,7 +82,7 @@ export default function RequestsAdminPage() {
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle()
-          
+
           if (lastStopReq && lastStopReq.details) {
             const thaliMatch = lastStopReq.details.match(/Thali:\s*([^\s(]+)/)
             if (thaliMatch) {
@@ -82,10 +95,45 @@ export default function RequestsAdminPage() {
         console.error('Auto profile update failed:', e)
       }
     }
-    const updated_at = new Date().toISOString()
-    await supabase.from('thali_requests').update({ status, updated_at }).eq('id', id)
-    setRequests(prev => prev.map(r => r.id === id ? { ...r, status, updated_at } : r))
+    
+    await supabase.from('thali_requests').update({ status }).eq('id', id)
+    setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r))
+
+    // Send push notification to user
+    if (userId && (status === 'approved' || status === 'rejected')) {
+      try {
+        const typeLabels = { 
+          resume: 'Resume Thali', 
+          stop: 'Stop Thali', 
+          extra: 'Extra Food', 
+          miqaat: 'Miqaat Pirsu',
+          change: 'Thali Change'
+        }
+        const typeLabel = typeLabels[reqObj?.request_type] || reqObj?.request_type || 'Request'
+        
+        const title = status === 'approved' ? '✅ Request Approved' : '❌ Request Rejected'
+        const body = status === 'approved' 
+          ? `Your ${typeLabel} request has been approved.`
+          : `Your ${typeLabel} request was rejected.`;
+
+        await supabase.functions.invoke('send-push', {
+          body: {
+            title,
+            body,
+            target_type: 'specific',
+            target_user_id: userId,
+            url: '/post'
+          }
+        })
+      } catch (notifyErr) {
+        console.warn('Push notification failed:', notifyErr)
+      }
+    }
   }
+
+  const now = new Date()
+  const allCount = allRequests.length
+  const pendingCount = allRequests.filter(r => (!r.status || r.status === 'pending')).length
 
   const filtered = requests.filter(r => {
     const u = users[r.user_id] || {}
@@ -93,7 +141,11 @@ export default function RequestsAdminPage() {
     const matchSearch = !q || (u.name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q) || String(u.thali_number||'').includes(q)
     const matchStatus = statusFilter === 'all' || (r.status || 'pending') === statusFilter
     const matchType   = typeFilter   === 'all' || r.request_type === typeFilter
-    return matchSearch && matchStatus && matchType
+    // Auto-hide non-pending requests older than 24h, unless showAll is toggled
+    const isPending = !r.status || r.status === 'pending'
+    const within24h = (now - new Date(r.updated_at || r.created_at)) / (1000 * 60 * 60) < 24
+    const matchTime = showAll || isPending || within24h
+    return matchSearch && matchStatus && matchType && matchTime
   })
 
   const rows = filtered.map(r => {
@@ -163,10 +215,8 @@ export default function RequestsAdminPage() {
     ]
   })
 
-  // Summary counts
-  const pendingCount  = requests.filter(r => (!r.status || r.status === 'pending')).length
-  const approvedCount = requests.filter(r => r.status === 'approved').length
-  const rejectedCount = requests.filter(r => r.status === 'rejected').length
+  const approvedCount = allRequests.filter(r => r.status === 'approved').length
+  const rejectedCount = allRequests.filter(r => r.status === 'rejected').length
 
   return (
     <PageWrap>
@@ -209,11 +259,11 @@ export default function RequestsAdminPage() {
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200, position: 'relative' }}>
           <Search size={14} color={T.textSub} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search thali user…"
+          <input name="searchRequests" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search thali user…"
             style={{ width: '100%', boxSizing: 'border-box', padding: '11px 14px 11px 36px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit' }}
           />
         </div>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+        <select name="requestStatusFilter" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
           style={{ padding: '11px 14px', borderRadius: 10, background: T.card, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit' }}>
           <option value="all">All Statuses</option>
           <option value="pending">Pending</option>
@@ -221,12 +271,15 @@ export default function RequestsAdminPage() {
           <option value="rejected">Rejected</option>
         </select>
         {types.length > 0 && (
-          <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
+          <select name="requestTypeFilter" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
             style={{ padding: '11px 14px', borderRadius: 10, background: T.card, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit' }}>
             <option value="all">All Types</option>
             {types.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         )}
+        <Btn variant={showAll ? 'solid' : 'outline'} size="sm" onClick={() => setShowAll(!showAll)}>
+          {showAll ? `All (${allCount})` : `Pending (${pendingCount})`}
+        </Btn>
         <Btn variant="outline" onClick={load}><RefreshCw size={15} />Refresh</Btn>
       </div>
 

@@ -13,18 +13,42 @@ import { T as SharedT, updateSystemTheme, Modal, SurveyResponseDisplay, Btn as S
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { Scan, X } from 'lucide-react'
 import UsersPage from './UsersPage'
+import { getWeekDate } from '../common/utils'
 import RequestsAdminPage from './RequestsAdminPage'
 import QueriesAdminPage from './QueriesAdminPage'
 import DailySurveyTracking from './DailySurveyTracking'
 
-const Spinner = ({ fullPage = true }) => {
-  const t = { accent: 'var(--accent-primary)', textSub: 'rgba(255,255,255,0.5)' }
-  return (
-    <div style={fullPage ? { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 20px' } : {}}>
-      <div className="spin" style={{ width: 34, height: 34, border: `2.5px solid var(--border-light)`, borderTop: `2.5px solid ${t.accent}`, borderRadius: '50%' }} />
+const Skl = ({ w = '100%', h = 14, style = {} }) => (
+  <div style={{
+    height: h, width: w, borderRadius: h / 2,
+    background: 'var(--border-light)',
+    animation: 'skeletonPulse 1.5s ease-in-out infinite',
+    ...style
+  }} />
+)
+
+const Spinner = ({ fullPage = true }) => (
+  fullPage ? (
+    <div style={{ flex: 1, padding: '40px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Skl w='45%' h={22} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
+        {[1,2,3].map(i => (
+          <div key={i} style={{ padding: 20, borderRadius: 16, background: 'var(--bg-surface)', border: '1px solid var(--border-light)' }}>
+            <Skl w='50%' h={10} style={{ marginBottom: 10 }} />
+            <Skl w='70%' h={24} />
+          </div>
+        ))}
+      </div>
+      <Skl w='100%' h={50} style={{ borderRadius: 12 }} />
+      <Skl w='100%' h={50} style={{ borderRadius: 12 }} />
+    </div>
+  ) : (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12 }}>
+      <Skl w={16} h={16} style={{ borderRadius: '50%' }} />
+      <Skl w='60%' h={12} />
     </div>
   )
-}
+)
 
 const T = {
   ...SharedT,
@@ -120,14 +144,14 @@ export default function KhidmatPortal({ signOut, user }) {
       const { data: row } = await supabase.from('survey_submissions_flat')
         .select('*').eq('user_id', userId).eq('week_id', weekId).single()
       
-      const { data: menuRow } = await supabase.from('weekly_menu').select('*').eq('day_name', today.charAt(0).toUpperCase() + today.slice(1)).maybeSingle()
+      const { data: menuRow } = await supabase.from('weekly_menu').select('*').eq('day_name', today.charAt(0).toUpperCase() + today.slice(1)).eq('week_start', getWeekDate()).maybeSingle()
       let dishRes = {}
       if (row && row[`${dayKey}_${mealKey}_status`] === 'Applied' && menuRow) {
         const dishList = (menuRow[meal] || '').split(',').map(s => s.trim()).filter(Boolean)
         dishList.forEach((dish, idx) => {
           const val = row[`${dayKey}_${mealKey}_dish_${idx + 1}`]
           if (val !== undefined && val !== null) {
-            dishRes[dish] = val === 'Yes' ? 'yes' : (val === 'No' ? 'no' : (parseInt(val) || 0))
+            dishRes[dish] = val === 'Yes' ? 'yes' : (val === 'No' ? 'no' : val)
           }
         })
       }
@@ -196,13 +220,16 @@ export default function KhidmatPortal({ signOut, user }) {
     const [{ data: req }, { data: queries }, { data: menu }] = await Promise.all([
       supabase.from('thali_requests').select('*').order('created_at', { ascending: false }).limit(5),
       supabase.from('queries').select('*').order('created_at', { ascending: false }).limit(5),
-      supabase.from('weekly_menu').select('*').order('week_start', { ascending: false }).limit(1)
+      supabase.from('weekly_menu').select('*').eq('week_start', getWeekDate())
     ])
     setRequestsList(req || []);
     setQueriesList(queries || []);
-    if (menu?.[0]?.menu_json) {
+    if (menu && menu.length > 0) {
       const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-      setWeeklyMenu(days.map(d => ({ name: d, ...menu[0].menu_json[d] })))
+      setWeeklyMenu(days.map(d => {
+        const row = menu.find(r => r.day_name === d)
+        return { name: d, lunch: row?.lunch || '', dinner: row?.dinner || '' }
+      }))
     }
     setLoadingItems(false)
   }

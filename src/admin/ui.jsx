@@ -348,14 +348,53 @@ export const Btn = ({ children, variant = 'primary', size = 'md', ...props }) =>
   )
 }
 
+// ── Skeleton Loading Blocks ──
+const Skl = ({ w = '100%', h = 14, r, style = {} }) => (
+  <div style={{
+    height: h, width: w, borderRadius: r ?? h / 2,
+    background: 'var(--border-light)',
+    animation: 'skeletonPulse 1.5s ease-in-out infinite',
+    ...style
+  }} />
+)
+
+const SklBox = ({ w = '100%', h = 80, style = {} }) => (
+  <div style={{
+    height: h, width: w, borderRadius: 12,
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--border-light)',
+    animation: 'skeletonPulse 1.6s ease-in-out infinite',
+    ...style
+  }} />
+)
+
 export const Spinner = () => (
-  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px 20px' }}>
-    <div style={{
-      width: 32, height: 32, borderRadius: '50%',
-      border: '3px solid rgba(212, 175, 55, 0.1)',
-      borderTop: '3px solid var(--accent-cyan)',
-      animation: 'spin 0.8s linear infinite',
-    }} />
+  <div style={{ padding: '20px clamp(12px, 4vw, 40px)', maxWidth: 1400, margin: '0 auto' }}>
+    {/* Stat card skeletons */}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 20, marginBottom: 24 }}>
+      {[1,2,3,4].map(i => (
+        <SklBox key={i} h={100} style={{ borderRadius: 20, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: 20 }}>
+          <Skl w='35%' h={10} style={{ marginBottom: 12 }} />
+          <Skl w='55%' h={24} r={6} />
+        </SklBox>
+      ))}
+    </div>
+    {/* Table skeleton */}
+    <SklBox h={60} style={{ marginBottom: 4 }}>
+      <div style={{ padding: 20 }}>
+        <Skl w='30%' h={12} />
+      </div>
+    </SklBox>
+    {[1,2,3,4,5].map(i => (
+      <SklBox key={i} h={50} style={{ borderRadius: 0, borderTop: 'none' }}>
+        <div style={{ padding: '16px 20px', display: 'flex', gap: 16 }}>
+          <Skl w='25%' h={12} />
+          <Skl w='20%' h={12} />
+          <Skl w='35%' h={12} />
+          <Skl w='15%' h={12} />
+        </div>
+      </SklBox>
+    ))}
   </div>
 )
 
@@ -607,9 +646,11 @@ export const PackingTVView = ({ user, onClose }) => {
             gap: isMultiRow ? '2vh 2vw' : '0 2.5vw', 
           }}>
             {dishEntries.map(([dish, pct], idx) => {
-              const val = parseInt(pct) || 0
+              const isCount = typeof pct === 'string' && !pct.endsWith('%') && pct !== 'yes' && pct !== 'no'
               const isRoti = dish.toLowerCase().includes('roti') || dish.toLowerCase().includes('naan')
-              const clr = pctColor(val, isRoti, pct)
+              const val = parseInt(pct) || 0
+              const fillHeight = isRoti ? (pct === 'yes' ? '100%' : '0%') : (isCount ? (val > 0 ? '100%' : '0%') : `${val}%`)
+              const clr = pctColor(isCount || isRoti ? (val > 0 ? 100 : 0) : val, isRoti, pct)
               
               return (
                 <div key={dish} style={{ 
@@ -628,7 +669,7 @@ export const PackingTVView = ({ user, onClose }) => {
                   {/* Vertical Fill Animation */}
                   <div style={{ 
                     position: 'absolute', left: 0, right: 0, bottom: 0,
-                    height: isRoti ? (pct === 'yes' ? '100%' : '0%') : `${val}%`,
+                    height: fillHeight,
                     background: clr.fill,
                     opacity: 0.12,
                     transition: 'height 1.5s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -666,16 +707,16 @@ export const PackingTVView = ({ user, onClose }) => {
                          fontSize: tagFontSize, fontWeight: 900, marginBottom: '0.5vh',
                          border: `1px solid ${clr.tagBorder}`
                        }}>
-                         {val === 100 ? 'FULL' : (val === 50 ? 'HALF' : (val === 25 ? 'QUARTER' : `${val}%`))}
+                         {isCount ? `${val} pcs` : (val === 100 ? 'FULL' : (val === 50 ? 'HALF' : (val === 25 ? 'QUARTER' : `${val}%`)))}
                        </div>
                      )}
-                     
+                      
                     <div style={{ 
                       fontSize: amountFontSize, 
                       fontWeight: 1000, color: clr.text, 
                       textShadow: `0 5px 15px ${clr.shadow}`, lineHeight: 1 
                     }}>
-                      {isRoti ? (pct === 'yes' ? 'YES' : 'NO') : `${val}%`}
+                      {isRoti ? (pct === 'yes' ? 'YES' : 'NO') : (isCount ? `${val}` : `${val}%`)}
                     </div>
 
                     <div style={{ 
@@ -683,7 +724,7 @@ export const PackingTVView = ({ user, onClose }) => {
                       color: 'var(--text-tertiary)', textTransform: 'uppercase', 
                       marginTop: '0.4vh', letterSpacing: '0.1em' 
                     }}>
-                      {isRoti ? 'Response' : 'Portion'}
+                      {isRoti ? 'Response' : (isCount ? 'Pieces' : 'Portion')}
                     </div>
                   </div>
                 </div>
@@ -743,8 +784,10 @@ export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => 
           gap: 20 
         }}>
           {dishEntries.map(([dish, pct]) => {
-            const val = parseInt(pct) || 0
+            const isCount = typeof pct === 'string' && !pct.endsWith('%') && pct !== 'yes' && pct !== 'no'
             const isRoti = dish.toLowerCase().includes('roti') || dish.toLowerCase().includes('naan')
+            const val = parseInt(pct) || 0
+            const fillHeight = isRoti ? (pct === 'yes' ? '100%' : '0%') : (isCount ? (val > 0 ? '100%' : '0%') : `${val}%`)
             
             return (
               <div key={dish} style={{ 
@@ -764,7 +807,7 @@ export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => 
                 <div style={{ 
                   position: 'absolute', 
                   bottom: 0, left: 0, right: 0, 
-                  height: isRoti ? (pct === 'yes' ? '100%' : '0%') : `${val}%`,
+                  height: fillHeight,
                   background: val > 50 || pct === 'yes' ? 'var(--accent-grad)' : 'rgba(212, 175, 55, 0.2)',
                   opacity: 0.3,
                   transition: 'height 1s ease-out'
@@ -780,7 +823,7 @@ export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => 
                   zIndex: 2,
                   lineHeight: 1
                 }}>
-                  {isRoti ? (pct === 'yes' ? 'YES' : 'NO') : `${val}%`}
+                  {isRoti ? (pct === 'yes' ? 'YES' : 'NO') : (isCount ? `${val}` : `${val}%`)}
                 </div>
                 
                 {val > 0 && !isRoti && (
@@ -788,7 +831,7 @@ export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => 
                      marginTop: 12, padding: '4px 12px', borderRadius: 10, background: 'var(--accent-gold)', 
                      color: '#000', fontSize: 12, fontWeight: 900, zIndex: 2 
                    }}>
-                     {val === 100 ? 'FULL PORTION' : 'HALF PORTION'}
+                     {isCount ? `${val} pcs` : (val === 100 ? 'FULL PORTION' : 'HALF PORTION')}
                    </div>
                 )}
               </div>
@@ -810,9 +853,31 @@ export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => 
         @keyframes pulse {
           0% { transform: scale(1); }
           50% { transform: scale(1.02); opacity: 0.9; }
-          100% { transform: scale(1); }
-        }
-      `}</style>
-    </div>
-  )
+        100% { transform: scale(1); }
+         }
+       `}</style>
+     </div>
+   )
 }
+
+export const ErrorBanner = ({ message, onDismiss }) => (
+  <div style={{
+    display: 'flex', alignItems: 'center', gap: 12,
+    padding: '12px 16px', borderRadius: 14,
+    background: 'rgba(239, 68, 68, 0.1)',
+    border: '1px solid rgba(239, 68, 68, 0.3)',
+    color: '#ef4444', fontSize: 13, fontWeight: 600,
+    marginBottom: 16,
+  }}>
+    <AlertCircle size={18} style={{ flexShrink: 0 }} />
+    <span style={{ flex: 1 }}>{message}</span>
+    {onDismiss && (
+      <button onClick={onDismiss} style={{
+        background: 'none', border: 'none', color: '#ef4444',
+        cursor: 'pointer', padding: 4, opacity: 0.7
+      }}>
+        <X size={16} />
+      </button>
+    )}
+  </div>
+)

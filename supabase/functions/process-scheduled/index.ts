@@ -88,6 +88,7 @@ Deno.serve(async (req) => {
             title: entry.title,
             body: entry.body,
             user_id: entry.target_type === 'specific' ? entry.target_user_id : null,
+            target_type: entry.target_type === 'all' ? null : entry.target_type,
             url: entry.media_url || '/',
           }),
         })

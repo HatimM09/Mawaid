@@ -31,27 +31,23 @@
         android:pathData="M63,38 C65,36 65,34 64,33 C63,32 62,33 63,35 C64,37 63,38 63,38z" />
     <!-- Plate outline - outer -->
     <path
-        android:fillColor="none"
         android:strokeColor="#D4AF37"
         android:strokeWidth="2.5"
         android:pathData="M34,66 C34,66 40,76 54,76 C68,76 74,66 74,66" />
     <!-- Plate outline - inner rim -->
     <path
-        android:fillColor="none"
         android:strokeColor="#D4AF37"
         android:strokeWidth="1.2"
         android:strokeAlpha="0.5"
         android:pathData="M40,68 C40,68 44,74 54,74 C64,74 68,68 68,68" />
     <!-- Left arc decoration -->
     <path
-        android:fillColor="none"
         android:strokeColor="#D4AF37"
         android:strokeWidth="1"
         android:strokeAlpha="0.35"
         android:pathData="M36,62 C32,52 36,42 44,38" />
     <!-- Right arc decoration -->
     <path
-        android:fillColor="none"
         android:strokeColor="#D4AF37"
         android:strokeWidth="1"
         android:strokeAlpha="0.35"

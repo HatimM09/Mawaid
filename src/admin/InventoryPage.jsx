@@ -249,11 +249,11 @@ export default function InventoryPage({ role: roleProp }) {
     return matchSearch && matchCat
   })
 
-  const lowStock = products.filter(p => p.stock <= p.low_stock_threshold)
+  const lowStock = products.filter(p => p.stock <= (p.low_stock_threshold || p.low_stock || 5))
 
   const stockRows = filtered.map(p => {
     const cat = CATEGORIES.find(c => c.id === p.category_id)
-    const isLow = p.stock <= p.low_stock
+    const isLow = p.stock <= (p.low_stock_threshold || p.low_stock || 5)
     return [
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', border: '1px solid rgba(212, 175, 55, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
@@ -276,14 +276,14 @@ export default function InventoryPage({ role: roleProp }) {
         <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 10, overflow: 'hidden', position: 'relative', border: '1px solid var(--border-glass)' }}>
           <div style={{ 
             height: '100%', 
-            width: `${Math.min(100, (p.stock / (p.low_stock * 2)) * 100)}%`, 
+            width: `${Math.min(100, (p.stock / Math.max(1, (p.low_stock_threshold || p.low_stock || 5) * 2)) * 100)}%`, 
             background: p.stock === 0 ? T.danger : isLow ? T.warn : T.success,
             boxShadow: `0 0 10px ${p.stock === 0 ? T.danger : isLow ? T.warn : T.success}40`,
             transition: 'width 0.5s ease-out'
           }} />
         </div>
         <div style={{ fontSize: 10, fontWeight: 600, color: T.textSub, marginTop: 4 }}>
-          Threshold: {p.low_stock} {p.unit}
+          Threshold: {p.low_stock_threshold || p.low_stock || 5} {p.unit}
         </div>
       </div>,
       <div style={{ 
@@ -367,6 +367,7 @@ export default function InventoryPage({ role: roleProp }) {
         <div style={{ flex: 1, minWidth: 260, position: 'relative' }}>
           <Search size={18} color={T.textSub} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
           <input
+            name="searchInventory"
             value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search items by name..."
             style={{ 
@@ -377,6 +378,7 @@ export default function InventoryPage({ role: roleProp }) {
           />
         </div>
         <select
+          name="inventoryCategoryFilter"
           value={catFilter} onChange={e => setCatFilter(e.target.value)}
           style={{ 
             padding: '0 16px', borderRadius: 16, background: 'rgba(15, 12, 8, 0.3)', 
@@ -479,14 +481,14 @@ export default function InventoryPage({ role: roleProp }) {
             <StatCard 
               icon={<ArrowUpRight />} 
               label="Total Stock In (Period)" 
-              value={auditLog.filter(l => l.type === 'in').reduce((acc, curr) => acc + (curr.qty || 0), 0).toFixed(1)} 
+              value={auditLog.filter(l => l.action === 'add').reduce((acc, curr) => acc + (curr.quantity || 0), 0).toFixed(1)} 
               color={T.success} 
               sub="Total added to inventory"
             />
             <StatCard 
               icon={<ArrowDownRight />} 
               label="Total Stock Out (Period)" 
-              value={auditLog.filter(l => l.type === 'out').reduce((acc, curr) => acc + (curr.qty || 0), 0).toFixed(1)} 
+              value={auditLog.filter(l => l.action === 'remove').reduce((acc, curr) => acc + (curr.quantity || 0), 0).toFixed(1)} 
               color={T.danger} 
               sub="Total consumed/removed"
             />
@@ -509,21 +511,21 @@ export default function InventoryPage({ role: roleProp }) {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <Input label="Item Name" placeholder="e.g. Basmati Rice" value={newProduct.name} onChange={e => setNewProduct({ ...newProduct, name: e.target.value })} />
-              <Select label="Category" value={newProduct.category_id} onChange={e => setNewProduct({ ...newProduct, category_id: parseInt(e.target.value) })}>
+              <Input label="Item Name" name="inventoryItemName" placeholder="e.g. Basmati Rice" value={newProduct.name} onChange={e => setNewProduct({ ...newProduct, name: e.target.value })} />
+              <Select label="Category" name="inventoryCategory" value={newProduct.category_id} onChange={e => setNewProduct({ ...newProduct, category_id: parseInt(e.target.value) })}>
                 {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
               </Select>
             </div>
-            <Input label="Subcategory" placeholder="e.g. Basmati, Long Grain, Grade A" value={newProduct.subcategory} onChange={e => setNewProduct({ ...newProduct, subcategory: e.target.value })} />
+            <Input label="Subcategory" name="inventorySubcategory" placeholder="e.g. Basmati, Long Grain, Grade A" value={newProduct.subcategory} onChange={e => setNewProduct({ ...newProduct, subcategory: e.target.value })} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <Select label="Unit (kg/pcs)" value={newProduct.unit} onChange={e => setNewProduct({ ...newProduct, unit: e.target.value })}>
+              <Select label="Unit (kg/pcs)" name="inventoryUnit" value={newProduct.unit} onChange={e => setNewProduct({ ...newProduct, unit: e.target.value })}>
                 <option value="kg">kg</option>
                 <option value="pcs">pcs</option>
                 <option value="L">Litre</option>
                 <option value="bag">bag</option>
                 <option value="box">box</option>
               </Select>
-              <Input label="Min Quantity" type="number" value={newProduct.low_stock} onChange={e => setNewProduct({ ...newProduct, low_stock: parseFloat(e.target.value) })} />
+              <Input label="Min Quantity" name="inventoryMinQty" type="number" value={newProduct.low_stock} onChange={e => setNewProduct({ ...newProduct, low_stock: parseFloat(e.target.value) })} />
             </div>
             <Btn style={{ width: '100%', marginTop: 8 }} onClick={handleAddProduct}>Create Inventory Item</Btn>
           </div>
@@ -546,8 +548,8 @@ export default function InventoryPage({ role: roleProp }) {
             <div style={{ fontSize: 18, fontWeight: 700, color: T.text }}>{showTx.product.name}</div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <Input label={`Quantity (${showTx.product.unit})`} type="number" autoFocus value={txQty} onChange={e => setTxQty(e.target.value)} />
-            <Input label="Transaction Note" placeholder="Supplier, Batch, Reason..." value={txNote} onChange={e => setTxNote(e.target.value)} />
+            <Input label={`Quantity (${showTx.product.unit})`} name="inventoryQty" type="number" autoFocus value={txQty} onChange={e => setTxQty(e.target.value)} />
+            <Input label="Transaction Note" name="inventoryTxNote" placeholder="Supplier, Batch, Reason..." value={txNote} onChange={e => setTxNote(e.target.value)} />
             <Btn
               style={{ width: '100%', marginTop: 16, height: 60, fontSize: 18, fontWeight: 800, background: showTx.type === 'in' ? T.success : T.danger, color: '#fff' }}
               onClick={handleTransaction}

@@ -512,6 +512,7 @@ export default function AdminLogin({ onLogin }) {
                     <input
                       className="adm-input"
                       type="password"
+                      name="adminKey"
                       value={password}
                       onChange={e => setPassword(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && handleSubmit()}

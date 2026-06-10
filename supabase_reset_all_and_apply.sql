@@ -25,10 +25,11 @@ CREATE TABLE IF NOT EXISTS public.user_stats (
   email       TEXT DEFAULT '',
   phone       TEXT DEFAULT '',
   address     TEXT DEFAULT '',
-  thali_number TEXT DEFAULT '',
-  avatar_url  TEXT DEFAULT '',
-  created_at  TIMESTAMPTZ DEFAULT now(),
-  updated_at  TIMESTAMPTZ DEFAULT now()
+  thali_number   TEXT DEFAULT '',
+  avatar_url     TEXT DEFAULT '',
+  snack_defaults JSONB DEFAULT '{"dish_1":0,"dish_2":0,"dish_3":0,"dish_4":0}',
+  created_at     TIMESTAMPTZ DEFAULT now(),
+  updated_at     TIMESTAMPTZ DEFAULT now()
 );
 
 -- Auto-create user_stats row when a new user signs up
@@ -88,13 +89,15 @@ CREATE TABLE IF NOT EXISTS public.khidmat_guzaar (
 CREATE TABLE IF NOT EXISTS public.weekly_menu (
   id          BIGSERIAL PRIMARY KEY,
   week_start  DATE DEFAULT CURRENT_DATE,
-  day_name    TEXT NOT NULL UNIQUE
+  day_name    TEXT NOT NULL
               CHECK (day_name IN ('Monday','Tuesday','Wednesday','Thursday','Friday','Saturday')),
   day_ar      TEXT DEFAULT '',
   lunch       TEXT DEFAULT '',
   dinner      TEXT DEFAULT '',
+  publish_at  TIMESTAMPTZ DEFAULT NULL,
   created_at  TIMESTAMPTZ DEFAULT now(),
-  updated_at  TIMESTAMPTZ DEFAULT now()
+  updated_at  TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(week_start, day_name)
 );
 
 -- ════════════════════════════════════════════════════════════
@@ -197,7 +200,7 @@ CREATE TABLE IF NOT EXISTS public.survey_submissions_flat (
   created_at      TIMESTAMPTZ DEFAULT now(),
   updated_at      TIMESTAMPTZ DEFAULT now(),
 
-  UNIQUE(user_id)
+  UNIQUE(user_id, week_id)
 );
 
 -- ════════════════════════════════════════════════════════════
@@ -230,7 +233,8 @@ CREATE TABLE IF NOT EXISTS public.thali_requests (
   extra_items   JSONB DEFAULT NULL,
   details       TEXT DEFAULT '',
   admin_note    TEXT DEFAULT '',
-  created_at    TIMESTAMPTZ DEFAULT now()
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now()
 );
 
 -- ════════════════════════════════════════════════════════════
@@ -243,7 +247,8 @@ CREATE TABLE IF NOT EXISTS public.queries (
   media         JSONB DEFAULT '[]',
   status        TEXT DEFAULT 'open' CHECK (status IN ('open', 'resolved', 'in_progress')),
   admin_reply   TEXT DEFAULT NULL,
-  created_at    TIMESTAMPTZ DEFAULT now()
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now()
 );
 
 -- ════════════════════════════════════════════════════════════
@@ -422,14 +427,14 @@ CREATE POLICY "Admins can manage settings" ON public.app_settings FOR ALL USING 
 -- ════════════════════════════════════════════════════════════
 -- SEED DATA: Default weekly menu
 -- ════════════════════════════════════════════════════════════
-INSERT INTO public.weekly_menu (day_name, lunch, dinner) VALUES
-  ('Monday',    'Chola, Kulcha, Shreekhand, Dal, Chawal', 'FMB Menu'),
-  ('Tuesday',   'American Choupsey, Wafers, Butter Khichdi', 'Roti, Veg Jaipuri, Chicken Pulao, Soup'),
-  ('Wednesday', 'Vegetable Sandwich, Bhel Salad, Corn Pulao', 'Roti, White Chicken, Manchurian Rice, Gravy'),
-  ('Thursday',  'Chicken 65, Corn Munch Salad, Dal Makhni, Chawal', 'Roti, Mango Custard, Matar Paneer, Tuwar Pulao, Palidu'),
-  ('Friday',    'FMB Menu', 'Roti, Gobi Matar, Chicken Kashmiri Pulao, Soup'),
-  ('Saturday',  'Chana Bateta, Dal Makhni, Chawal', 'Roti, Chicken Tarkari, Veg Coconut Rice, Kung Pao Gravy')
-ON CONFLICT (day_name) DO NOTHING;
+INSERT INTO public.weekly_menu (week_start, day_name, lunch, dinner, publish_at) VALUES
+  (CURRENT_DATE, 'Monday',    'Chola, Kulcha, Shreekhand, Dal, Chawal', 'FMB Menu', now()),
+  (CURRENT_DATE, 'Tuesday',   'American Choupsey, Wafers, Butter Khichdi', 'Roti, Veg Jaipuri, Chicken Pulao, Soup', now()),
+  (CURRENT_DATE, 'Wednesday', 'Vegetable Sandwich, Bhel Salad, Corn Pulao', 'Roti, White Chicken, Manchurian Rice, Gravy', now()),
+  (CURRENT_DATE, 'Thursday',  'Chicken 65, Corn Munch Salad, Dal Makhni, Chawal', 'Roti, Mango Custard, Matar Paneer, Tuwar Pulao, Palidu', now()),
+  (CURRENT_DATE, 'Friday',    'FMB Menu', 'Roti, Gobi Matar, Chicken Kashmiri Pulao, Soup', now()),
+  (CURRENT_DATE, 'Saturday',  'Chana Bateta, Dal Makhni, Chawal', 'Roti, Chicken Tarkari, Veg Coconut Rice, Kung Pao Gravy', now())
+ON CONFLICT (week_start, day_name) DO NOTHING;
 
 -- ════════════════════════════════════════════════════════════
 -- SEED DATA: Default app settings

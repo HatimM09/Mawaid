@@ -4,6 +4,7 @@ import { supabase } from './supabaseClient'
 import { RefreshCw, Search, Star } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, StatCard, fmtDateTime } from './ui'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
+import { getWeekDate } from '../common/utils'
 
 const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday']
 const TooltipStyle = {
@@ -23,12 +24,14 @@ const Stars = ({ n }) => (
 export default function FeedbackAdminPage() {
   const [loading, setLoading] = useState(true)
   const [feedbacks, setFeedbacks] = useState([])
+  const [allFeedbacks, setAllFeedbacks] = useState([])
   const [users, setUsers]   = useState({})
   const [dayFilter, setDayFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [showAll, setShowAll] = useState(false)
   const [avgData, setAvgData] = useState([])
   const [menu, setMenu] = useState({})
-  const [totals, setTotals] = useState({ count: 0, avgLunch: 0, avgDinner: 0 })
+  const [totals, setTotals] = useState({ count: 0, recentCount: 0, avgLunch: 0, avgDinner: 0 })
 
   useEffect(() => { load() }, [])
 
@@ -37,17 +40,20 @@ export default function FeedbackAdminPage() {
     const [{ data: fb }, { data: us }, { data: mn }] = await Promise.all([
       supabase.from('daily_feedback').select('*').order('created_at', { ascending: false }),
       supabase.from('user_stats').select('user_id,name,email,thali_number'),
-      supabase.from('weekly_menu').select('*').order('week_start', { ascending: false }).limit(1)
+      supabase.from('weekly_menu').select('*').eq('week_start', getWeekDate())
     ])
     const uMap = {}
     ;(us || []).forEach(u => { uMap[u.user_id] = u })
     setUsers(uMap)
     
-    if (mn?.[0]?.menu_json) {
-      setMenu(mn[0].menu_json)
+    if (mn && mn.length > 0) {
+      const menuMap = {}
+      mn.forEach(row => { menuMap[row.day_name] = { lunch: row.lunch, dinner: row.dinner } })
+      setMenu(menuMap)
     }
 
     const data = fb || []
+    setAllFeedbacks(data)
     setFeedbacks(data)
     buildStats(data)
     setLoading(false)
@@ -76,19 +82,25 @@ export default function FeedbackAdminPage() {
     })
   }
 
+  const now = new Date()
+  const recentCount = allFeedbacks.filter(r => (now - new Date(r.created_at)) / (1000 * 60 * 60) < 24).length
+
   const filtered = feedbacks.filter(r => {
     const u = users[r.user_id] || {}
     const q = search.toLowerCase()
     const matchSearch = !q || (u.name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q) || String(u.thali_number||'').includes(q)
     const matchDay = dayFilter === 'all' || r.day === dayFilter
-    return matchSearch && matchDay
+    // Auto-hide feedback older than 1 day, unless showAll is toggled
+    const within24h = (now - new Date(r.created_at)) / (1000 * 60 * 60) < 24
+    const matchTime = showAll || within24h
+    return matchSearch && matchDay && matchTime
   })
 
   const rows = filtered.map(r => {
     const u = users[r.user_id] || {}
     const dayMenu = menu[r.day] || {}
-    const lunchDishes = [dayMenu.lunch_1, dayMenu.lunch_2, dayMenu.lunch_3].filter(Boolean).join(', ')
-    const dinnerDishes = [dayMenu.dinner_1, dayMenu.dinner_2, dayMenu.dinner_3].filter(Boolean).join(', ')
+    const lunchDishes = dayMenu.lunch || ''
+    const dinnerDishes = dayMenu.dinner || ''
 
     return [
       <div>
@@ -104,7 +116,12 @@ export default function FeedbackAdminPage() {
         <Stars n={r.dinner_stars} />
         <div style={{ fontSize: 9, color: T.textSub, marginTop: 4, fontStyle: 'italic' }}>{dinnerDishes || '—'}</div>
       </div>,
-      r.comment ? <span style={{ color: T.textSub, fontSize: 12, maxWidth: 150, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.comment}</span> : '—',
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 200 }}>
+        <div style={{ fontSize: 11, color: T.accent, fontWeight: 700 }}>Lunch</div>
+        <span style={{ color: T.textSub, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{r.lunch_comment || '—'}</span>
+        <div style={{ fontSize: 11, color: '#5e9ce0', fontWeight: 700, marginTop: 4 }}>Dinner</div>
+        <span style={{ color: T.textSub, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{r.dinner_comment || '—'}</span>
+      </div>,
       fmtDateTime(r.created_at),
     ]
   })
@@ -114,8 +131,9 @@ export default function FeedbackAdminPage() {
       <PageTitle>Meal Feedback</PageTitle>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 16, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))', gap: 16, marginBottom: 24 }}>
         <StatCard icon="📋" label="Total Feedbacks" value={totals.count} />
+        <StatCard icon="🕐" label="Last 24h" value={recentCount} color="#e09855" />
         <StatCard icon="🍛" label="Avg Lunch Rating"  value={`${totals.avgLunch}★`}  color="#c49c5a" />
         <StatCard icon="🌙" label="Avg Dinner Rating" value={`${totals.avgDinner}★`} color="#5e9ce0" />
       </div>
@@ -140,22 +158,25 @@ export default function FeedbackAdminPage() {
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200, position: 'relative' }}>
           <Search size={14} color={T.textSub} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search thali user…"
+          <input name="searchFeedback" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search thali user…"
             style={{ width: '100%', boxSizing: 'border-box', padding: '11px 14px 11px 36px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit' }}
           />
         </div>
-        <select value={dayFilter} onChange={e => setDayFilter(e.target.value)}
+        <select name="feedbackDayFilter" value={dayFilter} onChange={e => setDayFilter(e.target.value)}
           style={{ padding: '11px 14px', borderRadius: 10, background: T.card, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit' }}>
           <option value="all">All Days</option>
           {DAYS.map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase()+d.slice(1)}</option>)}
         </select>
+        <Btn variant={showAll ? 'solid' : 'outline'} size="sm" onClick={() => setShowAll(!showAll)}>
+          {showAll ? 'Showing All' : 'Recent Only'}
+        </Btn>
         <Btn variant="outline" onClick={load}><RefreshCw size={15} />Refresh</Btn>
       </div>
 
       {loading ? <Spinner /> : (
         <AdminCard style={{ padding: 0 }}>
           <Table
-            headers={['Thali User', 'Day', 'Lunch (Menu)', 'Dinner (Menu)', 'Comment', 'Submitted']}
+            headers={['Thali User', 'Day', 'Lunch (Menu)', 'Dinner (Menu)', 'Comments', 'Submitted']}
             rows={rows}
             emptyMsg="No feedback found."
           />

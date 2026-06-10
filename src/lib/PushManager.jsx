@@ -1,40 +1,32 @@
 // src/lib/PushManager.jsx
 // Handles:
-//   1. Firebase Cloud Messaging (browser push — works when tab is closed)
+//   1. Web Push API (browser push — works when tab is closed)
 //   2. Supabase Realtime (in-app toast — instant when tab is open)
 
 import { useEffect, useRef } from 'react'
-import { initializeApp, getApps } from 'firebase/app'
-import { getMessaging, getToken, onMessage } from 'firebase/messaging'
 import toast from 'react-hot-toast'
 import { supabase } from '../admin/supabaseClient'
 
-// ── Firebase config ──────────────────────────────────────────────────────────
-const firebaseConfig = {
-  apiKey: 'AIzaSyCFQqTnz_CiVIKtDW4XH6CswPAm_KwN6jc',
-  authDomain: 'al-mawaid-8ffef.firebaseapp.com',
-  projectId: 'al-mawaid-8ffef',
-  storageBucket: 'al-mawaid-8ffef.firebasestorage.app',
-  messagingSenderId: '333277268731',
-  appId: '1:333277268731:web:9f7ba7f8f279a47f94be5e',
-}
+// VAPID public key for Web Push subscription
+const VAPID_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BApS0pbqbnV2xZBrqVhxgkacMNC5dAoT6M9zGcmLOvePl7f_iKA7ReDdJ0Cu9_2Ex969EJa3cssF3awCB-zXIhk'
 
-// VAPID key from env (set in .env and Vercel env vars), with hardcoded fallback for safety
-const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY || 'BIEVWJ3bbYO2OZW--9AD-uDEevFUa4GNC2BuU6gtopIq0BTSLXVMTWh8EI6SIubsp2_s2o6lckRZDwtNzlYrZKY'
-
-function getFirebaseApp() {
-  return getApps().length ? getApps()[0] : initializeApp(firebaseConfig)
-}
-
-async function saveFcmToken(userId, token, tokenType = 'fcm') {
+async function savePushSubscription(userId, subscription) {
+  const endpoint = subscription.endpoint
+  const subscriptionJson = JSON.stringify(subscription)
   const { error } = await supabase
     .from('push_subscriptions')
     .upsert(
-      { user_id: userId, fcm_token: token, token_type: tokenType, updated_at: new Date().toISOString() },
+      {
+        user_id: userId,
+        fcm_token: endpoint,
+        subscription_json: subscriptionJson,
+        token_type: 'webpush',
+        updated_at: new Date().toISOString()
+      },
       { onConflict: 'user_id, token_type' }
     )
-  if (error) console.error('[PushManager] Failed to save push token:', error.message)
-  else console.log('[PushManager] Push token saved to Supabase ✅ (' + tokenType + ')')
+  if (error) console.error('[PushManager] Failed to save push subscription:', error.message)
+  else console.log('[PushManager] Push subscription saved to Supabase ✅')
 }
 
 function showToast(title, body, url) {
@@ -65,8 +57,13 @@ function showToast(title, body, url) {
 }
 
 // ── Subscribe to Supabase Realtime notification channel ───────────────────────
-function subscribeRealtime(realtimeChannel, user, cancelledRef) {
+function subscribeRealtime(realtimeChannel, user, cancelledRef, retryCount = 0) {
+  const MAX_RETRIES = 3
   if (cancelledRef.current || realtimeChannel.current) return
+  if (retryCount > MAX_RETRIES) {
+    console.warn('[PushManager] Realtime max retries reached — giving up')
+    return
+  }
 
   console.log('[PushManager] Subscribing to Realtime notifications...')
   realtimeChannel.current = supabase
@@ -80,13 +77,23 @@ function subscribeRealtime(realtimeChannel, user, cancelledRef) {
         filter: `user_id=eq.${user.id}`,
       },
       (payload) => {
-        console.log('[PushManager] Realtime notification received:', payload.new)
         const { message, type, title, url } = payload.new
         showToast(title || 'Al-Mawaid', message, url)
       }
     )
     .subscribe((status) => {
-      console.log('[PushManager] Realtime status:', status)
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn(`[PushManager] Realtime ${status} — retrying (${retryCount + 1}/${MAX_RETRIES})`)
+        if (realtimeChannel.current) {
+          supabase.removeChannel(realtimeChannel.current)
+        }
+        realtimeChannel.current = null
+        if (!cancelledRef.current) {
+          setTimeout(() => subscribeRealtime(realtimeChannel, user, cancelledRef, retryCount + 1), 5000)
+        }
+      } else {
+        console.log('[PushManager] Realtime connected:', status)
+      }
     })
 }
 
@@ -115,7 +122,15 @@ export default function PushManager() {
         console.log('[PushManager] Using native push token ✅')
 
         if (!cancelledRef.current) {
-          await saveFcmToken(user.id, nativeToken, tokenType)
+          // Save native token as a push subscription entry
+          const { error } = await supabase
+            .from('push_subscriptions')
+            .upsert(
+              { user_id: user.id, fcm_token: nativeToken, token_type: tokenType, updated_at: new Date().toISOString() },
+              { onConflict: 'user_id, token_type' }
+            )
+          if (error) console.error('[PushManager] Failed to save native token:', error.message)
+          else console.log('[PushManager] Native push token saved ✅')
           subscribeRealtime(realtimeChannel, user, cancelledRef)
           return true
         }
@@ -149,10 +164,11 @@ export default function PushManager() {
       if (await handleNativeTokens(user)) return
 
       // ═══════════════════════════════════════════════════════════════════
-      // WEB PUSH (PWA) — Firebase Cloud Messaging via browser
+      // WEB PUSH (PWA) — Native Web Push API via Service Worker
       // ═══════════════════════════════════════════════════════════════════
       try {
         if (!('Notification' in window)) throw new Error('Notifications not supported in this browser')
+        if (!('PushManager' in window)) throw new Error('Push API not supported')
 
         console.log('[PushManager] Notification.permission:', Notification.permission)
 
@@ -169,44 +185,51 @@ export default function PushManager() {
         }
 
         if (!VAPID_KEY) {
-          console.error('[PushManager] VITE_FIREBASE_VAPID_KEY is missing from .env!')
+          console.error('[PushManager] VAPID public key is missing!')
           return
         }
 
-        console.log('[PushManager] Getting FCM token...')
-        const app = getFirebaseApp()
-        const messaging = getMessaging(app)
+        console.log('[PushManager] Subscribing to Web Push...')
         const swReg = await navigator.serviceWorker.ready
         console.log('[PushManager] SW ready:', swReg.scope)
 
-        const token = await getToken(messaging, {
-          vapidKey: VAPID_KEY,
-          serviceWorkerRegistration: swReg,
+        // Convert VAPID key from base64url to Uint8Array
+        const urlBase64ToUint8Array = (base64String) => {
+          const padding = '='.repeat((4 - base64String.length % 4) % 4)
+          const base64 = (base64String + padding)
+            .replace(/\-/g, '+')
+            .replace(/_/g, '/')
+          const rawData = atob(base64)
+          const outputArray = new Uint8Array(rawData.length)
+          for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i)
+          }
+          return outputArray
+        }
+
+        const subscription = await swReg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_KEY),
         })
 
-        if (!token) {
-          console.error('[PushManager] No FCM token returned — check VAPID key')
-          return
-        }
-
-        console.log('[PushManager] FCM token obtained ✅')
+        console.log('[PushManager] Web Push subscribed ✅ endpoint:', subscription.endpoint)
 
         if (!cancelledRef.current) {
-          await saveFcmToken(user.id, token)
-
-          onMessage(messaging, (payload) => {
-            console.log('[PushManager] Foreground message:', payload)
-            const { title, body } = payload.notification || {}
-            const url = payload.data?.url
-            showToast(title || 'New notification', body, url)
-          })
+          await savePushSubscription(user.id, subscription)
         }
       } catch (err) {
-        console.warn('[PushManager] Firebase push unavailable:', err.message)
+        console.debug('[PushManager] Web Push subscription failed (non-critical):', err.message)
       }
 
-      // ── Supabase Realtime (in-app toasts) ─────────────────────────────
-      subscribeRealtime(realtimeChannel, user, cancelledRef)
+      // Listen for foreground push messages from service worker
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data?.type === 'PUSH_RECEIVED') {
+          showToast(event.data.title, event.data.body, event.data.url)
+        }
+      })
+
+      //      ── Supabase Realtime (in-app toasts) ─────────────────────────────
+      setTimeout(() => subscribeRealtime(realtimeChannel, user, cancelledRef), 2000)
     }
 
     init()
@@ -216,6 +239,7 @@ export default function PushManager() {
       window.removeEventListener('native-push-ready', onNativeReady)
       if (realtimeChannel.current) {
         supabase.removeChannel(realtimeChannel.current)
+        realtimeChannel.current = null
       }
     }
   }, [])

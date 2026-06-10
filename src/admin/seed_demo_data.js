@@ -21,10 +21,12 @@ async function seed() {
       continue
     }
 
-    // Add a survey response for current week
+    // Add a survey response for current week (matches getWeekDate() in the app)
     const now = new Date()
     const day = now.getDay()
-    const diff = now.getDate() - day + (day === 0 ? -6 : 1)
+    const hour = now.getHours()
+    let diff = now.getDate() - day + (day === 0 ? -6 : 1)
+    if (day === 0 || (day === 6 && hour >= 20)) diff += 7
     const monday = new Date(now.setDate(diff))
     const weekId = monday.toISOString().split('T')[0]
 

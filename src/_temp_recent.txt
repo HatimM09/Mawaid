@@ -1,0 +1,45 @@
+function RecentRequestsList() {
+  const t = useTheme(), { user } = useAuth()
+  const [requests, setRequests] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetch = async () => {
+      // Fetch more than needed to account for filtering
+      const { data } = await supabase.from('thali_requests')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(15)
+
+      const filtered = (data || []).slice(0, 5)
+      setRequests(filtered)
+      setLoading(false)
+    }
+    fetch()
+  }, [user.id])
+
+  const statusColor = (s) => s === 'pending' ? '#d4882a' : s === 'approved' ? '#5eba82' : '#e05555'
+
+  if (loading) return <Spinner />
+  if (requests.length === 0) return <div style={{ textAlign: 'center', padding: 20, color: t.textSub, fontSize: 13, opacity: 0.6 }}>No recent requests.</div>
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {requests.map(r => (
+        <div key={r.id} style={{ padding: 14, borderRadius: 14, background: t.card, border: `1px solid ${t.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>
+              {r.request_type === 'resume' ? '▶️ Resume' : r.request_type === 'stop' ? '⏹️ Stop' : r.request_type === 'extra' ? '➕ Extra' : '🕌 Miqaat'}
+            </div>
+            <div style={{ fontSize: 11, color: t.textSub, marginTop: 2, fontFamily: "'DM Sans',sans-serif" }}>{new Date(r.created_at).toLocaleDateString()}</div>
+          </div>
+          <div style={{ fontSize: 10, fontWeight: 800, padding: '4px 10px', borderRadius: 20, background: `${statusColor(r.status)}15`, color: statusColor(r.status), border: `1px solid ${statusColor(r.status)}30`, textTransform: 'uppercase' }}>
+            {r.status || 'PENDING'}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+

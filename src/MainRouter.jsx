@@ -17,12 +17,10 @@ import SettingsPage from './admin/SettingsPage'
 import InventoryPage from './admin/InventoryPage'
 import NotificationsAdminPage from './admin/NotificationsAdminPage'
 import QRManagement from './admin/QRManagement'
-import UpdateBanner from './components/UpdateBanner'
 
 export default function MainRouter() {
   return (
     <Router>
-      <UpdateBanner />
       <Routes>
         {/* Admin area — password guarded */}
         <Route element={<AdminRoute />}>

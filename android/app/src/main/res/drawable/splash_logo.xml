@@ -36,7 +36,7 @@
         android:pathData="M72,38 C74,34 74,30 72,28 C70,26 68,28 70,32 C72,36 72,38 72,38z" />
     <!-- Plate outline -->
     <path
-        android:fillColor="none"
+        android:fillColor="#00000000"
         android:strokeColor="#D4AF37"
         android:strokeWidth="2"
         android:pathData="M38,72 C38,72 45,82 60,82 C75,82 82,72 82,72" />

@@ -210,16 +210,31 @@ export default function NotificationsAdminPage() {
     await supabase.from('broadcast_schedule').insert([scheduleEntry])
 
     if (!isScheduled) {
-      supabase.functions.invoke('send-push', {
-        body: {
-          title: form.title,
-          body: form.body,
-          user_id: form.target_type === 'specific' ? form.target_user_id : null,
+      let sentCount = 0
+      let failedCount = 0
+      if (form.channel === 'push') {
+        try {
+          const { data: pushResult, error: pushError } = await supabase.functions.invoke('send-push', {
+            body: {
+              title: form.title,
+              body: form.body,
+              user_id: form.target_type === 'specific' ? form.target_user_id : null,
+              target_type: form.target_type === 'all' ? null : form.target_type,
+            }
+          })
+          if (pushError) throw pushError
+          sentCount = pushResult?.sent || 0
+          failedCount = pushResult?.failed || 0
+        } catch (err) {
+          console.error('Push trigger error:', err)
+          failedCount = targetCount
         }
-      }).catch(err => console.error('Push trigger error:', err))
+      } else {
+        sentCount = targetCount
+      }
 
       await supabase.from('broadcast_schedule')
-        .update({ status: 'sent', sent_at: now, sent_count: targetCount })
+        .update({ status: failedCount > 0 && sentCount === 0 ? 'failed' : 'sent', sent_at: now, sent_count: sentCount, failed_count: failedCount })
         .eq('notice_id', noticeData.id)
     }
 
@@ -367,19 +382,36 @@ export default function NotificationsAdminPage() {
     const { error } = await supabase.from('broadcast_schedule')
       .update({ status: 'sending', failed_count: 0 })
       .eq('id', entry.id)
+    if (error) return
 
-    if (!error) {
-      supabase.functions.invoke('send-push', {
-        body: { title: entry.title, body: entry.body }
-      }).catch(err => console.error('Push trigger error:', err))
-
-      setTimeout(async () => {
-        await supabase.from('broadcast_schedule')
-          .update({ status: 'sent', sent_at: new Date().toISOString() })
-          .eq('id', entry.id)
-        fetchAll()
-      }, 2000)
+    let sentCount = 0
+    let failedCount = 0
+    if (entry.channel === 'push') {
+      try {
+        const { data: pushResult, error: pushError } = await supabase.functions.invoke('send-push', {
+          body: {
+            title: entry.title,
+            body: entry.body,
+            user_id: entry.target_type === 'specific' ? entry.target_user_id : null,
+            target_type: entry.target_type === 'all' ? null : entry.target_type,
+            url: entry.media_url || '/',
+          }
+        })
+        if (pushError) throw pushError
+        sentCount = pushResult?.sent || 0
+        failedCount = pushResult?.failed || 0
+      } catch (err) {
+        console.error('Push trigger error:', err)
+        failedCount = entry.total_targets || 1
+      }
+    } else {
+      sentCount = entry.total_targets || 1
     }
+
+    await supabase.from('broadcast_schedule')
+      .update({ status: failedCount > 0 && sentCount === 0 ? 'failed' : 'sent', sent_at: new Date().toISOString(), sent_count: sentCount, failed_count: failedCount })
+      .eq('id', entry.id)
+    fetchAll()
   }
 
   // ── Filtered data ────────────────────────────────────────────
@@ -614,6 +646,7 @@ export default function NotificationsAdminPage() {
                     </span>
                   </div>
                   <input
+                    name="notificationTitle"
                     placeholder="Menu Update"
                     value={form.title}
                     maxLength={60}
@@ -642,6 +675,7 @@ export default function NotificationsAdminPage() {
                     </span>
                   </div>
                   <input
+                    name="senderName"
                     placeholder="Al-Mawaid Office"
                     value={form.sender_name}
                     maxLength={50}
@@ -662,6 +696,7 @@ export default function NotificationsAdminPage() {
                     fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
                   }}>Message</label>
                   <textarea
+                    name="notificationBody"
                     placeholder="Add notification text..."
                     value={form.body}
                     onChange={e => setForm({ ...form, body: e.target.value })}
@@ -718,6 +753,7 @@ export default function NotificationsAdminPage() {
                       fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10,
                     }}>Channel</label>
                     <select
+                      name="channel"
                       value={form.channel}
                       onChange={e => setForm({ ...form, channel: e.target.value })}
                       style={{
@@ -847,6 +883,7 @@ export default function NotificationsAdminPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                   {/* Target Audience */}
                   <select
+                    name="targetType"
                     value={form.target_type}
                     onChange={e => setForm({ ...form, target_type: e.target.value })}
                     style={{
@@ -865,6 +902,7 @@ export default function NotificationsAdminPage() {
 
                   {/* Delivery Timing */}
                   <select
+                    name="delivery"
                     value={form.delivery}
                     onChange={e => setForm({ ...form, delivery: e.target.value })}
                     style={{
@@ -964,6 +1002,7 @@ export default function NotificationsAdminPage() {
                 {/* Conditional: Schedule picker */}
                 {form.delivery === 'schedule' && (
                   <input
+                    name="scheduledAt"
                     type="datetime-local"
                     value={form.scheduled_at}
                     onChange={e => setForm({ ...form, scheduled_at: e.target.value })}
@@ -979,6 +1018,7 @@ export default function NotificationsAdminPage() {
                 {/* Conditional: Specific user picker */}
                 {form.target_type === 'specific' && (
                   <select
+                    name="targetUserId"
                     value={form.target_user_id}
                     onChange={e => setForm({ ...form, target_user_id: e.target.value })}
                     style={{
@@ -1145,6 +1185,7 @@ export default function NotificationsAdminPage() {
             }}>
               <Search size={16} color="var(--text-tertiary)" />
               <input
+                name="searchBroadcasts"
                 placeholder="Search broadcasts..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
@@ -1558,6 +1599,7 @@ export default function NotificationsAdminPage() {
             Save this broadcast as a reusable preset for quick access later.
           </p>
           <input
+            name="presetName"
             label="Preset Name"
             placeholder="e.g. Weekly Menu Update, Holiday Greeting"
             value={saveTemplateName}

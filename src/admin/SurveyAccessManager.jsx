@@ -126,6 +126,7 @@ export default function SurveyAccessManager({ isOpen, onClose }) {
         <div style={{ position: 'relative', marginBottom: 16 }}>
           <Search size={16} color={T.textSub} style={{ position: 'absolute', left: 12, top: 12 }} />
           <input 
+            name="searchAccess"
             value={search} 
             onChange={e => { setSearch(e.target.value); setSelectedUser(null) }} 
             placeholder="Search member by name or thali #..."
@@ -163,14 +164,14 @@ export default function SurveyAccessManager({ isOpen, onClose }) {
             <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: 120 }}>
                 <label style={{ display: 'block', fontSize: 10, fontWeight: 800, color: T.textSub, marginBottom: 6, textTransform: 'uppercase' }}>Day</label>
-                <Select value={day} onChange={e => setDay(e.target.value)}>
+                <Select name="accessDay" value={day} onChange={e => setDay(e.target.value)}>
                   <option value="all">All Days</option>
                   {DAYS.map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
                 </Select>
               </div>
               <div style={{ flex: 1, minWidth: 120 }}>
                 <label style={{ display: 'block', fontSize: 10, fontWeight: 800, color: T.textSub, marginBottom: 6, textTransform: 'uppercase' }}>Meal</label>
-                <Select value={meal} onChange={e => setMeal(e.target.value)} disabled={day === 'all'}>
+                <Select name="accessMeal" value={meal} onChange={e => setMeal(e.target.value)} disabled={day === 'all'}>
                   <option value="both">Both Meals</option>
                   <option value="lunch">Lunch</option>
                   <option value="dinner">Dinner</option>

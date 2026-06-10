@@ -4,7 +4,6 @@
 import React, {
   useState, useEffect, useRef, createContext, useContext, useCallback
 } from 'react'
-import { Navigate } from 'react-router-dom'
 import {
   Home, FileText, User, X, Star, Camera, Check, LogOut,
   Mail, Lock, Eye, EyeOff, AlertCircle, ChevronDown, ChevronUp,
@@ -12,6 +11,7 @@ import {
   Users, Wallet, Bell, LifeBuoy, Info, MessageCircle, Upload, Utensils,
   Sun, Moon, Medal, Package, Shield, Menu, QrCode
 } from 'lucide-react'
+import { Navigate } from 'react-router-dom'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from './admin/supabaseClient'
 import { useWeeklyMenu } from './common/useWeeklyMenu'
@@ -94,7 +94,8 @@ const hasUserOverride = (appSettings, userId, dayName, mealType) => {
     if (dayName) {
       const dayOverride = userOverride[dayName.toLowerCase()];
       if (dayOverride) {
-         return !!(dayOverride.lunch || dayOverride.dinner || dayOverride.all);
+        if (mealType) return !!dayOverride[mealType];
+        return !!(dayOverride.lunch || dayOverride.dinner || dayOverride.all);
       }
     } else {
       return Object.keys(userOverride).length > 0;
@@ -144,6 +145,11 @@ const isRotiItem = (dish) => {
   return rotiKeywords.some(k => dish.toLowerCase().includes(k))
 }
 
+const isPortionItem = (dish) => {
+  const portionKeywords = ["pulav", "pulao", "dal chawal", "dhal chawal", "biryani", "khichdi", "khichadi", "rice", "pilaf", "polo"]
+  return portionKeywords.some(k => dish.toLowerCase().includes(k))
+}
+
 const mapDishToCol = (day, meal, dish) => {
   const d = day.substring(0, 3).toLowerCase()
   const m = meal === 'lunch' ? 'l' : 'd'
@@ -168,20 +174,26 @@ const canEditMeal = (dayName, weekId, mealType, appSettings = {}, userId = null)
   const mealDate = new Date(weekStart)
   mealDate.setDate(mealDate.getDate() + dayIdx)
 
-  // Edit window for a specific day: Opens 8 PM the night before
-  const openDate = new Date(mealDate)
-  openDate.setDate(openDate.getDate() - 1)
-  openDate.setHours(20, 0, 0, 0)
-
-  // Closes: 11:00 AM for lunch, 3:30 PM (15:30) for dinner on the day
-  const closeDate = new Date(mealDate)
   if (mealType === 'lunch') {
-    closeDate.setHours(11, 0, 0, 0)
-  } else {
-    closeDate.setHours(15, 30, 0, 0)
-  }
+    // Lunch edit: Opens 8 PM night before, closes 11 AM same day
+    const openDate = new Date(mealDate)
+    openDate.setDate(openDate.getDate() - 1)
+    openDate.setHours(20, 0, 0, 0) // 8 PM previous night
 
-  return now >= openDate && now < closeDate
+    const closeDate = new Date(mealDate)
+    closeDate.setHours(11, 0, 0, 0) // 11 AM same day
+
+    return now >= openDate && now < closeDate
+  } else {
+    // Dinner edit: Opens 12 PM (noon) same day, closes 4 PM same day
+    const openDate = new Date(mealDate)
+    openDate.setHours(12, 0, 0, 0) // 12 PM same day
+
+    const closeDate = new Date(mealDate)
+    closeDate.setHours(16, 0, 0, 0) // 4 PM same day
+
+    return now >= openDate && now < closeDate
+  }
 }
 
 
@@ -189,6 +201,40 @@ const canEditMeal = (dayName, weekId, mealType, appSettings = {}, userId = null)
 // SHARED UI PRIMITIVES
 // ══════════════════════════════════════════════════════════════
 
+
+
+
+// ── Notification Chime ──
+const playNotificationChime = () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const now = ctx.currentTime;
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = "sine";
+    osc1.frequency.setValueAtTime(880, now);
+    osc1.frequency.exponentialRampToValueAtTime(660, now + 0.2);
+    gain1.gain.setValueAtTime(0, now);
+    gain1.gain.linearRampToValueAtTime(0.15, now + 0.02);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.3);
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = "sine";
+    osc2.frequency.setValueAtTime(660, now + 0.1);
+    gain2.gain.setValueAtTime(0, now + 0.1);
+    gain2.gain.linearRampToValueAtTime(0.12, now + 0.12);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.1);
+    osc2.stop(now + 0.5);
+    setTimeout(() => ctx.close(), 600);
+  } catch { /* Audio not available */ }
+};
 
 const GeoBg = ({ t: tProp }) => {
   const ctx = useTheme(); const t = tProp || ctx
@@ -403,70 +449,92 @@ const GlobalStyles = () => {
         color: ${t.accent};
         font-weight: 900;
       }
-      /* Mobile Responsive Improvements */
+      /* ── COMPREHENSIVE RESPONSIVE SYSTEM ── */
+      html { font-size: 16px; overflow-x: hidden; }
+      body { overflow-x: hidden; width: 100%; max-width: 100vw; }
+      img { max-width: 100%; height: auto; }
+      .vh-fix { min-height: 100dvh; min-height: -webkit-fill-available; }
+      main { padding-bottom: max(110px, calc(80px + env(safe-area-inset-bottom, 20px))) !important; }
+      h1, h2, h3, h4, p, span, div { overflow-wrap: break-word; word-wrap: break-word; }
+      button, a, input, select, textarea { min-height: 44px; }
+      button, a { min-width: 44px; }
+      @media (max-width: 1024px) {
+        .mobile-bottom-nav { height: 68px !important; }
+      }
+      @media (max-width: 768px) {
+        main { padding-left: 14px !important; padding-right: 14px !important; }
+        h1 { font-size: clamp(20px, 5.5vw, 28px) !important; }
+        h2 { font-size: clamp(17px, 5vw, 24px) !important; }
+        .mobile-bottom-nav { height: 66px !important; border-radius: 22px !important; }
+        .mobile-bottom-nav button div { width: 42px !important; height: 42px !important; border-radius: 14px !important; }
+        .mobile-bottom-nav button span { font-size: 9px !important; }
+      }
       @media (max-width: 480px) {
         main { padding-left: 12px !important; padding-right: 12px !important; }
         h1 { font-size: clamp(18px, 5vw, 24px) !important; }
         h2 { font-size: clamp(16px, 4.5vw, 20px) !important; }
-        .mobile-bottom-nav { height: 64px !important; border-radius: 20px !important; width: calc(100% - 24px) !important; bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important; }
+        .mobile-bottom-nav { height: 62px !important; border-radius: 20px !important; width: calc(100% - 24px) !important; bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important; }
         .mobile-bottom-nav button div { width: 38px !important; height: 38px !important; border-radius: 12px !important; }
         .mobile-bottom-nav button span { font-size: 8px !important; }
         .mobile-bottom-nav button.active div { border-radius: 14px !important; }
       }
       @media (max-width: 360px) {
         main { padding-left: 8px !important; padding-right: 8px !important; }
-        .mobile-bottom-nav { height: 58px !important; width: calc(100% - 16px) !important; }
-        .mobile-bottom-nav button div { width: 34px !important; height: 34px !important; }
+        .mobile-bottom-nav { height: 56px !important; width: calc(100% - 16px) !important; }
+        .mobile-bottom-nav button div { width: 34px !important; height: 34px !important; border-radius: 10px !important; }
+        .mobile-bottom-nav button span { font-size: 7px !important; }
       }
-      /* Ensure content is never hidden behind bottom nav */
-      main { padding-bottom: max(110px, calc(80px + env(safe-area-inset-bottom, 20px))) !important; }
-      /* Smooth touch scrolling */
-      * { -webkit-overflow-scrolling: touch; }
-      html { overflow-x: hidden; }
-      body { overflow-x: hidden; width: 100%; max-width: 100vw; }
-      img { max-width: 100%; height: auto; }
-      /* Fix for 100vh on mobile (addresses browser chrome) */
-      .vh-fix { min-height: 100dvh; min-height: -webkit-fill-available; }
+      @media (max-height: 500px) and (orientation: landscape) {
+        .mobile-bottom-nav { height: 52px !important; }
+        .mobile-bottom-nav button div { width: 32px !important; height: 32px !important; }
+        main { padding-bottom: 70px !important; }
+      }
+      @media (min-width: 1400px) {
+        main { max-width: 900px !important; }
 
     `}</style>
   )
 }
 
 // ══════════════════════════════════════════════════════════════
-// SURVEY MODAL
+// SURVEY MODAL (TODAY ONLY - LUNCH & DINNER)
 // ══════════════════════════════════════════════════════════════
-function SurveyModal({ startDay, onClose, appSettings = {} }) {
+function SurveyModal({ onClose, appSettings = {} }) {
   const t = THEMES.bright
   const { user } = useAuth()
   const weeklyMenu = useWeeklyMenu() || {}
 
   const currentWeekId = getWeekDate()
-  const visibleDays = DAYS // Show all days to allow viewing responses
+  const today = getTodayKey()
+  const menu = weeklyMenu[today] || { lunch: [], dinner: [] }
+  const dayKey = today.substring(0, 3).toLowerCase()
 
-  const [currentDay, setCurrentDay] = useState(startDay || (visibleDays[0] || 'monday'))
   const [currentMeal, setCurrentMeal] = useState('lunch')
   const [wantsFood, setWantsFood] = useState(null)
+  const wantsFoodRef = useRef(null)
   const [responses, setResponses] = useState({})
   const [loading, setLoading] = useState(false)
   const [existingResponse, setExistingResponse] = useState(null)
   const [hasInitialized, setHasInitialized] = useState(false)
 
   const [userData, setUserData] = useState({ thali_no: '', email: user.email })
-  const currentDayIndexInVisible = visibleDays.indexOf(currentDay)
-  const menu = weeklyMenu[currentDay] || { lunch: [], dinner: [] }
-  const dayKey = currentDay.substring(0, 3).toLowerCase()
+  const [snackDefaults, setSnackDefaults] = useState({ dish_1: 0, dish_2: 0, dish_3: 0, dish_4: 0 })
   const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
-  const isEditable = canEditMeal(currentDay, currentWeekId, currentMeal, appSettings, user.id)
+  const isEditable = canEditMeal(today, currentWeekId, currentMeal, appSettings, user.id)
   const editCount = (existingResponse && !existingResponse.is_template) ? (existingResponse.edit_metadata?.[`${dayKey}_${mealKey}`] || 0) : 0
-  const editBlocked = !isEditable || (!isSurveyOpen(appSettings, user.id) && editCount >= 100) // Setting to 100 to allow unlimited edits within window as per request "pop up days survey... and they can edit"
+  const editBlocked = !isEditable || (!isSurveyOpen(appSettings, user.id) && editCount >= 100)
 
-  useEffect(() => { loadExisting() }, [currentDay, currentMeal])
+  useEffect(() => { loadExisting() }, [currentMeal])
 
   const loadExisting = async () => {
     try {
+      // Load user data and snack defaults
       if (!userData.thali_no) {
-        const { data: u } = await supabase.from('user_stats').select('thali_number, email').eq('user_id', user.id).maybeSingle()
-        if (u) setUserData({ thali_no: u.thali_number || '', email: u.email || user.email })
+        const { data: u } = await supabase.from('user_stats').select('thali_number, email, snack_defaults').eq('user_id', user.id).maybeSingle()
+        if (u) {
+          setUserData({ thali_no: u.thali_number || '', email: u.email || user.email })
+          if (u.snack_defaults) setSnackDefaults(u.snack_defaults)
+        }
       }
 
       // 1. Fetch LATEST submission (template)
@@ -478,30 +546,10 @@ function SurveyModal({ startDay, onClose, appSettings = {} }) {
         const isFromOldWeek = data.week_id !== currentWeekId
 
         if (!hasInitialized) {
-          // For current-week data, find the first incomplete day/meal
-          // For old-week templates, start fresh from monday/lunch
-          if (!isFromOldWeek) {
-            let foundDay = visibleDays[0] || 'monday'
-            let foundMeal = 'lunch'
-            let foundIncomplete = false
-            for (let day of visibleDays) {
-              const dKey = day.substring(0, 3).toLowerCase()
-              if (!data[`${dKey}_l_status`]) { foundDay = day; foundMeal = 'lunch'; foundIncomplete = true; break; }
-              if (!data[`${dKey}_d_status`]) { foundDay = day; foundMeal = 'dinner'; foundIncomplete = true; break; }
-            }
-            // If everything is filled, stay on the first day so user can review/edit
-            setHasInitialized(true)
-            if (foundIncomplete && (foundDay !== currentDay || foundMeal !== currentMeal)) {
-              setCurrentDay(foundDay)
-              setCurrentMeal(foundMeal)
-              return // let effect re-run with new day/meal
-            }
-          } else {
-            setHasInitialized(true)
-          }
+          setHasInitialized(true)
         }
 
-        const dayKey = currentDay.substring(0, 3).toLowerCase()
+        const dayKey = today.substring(0, 3).toLowerCase()
         const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
         const status = data[`${dayKey}_${mealKey}_status`]
         // If it's an old week, we reset the edit count for the new week
@@ -515,7 +563,12 @@ function SurveyModal({ startDay, onClose, appSettings = {} }) {
           activeDishes.forEach((dish, idx) => {
             const val = data[`${dayKey}_${mealKey}_dish_${idx + 1}`]
             if (val !== undefined && val !== null) {
-              if (val === 'Yes') dishRes[dish] = 'yes'
+              // Handle new format from our updated cards
+              if (typeof val === 'object' && val.status) {
+                dishRes[dish] = val
+              }
+              // Handle legacy format
+              else if (val === 'Yes') dishRes[dish] = 'yes'
               else if (val === 'No') dishRes[dish] = 'no'
               else if (typeof val === 'string' && val.includes('Skip')) dishRes[dish] = 'Skipped'
               else dishRes[dish] = parseInt(val) || 0
@@ -534,28 +587,23 @@ function SurveyModal({ startDay, onClose, appSettings = {} }) {
     }
   }
 
-  const goToDay = (day) => {
-    setCurrentDay(day)
-    setCurrentMeal('lunch')
-    setWantsFood(null)
-    setResponses({})
-  }
-
-  // Auto submit when all dishes are selected
+  // Auto submit when all dishes are selected (except last meal — user clicks button)
   useEffect(() => {
     if (!editBlocked && wantsFood === true) {
       const dishes = currentMeal === 'lunch' ? menu.lunch : menu.dinner
-      if (dishes.length > 0 && Object.keys(responses).length === dishes.length && !loading) {
+      const isLast = currentMeal === 'dinner'
+      if (dishes.length > 0 && Object.keys(responses).length === dishes.length && !loading && !isLast) {
         handleNext()
       }
     }
-  }, [responses, wantsFood, editBlocked, loading])
+  }, [responses, wantsFood, editBlocked, loading, currentMeal])
 
   const handleNext = async () => {
-    if (wantsFood !== null && !loading) {
+    let saveOk = true
+    if (wantsFoodRef.current !== null && !loading) {
       setLoading(true)
       try {
-        const dayKey = currentDay.substring(0, 3).toLowerCase()
+        const dayKey = today.substring(0, 3).toLowerCase()
         const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
         const currentEdits = (existingResponse && !existingResponse.is_template) ? (existingResponse.edit_metadata || {}) : {}
         const newEditCount = (currentEdits[`${dayKey}_${mealKey}`] || 0) + (existingResponse && !existingResponse.is_template ? 1 : 0)
@@ -566,40 +614,53 @@ function SurveyModal({ startDay, onClose, appSettings = {} }) {
           week_id: currentWeekId,
           thali_number: userData.thali_no,
           email: userData.email,
-          [`${dayKey}_${mealKey}_status`]: wantsFood ? 'Applied' : 'Skipped',
+          [`${dayKey}_${mealKey}_status`]: wantsFoodRef.current ? 'Applied' : 'Skipped',
           edit_metadata: { ...currentEdits, [`${dayKey}_${mealKey}`]: newEditCount },
           updated_at: new Date().toISOString()
         }
 
-        if (wantsFood) {
+        if (wantsFoodRef.current) {
           const activeDishes = menu[currentMeal] || []
           activeDishes.forEach((dish, idx) => {
             const colName = `${dayKey}_${mealKey}_dish_${idx + 1}`
             const val = responses[dish]
             if (val !== undefined) {
-              updateObj[colName] = val === 'yes' ? 'Yes' : val === 'no' ? 'No' : `${val}%`
+              // Handle new format
+              if (typeof val === 'object' && val.status) {
+                if (val.status === 'yes') {
+                  updateObj[colName] = String(val.value) // Save as string for consistency
+                } else {
+                  updateObj[colName] = 'No'
+                }
+              }
+              // Handle legacy format
+              else if (val === 'yes') {
+                updateObj[colName] = 'Yes'
+              } else if (val === 'no') {
+                updateObj[colName] = 'No'
+              } else if (typeof val === 'number') {
+                updateObj[colName] = isCountInput(idx) ? String(val) : `${val}%`
+              }
             }
           })
         }
 
         await supabase.from('survey_submissions_flat').upsert([updateObj], { onConflict: 'user_id,week_id' })
-        // Increment survey count only for new thali submissions, not edits
         if (!existingResponse || existingResponse.is_template) {
           await supabase.rpc('increment_user_surveys', { p_user_id: user.id })
         }
       } catch (err) {
         alert('Error saving: ' + err.message)
+        saveOk = false
       } finally {
         setLoading(false)
       }
     }
+      if (!saveOk) return
 
     if (currentMeal === 'lunch') {
-      setCurrentMeal('dinner'); setWantsFood(null); setResponses({})
-    } else if (currentDayIndexInVisible < visibleDays.length - 1) {
-      setCurrentDay(visibleDays[currentDayIndexInVisible + 1]); setCurrentMeal('lunch'); setWantsFood(null); setResponses({})
+      setCurrentMeal('dinner'); wantsFoodRef.current = null; setWantsFood(null); setResponses({})
     } else {
-      // 4. Survey Complete - Delete old week data if this was a template-based submission
       if (existingResponse?.is_template) {
         try {
           await supabase.from('survey_submissions_flat')
@@ -610,6 +671,22 @@ function SurveyModal({ startDay, onClose, appSettings = {} }) {
           console.warn('Could not clean up old survey:', delErr)
         }
       }
+      
+      // Send survey completion notification
+      try {
+        await supabase.functions.invoke('send-push', {
+          body: {
+            title: '✅ Survey Submitted',
+            body: `Your ${today}'s lunch & dinner survey has been saved.`,
+            target_type: 'specific',
+            target_user_id: user.id,
+            url: '/post'
+          }
+        })
+      } catch (notifyErr) {
+        console.warn('Survey notification failed:', notifyErr)
+      }
+      
       alert('🎉 Survey complete! Shukran Jazeelan.')
       onClose()
     }
@@ -617,16 +694,45 @@ function SurveyModal({ startDay, onClose, appSettings = {} }) {
 
   const handlePrev = () => {
     if (currentMeal === 'dinner') {
-      setCurrentMeal('lunch'); setWantsFood(null); setResponses({})
-    } else if (currentDayIndexInVisible > 0) {
-      setCurrentDay(visibleDays[currentDayIndexInVisible - 1]); setCurrentMeal('dinner'); setWantsFood(null); setResponses({})
+      setCurrentMeal('lunch'); wantsFoodRef.current = null; setWantsFood(null); setResponses({})
     }
   }
 
+  const isCountInput = (idx) => {
+    try {
+      const config = appSettings?.dish_input_config
+      if (config) {
+        const parsed = typeof config === 'string' ? JSON.parse(config) : config
+        const dayName = today.charAt(0).toUpperCase() + today.slice(1)
+        const key = `${dayName}_${currentMeal}`
+        const types = parsed[key]
+        if (types && types[idx]) return types[idx] === 'count'
+      }
+    } catch {}
+    return currentMeal === 'lunch' && idx <= 3
+  }
+
+  const getDishMax = (idx) => {
+    if (currentMeal === 'lunch' && idx < 4) {
+      return snackDefaults?.[`dish_${idx + 1}`] ?? 0
+    }
+    return Infinity
+  }
+
   const dishes = currentMeal === 'lunch' ? menu.lunch : menu.dinner
-  const isFirst = currentDayIndexInVisible === 0 && currentMeal === 'lunch'
-  const isLast = currentDayIndexInVisible === visibleDays.length - 1 && currentMeal === 'dinner'
-  const progress = ((currentDayIndexInVisible * 2 + (currentMeal === 'lunch' ? 1 : 2)) / (visibleDays.length * 2)) * 100
+  const hasOverload = dishes.some((dish, idx) => {
+    if (currentMeal === 'lunch' && idx < 4) {
+      const val = responses[dish]
+      if (typeof val === 'object' && val.status === 'yes') {
+        return val.value > (snackDefaults?.[`dish_${idx + 1}`] ?? 0)
+      }
+    }
+    return false
+  })
+  const isFirst = currentMeal === 'lunch'
+  const isLast = currentMeal === 'dinner'
+  const progress = currentMeal === 'lunch' ? 50 : 100
+
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.82)', padding: 16, backdropFilter: 'blur(12px)', overflowY: 'auto' }} onClick={onClose}>
@@ -636,14 +742,11 @@ function SurveyModal({ startDay, onClose, appSettings = {} }) {
           <div style={{ height: '100%', width: `${progress}%`, background: t.accentGrad, borderRadius: 2, transition: 'width 0.4s ease' }} />
         </div>
 
-        {/* Day pills */}
-        <div style={{ display: 'flex', gap: 4, overflowX: 'auto', marginBottom: 14, paddingBottom: 2, scrollbarWidth: 'none' }}>
-          {visibleDays.map(day => (
-            <button key={day} onClick={() => goToDay(day)}
-              style={{ flexShrink: 0, padding: '4px 10px', borderRadius: 20, border: `1.5px solid ${currentDay === day ? t.accent : t.border}`, background: currentDay === day ? t.accentBg : 'transparent', color: currentDay === day ? t.accent : t.textSub, fontWeight: 700, fontSize: 10, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>
-              {weeklyMenu[day]?.en?.slice(0, 3) || day.slice(0, 3)}
-            </button>
-          ))}
+        {/* Today indicator */}
+        <div style={{ textAlign: 'center', marginBottom: 14, padding: '8px', background: t.accentBg, borderRadius: 8, border: `1px solid ${t.border}` }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>
+            {today.charAt(0).toUpperCase() + today.slice(1)}
+          </span>
         </div>
 
         {/* Header */}
@@ -651,7 +754,7 @@ function SurveyModal({ startDay, onClose, appSettings = {} }) {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <img src="/al-mawaid.png" alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />
-              <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{menu.en || currentDay}</h2>
+              <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{menu.en || today}</h2>
             </div>
             <div style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 3 }}>
               {currentMeal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}<span style={{ margin: '0 6px', opacity: .3 }}>·</span>
@@ -675,7 +778,7 @@ function SurveyModal({ startDay, onClose, appSettings = {} }) {
           </button>
           <button onClick={handleNext} disabled={loading}
             style={{ flex: 1, padding: '8px 12px', borderRadius: 10, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontFamily: "'DM Sans',sans-serif" }}>
-            {isLast ? 'Finish ✓' : 'Next'} {!isLast && <ChevronRight size={13} />}
+            {isLast ? 'Finish ✓' : currentMeal === 'lunch' ? 'Dinner →' : 'Next'} {!isLast && <ChevronRight size={13} />}
           </button>
         </div>
 
@@ -687,7 +790,9 @@ function SurveyModal({ startDay, onClose, appSettings = {} }) {
               <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${t.border}` }}>
                 <span style={{ fontSize: 15, fontWeight: 500, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</span>
                 <span style={{ fontSize: 16, fontWeight: 800, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>
-                  {val === 'yes' ? '✅' : val === 'no' ? '❌' : (val === 0 ? '0%' : (val === 'Skipped' ? 'SKIP' : `${val}%`))}
+                  {val === 'no' ? '❌' : 
+                   typeof val === 'object' && val.status === 'yes' ? `✅ ${val.value}` : 
+                   (typeof val === 'number' ? (val === 0 ? '0%' : `${val}%`) : (val === 'Skipped' ? 'SKIP' : `${val}%`))}
                 </span>
               </div>
             ))}
@@ -695,45 +800,142 @@ function SurveyModal({ startDay, onClose, appSettings = {} }) {
         ) : wantsFood === null ? (
           <div>
             <p style={{ fontSize: 15, fontWeight: 600, color: t.text, marginBottom: 14, fontFamily: "'DM Sans',sans-serif" }}>
-              Do you want {currentMeal} for {menu.en || currentDay}?
+              Do you want {currentMeal} for {menu.en || today}?
             </p>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button className="stagger-item" onClick={() => setWantsFood(true)}
+              <button className="stagger-item" onClick={() => { wantsFoodRef.current = true; setWantsFood(true) }}
                 style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>✅ Yes</button>
-              <button className="stagger-item" onClick={() => { setWantsFood(false); setTimeout(handleNext, 200) }}
+              <button className="stagger-item" onClick={() => { wantsFoodRef.current = false; setWantsFood(false); setTimeout(handleNext, 200) }}
                 style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${t.border}`, background: 'transparent', color: t.text, fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>❌ No</button>
             </div>
           </div>
         ) : wantsFood ? (
           <div>
             <p style={{ fontSize: 12, fontWeight: 600, color: t.textSub, marginBottom: 10, fontFamily: "'DM Sans',sans-serif" }}>Select portion for each dish:</p>
-            {dishes.map((dish, idx) => (
-              <div key={dish} className="stagger-item" style={{ marginBottom: 10, padding: 12, background: t.inputBg, borderRadius: 11, animationDelay: `${0.1 + idx * 0.05}s` }}>
-                <p style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</p>
-                {isRotiItem(dish) ? (
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    {['yes', 'no'].map(opt => (
-                      <button key={opt} onClick={() => setResponses(prev => ({ ...prev, [dish]: opt }))}
-                        style={{ flex: 1, padding: '8px 4px', borderRadius: 9, border: `1.5px solid ${responses[dish] === opt ? (opt === 'yes' ? t.accent : '#e05555') : t.border}`, background: responses[dish] === opt ? (opt === 'yes' ? t.accentBg : 'rgba(220,80,80,0.09)') : 'transparent', color: responses[dish] === opt ? (opt === 'yes' ? t.accent : '#e05555') : t.text, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>
-                        {opt === 'yes' ? '✅ Yes' : '❌ No'}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-                    {[0, 25, 50, 100].map(pct => (
-                      <button key={pct} onClick={() => setResponses(prev => ({ ...prev, [dish]: pct }))}
-                        style={{ padding: '16px 4px', borderRadius: 14, border: `2px solid ${responses[dish] === pct ? t.accent : t.border}`, background: responses[dish] === pct ? t.accentBg : 'transparent', color: responses[dish] === pct ? t.accent : t.text, fontSize: 18, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: '0.2s' }}>
-                        {pct}%
-                      </button>
-                    ))}
+            {currentMeal === 'lunch' ? dishes.map((dish, idx) => (
+              <div key={dish} style={{ 
+                background: t.card, 
+                borderRadius: '16px', 
+                padding: '16px', 
+                border: `1px solid ${t.border}`,
+                marginBottom: '12px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <h3 style={{ color: t.text, margin: 0, fontSize: '14px', fontWeight: '600' }}>{dish}</h3>
+                  <span style={{ 
+                    fontSize: '11px', 
+                    color: t.textSub,
+                    padding: '4px 8px',
+                    borderRadius: '12px',
+                    background: t.accentBg,
+                    color: t.accent,
+                    fontWeight: '600'
+                  }}>
+                    {isRotiItem(dish) ? 'Roti' : `Default: ${snackDefaults?.[`dish_${idx + 1}`] ?? 0}`}
+                  </span>
+                </div>
+                
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                  <button
+                    onClick={() => {
+                      if (isRotiItem(dish)) {
+                        setResponses(prev => ({ ...prev, [dish]: 'yes' }))
+                      } else {
+                        const defVal = snackDefaults?.[`dish_${idx + 1}`] ?? 0
+                        setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: defVal } }))
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      borderRadius: '8px',
+                      border: `1px solid ${responses[dish] === 'yes' || (typeof responses[dish] === 'object' && responses[dish].status === 'yes') ? t.accent : t.border}`,
+                      background: responses[dish] === 'yes' || (typeof responses[dish] === 'object' && responses[dish].status === 'yes') ? t.accentBg : t.inputBg,
+                      color: responses[dish] === 'yes' || (typeof responses[dish] === 'object' && responses[dish].status === 'yes') ? t.accent : t.text,
+                      fontSize: '12px',
+                      fontWeight: '600'
+                    }}
+                  >
+                    ✅ Yes
+                  </button>
+                  <button
+                    onClick={() => setResponses(prev => ({ ...prev, [dish]: 'no' }))}
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      borderRadius: '8px',
+                      border: `1px solid ${responses[dish] === 'no' ? '#e05555' : t.border}`,
+                      background: responses[dish] === 'no' ? 'rgba(224,85,85,0.1)' : t.inputBg,
+                      color: responses[dish] === 'no' ? '#e05555' : t.text,
+                      fontSize: '12px',
+                      fontWeight: '600'
+                    }}
+                  >
+                    ❌ No
+                  </button>
+                </div>
+
+                {((isRotiItem(dish) && responses[dish] === 'yes') || (!isRotiItem(dish) && responses[dish]?.status === 'yes')) && (
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', color: t.textSub }}>
+                      {isRotiItem(dish) ? 'Roti' : 'Count:'}
+                    </span>
+                    {!isRotiItem(dish) && (
+                      <input
+                        type="number"
+                        min="0"
+                        max={snackDefaults?.[`dish_${idx + 1}`] ?? Infinity}
+                        value={responses[dish]?.value ?? 0}
+                        onChange={(e) => {
+                          const value = Math.max(0, parseInt(e.target.value) || 0)
+                          const maxVal = snackDefaults?.[`dish_${idx + 1}`] ?? Infinity
+                          const finalValue = Math.min(value, maxVal)
+                          setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: finalValue } }))
+                        }}
+                        style={{
+                          width: '60px',
+                          padding: '6px',
+                          borderRadius: '6px',
+                          border: `1px solid ${t.border}`,
+                          background: t.inputBg,
+                          color: t.text,
+                          fontSize: '12px',
+                          textAlign: 'center'
+                        }}
+                      />
+                    )}
+                    {!isRotiItem(dish) && (
+                      <span style={{ fontSize: '11px', color: t.textSub }}>
+                        Default: {snackDefaults?.[`dish_${idx + 1}`] ?? 0}
+                      </span>
+                    )}
                   </div>
                 )}
+
+                <div style={{ marginTop: '8px', fontSize: '11px', color: t.textSub }}>
+                  Current: {responses[dish] === 'no' ? '❌ No' : 
+                           (isRotiItem(dish) ? (responses[dish] === 'yes' ? '✅ Roti' : 'Not selected') :
+                           (typeof responses[dish] === 'object' && responses[dish].status === 'yes' ? `✅ ${responses[dish].value} portions` : 
+                           'Not selected'))}
+                </div>
+              </div>
+            )) : dishes.map((dish, idx) => (
+              <div key={dish} style={{ marginBottom: 10, padding: 12, background: t.inputBg, borderRadius: 11 }}>
+                <p style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                  {[0, 25, 50, 100].map(pct => (
+                    <button key={pct} onClick={() => setResponses(prev => ({ ...prev, [dish]: pct }))}
+                      style={{ padding: '16px 4px', borderRadius: 14, border: `2px solid ${responses[dish] === pct ? t.accent : t.border}`, background: responses[dish] === pct ? t.accentBg : 'transparent', color: responses[dish] === pct ? t.accent : t.text, fontSize: 18, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: '0.2s' }}>
+                      {pct}%
+                    </button>
+                  ))}
+                </div>
               </div>
             ))}
-            <button onClick={handleNext} disabled={loading || Object.keys(responses).length < dishes.length}
-              style={{ width: '100%', padding: 13, borderRadius: 11, border: 'none', marginTop: 6, background: Object.keys(responses).length < dishes.length ? t.border : t.accentGrad, color: '#fff', fontSize: 14, fontWeight: 700, cursor: Object.keys(responses).length < dishes.length ? 'not-allowed' : 'pointer', opacity: Object.keys(responses).length < dishes.length ? .5 : 1, fontFamily: "'DM Sans',sans-serif" }}>
-              {loading ? 'Saving…' : isLast ? 'Complete Survey ✓' : 'Save & Next →'}
+            <button onClick={handleNext} disabled={loading || Object.keys(responses).length < dishes.length || hasOverload }
+              style={{ width: '100%', padding: 13, borderRadius: 11, border: 'none', marginTop: 6, background: Object.keys(responses).length < dishes.length || hasOverload ? t.border : t.accentGrad, color: '#fff', fontSize: 14, fontWeight: 700, cursor: Object.keys(responses).length < dishes.length || hasOverload ? 'not-allowed' : 'pointer', opacity: Object.keys(responses).length < dishes.length || hasOverload ? .5 : 1, fontFamily: "'DM Sans',sans-serif" }}>
+              {loading ? 'Saving…' : hasOverload ? '⚠️ Over limit' : isLast ? 'Complete Survey ✓' : 'Save & Next →'}
             </button>
           </div>
         ) : (
@@ -747,7 +949,7 @@ function SurveyModal({ startDay, onClose, appSettings = {} }) {
 // ══════════════════════════════════════════════════════════════
 // DAILY SURVEY MODAL (NEW)
 // ══════════════════════════════════════════════════════════════
-function DailySurveyModal({ onClose }) {
+function DailySurveyModal({ onClose, appSettings = {} }) {
   const t = THEMES.bright
   const { user } = useAuth()
   const weeklyMenu = useWeeklyMenu() || {}
@@ -762,6 +964,20 @@ function DailySurveyModal({ onClose }) {
   const today = getTodayKey()
   const menu = weeklyMenu[today] || { lunch: [], dinner: [] }
   const dayKey = today.substring(0, 3).toLowerCase()
+
+  const isCountInput = (meal, idx) => {
+    try {
+      const config = appSettings?.dish_input_config
+      if (config) {
+        const parsed = typeof config === 'string' ? JSON.parse(config) : config
+        const dayName = today.charAt(0).toUpperCase() + today.slice(1)
+        const key = `${dayName}_${meal}`
+        const types = parsed[key]
+        if (types && types[idx]) return types[idx] === 'count'
+      }
+    } catch {}
+    return meal === 'lunch' && idx <= 3
+  }
 
   useEffect(() => {
     supabase.from('user_stats').select('thali_number, email').eq('user_id', user.id).single()
@@ -833,7 +1049,15 @@ function DailySurveyModal({ onClose }) {
         menu.lunch.forEach((dish, idx) => {
           const colName = `${dayKey}_l_dish_${idx + 1}`
           const val = responses[dish]
-          updateObj[colName] = typeof val === 'number' ? `${val}%` : val === 'yes' ? 'Yes' : 'No'
+          if (typeof val === 'object' && val.status === 'yes') {
+            updateObj[colName] = String(val.value) // Save as string for consistency
+          } else if (val === 'no') {
+            updateObj[colName] = 'No'
+          } else if (typeof val === 'number') {
+            updateObj[colName] = isCountInput('lunch', idx) ? String(val) : `${val}%`
+          } else {
+            updateObj[colName] = 'No' // Default to No if undefined
+          }
         })
       }
 
@@ -842,13 +1066,17 @@ function DailySurveyModal({ onClose }) {
         rotiItems.forEach((dish, idx) => {
           const menuIdx = dinnerDishes.indexOf(dish)
           const realColName = `${dayKey}_d_dish_${menuIdx + 1}`
-          updateObj[realColName] = rotiStatus ? 'Yes' : 'No'
+          updateObj[realColName] = rotiStatus === 'yes' ? 'Yes' : 'No'
         })
         otherDinnerDishes.forEach((dish) => {
           const menuIdx = dinnerDishes.indexOf(dish)
           const realColName = `${dayKey}_d_dish_${menuIdx + 1}`
           const val = responses[dish]
-          updateObj[realColName] = typeof val === 'number' ? `${val}%` : val === 'yes' ? 'Yes' : 'No'
+          if (typeof val === 'number') {
+            updateObj[realColName] = isCountInput('dinner', menuIdx) ? String(val) : `${val}%`
+          } else {
+            updateObj[realColName] = val === 'yes' ? 'Yes' : 'No'
+          }
         })
       }
 
@@ -903,15 +1131,28 @@ function DailySurveyModal({ onClose }) {
             <div className="stagger-item">
               <SectionLabel>Lunch Portions</SectionLabel>
               <div style={{ maxHeight: '40vh', overflowY: 'auto', paddingRight: 5 }}>
-                {menu.lunch.map(dish => (
+                {menu.lunch.map((dish, idx) => (
                   <div key={dish} style={{ marginBottom: 18, padding: 14, background: t.inputBg, borderRadius: 16, border: `1px solid ${t.border}` }}>
                     <p style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700, color: t.text }}>{dish}</p>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      {[0, 25, 50, 100].map(pct => (
-                        <button key={pct} onClick={() => setResponses(prev => ({ ...prev, [dish]: pct }))}
-                          style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: `1.5px solid ${responses[dish] === pct ? t.accent : t.border}`, background: responses[dish] === pct ? t.accentBg : 'transparent', color: responses[dish] === pct ? t.accent : t.textSub, fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>{pct}%</button>
-                      ))}
-                    </div>
+                    {isCountInput('lunch', idx) ? (
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <span style={{ fontSize: 12, color: t.textSub, fontWeight: 600, whiteSpace: 'nowrap' }}>Count:</span>
+                        <input type="number" name="lunchPortionCount" min="0" value={typeof responses[dish] === 'number' ? responses[dish] : 0}
+                          onChange={e => {
+                            const val = parseInt(e.target.value, 10) || 0
+                            setResponses(prev => ({ ...prev, [dish]: val }))
+                          }}
+                          style={{ width: 70, padding: '8px 10px', borderRadius: 9, border: `1.5px solid ${t.border}`, background: t.inputBg, color: t.text, fontSize: 15, fontWeight: 700, textAlign: 'center', outline: 'none', fontFamily: "'DM Sans',sans-serif" }}
+                          aria-label="Portion count" />
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {[0, 25, 50, 100].map(pct => (
+                          <button key={pct} onClick={() => setResponses(prev => ({ ...prev, [dish]: pct }))}
+                            style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: `1.5px solid ${responses[dish] === pct ? t.accent : t.border}`, background: responses[dish] === pct ? t.accentBg : 'transparent', color: responses[dish] === pct ? t.accent : t.textSub, fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>{pct}%</button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -945,17 +1186,33 @@ function DailySurveyModal({ onClose }) {
             <div className="stagger-item">
               <SectionLabel>Dinner Portions</SectionLabel>
               <div style={{ maxHeight: '40vh', overflowY: 'auto', paddingRight: 5 }}>
-                {otherDinnerDishes.map(dish => (
-                  <div key={dish} style={{ marginBottom: 18, padding: 14, background: t.inputBg, borderRadius: 16, border: `1px solid ${t.border}` }}>
-                    <p style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700, color: t.text }}>{dish}</p>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      {[0, 25, 50, 100].map(pct => (
-                        <button key={pct} onClick={() => setResponses(prev => ({ ...prev, [dish]: pct }))}
-                          style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: `1.5px solid ${responses[dish] === pct ? t.accent : t.border}`, background: responses[dish] === pct ? t.accentBg : 'transparent', color: responses[dish] === pct ? t.accent : t.textSub, fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>{pct}%</button>
-                      ))}
+                {otherDinnerDishes.map((dish, idx) => {
+                  const origIdx = dinnerDishes.indexOf(dish)
+                  return (
+                    <div key={dish} style={{ marginBottom: 18, padding: 14, background: t.inputBg, borderRadius: 16, border: `1px solid ${t.border}` }}>
+                      <p style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700, color: t.text }}>{dish}</p>
+                      {isCountInput('dinner', origIdx) ? (
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <span style={{ fontSize: 12, color: t.textSub, fontWeight: 600, whiteSpace: 'nowrap' }}>Count:</span>
+                          <input type="number" name="dinnerPortionCount" min="0" value={typeof responses[dish] === 'number' ? responses[dish] : 0}
+                            onChange={e => {
+                              const val = parseInt(e.target.value, 10) || 0
+                              setResponses(prev => ({ ...prev, [dish]: val }))
+                            }}
+                            style={{ width: 70, padding: '8px 10px', borderRadius: 9, border: `1.5px solid ${t.border}`, background: t.inputBg, color: t.text, fontSize: 15, fontWeight: 700, textAlign: 'center', outline: 'none', fontFamily: "'DM Sans',sans-serif" }}
+                            aria-label="Portion count" />
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {[0, 25, 50, 100].map(pct => (
+                            <button key={pct} onClick={() => setResponses(prev => ({ ...prev, [dish]: pct }))}
+                              style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: `1.5px solid ${responses[dish] === pct ? t.accent : t.border}`, background: responses[dish] === pct ? t.accentBg : 'transparent', color: responses[dish] === pct ? t.accent : t.textSub, fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>{pct}%</button>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
@@ -983,6 +1240,11 @@ function ThaliUserApp() {
   const t = THEMES[theme] || THEMES.dark
   const [unreadCount, setUnreadCount] = useState(0)
   const [toastNotice, setToastNotice] = useState(null)
+  const lastNoticeIdRef = useRef(null)
+  const dragStartY = useRef(null)
+  const dragY = useRef(0)
+  const [dragOffset, setDragOffset] = useState(0)
+  const [isDragging, setIsDragging] = useState(false)
   const [appSettings, setAppSettings] = useState({})
 
   const loadAppSettings = useCallback(async () => {
@@ -1008,19 +1270,19 @@ function ThaliUserApp() {
 
   useEffect(() => {
     updateSystemTheme(theme)
+    if (typeof window !== 'undefined' && window.Capacitor) {
+      import('@capacitor/status-bar').then(({ StatusBar }) => {
+        const isDark = theme === 'dark' || theme === 'royal'
+        StatusBar.setStyle({ style: isDark ? 'DARK' : 'LIGHT' })
+        StatusBar.setBackgroundColor({ color: THEMES[theme]?.card || '#060d1a' })
+      }).catch(() => {})
+    }
   }, [theme])
 
   // ── Native Notification System (Supabase Realtime) ──
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission()
-    }
-
-    const getMonday = (d) => {
-      d = new Date(d)
-      const day = d.getDay()
-      const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-      return new Date(d.setDate(diff))
     }
 
     const loadUnread = async () => {
@@ -1034,23 +1296,28 @@ function ThaliUserApp() {
 
       if (!error && data) {
         try {
-          const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-          const today = days[new Date().getDay()]
+          const dayNum = new Date().getDay()
           const h = new Date().getHours()
-          const mealName = h < 15 ? 'lunch' : 'dinner'
-          const dayKey = today.substring(0, 3).toLowerCase()
-          const mealKey = mealName === 'lunch' ? 'l' : 'd'
-          const weekId = getMonday(new Date()).toISOString().split('T')[0]
-          
-          const { data: subData } = await supabase
-            .from('survey_submissions_flat')
-            .select(`${dayKey}_${mealKey}_status`)
-            .eq('user_id', user.id)
-            .eq('week_id', weekId)
-            .maybeSingle()
+          const weekId = getWeekDate()
+          let isEating = false
+
+          if (dayNum !== 0) {
+            const days = ['', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+            const today = days[dayNum]
+            const mealName = h < 15 ? 'lunch' : 'dinner'
+            const dayKey = today.substring(0, 3).toLowerCase()
+            const mealKey = mealName === 'lunch' ? 'l' : 'd'
             
-          const status = subData ? subData[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
-          const isEating = status === 'Applied'
+            const { data: subData } = await supabase
+              .from('survey_submissions_flat')
+              .select(`${dayKey}_${mealKey}_status`)
+              .eq('user_id', user.id)
+              .eq('week_id', weekId)
+              .maybeSingle()
+              
+            const status = subData ? subData[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
+            isEating = status === 'Applied'
+          }
           
           const filtered = data.filter(notice => {
             const toneStr = notice.tone || ''
@@ -1077,23 +1344,28 @@ function ThaliUserApp() {
           if (toneStr.includes(':opt_in') || toneStr.includes(':opt_out')) {
             const isOptInTarget = toneStr.includes(':opt_in')
             try {
-              const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-              const today = days[new Date().getDay()]
+              const dayNum = new Date().getDay()
               const h = new Date().getHours()
-              const mealName = h < 15 ? 'lunch' : 'dinner'
-              const dayKey = today.substring(0, 3).toLowerCase()
-              const mealKey = mealName === 'lunch' ? 'l' : 'd'
-              const weekId = getMonday(new Date()).toISOString().split('T')[0]
-              
-              const { data } = await supabase
-                .from('survey_submissions_flat')
-                .select(`${dayKey}_${mealKey}_status`)
-                .eq('user_id', user.id)
-                .eq('week_id', weekId)
-                .maybeSingle()
+              const weekId = getWeekDate()
+              let isEating = false
+
+              if (dayNum !== 0) {
+                const days = ['', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+                const today = days[dayNum]
+                const mealName = h < 15 ? 'lunch' : 'dinner'
+                const dayKey = today.substring(0, 3).toLowerCase()
+                const mealKey = mealName === 'lunch' ? 'l' : 'd'
                 
-              const status = data ? data[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
-              const isEating = status === 'Applied'
+                const { data } = await supabase
+                  .from('survey_submissions_flat')
+                  .select(`${dayKey}_${mealKey}_status`)
+                  .eq('user_id', user.id)
+                  .eq('week_id', weekId)
+                  .maybeSingle()
+                  
+                const status = data ? data[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
+                isEating = status === 'Applied'
+              }
               
               if (isOptInTarget && !isEating) isForMe = false
               if (!isOptInTarget && isEating) isForMe = false
@@ -1116,7 +1388,7 @@ function ThaliUserApp() {
       })
       .subscribe()
     return () => supabase.removeChannel(channel)
-  }, [user])
+  }, [user?.id])
 
   const markNotificationsRead = useCallback(() => {
     localStorage.setItem('almawaid_last_notice_read', new Date().toISOString())
@@ -1177,13 +1449,44 @@ function ThaliUserApp() {
         {toastNotice && (
           <div
             onClick={() => { setActiveTab('profile'); setToastNotice(null) }}
+            onTouchStart={(e) => {
+              dragStartY.current = e.touches[0].clientY
+              dragY.current = 0
+              setIsDragging(true)
+            }}
+            onTouchMove={(e) => {
+              if (dragStartY.current === null) return
+              const delta = e.touches[0].clientY - dragStartY.current
+              if (delta > 0) {
+                e.preventDefault()
+                dragY.current = delta * 0.5
+                setDragOffset(dragY.current)
+              }
+            }}
+            onTouchEnd={() => {
+              setIsDragging(false)
+              if (dragY.current > 80) {
+                setToastNotice(null)
+              }
+              setDragOffset(0)
+              dragStartY.current = null
+              dragY.current = 0
+            }}
             style={{
-              position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)',
+              position: 'fixed', top: 20, left: '50%',
               width: 'calc(100% - 32px)', maxWidth: 400, zIndex: 10000,
               background: 'rgba(20, 18, 12, 0.95)', border: `1.5px solid ${t.accentBorder}`,
               borderRadius: 20, padding: 16, display: 'flex', gap: 14,
               boxShadow: '0 20px 50px rgba(0,0,0,0.5)', cursor: 'pointer',
-              animation: 'slideDown 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+              transform: dragOffset > 0
+                ? `translateX(-50%) translateY(${dragOffset}px)`
+                : 'translateX(-50%)',
+              transition: isDragging
+                ? 'none'
+                : 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+              animation: dragOffset === 0 && !isDragging
+                ? 'slideDown 0.5s cubic-bezier(0.4, 0, 0.2, 1)'
+                : undefined,
               backdropFilter: 'blur(20px)'
             }}
           >
@@ -1192,11 +1495,12 @@ function ThaliUserApp() {
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 800, color: t.accent, marginBottom: 2 }}>{toastNotice.title}</div>
-              <div style={{ fontSize: 12, color: t.textSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{toastNotice.body}</div>
+              <div style={{ fontSize: 12, color: t.textSub, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>{toastNotice.body}</div>
             </div>
             <button onClick={(e) => { e.stopPropagation(); setToastNotice(null) }} style={{ background: 'none', border: 'none', color: t.textSub, padding: 4, cursor: 'pointer' }}>
               <X size={16} />
             </button>
+          <div style={{position:"absolute",bottom:0,left:0,height:3,right:0,background:t.accent,borderRadius:"0 0 20px 20px",animation:"toastCountdown 8s linear forwards"}} />
           </div>
         )}
 
@@ -1206,7 +1510,7 @@ function ThaliUserApp() {
         {activeTab === 'post' && <PostPage />}
         {activeTab === 'profile' && <ProfilePage theme={theme} setTheme={handleSetTheme} markRead={markNotificationsRead} appSettings={appSettings} />}
 
-        {showDailySurvey && <DailySurveyModal onClose={() => { setShowDailySurvey(false); setActiveTab('home') }} />}
+        {showDailySurvey && <DailySurveyModal onClose={() => { setShowDailySurvey(false); setActiveTab('home') }} appSettings={appSettings} />}
 
         <nav className="mobile-bottom-nav">
           {tabs.map(({ id, label, Icon }) => {
@@ -1251,12 +1555,22 @@ function HomePage({ setActiveTab, setShowDailySurvey, appSettings = {} }) {
   const [dinnerComment, setDinnerComment] = useState('')
   const STAR_LABELS = { 1: '😞 Poor', 2: '😐 Fair', 3: '🙂 Good', 4: '😄 Great', 5: '🤩 Excellent' }
 
-  useEffect(() => { loadData() }, [user])
+  useEffect(() => { loadData() }, [user?.id])
 
   const loadData = async () => {
     try {
-      const { data } = await supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle()
-      if (data) setProfileData({ name: data.name || '', thali_number: data.thali_number || '', avatar_url: data.avatar_url || '' })
+      const [{ data: profile }, { data: existingFb }] = await Promise.all([
+        supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
+        supabase.from('daily_feedback').select('*').eq('user_id', user.id).eq('day', todayKey).maybeSingle(),
+      ])
+      if (profile) setProfileData({ name: profile.name || '', thali_number: profile.thali_number || '', avatar_url: profile.avatar_url || '' })
+      if (existingFb) {
+        setFeedbackSubmitted({ lunch: !!existingFb.lunch_stars, dinner: !!existingFb.dinner_stars })
+        setLunchStars(existingFb.lunch_stars || 0)
+        setDinnerStars(existingFb.dinner_stars || 0)
+        setLunchComment(existingFb.lunch_comment || '')
+        setDinnerComment(existingFb.dinner_comment || '')
+      }
     } catch { }
     setStatsLoading(false)
   }
@@ -1269,7 +1583,8 @@ function HomePage({ setActiveTab, setShowDailySurvey, appSettings = {} }) {
         user_id: user.id, day: todayKey,
         lunch_stars: lunchStars || null, lunch_emoji: lunchStars ? STAR_LABELS[lunchStars] : null,
         dinner_stars: dinnerStars || null, dinner_emoji: dinnerStars ? STAR_LABELS[dinnerStars] : null,
-        comment: (lunchComment || dinnerComment).trim(),
+        lunch_comment: lunchComment.trim() || null,
+        dinner_comment: dinnerComment.trim() || null,
         created_at: new Date().toISOString()
       }], { onConflict: 'user_id,day' })
       if (dbErr) throw dbErr
@@ -1395,25 +1710,40 @@ function HomePage({ setActiveTab, setShowDailySurvey, appSettings = {} }) {
                     {stars > 0 && <div style={{ fontSize: 14, fontWeight: 700, color: t.accent, opacity: 0.9, fontFamily: "'DM Sans',sans-serif" }}>{STAR_LABELS[stars]}</div>}
                   </div>
                 )}
+                {/* Separate comment field per meal */}
+                <div style={{ marginTop: 16 }}>
+                  <label style={{ display: 'block', fontSize: 10, fontWeight: 800, color: t.textSub, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{meal === 'lunch' ? 'Lunch' : 'Dinner'} Comment</label>
+                  {submitted ? (
+                    <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: `1px solid ${t.border}`, color: t.textSub, fontSize: 13, minHeight: 60, boxSizing: 'border-box', fontStyle: 'italic' }}>
+                      {meal === 'lunch' ? lunchComment || '—' : dinnerComment || '—'}
+                    </div>
+                  ) : (
+                    <textarea
+                      name={`${meal}Comment`}
+                      value={meal === 'lunch' ? lunchComment : dinnerComment}
+                      onChange={e => meal === 'lunch' ? setLunchComment(e.target.value) : setDinnerComment(e.target.value)}
+                      placeholder={`Tell us how ${meal} was...`}
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 12, background: t.inputBg, border: `1px solid ${t.border}`, color: t.text, fontSize: 13, resize: 'none', outline: 'none', fontFamily: "'DM Sans',sans-serif", minHeight: 60, boxSizing: 'border-box', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)' }}
+                    />
+                  )}
+                </div>
               </div>
             )
           })}
         </div>
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', fontSize: 10, fontWeight: 800, color: t.textSub, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Your Comments</label>
-          <textarea
-            value={lunchComment}
-            onChange={e => { setLunchComment(e.target.value); setDinnerComment(e.target.value) }}
-            placeholder="Tell us what you liked or how we can improve..."
-            style={{ width: '100%', padding: '14px 16px', borderRadius: 16, background: t.inputBg, border: `1px solid ${t.border}`, color: t.text, fontSize: 14, resize: 'none', outline: 'none', fontFamily: "'DM Sans',sans-serif", minHeight: 80, boxSizing: 'border-box', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)' }}
-          />
-        </div>
-        <Btn onClick={handleSubmitCombined} disabled={submittingFeedback || (!lunchStars && !dinnerStars)} style={{ width: '100%', height: 52, fontSize: 15, borderRadius: 16 }}>
-          {submittingFeedback ? 'Saving...' : 'Submit Feedback'}
-        </Btn>
+        
+        {feedbackSubmitted.lunch && feedbackSubmitted.dinner ? (
+          <div style={{ width: '100%', padding: '14px 0', textAlign: 'center', color: t.successText, fontSize: 14, fontWeight: 700, fontFamily: "'DM Sans',sans-serif" }}>
+            ✅ Feedback submitted for today. Shukran!
+          </div>
+        ) : (
+          <Btn onClick={handleSubmitCombined} disabled={submittingFeedback || (!lunchStars && !dinnerStars)} style={{ width: '100%', height: 52, fontSize: 15, borderRadius: 16 }}>
+            {submittingFeedback ? 'Saving...' : 'Submit Feedback'}
+          </Btn>
+        )}
       </Card>
 
-      {showSurvey && <SurveyModal startDay="monday" onClose={() => { setShowSurvey(false); loadData() }} appSettings={appSettings} />}
+      {showSurvey && <SurveyModal onClose={() => { setShowSurvey(false); loadData() }} appSettings={appSettings} />}
     </main>
   )
 }
@@ -1444,6 +1774,7 @@ function WeeklyMenuPage() {
     if (val === 'Yes') return 'yes'
     if (val === 'No') return 'no'
     if (typeof val === 'string' && val.endsWith('%')) return parseInt(val.replace('%', ''))
+    if (typeof val === 'string' && /^\d+$/.test(val)) return parseInt(val)
     return null
   }
 
@@ -1582,7 +1913,7 @@ function WeeklyMenuPage() {
                             {dish}
                             {resp !== null && (
                               <span style={{ fontWeight: '800', color: resp === 'yes' ? '#4CAF50' : resp === 'no' ? '#F44336' : t.accent }}>
-                                {resp === 'yes' ? '✅' : resp === 'no' ? '❌' : `${resp}%`}
+                                {resp === 'yes' ? '✅' : resp === 'no' ? '❌' : (typeof resp === 'number' && resp <= 100 && resp % 25 === 0 ? `${resp}%` : `${resp}`)}
                               </span>
                             )}
                           </div>
@@ -1617,7 +1948,7 @@ function WeeklyMenuPage() {
                             {dish}
                             {resp !== null && (
                               <span style={{ fontWeight: '800', color: resp === 'yes' ? '#4CAF50' : resp === 'no' ? '#F44336' : t.accent }}>
-                                {resp === 'yes' ? '✅' : resp === 'no' ? '❌' : `${resp}%`}
+                                {resp === 'yes' ? '✅' : resp === 'no' ? '❌' : (typeof resp === 'number' && resp <= 100 && resp % 25 === 0 ? `${resp}%` : `${resp}`)}
                               </span>
                             )}
                           </div>
@@ -1703,6 +2034,24 @@ function ThaliRequestsSection() {
       else if (type === 'extra') { const valid = extraItems.filter(i => i.name.trim()); if (!valid.length) throw new Error('Please add at least one item'); payload = { ...payload, extra_items: valid } }
       const { error: dbErr } = await supabase.from('thali_requests').insert([payload])
       if (dbErr) throw dbErr
+      
+      // Send push notification for request submission
+      try {
+        const typeLabels = { resume: 'Resume Thali', stop: 'Stop Thali', extra: 'Extra Food', miqaat: 'Miqaat Pirsu' }
+        const typeLabel = typeLabels[type] || type
+        await supabase.functions.invoke('send-push', {
+          body: {
+            title: '📋 Request Submitted',
+            body: `Your ${typeLabel} request has been submitted for review.`,
+            target_type: 'specific',
+            target_user_id: user.id,
+            url: '/post'
+          }
+        })
+      } catch (notifyErr) {
+        console.warn('Request submission notification failed:', notifyErr)
+      }
+      
       setSuccess(`✅ ${type === 'resume' ? 'Resume' : type === 'stop' ? 'Stop' : 'Extra food'} request submitted!`)
       resetAll(); setActiveRequest(null)
     } catch (err) { setError(err.message) } finally { setSubmitting(false) }
@@ -1719,7 +2068,7 @@ function ThaliRequestsSection() {
           <div style={{ padding: '0 16px 16px' }}>
             <div style={{ marginBottom: 12 }}>
               <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>RESUME FROM</label>
-              <input type="date" value={resumeFrom} min={today} onChange={e => setResumeFrom(e.target.value)} style={inp} />
+              <input type="date" name="resumeFrom" value={resumeFrom} min={today} onChange={e => setResumeFrom(e.target.value)} style={inp} />
             </div>
             {error && <ErrorBanner msg={error} />}
             <button onClick={() => handleSubmit('resume')} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting…' : '✅ Submit Resume Request'}</button>
@@ -1731,8 +2080,8 @@ function ThaliRequestsSection() {
         {activeRequest === 'stop' && (
           <div style={{ padding: '0 16px 16px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-              <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>FROM</label><input type="date" value={stopFrom} min={today} onChange={e => setStopFrom(e.target.value)} style={inp} /></div>
-              <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>TO</label><input type="date" value={stopTo} min={stopFrom || today} onChange={e => setStopTo(e.target.value)} style={inp} /></div>
+              <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>FROM</label><input type="date" name="stopFrom" value={stopFrom} min={today} onChange={e => setStopFrom(e.target.value)} style={inp} /></div>
+              <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>TO</label><input type="date" name="stopTo" value={stopTo} min={stopFrom || today} onChange={e => setStopTo(e.target.value)} style={inp} /></div>
             </div>
             {error && <ErrorBanner msg={error} />}
             <button onClick={() => handleSubmit('stop')} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : 'linear-gradient(135deg,#e05555,#c03030)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting…' : '⏹️ Submit Stop Request'}</button>
@@ -1762,7 +2111,7 @@ function ThaliRequestsSection() {
           <div style={{ padding: '0 16px 16px' }}>
             {extraItems.map((item, i) => (
               <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                <input type="text" value={item.name} placeholder={`Item ${i + 1}`} onChange={e => updateExtraItem(i, 'name', e.target.value)} style={{ ...inp, flex: 1 }} />
+                <input type="text" name={`extraItem${i}`} value={item.name} placeholder={`Item ${i + 1}`} onChange={e => updateExtraItem(i, 'name', e.target.value)} style={{ ...inp, flex: 1 }} />
                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                   {[1, 2, 3, 4].map(n => (
                     <button key={n} onClick={() => updateExtraItem(i, 'qty', n)}
@@ -1798,11 +2147,11 @@ function RecentRequestsList() {
       const { data } = await supabase.from('thali_requests')
         .select('*')
         .eq('user_id', user.id)
+        .eq('status', 'pending')  // Only show pending requests in recent
         .order('created_at', { ascending: false })
-        .limit(15)
+        .limit(5)
 
-      const filtered = (data || []).slice(0, 5)
-      setRequests(filtered)
+      setRequests(data || [])
       setLoading(false)
     }
     fetch()
@@ -1811,7 +2160,7 @@ function RecentRequestsList() {
   const statusColor = (s) => s === 'pending' ? '#d4882a' : s === 'approved' ? '#5eba82' : '#e05555'
 
   if (loading) return <Spinner />
-  if (requests.length === 0) return <div style={{ textAlign: 'center', padding: 20, color: t.textSub, fontSize: 13, opacity: 0.6 }}>No recent requests.</div>
+  if (requests.length === 0) return <div style={{ textAlign: 'center', padding: 20, color: t.textSub, fontSize: 13, opacity: 0.6 }}>No pending requests.</div>
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1905,7 +2254,7 @@ function QueriesSection() {
             </a>
           )}
         </div>
-        <textarea value={comment} onChange={e => setComment(e.target.value)} style={{ width: '100%', minHeight: 78, padding: 12, borderRadius: 11, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 14, resize: 'vertical', outline: 'none', fontFamily: "'DM Sans',sans-serif", marginBottom: 10 }} placeholder="Describe your query or issue…" />
+        <textarea name="query" value={comment} onChange={e => setComment(e.target.value)} style={{ width: '100%', minHeight: 78, padding: 12, borderRadius: 11, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 14, resize: 'vertical', outline: 'none', fontFamily: "'DM Sans',sans-serif", marginBottom: 10 }} placeholder="Describe your query or issue…" />
         {mediaFiles.length > 0 && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
             {mediaFiles.map((item, i) => (
@@ -1970,7 +2319,10 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
   const [loading, setLoading] = useState(true)
   const [showQR, setShowQR] = useState(false)
   const [helpline, setHelpline] = useState('')
-  useEffect(() => { supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle().then(({ data }) => { if (data) setProfileData(data) }).finally(() => setLoading(false)) }, []); supabase.from("app_settings").select("*").eq("key", "helpline_number").maybeSingle().then(({ data }) => { if (data) setHelpline(data.value) })
+  useEffect(() => {
+    supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle().then(({ data }) => { if (data) setProfileData(data) }).finally(() => setLoading(false))
+    supabase.from("app_settings").select("*").eq("key", "helpline_number").maybeSingle().then(({ data }) => { if (data) setHelpline(data.value) })
+  }, [user.id])
 
   const NavCard = ({ label, icon, desc, onClick }) => (
     <button onClick={onClick} style={{ width: '100%', padding: '13px 16px', borderRadius: 14, border: `1px solid ${t.border}`, background: t.card, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10, textAlign: 'left', transition: 'all 0.2s' }}>
@@ -2112,25 +2464,24 @@ function MySurveysPage({ onBack }) {
       }).finally(() => setLoading(false))
   }, [weeklyMenu])
 
-  // Realtime subscription: refresh surveys on insert/update
+  // Realtime subscription: refresh surveys on any change
   useEffect(() => {
     const subscription = supabase.channel('survey_changes')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'survey_submissions_flat' }, payload => {
-        // Simple refetch
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_submissions_flat' }, payload => {
         const fetchData = async () => {
-          const { data: all } = await supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id);
-          if (!all) return setSurveys({});
+          const { data: rows } = await supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id).maybeSingle();
+          if (!rows) return setSurveys({});
           const grouped = {};
           DAYS.forEach(day => {
             const dayKey = day.substring(0, 3).toLowerCase();
             ['lunch', 'dinner'].forEach(meal => {
               const mealKey = meal === 'lunch' ? 'l' : 'd';
-              const status = all[`${dayKey}_${mealKey}_status`];
+              const status = rows[`${dayKey}_${mealKey}_status`];
               if (status) {
                 const dishResponses = {};
                 const dishes = weeklyMenu[day]?.[meal] || [];
                 dishes.forEach((d, i) => {
-                  const val = all[`${dayKey}_${mealKey}_dish_${i + 1}`];
+                  const val = rows[`${dayKey}_${mealKey}_dish_${i + 1}`];
                   if (val !== undefined && val !== null) {
                     dishResponses[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : parseInt(val);
                   }
@@ -2139,7 +2490,7 @@ function MySurveysPage({ onBack }) {
                 grouped[day][meal] = {
                   wants_food: status === 'Applied',
                   dish_responses: dishResponses,
-                  edit_count: (all.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0
+                  edit_count: (rows.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0
                 };
               }
             });
@@ -2164,7 +2515,7 @@ function MySurveysPage({ onBack }) {
               <div style={{ fontSize: 16, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{weeklyMenu[day]?.en || day}</div>
             </div>
             {['lunch', 'dinner'].map(meal => {
-              const r = dayData[meal]; if (!r) return null
+              const r = dayData[meal] || {};
               return (
                 <div key={meal} style={{ marginBottom: 8, padding: 11, background: t.inputBg, borderRadius: 10, border: `1px solid ${t.border}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -2306,13 +2657,6 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const getMonday = (d) => {
-      d = new Date(d)
-      const day = d.getDay()
-      const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-      return new Date(d.setDate(diff))
-    }
-
     const fetchNotices = async () => {
       // Fetch notices targeted at everyone or specifically at this user
       const { data } = await supabase
@@ -2325,25 +2669,37 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
 
       if (data) {
         try {
-          const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-          const today = days[new Date().getDay()]
+          const dayNum = new Date().getDay()
           const h = new Date().getHours()
-          const mealName = h < 15 ? 'lunch' : 'dinner'
-          const dayKey = today.substring(0, 3).toLowerCase()
-          const mealKey = mealName === 'lunch' ? 'l' : 'd'
-          const weekId = getMonday(new Date()).toISOString().split('T')[0]
-          
-          const { data: subData } = await supabase
-            .from('survey_submissions_flat')
-            .select(`${dayKey}_${mealKey}_status`)
-            .eq('user_id', user.id)
-            .eq('week_id', weekId)
-            .maybeSingle()
+          const weekId = getWeekDate()
+          let isEating = false
+
+          if (dayNum !== 0) {
+            const days = ['', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+            const today = days[dayNum]
+            const mealName = h < 15 ? 'lunch' : 'dinner'
+            const dayKey = today.substring(0, 3).toLowerCase()
+            const mealKey = mealName === 'lunch' ? 'l' : 'd'
             
-          const status = subData ? subData[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
-          const isEating = status === 'Applied'
+            const { data: subData } = await supabase
+              .from('survey_submissions_flat')
+              .select(`${dayKey}_${mealKey}_status`)
+              .eq('user_id', user.id)
+              .eq('week_id', weekId)
+              .maybeSingle()
+              
+            const status = subData ? subData[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
+            isEating = status === 'Applied'
+          }
+          
+          const now = new Date()
+          const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000)
           
           const filtered = data.filter(notice => {
+            // Hide notices older than 48 hours
+            const noticeDate = new Date(notice.created_at || notice.scheduled_at)
+            if (noticeDate < fortyEightHoursAgo) return false
+            
             const toneStr = notice.tone || ''
             if (toneStr.includes(':opt_in')) return isEating
             if (toneStr.includes(':opt_out')) return !isEating
@@ -2481,8 +2837,8 @@ function SupportTicketsPage({ onBack }) {
             </button>
           ))}
         </div>
-        <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" style={{ ...inputStyle, marginBottom: 10 }} />
-        <textarea value={details} onChange={e => setDetails(e.target.value)} placeholder="Describe your problem" style={{ ...inputStyle, minHeight: 110, resize: 'vertical', marginBottom: 10 }} />
+        <input name="ticketSubject" value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" style={{ ...inputStyle, marginBottom: 10 }} />
+        <textarea name="ticketDetails" value={details} onChange={e => setDetails(e.target.value)} placeholder="Describe your problem" style={{ ...inputStyle, minHeight: 110, resize: 'vertical', marginBottom: 10 }} />
         {error && <ErrorBanner msg={error} />}
         {success && <div style={{ marginBottom: 10, padding: 11, borderRadius: 10, background: t.successBg, border: `1px solid ${t.successBorder}`, color: t.successText, fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>{success}</div>}
         <button onClick={handleSubmit} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting...' : 'Submit Support Ticket'}</button>
@@ -2549,7 +2905,7 @@ function ResetPasswordPage({ onBack }) {
             <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 7, letterSpacing: '0.14em', fontFamily: "'DM Sans',sans-serif" }}>NEW PASSWORD</label>
             <div style={{ position: 'relative' }}>
               <Lock size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: t.accent, opacity: .6 }} />
-              <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)} required placeholder="Enter new password" style={{ width: '100%', padding: '13px 13px 13px 44px', borderRadius: 12, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 15, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
+              <input type="password" name="newPassword" value={newPass} onChange={e => setNewPass(e.target.value)} required placeholder="Enter new password" style={{ width: '100%', padding: '13px 13px 13px 44px', borderRadius: 12, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 15, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
             </div>
           </div>
           {error && <ErrorBanner msg={error} />}
@@ -2576,25 +2932,34 @@ function ResetPasswordPage({ onBack }) {
 export default function App() {
   const [session, setSession] = useState(undefined)
   const [mockUser, setMockUser] = useState(() => {
+    const remember = localStorage.getItem('almawaid_remember_me') !== 'false'
+    if (!remember) return null
     const saved = localStorage.getItem('al_mawaid_mock_user')
     return saved ? JSON.parse(saved) : null
   })
-  const [portalRole, setPortalRole] = useState(() => localStorage.getItem('al_mawaid_portal') || null)
+  const [portalRole, setPortalRole] = useState(() => {
+    const remember = localStorage.getItem('almawaid_remember_me') !== 'false'
+    if (!remember) return null
+    return localStorage.getItem('al_mawaid_portal') || null
+  })
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut()
-    setPortalRole(null)
     setMockUser(null)
+    setPortalRole(null)
     localStorage.removeItem('al_mawaid_portal')
     localStorage.removeItem('al_mawaid_mock_user')
+    await supabase.auth.signOut()
   }, [])
 
   const handleRoleLogin = useCallback((role, sess) => {
-    localStorage.setItem('al_mawaid_portal', role)
-    if (role === 'inventory_manager' && sess?.user) {
-      localStorage.setItem('al_mawaid_mock_user', JSON.stringify(sess.user))
-      setMockUser(sess.user)
+    const remember = localStorage.getItem('almawaid_remember_me') !== 'false'
+    if (remember) {
+      localStorage.setItem('al_mawaid_portal', role)
+      if (role === 'inventory_manager' && sess?.user) {
+        localStorage.setItem('al_mawaid_mock_user', JSON.stringify(sess.user))
+      }
     }
+    setMockUser(role === 'inventory_manager' && sess?.user ? sess.user : null)
     setPortalRole(role)
   }, [])
 

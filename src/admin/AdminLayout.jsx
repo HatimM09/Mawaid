@@ -1,12 +1,13 @@
 // src/admin/AdminLayout.jsx
-import React, { useState, useEffect } from 'react'
-import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, ClipboardList, Star, FileText,
-  MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight, ChevronLeft, Search, Bell, Zap, Command, Sparkles, AlertCircle, History, Package, Send, RefreshCw
+  MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight, Search, Bell, History, Package, Send, RefreshCw
 } from 'lucide-react'
-import { T, updateSystemTheme } from './ui'
+import { updateSystemTheme } from './ui'
 import { supabase } from './supabaseClient'
+import { playNotificationChime } from '../common/utils'
 
 const NAV = [
   { to: '/admin', label: 'Dashboard', Icon: LayoutDashboard, color: 'var(--accent-primary)', end: true },
@@ -26,8 +27,14 @@ export default function AdminLayout() {
   const [adminName, setAdminName] = useState('Admin')
   const [role, setRole] = useState(localStorage.getItem('al_mawaid_portal') || 'khidmat')
   const [toastNotice, setToastNotice] = useState(null)
+  const lastNoticeIdRef = useRef(null)
+  const dragStartY = useRef(null)
+  const dragY = useRef(0)
+  const [dragOffset, setDragOffset] = useState(0)
+  const [isDragging, setIsDragging] = useState(false)
   const [connStatus, setConnStatus] = useState('connecting')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [navCounts, setNavCounts] = useState({})
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -79,6 +86,35 @@ export default function AdminLayout() {
         })
     })
   }, [])
+
+  // ── NAVIGATION BADGE COUNTS ──
+  const loadNavCounts = useCallback(async () => {
+    const [pendingReqs, openQueries, lowStock, userCount] = await Promise.all([
+      supabase.from('thali_requests').select('id', { count: 'exact', head: true }).or('status.eq.pending,status.is.null'),
+      supabase.from('queries').select('id', { count: 'exact', head: true }).or('status.eq.open,status.is.null'),
+      supabase.from('inventory').select('id, stock, low_stock_threshold'),
+      supabase.from('user_stats').select('id', { count: 'exact', head: true }),
+    ])
+    const lowStockCount = (lowStock.data || []).filter(p => p.stock <= (p.low_stock_threshold || 5)).length
+    setNavCounts({
+      'Thali Requests': pendingReqs.count ?? 0,
+      'Queries': openQueries.count ?? 0,
+      'Inventory': lowStockCount,
+      'Thali Users': userCount.count ?? 0,
+    })
+  }, [])
+
+  useEffect(() => {
+    loadNavCounts()
+    const channel = supabase
+      .channel('nav-counts')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'thali_requests' }, () => loadNavCounts())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'queries' }, () => loadNavCounts())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => loadNavCounts())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_stats' }, () => loadNavCounts())
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [loadNavCounts])
 
   // ── Native Notification System (Realtime) ──
   useEffect(() => {
@@ -238,6 +274,7 @@ export default function AdminLayout() {
           from { transform: translateY(20px); opacity: 0; }
           to { transform: translateY(0); opacity: 1; }
         }
+        @keyframes skeletonPulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
 
         @media (min-width: 1025px) {
           .global-bottom-nav { display: none !important; }
@@ -310,6 +347,27 @@ export default function AdminLayout() {
           .admin-nav-breadcrumb { display: none !important; }
           .mobile-only { display: block !important; }
         }
+
+        /* ── Fix native select dropdown visibility in dark admin theme ── */
+        .admin-root select {
+          color: var(--text-primary) !important;
+          background: var(--input-bg) !important;
+        }
+        .admin-root select option {
+          background: var(--bg-deep) !important;
+          color: var(--text-primary) !important;
+        }
+        .admin-root select option:hover,
+        .admin-root select option:focus,
+        .admin-root select option:active,
+        .admin-root select option:checked {
+          background: var(--accent-primary) !important;
+          color: #000 !important;
+        }
+        .admin-root select:focus {
+          border-color: var(--accent-primary) !important;
+          box-shadow: 0 0 0 2px var(--accent-bg) !important;
+        }
       `}</style>
 
       {/* Main Content Area */}
@@ -356,6 +414,7 @@ export default function AdminLayout() {
           }}>
             <Search size={16} color="var(--text-tertiary)" />
             <input
+              name="commandPalette"
               readOnly
               onClick={() => setShowPalette(true)}
               placeholder="Search command (CMD+K)"
@@ -406,6 +465,17 @@ export default function AdminLayout() {
                 <NavLink key={to} to={to} end={end} className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`} onClick={() => window.innerWidth < 1025 && setIsSidebarOpen(false)}>
                   <Icon size={20} />
                   <span style={{ fontSize: 14, fontWeight: 600 }}>{label}</span>
+                  {navCounts[label] > 0 && (
+                    <div style={{
+                      marginLeft: 'auto', minWidth: 22, height: 22,
+                      borderRadius: 11, background: 'var(--accent-grad)',
+                      color: '#000', fontSize: 10, fontWeight: 900,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '0 5px', boxShadow: '0 2px 8px rgba(212,175,55,0.4)'
+                    }}>
+                      {navCounts[label] > 99 ? '99+' : navCounts[label]}
+                    </div>
+                  )}
                 </NavLink>
               ))}
             </div>
@@ -445,8 +515,21 @@ export default function AdminLayout() {
           }}>
             {NAV.map(({ to, label, Icon, end }) => (
               <NavLink key={to} to={to} end={end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-                <div className="icon-box">
+                <div className="icon-box" style={{ position: 'relative' }}>
                   <Icon size={20} strokeWidth={2.5} />
+                  {navCounts[label] > 0 && (
+                    <div style={{
+                      position: 'absolute', top: -4, right: -6,
+                      minWidth: 18, height: 18,
+                      borderRadius: 9, background: '#f43f5e',
+                      color: '#fff', fontSize: 9, fontWeight: 900,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '0 4px',
+                      boxShadow: '0 2px 8px rgba(244,63,94,0.5)'
+                    }}>
+                      {navCounts[label] > 99 ? '99+' : navCounts[label]}
+                    </div>
+                  )}
                 </div>
                 <span>{label}</span>
               </NavLink>
@@ -460,13 +543,38 @@ export default function AdminLayout() {
         {toastNotice && (
           <div
             onClick={() => setToastNotice(null)}
+            onTouchStart={(e) => {
+              dragStartY.current = e.touches[0].clientY
+              dragY.current = 0
+              setIsDragging(true)
+            }}
+            onTouchMove={(e) => {
+              if (dragStartY.current === null) return
+              const delta = e.touches[0].clientY - dragStartY.current
+              if (delta > 0) {
+                e.preventDefault()
+                dragY.current = delta * 0.5
+                setDragOffset(dragY.current)
+              }
+            }}
+            onTouchEnd={() => {
+              setIsDragging(false)
+              if (dragY.current > 80) {
+                setToastNotice(null)
+              }
+              setDragOffset(0)
+              dragStartY.current = null
+              dragY.current = 0
+            }}
             style={{
               position: 'fixed', top: 80, right: 20,
               width: 'calc(100% - 40px)', maxWidth: 350, zIndex: 10000,
               background: 'rgba(15, 12, 8, 0.95)', border: '1.5px solid rgba(212, 175, 55, 0.4)',
               borderRadius: 20, padding: 16, display: 'flex', gap: 14,
               boxShadow: '0 20px 50px rgba(0,0,0,0.5)', cursor: 'pointer',
-              animation: 'slideDown 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+              transform: dragOffset > 0 ? `translateY(${dragOffset}px)` : 'none',
+              transition: isDragging ? 'none' : 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+              animation: dragOffset === 0 && !isDragging ? 'slideDown 0.5s cubic-bezier(0.4, 0, 0.2, 1)' : undefined,
               backdropFilter: 'blur(20px)'
             }}
           >
@@ -480,6 +588,7 @@ export default function AdminLayout() {
             <button onClick={(e) => { e.stopPropagation(); setToastNotice(null) }} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', padding: 4, cursor: 'pointer' }}>
               <X size={16} />
             </button>
+          <div style={{position:"absolute",bottom:0,left:0,height:3,right:0,background:"var(--accent-primary)",borderRadius:"0 0 20px 20px",animation:"toastCountdown 8s linear forwards"}} />
           </div>
         )}
       </div>
@@ -492,6 +601,7 @@ export default function AdminLayout() {
             <div style={{ display: 'flex', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid var(--border-light)' }}>
               <Search size={20} color="var(--accent-cyan)" />
               <input
+                name="commandSearch"
                 autoFocus
                 placeholder="Type a command or search..."
                 value={searchQuery}

@@ -9,12 +9,11 @@ import {
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { 
   T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner, Grid,
-  SectionHeader, Modal, PackingTVView, fmtDate 
+  SectionHeader, Modal, PackingTVView, fmtDate, ErrorBanner
 } from './ui'
 import SurveyAccessManager from './SurveyAccessManager'
 import { Shield } from 'lucide-react'
-
-const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+import { getWeekDate, DAYS } from '../common/utils'
 
 export default function DailySurveyTracking() {
   const weeklyMenu = useWeeklyMenu() || {}
@@ -32,6 +31,16 @@ export default function DailySurveyTracking() {
   const [refreshing, setRefreshing] = useState(false)
   const [isScanning, setIsScanning] = useState(false)
   const [isAccessManagerOpen, setIsAccessManagerOpen] = useState(false)
+  const [weekFilter, setWeekFilter] = useState('all')
+  const [availableWeeks, setAvailableWeeks] = useState([])
+  const [dishInputConfig, setDishInputConfig] = useState({})
+
+  // Helper to check if a dish at a given index is count or percentage
+  const getInputType = (d, m, idx) => {
+    const key = `${d.charAt(0).toUpperCase() + d.slice(1)}_${m}`
+    const config = dishInputConfig[key]
+    return config?.[idx] || (m === 'lunch' && idx <= 3 ? 'count' : 'percentage')
+  }
 
   const processDirectScan = async (userId) => {
     try {
@@ -54,7 +63,7 @@ export default function DailySurveyTracking() {
         dishes.forEach((d, i) => {
           const val = row[`${dayKey}_${mealKey}_dish_${i + 1}`]
           if (val !== undefined && val !== null) {
-            dishRes[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : (parseInt(val) || 0)
+            dishRes[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : val
           }
         })
       }
@@ -101,24 +110,19 @@ export default function DailySurveyTracking() {
     await processDirectScan(userId)
   }
 
-  const getWeekDate = () => {
-    const now = new Date()
-    const day = now.getDay()
-    const hour = now.getHours()
-    let diff = now.getDate() - day + (day === 0 ? -6 : 1)
-    // Saturday 8PM+ or Sunday: surveys target next week's Monday
-    if (day === 0 || (day === 6 && hour >= 20)) {
-      diff += 7
-    }
-    const monday = new Date(now.setDate(diff))
-    return monday.toISOString().split('T')[0]
-  }
+  const [loadError, setLoadError] = useState(null)
 
   const load = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true)
     else setRefreshing(true)
     
     try {
+      // Load dish input config
+      const { data: settingsData } = await supabase.from('app_settings').select('*').eq('key', 'dish_input_config').maybeSingle()
+      if (settingsData) {
+        try { setDishInputConfig(JSON.parse(settingsData.value)) } catch {}
+      }
+
       const { data: resultsRaw, error } = await supabase
         .from('user_stats')
         .select(`
@@ -127,7 +131,14 @@ export default function DailySurveyTracking() {
         `)
       
       if (error) throw error
-      const currentWeekId = getWeekDate()
+      setLoadError(null)
+      
+      // Collect distinct week_ids for filter
+      const allWeeks = [...new Set((resultsRaw || []).flatMap(u => {
+        const subs = Array.isArray(u.survey_submissions_flat) ? u.survey_submissions_flat : (u.survey_submissions_flat ? [u.survey_submissions_flat] : [])
+        return subs.map(s => s.week_id).filter(Boolean)
+      }))].sort().reverse()
+      setAvailableWeeks(allWeeks)
       
       const dayKey = day.substring(0, 3).toLowerCase()
       const mealKey = meal === 'lunch' ? 'l' : 'd'
@@ -135,31 +146,41 @@ export default function DailySurveyTracking() {
       
       const results = (resultsRaw || []).map(u => {
         const submissionData = Array.isArray(u.survey_submissions_flat) ? u.survey_submissions_flat : (u.survey_submissions_flat ? [u.survey_submissions_flat] : [])
-        const resp = submissionData.find(r => r.week_id === currentWeekId)
+        let resp
+        if (weekFilter === 'all') {
+          // Find the latest submission (by week_id)
+          resp = submissionData.sort((a, b) => (b.week_id || '').localeCompare(a.week_id || ''))[0]
+        } else {
+          resp = submissionData.find(r => r.week_id === weekFilter)
+        }
         const status = resp ? resp[statusKey] : null
         const dishResponses = {}
         if (status === 'Applied') {
           const dishes = weeklyMenu[day]?.[meal] || []
           dishes.forEach((d, i) => {
             const val = resp[`${dayKey}_${mealKey}_dish_${i + 1}`]
-            dishResponses[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : parseInt(val)
+            if (val !== undefined && val !== null) {
+              dishResponses[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : val
+            }
           })
         }
         return { 
           ...u, 
           status, 
           dishResponses, 
+          week_id: resp ? resp.week_id : null,
           updated_at: resp ? resp.updated_at : null 
         }
       })
       
       setUsers(results)
     } catch (e) {
-      console.error(e)
+      console.error('DailySurveyTracking load error:', e)
+      setLoadError(e?.message || 'Failed to load survey tracking data')
     }
     setLoading(false)
     setRefreshing(false)
-  }, [day, meal, weeklyMenu])
+  }, [day, meal, weeklyMenu, weekFilter])
 
   useEffect(() => {
     load()
@@ -223,13 +244,17 @@ export default function DailySurveyTracking() {
   const dishStats = {}
   yesMembers.forEach(u => {
     Object.entries(u.dishResponses || {}).forEach(([dish, val]) => {
-      if (!dishStats[dish]) dishStats[dish] = { totalPct: 0, count: 0, yesNoCount: 0, yesCount: 0 }
+      if (!dishStats[dish]) dishStats[dish] = { total: 0, count: 0, yesNoCount: 0, yesCount: 0, isCount: false }
       if (val === 'yes' || val === 'no') {
         dishStats[dish].yesNoCount++
         if (val === 'yes') dishStats[dish].yesCount++
+      } else if (typeof val === 'string' && val.endsWith('%')) {
+        dishStats[dish].count++
+        dishStats[dish].total += (parseInt(val) || 0)
       } else {
         dishStats[dish].count++
-        dishStats[dish].totalPct += (parseInt(val) || 0)
+        dishStats[dish].total += (parseInt(val) || 0)
+        dishStats[dish].isCount = true
       }
     })
   })
@@ -255,6 +280,8 @@ export default function DailySurveyTracking() {
             </Btn>
           </div>
         </div>
+
+        {loadError && <ErrorBanner message={loadError} onDismiss={() => setLoadError(null)} />}
 
         {/* Day, Meal, Search & Sleek Dish Percentages Capsule Row */}
         <div style={{ 
@@ -291,11 +318,21 @@ export default function DailySurveyTracking() {
               </button>
             ))}
           </div>
+
+          {/* Week Filter */}
+          <select value={weekFilter} onChange={e => setWeekFilter(e.target.value)}
+            style={{ padding: '6px 12px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.border}`, color: T.text, fontSize: 11, fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
+            <option value="all">Latest Week</option>
+            {availableWeeks.map(w => (
+              <option key={w} value={w}>{new Date(w + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</option>
+            ))}
+          </select>
           
           {/* Search Bar */}
           <div style={{ flex: '1 1 200px', position: 'relative' }}>
             <Search size={14} color={T.textSub} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
             <input 
+              name="searchTracking"
               value={search} 
               onChange={e => setSearch(e.target.value)} 
               placeholder="Search thali or name..."
@@ -315,7 +352,8 @@ export default function DailySurveyTracking() {
                 const isYesNo = stat.yesNoCount > 0
                 const avg = isYesNo 
                   ? (stat.yesNoCount ? Math.round((stat.yesCount / stat.yesNoCount) * 100) : 0)
-                  : (stat.count ? Math.round(stat.totalPct / stat.count) : 0)
+                  : (stat.count ? Math.round(stat.total / stat.count) : 0)
+                const unit = isYesNo ? '%' : (stat.isCount ? '' : '%')
                 
                 return (
                   <div key={dish} style={{ 
@@ -324,7 +362,7 @@ export default function DailySurveyTracking() {
                     borderRadius: 10, border: `1px solid ${T.border}`
                   }}>
                     <span style={{ fontSize: 10, fontWeight: 700, color: T.textSub, textTransform: 'uppercase' }}>{dish}</span>
-                    <span style={{ fontSize: 11, fontWeight: 900, color: T.accent }}>{avg}%</span>
+                    <span style={{ fontSize: 11, fontWeight: 900, color: T.accent }}>{avg}{unit}</span>
                   </div>
                 )
               })}
@@ -539,7 +577,11 @@ function SurveyResponseDisplay({ user, meal, day, onClose }) {
           {user.status === 'Applied' && (
             <div style={{ marginTop: 8 }}>
               <div style={{ fontSize: 20, fontWeight: 900, color: T.accent, lineHeight: 1 }}>
-                {(Object.values(user.dishResponses || {}).reduce((acc, v) => acc + (parseInt(v) || 0), 0) / 100).toFixed(1)}
+                {(Object.values(user.dishResponses || {}).reduce((acc, v) => {
+                  if (v === 'yes' || v === 'no') return acc
+                  const n = parseInt(v) || 0
+                  return acc + (typeof v === 'string' && v.endsWith('%') ? n / 100 : n)
+                }, 0)).toFixed(1)}
               </div>
               <div style={{ fontSize: 9, fontWeight: 800, color: T.textSub, textTransform: 'uppercase' }}>Portions</div>
             </div>
@@ -564,7 +606,7 @@ function SurveyResponseDisplay({ user, meal, day, onClose }) {
                 fontSize: 18, fontWeight: 900, color: T.accent, marginBottom: 4,
                 textShadow: '0 0 10px rgba(197, 160, 89, 0.2)'
               }}>
-                {val === 'yes' ? '100%' : val === 'no' ? '0%' : `${val}%`}
+                {val === 'yes' ? '100%' : val === 'no' ? '0%' : (typeof val === 'string' && val.endsWith('%') ? val : `${val}`)}
               </div>
               <div style={{ 
                 fontSize: 9, fontWeight: 800, color: T.textSub, 

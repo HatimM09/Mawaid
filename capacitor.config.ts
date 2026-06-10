@@ -6,7 +6,7 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   bundledWebRuntime: false,
   server: {
-    androidScheme: 'http',
+    androidScheme: 'https',
     cleartext: true
   },
   plugins: {
@@ -17,6 +17,11 @@ const config: CapacitorConfig = {
       androidSpinnerStyle: "large",
       iosSpinnerStyle: "small",
       spinnerColor: "#c5a059",
+    },
+    StatusBar: {
+      style: "dark",
+      backgroundColor: "#060d1a",
+      overlaysWebView: true
     }
   }
 };

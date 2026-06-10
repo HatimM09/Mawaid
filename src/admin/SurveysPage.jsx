@@ -5,14 +5,12 @@ import { supabase } from './supabaseClient'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { RefreshCw, Search, Filter, Utensils, Download, User as UserIcon, Calendar as CalendarIcon, Scan, X } from 'lucide-react'
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
-import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Grid, Modal, SectionHeader, SurveyResponseDisplay, PackingTVView, fmtDate, fmtDateTime } from './ui'
+import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Grid, Modal, SectionHeader, SurveyResponseDisplay, PackingTVView, fmtDate, fmtDateTime, ErrorBanner } from './ui'
+import { getWeekDate, DAYS, MEALS } from '../common/utils'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
 } from 'recharts'
 import SurveyAccessManager from './SurveyAccessManager'
-
-const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-const MEALS = ['lunch', 'dinner']
 
 const TooltipStyle = {
   contentStyle: { background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, color: T.text, fontSize: 13 },
@@ -41,6 +39,10 @@ export default function SurveysPage() {
   const [selectedUser, setSelectedUser] = useState(null)
   const [isScanning, setIsScanning] = useState(false)
   const [isAccessManagerOpen, setIsAccessManagerOpen] = useState(false)
+  const [loadError, setLoadError] = useState(null)
+  const [weekFilter, setWeekFilter] = useState('all')
+  const [availableWeeks, setAvailableWeeks] = useState([])
+  const [dishInputConfig, setDishInputConfig] = useState({})
 
   // --- AUTO LOAD URL USER ---
   useEffect(() => {
@@ -103,7 +105,7 @@ export default function SurveysPage() {
 
   const processDirectScan = async (userId) => {
     try {
-      const { data: u } = await supabase.from('user_stats').select('*').eq('user_id', userId).single()
+      const { data: u } = await supabase.from('user_stats').select('*').eq('user_id', userId).maybeSingle()
       if (!u) return
       
       const dayKey = dayFilter.substring(0, 3).toLowerCase()
@@ -111,14 +113,16 @@ export default function SurveysPage() {
       const weekId = getWeekDate()
       
       const { data: row } = await supabase.from('survey_submissions_flat')
-        .select('*').eq('user_id', userId).eq('week_id', weekId).single()
+        .select('*').eq('user_id', userId).eq('week_id', weekId).maybeSingle()
       
       const dishRes = {}
       if (row && row[`${dayKey}_${mealKey}_status`] === 'Applied') {
         const dishes = weeklyMenu[dayFilter]?.[mealFilter] || []
         dishes.forEach((d, i) => {
           const val = row[`${dayKey}_${mealKey}_dish_${i + 1}`]
-          dishRes[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : parseInt(val)
+          if (val !== undefined && val !== null) {
+            dishRes[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : val
+          }
         })
       }
 
@@ -127,7 +131,8 @@ export default function SurveysPage() {
         status: row ? row[`${dayKey}_${mealKey}_status`] : 'Not Submitted',
         dishResponses: dishRes,
         currentDay: dayFilter,
-        currentMeal: mealFilter
+        currentMeal: mealFilter,
+        dishInputConfig: dishInputConfig
       })
     } catch (e) { console.error(e) }
   }
@@ -164,30 +169,32 @@ export default function SurveysPage() {
     }
   }, [isScanning, responses])
 
-  const getWeekDate = () => {
-    const now = new Date()
-    const day = now.getDay()
-    const hour = now.getHours()
-    let diff = now.getDate() - day + (day === 0 ? -6 : 1)
-    // If we are in the Saturday 8PM+ or Sunday window, surveys target next week's Monday
-    if (day === 0 || (day === 6 && hour >= 20)) {
-      diff += 7
-    }
-    const monday = new Date(now.setDate(diff))
-    return monday.toISOString().split('T')[0]
-  }
-
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
-      const currentWeekId = getWeekDate()
-      const { data: flat, error } = await supabase
+      // Load dish input config
+      const { data: configData } = await supabase.from('app_settings').select('value').eq('key', 'dish_input_config').maybeSingle()
+      if (configData) {
+        try { setDishInputConfig(JSON.parse(configData.value)) } catch {}
+      }
+
+      let query = supabase
         .from('survey_submissions_flat')
         .select('*, user_stats(*)')
-        .eq('week_id', currentWeekId)
         .order('updated_at', { ascending: false })
+
+      if (weekFilter !== 'all') {
+        query = query.eq('week_id', weekFilter)
+      }
+
+      const { data: flat, error } = await query
       
       if (error) throw error
+      setLoadError(null)
+
+      // Collect distinct week_ids for the filter
+      const weeks = [...new Set((flat || []).map(r => r.week_id).filter(Boolean))].sort().reverse()
+      setAvailableWeeks(weeks)
 
       // Map users for the UI stats if needed
       const uMap = {}
@@ -210,7 +217,7 @@ export default function SurveysPage() {
               dishes.forEach((d, i) => {
                 const val = row[`${dayKey}_${mealKey}_dish_${i + 1}`]
                 if (val !== undefined && val !== null) {
-                  dishResponses[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : parseInt(val)
+                  dishResponses[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : val
                 }
               })
               normalized.push({
@@ -218,6 +225,7 @@ export default function SurveysPage() {
                 user_id: row.user_id,
                 day,
                 meal,
+                week_id: row.week_id,
                 wants_food: status === 'Applied',
                 dish_responses: dishResponses,
                 created_at: row.updated_at
@@ -229,14 +237,31 @@ export default function SurveysPage() {
       
       setResponses(normalized)
       buildChart(normalized)
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      console.error('SurveysPage load error:', e)
+      setLoadError(e?.message || 'Failed to load survey responses')
+    }
     setLoading(false)
-  }, [weeklyMenu])
+  }, [weeklyMenu, weekFilter])
 
   useEffect(() => {
     load()
     const interval = setInterval(() => load(true), 60000)
     return () => clearInterval(interval)
+  }, [load])
+
+  // --- REAL-TIME SUBSCRIPTION ---
+  useEffect(() => {
+    const channel = supabase
+      .channel('surveys-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_submissions_flat' }, () => {
+        load(true)
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [load])
 
   const buildChart = (data) => {
@@ -268,18 +293,23 @@ export default function SurveysPage() {
   // AGGREGATE SUMMARY
   const summary = useMemo(() => {
     const counts = {}
+    const isCountDish = {}
     const activeData = filtered.filter(f => f.wants_food)
     activeData.forEach(r => {
       const q = r.dish_responses || {}
-      Object.entries(q).forEach(([dish, pct]) => {
-        if (!counts[dish]) counts[dish] = 0
-        counts[dish] += (parseInt(pct) || 0)
+      Object.entries(q).forEach(([dish, val]) => {
+        if (!counts[dish]) {
+          counts[dish] = 0
+          isCountDish[dish] = typeof val === 'string' && !val.endsWith('%') && val !== 'yes' && val !== 'no'
+        }
+        counts[dish] += (parseInt(val) || 0)
       })
     })
-    return Object.entries(counts).map(([name, totalPct]) => ({
+    return Object.entries(counts).map(([name, total]) => ({
       name,
-      portions: (totalPct / 100).toFixed(1),
-      raw: totalPct
+      portions: isCountDish[name] ? String(total) : (total / 100).toFixed(1),
+      raw: total,
+      isCount: isCountDish[name]
     }))
   }, [filtered])
 
@@ -292,16 +322,21 @@ export default function SurveysPage() {
         <div style={{ fontWeight: 600, color: T.text, fontSize: 13 }}>{u.name || '—'}</div>
         <div style={{ color: T.textSub, fontSize: 11 }}>Thali #{u.thali_number || '—'}</div>
       </div>,
+      <div style={{ fontSize: 11, color: T.textSub, fontWeight: 600 }}>{r.week_id ? new Date(r.week_id + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—'}</div>,
       <Badge color={r.meal === 'lunch' ? '#c49c5a' : '#5e9ce0'}>{r.day.toUpperCase()}</Badge>,
       <Badge variant="outline">{r.meal}</Badge>,
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxWidth: 300 }}>
         {r.wants_food === false ? (
           <span style={{ color: T.danger, fontSize: 11, fontWeight: 700 }}>OPTED OUT (SKIP)</span>
-        ) : Object.entries(qtys).map(([d, p]) => (
-          <span key={d} style={{ fontSize: 11, background: 'rgba(255,255,255,0.04)', padding: '2px 6px', borderRadius: 6, border: `1px solid ${T.border}` }}>
-            {d}: <strong style={{ color: T.accent }}>{p}%</strong>
-          </span>
-        ))}
+        ) : Object.entries(qtys).map(([d, p]) => {
+          const isCount = typeof p === 'string' && !p.endsWith('%') && p !== 'yes' && p !== 'no'
+          const numVal = parseInt(p) || 0
+          return (
+            <span key={d} style={{ fontSize: 11, background: 'rgba(255,255,255,0.04)', padding: '2px 6px', borderRadius: 6, border: `1px solid ${T.border}` }}>
+              {d}: <strong style={{ color: T.accent }}>{isCount ? numVal : `${numVal}%`}</strong>
+            </span>
+          )
+        })}
       </div>,
       <div style={{ fontSize: 11, color: T.textSub }}>{fmtDateTime(r.created_at)}</div>,
     ]
@@ -324,12 +359,17 @@ export default function SurveysPage() {
         return <Badge color={val === 'yes' ? T.accent : T.danger} variant={val === 'yes' ? 'solid' : 'outline'}>{val.toUpperCase()}</Badge>
       }
 
+      const isCount = typeof val === 'string' && !val.endsWith('%') && val !== 'yes' && val !== 'no'
+      const numVal = parseInt(val) || 0
+
       return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ width: 36, height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${val}%`, background: val > 50 ? T.accentGrad : T.accent, opacity: val > 0 ? 1 : 0.2 }} />
-          </div>
-          <span style={{ fontSize: 11, fontWeight: 700, color: val > 0 ? T.text : T.textSub }}>{val}%</span>
+          {!isCount && (
+            <div style={{ width: 36, height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${numVal}%`, background: numVal > 50 ? T.accentGrad : T.accent, opacity: numVal > 0 ? 1 : 0.2 }} />
+            </div>
+          )}
+          <span style={{ fontSize: 11, fontWeight: 700, color: numVal > 0 ? T.text : T.textSub }}>{isCount ? numVal : `${numVal}%`}</span>
         </div>
       )
     })
@@ -401,11 +441,11 @@ export default function SurveysPage() {
                   <div key={s.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 10, borderBottom: `1px solid ${T.border}` }}>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <span style={{ color: T.text, fontSize: 15, fontWeight: 700 }}>{s.name}</span>
-                      <span style={{ color: T.textSub, fontSize: 11 }}>Total: {s.raw}%</span>
+                      <span style={{ color: T.textSub, fontSize: 11 }}>Total: {s.raw}{s.isCount ? '' : '%'}</span>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ color: T.accent, fontSize: 24, fontWeight: 900 }}>{s.portions}</div>
-                      <div style={{ fontSize: 10, color: T.textSub, textTransform: 'uppercase', fontWeight: 800 }}>Portions</div>
+                      <div style={{ fontSize: 10, color: T.textSub, textTransform: 'uppercase', fontWeight: 800 }}>{s.isCount ? 'Count' : 'Portions'}</div>
                     </div>
                   </div>
                 ))}
@@ -456,13 +496,24 @@ export default function SurveysPage() {
               </button>
             ))}
           </div>
+
+          <select value={weekFilter} onChange={e => setWeekFilter(e.target.value)}
+            style={{ padding: '6px 12px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.border}`, color: T.text, fontSize: 11, fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
+            <option value="all">ALL WEEKS</option>
+            {availableWeeks.map(w => (
+              <option key={w} value={w}>{new Date(w + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</option>
+            ))}
+          </select>
+
           <Btn variant="ghost" onClick={() => load()} className="clickable"><RefreshCw size={15} className={loading ? 'spin' : ''} /></Btn>
         </div>
       </div>
 
+      {loadError && <ErrorBanner message={loadError} onDismiss={() => setLoadError(null)} />}
+
       <div style={{ flex: 1, minWidth: 260, position: 'relative', marginBottom: 24 }}>
         <Search size={16} color={T.textSub} style={{ position: 'absolute', left: 16, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Quick search member name or thali #..."
+        <input name="searchSurveys" value={search} onChange={e => setSearch(e.target.value)} placeholder="Quick search member name or thali #..."
           style={{ width: '100%', boxSizing: 'border-box', padding: '14px 14px 14px 44px', borderRadius: 16, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 15, outline: 'none', fontFamily: 'inherit' }}
         />
       </div>
@@ -471,7 +522,7 @@ export default function SurveysPage() {
         <AdminCard style={{ padding: 0, overflow: 'hidden', borderRadius: 24 }}>
           {viewMode === 'aggregate' ? (
             <Table
-              headers={['Thali User', 'Day', 'Meal', 'Quantities Selected', 'Submitted']}
+              headers={['Thali User', 'Week', 'Day', 'Meal', 'Quantities Selected', 'Submitted']}
               rows={aggregateRows}
               emptyMsg="No survey logs found for this filter."
             />

@@ -1,0 +1,14 @@
+f >0, else 99)
+  const getDishLimit = (idx) => { const v = snackDefaults?.[`dish_${idx + 1}`] ?? 0; return v > 0 ? v : 99; }
+  const getDishDefault = (idx) => (snackDefaults?.[`dish_${idx + 1}`] ?? 0) > 0 ? (snackDefaults?.[`dish_${idx + 1}`] ?? 0) : 0
+
+  // Check if any snack count exceeds its default limit
+  const hasSnackOverflow = currentMeal === 'lunch' && dishes.some((dish, idx) => {
+    if (idx <= 3 && typeof responses[dish] === 'number') {
+      return responses[dish] > getDishLimit(idx);
+    }
+    return false;
+  })
+
+  return (
+    <div style={{ position: 'fixed', inset: 

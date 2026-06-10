@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { supabase } from './supabaseClient'
 import { RefreshCw, Search, Send, ChevronDown, ChevronUp, ShieldAlert, Lock } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner, fmtDateTime } from './ui'
 
-const STATUS_COLORS = { open: '#e09855', resolved: '#5eba82', closed: '#9aabb8' }
+const STATUS_COLORS = { open: '#e09855', resolved: '#5eba82', in_progress: '#9aabb8' }
 
 export default function QueriesAdminPage() {
   const context = useOutletContext() || { role: 'khidmat' }
@@ -12,16 +12,16 @@ export default function QueriesAdminPage() {
   const isAdmin = role === 'admin'
   const [loading, setLoading]   = useState(true)
   const [queries, setQueries]   = useState([])
+  const [allQueries, setAllQueries] = useState([])
   const [users, setUsers]       = useState({})
   const [statusFilter, setStatusFilter] = useState('open')
   const [search, setSearch]     = useState('')
+  const [showAll, setShowAll]   = useState(false)
   const [expanded, setExpanded] = useState(null)
   const [reply, setReply]       = useState('')
   const [sending, setSending]   = useState(false)
 
-  useEffect(() => { load() }, [])
-
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     const [{ data: q }, { data: us }] = await Promise.all([
       supabase.from('queries').select('*').order('created_at', { ascending: false }),
@@ -30,36 +30,48 @@ export default function QueriesAdminPage() {
     const uMap = {}
     ;(us || []).forEach(u => { uMap[u.user_id] = u })
     setUsers(uMap)
-    const now = new Date()
-    const data = (q || []).filter(item => {
-      if (item.status === 'open' || !item.status) return true
-      const updateTime = new Date(item.updated_at || item.created_at)
-      const diffHours = (now - updateTime) / (1000 * 60 * 60)
-      return diffHours < 24
-    })
+    const data = q || []
+    setAllQueries(data)
     setQueries(data)
     setLoading(false)
-  }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  // --- REAL-TIME SUBSCRIPTION ---
+  useEffect(() => {
+    const channel = supabase
+      .channel('queries-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'queries' }, () => {
+        load()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [load])
 
   const updateStatus = async (id, status) => {
     const updateObj = { status, updated_at: new Date().toISOString() }
     if (status === 'resolved') {
       updateObj.admin_reply = 'Resolved by Al-Mawaid Administration.'
-      updateObj.replied_at = new Date().toISOString()
     }
-    await supabase.from('queries').update(updateObj).eq('id', id)
+    const { error } = await supabase.from('queries').update(updateObj).eq('id', id)
+    if (error) {
+      console.error('[Queries] Update failed:', error.message)
+      return
+    }
     setQueries(prev => prev.map(q => q.id === id ? { ...q, ...updateObj } : q))
   }
 
   const sendReply = async (q) => {
     if (!reply.trim()) return
     setSending(true)
-    const updated_at = new Date().toISOString()
     const updateObj = {
       admin_reply: reply.trim(),
       status: 'resolved',
-      replied_at: new Date().toISOString(),
-      updated_at
+      updated_at: new Date().toISOString()
     }
     const { error } = await supabase.from('queries').update(updateObj).eq('id', q.id)
     setSending(false)
@@ -70,16 +82,21 @@ export default function QueriesAdminPage() {
     }
   }
 
+  const now = new Date()
+  const openCount     = allQueries.filter(q => q.status === 'open' || !q.status).length
+  const resolvedCount = allQueries.filter(q => q.status === 'resolved').length
+
   const filtered = queries.filter(q => {
     const u = users[q.user_id] || {}
     const s = search.toLowerCase()
     const matchSearch = !s || (u.name||'').toLowerCase().includes(s) || (q.comment||'').toLowerCase().includes(s)
     const matchStatus = statusFilter === 'all' || (q.status || 'open') === statusFilter
-    return matchSearch && matchStatus
+    // Auto-hide resolved queries older than 24h, unless showAll is toggled
+    const isOpen = !q.status || q.status === 'open'
+    const within24h = (now - new Date(q.updated_at || q.created_at)) / (1000 * 60 * 60) < 24
+    const matchTime = showAll || isOpen || within24h
+    return matchSearch && matchStatus && matchTime
   })
-
-  const openCount     = queries.filter(q => q.status === 'open' || !q.status).length
-  const resolvedCount = queries.filter(q => q.status === 'resolved').length
 
   return (
     <PageWrap>
@@ -115,17 +132,20 @@ export default function QueriesAdminPage() {
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200, position: 'relative' }}>
           <Search size={14} color={T.textSub} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search thali user or comment…"
+          <input name="searchQueries" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search thali user or comment…"
             style={{ width: '100%', boxSizing: 'border-box', padding: '11px 14px 11px 36px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit' }}
           />
         </div>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+        <select name="queryStatusFilter" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
           style={{ padding: '11px 14px', borderRadius: 10, background: T.card, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit' }}>
           <option value="all">All</option>
           <option value="open">Open</option>
           <option value="resolved">Resolved</option>
-          <option value="closed">Closed</option>
+          <option value="in_progress">In Progress</option>
         </select>
+        <Btn variant={showAll ? 'solid' : 'outline'} size="sm" onClick={() => setShowAll(!showAll)}>
+          {showAll ? `All (${allQueries.length})` : `Open (${openCount})`}
+        </Btn>
         <Btn variant="outline" onClick={load}><RefreshCw size={15} />Refresh</Btn>
       </div>
 
@@ -189,6 +209,7 @@ export default function QueriesAdminPage() {
                     <div style={{ marginBottom: 10 }}>
                       <label style={{ display: 'block', color: T.textSub, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>Reply</label>
                       <textarea
+                        name="queryReply"
                         value={reply}
                         onChange={e => setReply(e.target.value)}
                         rows={3}
@@ -202,8 +223,8 @@ export default function QueriesAdminPage() {
                       />
                     </div>
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                      {status !== 'closed' && (
-                        <Btn size="sm" variant="ghost" onClick={() => updateStatus(q.id, 'closed')}>Mark Closed</Btn>
+                      {status !== 'resolved' && (
+                        <Btn size="sm" variant="ghost" onClick={() => updateStatus(q.id, 'in_progress')}>Mark In Progress</Btn>
                       )}
                       {status !== 'resolved' && (
                         <Btn size="sm" variant="ghost" onClick={() => updateStatus(q.id, 'resolved')}>Mark Resolved</Btn>

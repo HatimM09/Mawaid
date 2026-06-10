@@ -28,6 +28,7 @@ export default function LoginPage({ onRoleLogin }) {
   const [error, setError]       = useState('')
   const [secretKey, setSecretKey] = useState('')
   const [mousePos, setMousePos] = useState({ x: 0.5, y: 0.5 })
+  const [rememberMe, setRememberMe] = useState(() => localStorage.getItem('almawaid_remember_me') !== 'false')
 
   const btnRef = useRef(null)
 
@@ -72,7 +73,7 @@ export default function LoginPage({ onRoleLogin }) {
         setLoading(false); return
       }
 
-      const { data: { session }, error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
+      const { data: { session }, error: signInErr } = await supabase.auth.signInWithPassword({ email, password, options: { shouldCreateSession: rememberMe !== false } })
       if (signInErr) throw signInErr
 
       if (role === 'member') { onRoleLogin('member', session); setLoading(false); return }
@@ -98,6 +99,7 @@ export default function LoginPage({ onRoleLogin }) {
         await supabase.auth.signOut(); throw new Error('You are not registered as part of the Al Mawaid Team.')
       }
       onRoleLogin((dbRole === 'admin' || isSecretAdmin) ? 'admin' : dbRole, session)
+      localStorage.setItem('almawaid_remember_me', rememberMe ? 'true' : 'false')
     } catch (err) { setError(err.message) }
     finally { setLoading(false) }
   }
@@ -633,6 +635,7 @@ export default function LoginPage({ onRoleLogin }) {
                     <Mail />
                     <input
                       type="email"
+                      name="email"
                       className="lp-input"
                       placeholder="your@email.com"
                       value={email}
@@ -650,6 +653,7 @@ export default function LoginPage({ onRoleLogin }) {
                       <Lock />
                       <input
                         type={showPass ? 'text' : 'password'}
+                        name="password"
                         className="lp-input"
                         placeholder="••••••••"
                         value={password}
@@ -676,6 +680,7 @@ export default function LoginPage({ onRoleLogin }) {
                       <Shield size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'rgba(139,105,20,0.3)', filter: 'brightness(0.85)', pointerEvents: 'none' }} />
                       <input
                         type="password"
+                        name="secretKey"
                         className="lp-input"
                         placeholder="Enter admin key..."
                         value={secretKey}
@@ -686,6 +691,33 @@ export default function LoginPage({ onRoleLogin }) {
                 )}
 
                 {error && <div className="lp-error" key={error}>{error}</div>}
+
+                {/* ── Remember Me ── */}
+                <label style={{
+                  display: 'flex', alignItems: 'center', gap: 10, marginTop: 2, marginBottom: 0,
+                  cursor: 'pointer', userSelect: 'none',
+                  fontFamily: "'Outfit',sans-serif", fontSize: 12,
+                  color: 'rgba(245, 222, 179, 0.6)', fontWeight: 600, letterSpacing: '0.04em'
+                }}>
+                  <div
+                    onClick={() => setRememberMe(s => !s)}
+                    style={{
+                      width: 18, height: 18, borderRadius: 5,
+                      border: `1.5px solid ${rememberMe ? '#D4AF37' : 'rgba(212, 175, 55, 0.3)'}`,
+                      background: rememberMe ? 'rgba(212, 175, 55, 0.2)' : 'transparent',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: 'pointer', transition: 'all 0.25s ease', flexShrink: 0,
+                      boxShadow: rememberMe ? '0 0 12px rgba(212, 175, 55, 0.15)' : 'none'
+                    }}
+                  >
+                    {rememberMe && (
+                      <svg width="11" height="9" viewBox="0 0 11 9" fill="none" style={{ display: 'block' }}>
+                        <path d="M1 4.5L4 7.5L10 1" stroke="#D4AF37" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
+                  <span>Remember Me</span>
+                </label>
 
                 <div className="lp-btn-wrap">
                   <button

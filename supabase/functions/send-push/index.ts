@@ -1,119 +1,42 @@
 // supabase/functions/send-push/index.ts
-// Sends push notifications to both FCM tokens (PWA) and Expo push tokens (native app).
+// Sends push notifications via:
+//   1. Web Push API (for PWA browser subscriptions — works via pushManager.subscribe())
+//   2. Expo Push Service (for native app tokens from React Native app)
 //
 // Token types:
-//   - "fcm":  Firebase Cloud Messaging token (from PWA web app)
-//   - "expo": Expo Push Token (from React Native app via expo-notifications)
+//   - "webpush": Web Push subscription (stored as subscription_json with endpoint + keys)
+//   - "expo":    Expo Push Token (from React Native app via expo-notifications)
 //
 // Deploy: npx supabase functions deploy send-push
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import webpush from 'npm:web-push'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const FIREBASE_PROJECT_ID = 'al-mawaid-8ffef'
-const CLIENT_EMAIL = Deno.env.get('FIREBASE_CLIENT_EMAIL')!
-const PRIVATE_KEY = Deno.env.get('FIREBASE_PRIVATE_KEY')!
+const VAPID_PUBLIC_KEY = Deno.env.get('VAPID_PUBLIC_KEY')!
+const VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY')!
 
-// ── Auth helpers ──────────────────────────────────────────────────────────────
+// Configure web-push with VAPID details
+webpush.setVapidDetails(
+  'mailto:admin@al-mawaid.com',
+  VAPID_PUBLIC_KEY,
+  VAPID_PRIVATE_KEY
+)
 
-async function getFcmAccessToken(): Promise<string> {
-  const now = Math.floor(Date.now() / 1000)
+// ── Send via Web Push API (for PWA browser subscriptions) ─────────────────────
 
-  const encode = (obj: any) =>
-    btoa(JSON.stringify(obj))
-      .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
-
-  const headerB64 = encode({ alg: 'RS256', typ: 'JWT' })
-  const payloadB64 = encode({
-    iss: CLIENT_EMAIL,
-    scope: 'https://www.googleapis.com/auth/firebase.messaging',
-    aud: 'https://oauth2.googleapis.com/token',
-    iat: now,
-    exp: now + 3600,
-  })
-
-  const signingInput = `${headerB64}.${payloadB64}`
-
-  const pemKey = PRIVATE_KEY.replace(/\\n/g, '\n')
-  const pemContents = pemKey
-    .replace('-----BEGIN PRIVATE KEY-----', '')
-    .replace('-----END PRIVATE KEY-----', '')
-    .replace(/\s/g, '')
-
-  const binaryKey = Uint8Array.from(atob(pemContents), (c) => c.charCodeAt(0))
-
-  const cryptoKey = await crypto.subtle.importKey(
-    'pkcs8',
-    binaryKey,
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-    false,
-    ['sign']
-  )
-
-  const signature = await crypto.subtle.sign(
-    'RSASSA-PKCS1-v1_5',
-    cryptoKey,
-    new TextEncoder().encode(signingInput)
-  )
-
-  const signatureB64 = btoa(String.fromCharCode(...new Uint8Array(signature)))
-    .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
-
-  const jwt = `${signingInput}.${signatureB64}`
-
-  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
-  })
-
-  const tokenData = await tokenRes.json()
-  if (!tokenData.access_token) {
-    throw new Error(`OAuth failed: ${JSON.stringify(tokenData)}`)
-  }
-  return tokenData.access_token
-}
-
-// ── Send via FCM (for PWA web tokens) ─────────────────────────────────────────
-
-async function sendFcmMessage(
-  accessToken: string,
-  fcmToken: string,
+async function sendWebPush(
+  subscriptionJson: string,
   title: string,
   body: string,
   url: string
 ) {
-  const res = await fetch(
-    `https://fcm.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/messages:send`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message: {
-          token: fcmToken,
-          notification: { title, body },
-          webpush: {
-            notification: {
-              title,
-              body,
-              icon: '/al-mawaid.png',
-              badge: '/al-mawaid.png',
-            },
-            fcm_options: { link: url || '/' },
-          },
-        },
-      }),
-    }
-  )
-  if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.error?.message || 'FCM send failed')
-  }
-  return res.json()
+  const subscription = JSON.parse(subscriptionJson)
+  const payload = JSON.stringify({ title, body, url })
+
+  const res = await webpush.sendNotification(subscription, payload)
+  return res
 }
 
 // ── Send via Expo Push Service (for native app tokens) ────────────────────────
@@ -166,23 +89,65 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { user_id, title, body, url, type = 'info' } = await req.json()
+    const { user_id, title, body, url, type = 'info', target_type } = await req.json()
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-    // 1. Fetch push subscriptions (both FCM and Expo tokens)
-    let query = supabase.from('push_subscriptions').select('user_id, fcm_token, token_type')
-    if (user_id) query = query.eq('user_id', user_id)
-    const { data: subs, error } = await query
-    if (error) throw error
-    if (!subs || subs.length === 0) {
-      return jsonResponse({ ok: true, sent: 0, message: 'No subscribers' })
+    // 1. Determine target users
+    let targetUserIds: string[] = []
+    
+    if (user_id && target_type === 'specific') {
+      // Specific user
+      targetUserIds = [user_id]
+    } else if (target_type === 'all' || !target_type) {
+      // All users - fetch from user_stats (all registered users)
+      const { data: allUsers, error: usersError } = await supabase
+        .from('user_stats')
+        .select('user_id')
+      if (usersError) throw usersError
+      targetUserIds = (allUsers || []).map(u => u.user_id)
+    } else if (target_type === 'opt_in' || target_type === 'opt_out') {
+      // Filter by survey status (opt_in = eating, opt_out = not eating)
+      const now = new Date()
+      const day = now.getDay()
+      if (day === 0) {
+        return jsonResponse({ ok: true, sent: 0, message: 'No survey data available on Sunday' })
+      }
+      const days = ['', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+      const dayName = days[day]
+      const hour = now.getHours()
+      const mealKey = hour < 15 ? 'l' : 'd'
+      const statusColumn = `${dayName}_${mealKey}_status`
+      const targetStatus = target_type === 'opt_in' ? 'opted_in' : 'opted_out'
+
+      const { data: filteredUsers, error: filterError } = await supabase
+        .from('survey_submissions_flat')
+        .select('user_id')
+        .eq(statusColumn, targetStatus)
+      if (filterError) throw filterError
+
+      if (filteredUsers && filteredUsers.length > 0) {
+        targetUserIds = filteredUsers.map(u => u.user_id)
+      } else {
+        return jsonResponse({ ok: true, sent: 0, message: `No users found with ${target_type} status` })
+      }
+    } else {
+      // Fallback: users with push subscriptions
+      let query = supabase.from('push_subscriptions').select('user_id')
+      const { data: subs, error: subsError } = await query
+      if (subsError) throw subsError
+      targetUserIds = [...new Set((subs || []).map(s => s.user_id))]
     }
 
-    // 2. Insert notification rows (triggers Realtime in-app toasts)
-    const uniqueUserIds = [...new Set(subs.map((s) => s.user_id))]
+    // 2. Fetch push subscriptions for target users
+    let query = supabase.from('push_subscriptions').select('user_id, fcm_token, token_type, subscription_json').in('user_id', targetUserIds)
+    let { data: subs, error } = await query
+    if (error) throw error
+    const pushSubs = subs || []
+
+    // 3. Insert notification rows for ALL target users (triggers Realtime in-app toasts)
     await supabase.from('notifications').insert(
-      uniqueUserIds.map((uid) => ({
+      targetUserIds.map((uid) => ({
         user_id: uid,
         title,
         message: body,
@@ -191,29 +156,43 @@ Deno.serve(async (req) => {
       }))
     )
 
-    // 3. Separate tokens by type
-    const fcmTokens = subs.filter((s) => s.token_type === 'fcm' || !s.token_type).map((s) => s.fcm_token)
-    const expoTokens = subs.filter((s) => s.token_type === 'expo').map((s) => s.fcm_token)
+    // 4. Separate subscriptions by type
+    const webPushSubs = pushSubs.filter((s) => s.token_type === 'webpush' && s.subscription_json)
+    const expoTokens = pushSubs.filter((s) => s.token_type === 'expo').map((s) => s.fcm_token)
 
     let sent = 0
     let failed = 0
 
-    // 4a. Send via FCM for PWA tokens
-    if (fcmTokens.length > 0) {
-      const accessToken = await getFcmAccessToken()
-      const fcmResults = await Promise.allSettled(
-        fcmTokens.map((token) =>
-          sendFcmMessage(accessToken, token, title, body, url || '/')
+    // 5a. Send via Web Push API for PWA subscriptions
+    if (webPushSubs.length > 0) {
+      const webPushResults = await Promise.allSettled(
+        webPushSubs.map((s) =>
+          sendWebPush(s.subscription_json!, title, body, url || '/')
         )
       )
-      sent += fcmResults.filter((r) => r.status === 'fulfilled').length
-      failed += fcmResults.filter((r) => r.status === 'rejected').length
-      for (const r of fcmResults) {
-        if (r.status === 'rejected') console.error('[send-push] FCM failed:', r.reason)
+      sent += webPushResults.filter((r) => r.status === 'fulfilled').length
+      failed += webPushResults.filter((r) => r.status === 'rejected').length
+
+      // Remove expired/invalid subscriptions
+      for (let i = 0; i < webPushResults.length; i++) {
+        const r = webPushResults[i]
+        if (r.status === 'rejected') {
+          const errMsg = r.reason?.message || String(r.reason)
+          console.error('[send-push] Web Push failed:', errMsg)
+          // Remove subscription if it's expired or invalid (410 Gone / 404 Not Found)
+          if (errMsg.includes('410') || errMsg.includes('404') || errMsg.includes('expired')) {
+            await supabase
+              .from('push_subscriptions')
+              .delete()
+              .eq('user_id', webPushSubs[i].user_id)
+              .eq('token_type', 'webpush')
+            console.log('[send-push] Removed expired subscription for user:', webPushSubs[i].user_id)
+          }
+        }
       }
     }
 
-    // 4b. Send via Expo Push Service for native app tokens
+    // 5b. Send via Expo Push Service for native app tokens
     if (expoTokens.length > 0) {
       const expoResults = await Promise.allSettled(
         expoTokens.map((token) =>
@@ -227,8 +206,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    return jsonResponse({ ok: true, sent, failed, fcm: fcmTokens.length, expo: expoTokens.length })
+    return jsonResponse({ ok: true, sent, failed, webpush: webPushSubs.length, expo: expoTokens.length })
   } catch (err) {
+    console.error('[send-push] Error:', err.message)
     return jsonResponse({ ok: false, error: err.message }, 500)
   }
 })

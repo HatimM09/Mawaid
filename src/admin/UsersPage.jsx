@@ -1,5 +1,5 @@
 // src/admin/UsersPage.jsx
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase, supabaseUrl, supabaseAnonKey } from './supabaseClient'
 import { createClient } from '@supabase/supabase-js'
 import { Search, RefreshCw, UserPlus, Edit2, Trash2, X, Shield, Phone, MapPin, UserCheck, QrCode } from 'lucide-react'
@@ -23,6 +23,26 @@ export default function UsersPage() {
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
   const [fetchingMore, setFetchingMore] = useState(false)
+  const sentinelRef = useRef(null)
+
+  // ── Infinite Scroll: auto-load when sentinel is visible (stable ref avoids stale closures) ──
+  const loadRef = useRef(null)
+  // ── Infinite Scroll: auto-load when sentinel is visible (stable ref avoids stale closures) ──
+  useEffect(() => {
+    if (!hasMore || fetchingMore || loading || users.length === 0) return
+    const el = sentinelRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasMore && !fetchingMore && !loading) {
+          loadRef.current(false)
+        }
+      },
+      { rootMargin: '200px' }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [hasMore, fetchingMore, loading, users.length])
 
   const load = useCallback(async (isInitial = false) => {
     if (isInitial) {
@@ -53,8 +73,24 @@ export default function UsersPage() {
     setFetchingMore(false)
   }, [limit, page])
 
+  loadRef.current = load
+
   useEffect(() => { 
     load(true)
+  }, [load])
+
+  // --- REAL-TIME SUBSCRIPTION (stable ref to avoid re-subscribing on pagination) ---
+  useEffect(() => {
+    const channel = supabase
+      .channel('users-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_stats' }, () => {
+        loadRef.current(true)
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   const handleSave = async (e) => {
@@ -174,7 +210,7 @@ export default function UsersPage() {
             <QrCode size={16} /> <span className="desktop-only">Print All QR Labels</span>
           </Btn>
           {isAdmin && (
-            <Btn onClick={() => { setEditForm({ name: '', email: '', thali_number: '', phone: '', address: '', password: '', avatar_url: '' }); setIsAdding(true); }}>
+            <Btn onClick={() => {            setEditForm({ name: '', email: '', thali_number: '', phone: '', address: '', password: '', avatar_url: '', snack_defaults: { dish_1: 0, dish_2: 0, dish_3: 0, dish_4: 0 } }); setIsAdding(true); }}>
               <UserPlus size={16} /> <span className="desktop-only">Add Thali User</span><span className="mobile-only" style={{ display: 'none' }}>Add</span>
             </Btn>
           )}
@@ -200,6 +236,7 @@ export default function UsersPage() {
         <div style={{ flex: 1, minWidth: 260, position: 'relative' }}>
           <Search size={15} color={T.textSub} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
           <input
+            name="searchUsers"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search by name, email, thali or phone…"
@@ -224,16 +261,22 @@ export default function UsersPage() {
             />
           </AdminCard>
           
+          {/* Infinite scroll sentinel + load more indicator */}
+          {hasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
           {hasMore && (
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 24, paddingBottom: 40 }}>
-              <Btn 
-                variant="outline" 
-                onClick={() => load(false)} 
-                disabled={fetchingMore}
-                style={{ minWidth: 160 }}
-              >
-                {fetchingMore ? <RefreshCw size={15} className="spin" /> : 'Load More Thali Users'}
-              </Btn>
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 24, paddingBottom: 40, transition: 'all 0.3s' }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: fetchingMore ? '16px 0' : 0,
+                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+              }}>
+                {fetchingMore && (
+                  <>
+                    <RefreshCw size={18} className="spin" style={{ color: T.accent }} />
+                    <span style={{ fontSize: 13, color: T.textSub, fontWeight: 600 }}>Loading more users…</span>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </>
@@ -246,9 +289,10 @@ export default function UsersPage() {
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
           backdropFilter: 'blur(8px)', zIndex: 100,
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '20px 20px',
+          overflowY: 'auto',
         }}>
-          <AdminCard style={{ width: '100%', maxWidth: 480, position: 'relative', boxShadow: '0 32px 64px rgba(0,0,0,0.5)' }}>
+          <AdminCard style={{ width: '100%', maxWidth: 480, position: 'relative', boxShadow: '0 32px 64px rgba(0,0,0,0.5)', marginTop: 40, marginBottom: 40 }}>
             <button 
               onClick={() => setEditForm(null)}
               style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', color: T.textSub, cursor: 'pointer' }}
@@ -261,23 +305,42 @@ export default function UsersPage() {
             <p style={{ color: T.textSub, fontSize: 13, marginBottom: 24 }}> Ensure all information is accurate for food delivery.</p>
             
             <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <Input label="Email (Primary Key)" value={editForm.email} onChange={e => setEditForm({...editForm, email: e.target.value})} disabled={!isAdding} required />
+              <Input label="Email (Primary Key)" name="userEmail" value={editForm.email} onChange={e => setEditForm({...editForm, email: e.target.value})} disabled={!isAdding} required />
               <Grid cols={2}>
-                <Input label="Full Name" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} />
-                <Input label="Thali Number" value={editForm.thali_number} onChange={e => setEditForm({...editForm, thali_number: e.target.value})} type="number" />
+                <Input label="Full Name" name="userName" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} />
+                <Input label="Thali Number" name="userThali" value={editForm.thali_number} onChange={e => setEditForm({...editForm, thali_number: e.target.value})} type="number" />
               </Grid>
-              <Input label="Phone Number" value={editForm.phone} onChange={e => setEditForm({...editForm, phone: e.target.value})} />
-              <Input label="Residential Address" value={editForm.address} onChange={e => setEditForm({...editForm, address: e.target.value})} />
+              <Input label="Phone Number" name="userPhone" value={editForm.phone} onChange={e => setEditForm({...editForm, phone: e.target.value})} />
+              <Input label="Residential Address" name="userAddress" value={editForm.address} onChange={e => setEditForm({...editForm, address: e.target.value})} />
+
+              <SectionHeader>Snack Defaults (Lunch Dish 1–4)</SectionHeader>
+              <p style={{ color: T.textSub, fontSize: 12, margin: '0 0 12px' }}>Set the default count for each snack dish. Users can only reduce these values when filling their weekly survey.</p>
+              <Grid cols={4}>
+                {['dish_1','dish_2','dish_3','dish_4'].map((dishKey, i) => (
+                  <Input
+                    key={dishKey}
+                    label={`Dish ${i + 1}`}
+                    name={dishKey}
+                    type="number"
+                    min="0"
+                    value={editForm.snack_defaults?.[dishKey] ?? 0}
+                    onChange={e => setEditForm({
+                      ...editForm,
+                      snack_defaults: { ...editForm.snack_defaults, [dishKey]: parseInt(e.target.value, 10) || 0 }
+                    })}
+                  />
+                ))}
+              </Grid>
               
               <SectionHeader>Auth & Profile</SectionHeader>
               <Grid cols={2}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <Input label="Profile Picture URL" value={editForm.avatar_url} onChange={e => setEditForm({...editForm, avatar_url: e.target.value})} placeholder="https://..." />
+                  <Input label="Profile Picture URL" name="userAvatar" value={editForm.avatar_url} onChange={e => setEditForm({...editForm, avatar_url: e.target.value})} placeholder="https://..." />
                   {editForm.avatar_url && (
                     <img src={editForm.avatar_url} alt="Preview" style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${T.border}` }} />
                   )}
                 </div>
-                {isAdding && <Input label="Assign Password" type="password" value={editForm.password} onChange={e => setEditForm({...editForm, password: e.target.value})} placeholder="Min 6 chars" required />}
+                {isAdding && <Input label="Assign Password" name="userPassword" type="password" value={editForm.password} onChange={e => setEditForm({...editForm, password: e.target.value})} placeholder="Min 6 chars" required />}
               </Grid>
               
               {error && <Alert msg={error} />}
@@ -292,7 +355,11 @@ export default function UsersPage() {
         </div>
       )}
 
-      <style>{`.spin { animation: spin 1s linear infinite } @keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      <style>{`
+        .spin { animation: spin 1s linear infinite } @keyframes spin { to { transform: rotate(360deg) } }
+        .admin-page-wrap { animation: fadeSlideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        @keyframes fadeSlideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+      `}</style>
     </PageWrap>
   )
 }
