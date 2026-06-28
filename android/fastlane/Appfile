@@ -1,0 +1,11 @@
+# Appfile for fastlane supply
+# This file tells fastlane which app to deploy and how to authenticate.
+
+package_name "com.almawaid.app"
+
+# Path to the Google Play Console service account JSON key
+# Generate this file in Google Cloud Console and download it here
+json_key_file "play-service-account.json"
+
+# You can also set this via environment variable for CI/CD:
+# json_key_file ENV["PLAY_SERVICE_ACCOUNT_KEY"]

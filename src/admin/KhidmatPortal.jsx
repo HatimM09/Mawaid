@@ -121,32 +121,36 @@ export default function KhidmatPortal({ signOut, user }) {
 
   const processScan = async (userId) => {
     try {
-      const { data: u } = await supabase.from('user_stats').select('*').eq('user_id', userId).single()
+      const { data: u } = await supabase.from('user_stats').select('*').eq('user_id', userId).maybeSingle()
       if (!u) return
       
       const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
       let today = days[new Date().getDay()]
       if (today === 'sunday') today = 'monday'
-      const meal = new Date().getHours() < 16 ? 'lunch' : 'dinner'
       const dayKey = today.substring(0, 3).toLowerCase()
-      const mealKey = meal === 'lunch' ? 'l' : 'd'
-      
-      // Get current week Monday (matching user-side getWeekDate logic)
-      const now2 = new Date()
-      const wd = now2.getDay()
-      const wh = now2.getHours()
-      let diff = now2.getDate() - wd + (wd === 0 ? -6 : 1)
-      if (wd === 0 || (wd === 6 && wh >= 20)) {
-        diff += 7
-      }
-      const weekId = new Date(new Date().setDate(diff)).toISOString().split('T')[0]
+      const weekId = getWeekDate()
       
       const { data: row } = await supabase.from('survey_submissions_flat')
-        .select('*').eq('user_id', userId).eq('week_id', weekId).single()
+        .select('*').eq('user_id', userId).eq('week_id', weekId).maybeSingle()
+      
+      // Data-driven meal selection: use actual survey data, NOT current time
+      const lunchStatus = row ? row[`${dayKey}_l_status`] : null
+      const dinnerStatus = row ? row[`${dayKey}_d_status`] : null
+      let meal, mealKey
+      if (lunchStatus === 'Applied') {
+        meal = 'lunch'; mealKey = 'l'
+      } else if (dinnerStatus === 'Applied') {
+        meal = 'dinner'; mealKey = 'd'
+      } else {
+        // Neither Applied — show the meal that has a status
+        meal = lunchStatus ? 'lunch' : 'dinner'
+        mealKey = meal === 'lunch' ? 'l' : 'd'
+      }
       
       const { data: menuRow } = await supabase.from('weekly_menu').select('*').eq('day_name', today.charAt(0).toUpperCase() + today.slice(1)).eq('week_start', getWeekDate()).maybeSingle()
       let dishRes = {}
-      if (row && row[`${dayKey}_${mealKey}_status`] === 'Applied' && menuRow) {
+      const statusKey = `${dayKey}_${mealKey}_status`
+      if (row && row[statusKey] === 'Applied' && menuRow) {
         const dishList = (menuRow[meal] || '').split(',').map(s => s.trim()).filter(Boolean)
         dishList.forEach((dish, idx) => {
           const val = row[`${dayKey}_${mealKey}_dish_${idx + 1}`]
@@ -158,7 +162,7 @@ export default function KhidmatPortal({ signOut, user }) {
 
       setScannedUser({
         ...u,
-        status: row ? row[`${dayKey}_${mealKey}_status`] : 'Not Submitted',
+        status: row ? row[statusKey] : 'Not Submitted',
         dishResponses: dishRes,
         currentDay: today,
         currentMeal: meal

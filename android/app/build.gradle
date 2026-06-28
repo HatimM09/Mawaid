@@ -4,7 +4,7 @@ android {
     namespace = "com.almawaid.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.almawaid.app"
+        applicationId "com.almawaid.myapp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -18,8 +18,24 @@ android {
             useNewCruncher = false
         }
     }
+    // Load keystore properties from keystore.properties (gitignored) or env vars
+    def keystorePropsFile = file('keystore.properties')
+    def keystoreProps = new Properties()
+    if (keystorePropsFile.exists()) {
+        keystoreProps.load(new FileInputStream(keystorePropsFile))
+    }
+
+    signingConfigs {
+        release {
+            storeFile file('release.keystore.jks')
+            storePassword keystoreProps['KEYSTORE_PASSWORD'] ?: System.getenv('KEYSTORE_PASSWORD')
+            keyAlias keystoreProps['KEY_ALIAS'] ?: System.getenv('KEY_ALIAS') ?: "almawaid"
+            keyPassword keystoreProps['KEY_PASSWORD'] ?: System.getenv('KEY_PASSWORD')
+        }
+    }
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'

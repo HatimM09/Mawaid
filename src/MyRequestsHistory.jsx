@@ -165,6 +165,11 @@ export default function MyRequestsHistory() {
                         </span>
                       </div>
 
+                      {r.meal_type && (
+                        <div style={{ fontSize: 11, color: '#9b8de0', fontWeight: 600, marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          Meal: {r.meal_type === 'both' ? 'Both (Lunch & Dinner)' : r.meal_type.charAt(0).toUpperCase() + r.meal_type.slice(1)}
+                        </div>
+                      )}
                       {r.from_date && (
                         <div style={{ fontSize: 11, color: t.textSub }}>
                           {formatDate(r.from_date)}{r.to_date ? ` → ${formatDate(r.to_date)}` : ''}

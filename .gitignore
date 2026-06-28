@@ -42,3 +42,10 @@ native/*.p8
 native/*.p12
 native/*.key
 native/*.mobileprovision
+
+# Android signing & deployment
+android/app/*.keystore
+android/app/*.jks
+android/app/keystore.properties
+android/fastlane/play-service-account.json
+android/fastlane/*.json

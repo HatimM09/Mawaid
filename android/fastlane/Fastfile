@@ -1,0 +1,114 @@
+# Fastfile for Al-Mawaid Android deployment
+# Automates building the signed AAB and uploading to Google Play Console.
+#
+# Prerequisites:
+#   1. Install fastlane: https://docs.fastlane.tools/getting-started/android/setup/
+#   2. Place your service account JSON key at fastlane/play-service-account.json
+#   3. The release keystore should be at app/release.keystore.jks (already set up)
+#
+# Manual setup (one-time):
+#   - See ../scripts/GOOGLE_PLAY_SETUP.md
+
+default_platform(:android)
+
+platform :android do
+
+  ##############################################################################
+  # Build the signed release AAB
+  ##############################################################################
+  desc "Build a signed release Android App Bundle (AAB)"
+  lane :build do
+    gradle(
+      task: "bundleRelease",
+      project_dir: ".",
+      print_command: true
+    )
+  end
+
+  ##############################################################################
+  # Upload an existing AAB to Google Play (Internal Testing track)
+  ##############################################################################
+  desc "Upload a pre-built AAB to Google Play Console (Internal Testing track)"
+  lane :upload do |options|
+    aab_path = options[:aab_path] || "app/build/outputs/bundle/release/app-release.aab"
+
+    supply(
+      aab: aab_path,
+      track: options[:track] || "internal",
+      release_status: options[:release_status] || "completed",
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      version_code: options[:version_code],
+      version_name: options[:version_name],
+      timeout: 600
+    )
+  end
+
+  ##############################################################################
+  # Full release: build + upload to a specific track
+  ##############################################################################
+  desc "Build signed AAB and upload to Google Play Console"
+  lane :deploy do |options|
+    track = options[:track] || "internal"
+    release_status = options[:release_status] || "completed"
+
+    # 1. Build the signed release AAB
+    gradle(
+      task: "bundleRelease",
+      project_dir: ".",
+      print_command: true
+    )
+
+    # 2. Upload to the specified track
+    supply(
+      aab: "app/build/outputs/bundle/release/app-release.aab",
+      track: track,
+      release_status: release_status,
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      timeout: 600
+    )
+  end
+
+  ##############################################################################
+  # Full release to Production
+  ##############################################################################
+  desc "Build and release to Production"
+  lane :production do
+    deploy(track: "production", release_status: "completed")
+  end
+
+  ##############################################################################
+  # Promote a release from one track to another
+  ##############################################################################
+  desc "Promote an existing release from one track to another"
+  lane :promote do |options|
+    from_track = options[:from] || "internal"
+    to_track   = options[:to]   || "production"
+
+    supply(
+      track: to_track,
+      track_promote_to: from_track,
+      skip_upload_aab: true,
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      release_status: "completed"
+    )
+  end
+
+  ##############################################################################
+  # Bump version code (useful in CI)
+  ##############################################################################
+  desc "Increment the Android version code in app/build.gradle"
+  lane :bump_version_code do
+    increment_version_code(
+      gradle_file_path: "app/build.gradle"
+    )
+  end
+end

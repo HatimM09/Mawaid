@@ -497,7 +497,7 @@ const GlobalStyles = () => {
 }
 
 // ══════════════════════════════════════════════════════════════
-// SURVEY MODAL (TODAY ONLY - LUNCH & DINNER)
+// SURVEY MODAL (FULL WEEK: MONDAY – SATURDAY)
 // ══════════════════════════════════════════════════════════════
 function SurveyModal({ onClose, appSettings = {} }) {
   const t = THEMES.bright
@@ -505,30 +505,50 @@ function SurveyModal({ onClose, appSettings = {} }) {
   const weeklyMenu = useWeeklyMenu() || {}
 
   const currentWeekId = getWeekDate()
-  const today = getTodayKey()
-  const menu = weeklyMenu[today] || { lunch: [], dinner: [] }
-  const dayKey = today.substring(0, 3).toLowerCase()
 
+  const [currentDayIndex, setCurrentDayIndex] = useState(0)
   const [currentMeal, setCurrentMeal] = useState('lunch')
   const [wantsFood, setWantsFood] = useState(null)
   const wantsFoodRef = useRef(null)
   const [responses, setResponses] = useState({})
   const [loading, setLoading] = useState(false)
-  const [existingResponse, setExistingResponse] = useState(null)
-  const [hasInitialized, setHasInitialized] = useState(false)
+  const [existingData, setExistingData] = useState(null)
+  const [dataLoaded, setDataLoaded] = useState(false)
+  const [hasFirstSave, setHasFirstSave] = useState(false)
+  const justLoadedRef = useRef(false)
+  const userInteractedRef = useRef(false)
 
   const [userData, setUserData] = useState({ thali_no: '', email: user.email })
   const [snackDefaults, setSnackDefaults] = useState({ dish_1: 0, dish_2: 0, dish_3: 0, dish_4: 0 })
+
+  const currentDay = DAYS[currentDayIndex]
+  const menu = weeklyMenu[currentDay] || { lunch: [], dinner: [] }
+  const dayKey = currentDay.substring(0, 3).toLowerCase()
   const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
-  const isEditable = canEditMeal(today, currentWeekId, currentMeal, appSettings, user.id)
-  const editCount = (existingResponse && !existingResponse.is_template) ? (existingResponse.edit_metadata?.[`${dayKey}_${mealKey}`] || 0) : 0
+
+  const isEditable = canEditMeal(currentDay, currentWeekId, currentMeal, appSettings, user.id)
+  const editCount = existingData ? (existingData.edit_metadata?.[`${dayKey}_${mealKey}`] || 0) : 0
   const editBlocked = !isEditable || (!isSurveyOpen(appSettings, user.id) && editCount >= 100)
 
-  useEffect(() => { loadExisting() }, [currentMeal])
+  const totalSlots = 12
+  const currentSlot = currentDayIndex * 2 + (currentMeal === 'lunch' ? 0 : 1)
+  const isFirst = currentDayIndex === 0 && currentMeal === 'lunch'
+  const isLast = currentDayIndex === 5 && currentMeal === 'dinner'
+  const progress = (currentSlot / totalSlots) * 100
+
+  // Load all existing data once on mount
+  useEffect(() => {
+    loadExisting()
+  }, [])
+
+  // When day/meal/menu changes, populate responses from existing data
+  useEffect(() => {
+    if (!dataLoaded) return
+    populateFromExisting()
+  }, [currentDayIndex, currentMeal, dataLoaded, weeklyMenu])
 
   const loadExisting = async () => {
     try {
-      // Load user data and snack defaults
       if (!userData.thali_no) {
         const { data: u } = await supabase.from('user_stats').select('thali_number, email, snack_defaults').eq('user_id', user.id).maybeSingle()
         if (u) {
@@ -537,147 +557,146 @@ function SurveyModal({ onClose, appSettings = {} }) {
         }
       }
 
-      // 1. Fetch LATEST submission (template)
       const { data } = await supabase.from('survey_submissions_flat')
         .select('*').eq('user_id', user.id).order('week_id', { ascending: false }).limit(1).maybeSingle()
 
-      if (data) {
-        const currentWeekId = getWeekDate()
-        const isFromOldWeek = data.week_id !== currentWeekId
-
-        if (!hasInitialized) {
-          setHasInitialized(true)
-        }
-
-        const dayKey = today.substring(0, 3).toLowerCase()
-        const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
-        const status = data[`${dayKey}_${mealKey}_status`]
-        // If it's an old week, we reset the edit count for the new week
-        const editCountData = isFromOldWeek ? 0 : (data.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0
-        setExistingResponse({ ...data, is_template: isFromOldWeek })
-
-        if (status && !isFromOldWeek) {
-          setWantsFood(status === 'Applied')
-          const activeDishes = menu[currentMeal] || []
-          const dishRes = {}
-          activeDishes.forEach((dish, idx) => {
-            const val = data[`${dayKey}_${mealKey}_dish_${idx + 1}`]
-            if (val !== undefined && val !== null) {
-              // Handle new format from our updated cards
-              if (typeof val === 'object' && val.status) {
-                dishRes[dish] = val
-              }
-              // Handle legacy format
-              else if (val === 'Yes') dishRes[dish] = 'yes'
-              else if (val === 'No') dishRes[dish] = 'no'
-              else if (typeof val === 'string' && val.includes('Skip')) dishRes[dish] = 'Skipped'
-              else dishRes[dish] = parseInt(val) || 0
-            }
-          })
-          setResponses(dishRes)
-        } else {
-          setWantsFood(null); setResponses({})
-        }
+      if (data && data.week_id === currentWeekId) {
+        setExistingData(data)
       } else {
-        setExistingResponse(null); setWantsFood(null); setResponses({})
+        setExistingData(null)
       }
+      setDataLoaded(true)
     } catch (err) {
-      console.error('Error loading survey template:', err)
-      setExistingResponse(null); setWantsFood(null); setResponses({})
+      console.error('Error loading survey:', err)
+      setDataLoaded(true)
     }
   }
 
-  // Auto submit when all dishes are selected (except last meal — user clicks button)
+  const populateFromExisting = () => {
+    justLoadedRef.current = true
+    if (!existingData) {
+      setWantsFood(null)
+      setResponses({})
+      return
+    }
+
+    const statusKey = `${dayKey}_${mealKey}_status`
+    const status = existingData[statusKey]
+
+    if (status) {
+      wantsFoodRef.current = status === 'Applied'
+      if (status === 'Applied') {
+        const activeDishes = menu[currentMeal] || []
+        if (activeDishes.length === 0 && existingData[`${dayKey}_${mealKey}_dish_1`] !== undefined) {
+          return
+        }
+        setWantsFood(true)
+        const dishRes = {}
+        activeDishes.forEach((dish, idx) => {
+          const val = existingData[`${dayKey}_${mealKey}_dish_${idx + 1}`]
+          if (val !== undefined && val !== null) {
+            if (typeof val === 'object' && val.status) {
+              dishRes[dish] = val
+            } else if (val === 'Yes') dishRes[dish] = 'yes'
+            else if (val === 'No') dishRes[dish] = 'no'
+            else if (typeof val === 'string' && val.includes('Skip')) dishRes[dish] = 'Skipped'
+            else dishRes[dish] = parseInt(val) || 0
+          }
+        })
+        setResponses(dishRes)
+      } else {
+        setWantsFood(false)
+        setResponses({})
+      }
+    } else {
+      setWantsFood(null)
+      setResponses({})
+    }
+  }
+
+  // Auto-advance when all dishes selected (except last slot) — only after user interaction
   useEffect(() => {
-    if (!editBlocked && wantsFood === true) {
-      const dishes = currentMeal === 'lunch' ? menu.lunch : menu.dinner
-      const isLast = currentMeal === 'dinner'
-      if (dishes.length > 0 && Object.keys(responses).length === dishes.length && !loading && !isLast) {
+    if (justLoadedRef.current) {
+      return
+    }
+    if (!editBlocked && wantsFood === true && !loading) {
+      const dishes = menu[currentMeal] || []
+      if (dishes.length > 0 && Object.keys(responses).length === dishes.length && !isLast) {
         handleNext()
       }
     }
-  }, [responses, wantsFood, editBlocked, loading, currentMeal])
+  }, [responses, wantsFood, editBlocked, loading])
+
+  const saveCurrentSlot = async () => {
+    if (wantsFoodRef.current === null) return true
+    setLoading(true)
+    let success = true
+    try {
+      const currentEdits = (existingData || {}).edit_metadata || {}
+      const isNew = !existingData
+      const newEditCount = (currentEdits[`${dayKey}_${mealKey}`] || 0) + (isNew ? 0 : 1)
+
+      const updateObj = {
+        user_id: user.id,
+        week_id: currentWeekId,
+        thali_number: userData.thali_no,
+        email: userData.email,
+        [`${dayKey}_${mealKey}_status`]: wantsFoodRef.current ? 'Applied' : 'Skipped',
+        edit_metadata: { ...currentEdits, [`${dayKey}_${mealKey}`]: newEditCount },
+        updated_at: new Date().toISOString()
+      }
+
+      if (wantsFoodRef.current) {
+        const activeDishes = menu[currentMeal] || []
+        activeDishes.forEach((dish, idx) => {
+          const colName = `${dayKey}_${mealKey}_dish_${idx + 1}`
+          const val = responses[dish]
+          if (val !== undefined) {
+            if (typeof val === 'object' && val.status) {
+              updateObj[colName] = val.status === 'yes' ? String(val.value) : 'No'
+            } else if (val === 'yes') {
+              updateObj[colName] = 'Yes'
+            } else if (val === 'no') {
+              updateObj[colName] = 'No'
+            } else if (typeof val === 'number') {
+              updateObj[colName] = isCountInput(idx) ? String(val) : `${val}%`
+            }
+          }
+        })
+      }
+
+      const { error } = await supabase.from('survey_submissions_flat').upsert([updateObj], { onConflict: 'user_id,week_id' })
+      if (error) throw error
+
+      // Update local cache with saved data
+      setExistingData(prev => ({ ...prev, ...updateObj }))
+
+      // Call increment_user_surveys RPC once for brand-new submissions
+      if (isNew && !hasFirstSave) {
+        setHasFirstSave(true)
+        await supabase.rpc('increment_user_surveys', { p_user_id: user.id }).catch(() => {})
+      }
+    } catch (err) {
+      alert('Error saving: ' + err.message)
+      success = false
+    } finally {
+      setLoading(false)
+    }
+    return success
+  }
 
   const handleNext = async () => {
-    let saveOk = true
-    if (wantsFoodRef.current !== null && !loading) {
-      setLoading(true)
-      try {
-        const dayKey = today.substring(0, 3).toLowerCase()
-        const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
-        const currentEdits = (existingResponse && !existingResponse.is_template) ? (existingResponse.edit_metadata || {}) : {}
-        const newEditCount = (currentEdits[`${dayKey}_${mealKey}`] || 0) + (existingResponse && !existingResponse.is_template ? 1 : 0)
+    justLoadedRef.current = false
+    const saved = await saveCurrentSlot()
+    if (!saved) return
 
-        const currentWeekId = getWeekDate()
-        const updateObj = {
-          user_id: user.id,
-          week_id: currentWeekId,
-          thali_number: userData.thali_no,
-          email: userData.email,
-          [`${dayKey}_${mealKey}_status`]: wantsFoodRef.current ? 'Applied' : 'Skipped',
-          edit_metadata: { ...currentEdits, [`${dayKey}_${mealKey}`]: newEditCount },
-          updated_at: new Date().toISOString()
-        }
-
-        if (wantsFoodRef.current) {
-          const activeDishes = menu[currentMeal] || []
-          activeDishes.forEach((dish, idx) => {
-            const colName = `${dayKey}_${mealKey}_dish_${idx + 1}`
-            const val = responses[dish]
-            if (val !== undefined) {
-              // Handle new format
-              if (typeof val === 'object' && val.status) {
-                if (val.status === 'yes') {
-                  updateObj[colName] = String(val.value) // Save as string for consistency
-                } else {
-                  updateObj[colName] = 'No'
-                }
-              }
-              // Handle legacy format
-              else if (val === 'yes') {
-                updateObj[colName] = 'Yes'
-              } else if (val === 'no') {
-                updateObj[colName] = 'No'
-              } else if (typeof val === 'number') {
-                updateObj[colName] = isCountInput(idx) ? String(val) : `${val}%`
-              }
-            }
-          })
-        }
-
-        await supabase.from('survey_submissions_flat').upsert([updateObj], { onConflict: 'user_id,week_id' })
-        if (!existingResponse || existingResponse.is_template) {
-          await supabase.rpc('increment_user_surveys', { p_user_id: user.id })
-        }
-      } catch (err) {
-        alert('Error saving: ' + err.message)
-        saveOk = false
-      } finally {
-        setLoading(false)
-      }
-    }
-      if (!saveOk) return
-
-    if (currentMeal === 'lunch') {
-      setCurrentMeal('dinner'); wantsFoodRef.current = null; setWantsFood(null); setResponses({})
-    } else {
-      if (existingResponse?.is_template) {
-        try {
-          await supabase.from('survey_submissions_flat')
-            .delete()
-            .eq('user_id', user.id)
-            .eq('week_id', existingResponse.week_id)
-        } catch (delErr) {
-          console.warn('Could not clean up old survey:', delErr)
-        }
-      }
-      
+    if (isLast) {
       // Send survey completion notification
       try {
         await supabase.functions.invoke('send-push', {
           body: {
-            title: '✅ Survey Submitted',
-            body: `Your ${today}'s lunch & dinner survey has been saved.`,
+            title: '✅ Weekly Survey Submitted',
+            body: 'Your full week survey (Mon–Sat) has been saved.',
             target_type: 'specific',
             target_user_id: user.id,
             url: '/post'
@@ -686,15 +705,35 @@ function SurveyModal({ onClose, appSettings = {} }) {
       } catch (notifyErr) {
         console.warn('Survey notification failed:', notifyErr)
       }
-      
-      alert('🎉 Survey complete! Shukran Jazeelan.')
+      alert('🎉 Full week survey complete! Shukran Jazeelan.')
       onClose()
+      return
+    }
+
+    wantsFoodRef.current = null
+    setWantsFood(null)
+    setResponses({})
+
+    if (currentMeal === 'lunch') {
+      setCurrentMeal('dinner')
+    } else {
+      setCurrentDayIndex(prev => prev + 1)
+      setCurrentMeal('lunch')
     }
   }
 
   const handlePrev = () => {
     if (currentMeal === 'dinner') {
-      setCurrentMeal('lunch'); wantsFoodRef.current = null; setWantsFood(null); setResponses({})
+      setCurrentMeal('lunch')
+      wantsFoodRef.current = null
+      setWantsFood(null)
+      setResponses({})
+    } else if (currentDayIndex > 0) {
+      setCurrentDayIndex(prev => prev - 1)
+      setCurrentMeal('dinner')
+      wantsFoodRef.current = null
+      setWantsFood(null)
+      setResponses({})
     }
   }
 
@@ -703,7 +742,7 @@ function SurveyModal({ onClose, appSettings = {} }) {
       const config = appSettings?.dish_input_config
       if (config) {
         const parsed = typeof config === 'string' ? JSON.parse(config) : config
-        const dayName = today.charAt(0).toUpperCase() + today.slice(1)
+        const dayName = currentDay.charAt(0).toUpperCase() + currentDay.slice(1)
         const key = `${dayName}_${currentMeal}`
         const types = parsed[key]
         if (types && types[idx]) return types[idx] === 'count'
@@ -712,14 +751,7 @@ function SurveyModal({ onClose, appSettings = {} }) {
     return currentMeal === 'lunch' && idx <= 3
   }
 
-  const getDishMax = (idx) => {
-    if (currentMeal === 'lunch' && idx < 4) {
-      return snackDefaults?.[`dish_${idx + 1}`] ?? 0
-    }
-    return Infinity
-  }
-
-  const dishes = currentMeal === 'lunch' ? menu.lunch : menu.dinner
+  const dishes = menu[currentMeal] || []
   const hasOverload = dishes.some((dish, idx) => {
     if (currentMeal === 'lunch' && idx < 4) {
       const val = responses[dish]
@@ -729,10 +761,6 @@ function SurveyModal({ onClose, appSettings = {} }) {
     }
     return false
   })
-  const isFirst = currentMeal === 'lunch'
-  const isLast = currentMeal === 'dinner'
-  const progress = currentMeal === 'lunch' ? 50 : 100
-
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.82)', padding: 16, backdropFilter: 'blur(12px)', overflowY: 'auto' }} onClick={onClose}>
@@ -742,10 +770,10 @@ function SurveyModal({ onClose, appSettings = {} }) {
           <div style={{ height: '100%', width: `${progress}%`, background: t.accentGrad, borderRadius: 2, transition: 'width 0.4s ease' }} />
         </div>
 
-        {/* Today indicator */}
+        {/* Day indicator */}
         <div style={{ textAlign: 'center', marginBottom: 14, padding: '8px', background: t.accentBg, borderRadius: 8, border: `1px solid ${t.border}` }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>
-            {today.charAt(0).toUpperCase() + today.slice(1)}
+            {currentDay.charAt(0).toUpperCase() + currentDay.slice(1)} · {currentSlot + 1} of {totalSlots}
           </span>
         </div>
 
@@ -754,7 +782,7 @@ function SurveyModal({ onClose, appSettings = {} }) {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <img src="/al-mawaid.png" alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />
-              <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{menu.en || today}</h2>
+              <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{menu.en || currentDay}</h2>
             </div>
             <div style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 3 }}>
               {currentMeal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}<span style={{ margin: '0 6px', opacity: .3 }}>·</span>
@@ -800,12 +828,12 @@ function SurveyModal({ onClose, appSettings = {} }) {
         ) : wantsFood === null ? (
           <div>
             <p style={{ fontSize: 15, fontWeight: 600, color: t.text, marginBottom: 14, fontFamily: "'DM Sans',sans-serif" }}>
-              Do you want {currentMeal} for {menu.en || today}?
+              Do you want {currentMeal} for {menu.en || currentDay}?
             </p>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button className="stagger-item" onClick={() => { wantsFoodRef.current = true; setWantsFood(true) }}
+              <button className="stagger-item" onClick={() => { wantsFoodRef.current = true; setWantsFood(true); justLoadedRef.current = false }}
                 style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>✅ Yes</button>
-              <button className="stagger-item" onClick={() => { wantsFoodRef.current = false; setWantsFood(false); setTimeout(handleNext, 200) }}
+              <button className="stagger-item" onClick={() => { wantsFoodRef.current = false; setWantsFood(false); justLoadedRef.current = false; setTimeout(handleNext, 200) }}
                 style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${t.border}`, background: 'transparent', color: t.text, fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>❌ No</button>
             </div>
           </div>
@@ -2011,14 +2039,16 @@ function ThaliRequestsSection() {
   const [error, setError] = useState('')
   const [resumeFrom, setResumeFrom] = useState('')
   const [resumeTo, setResumeTo] = useState('')
+  const [resumeMealType, setResumeMealType] = useState(null)
   const [stopFrom, setStopFrom] = useState('')
   const [stopTo, setStopTo] = useState('')
+  const [stopMealType, setStopMealType] = useState(null)
   const [miqaatOption, setMiqaatOption] = useState(null)
   const [extraItems, setExtraItems] = useState([{ name: '', qty: 1 }])
   const today = new Date().toISOString().split('T')[0]
   const inp = { width: '100%', padding: '11px 13px', borderRadius: 11, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }
 
-  const resetAll = () => { setResumeFrom(''); setResumeTo(''); setStopFrom(''); setStopTo(''); setMiqaatOption(null); setExtraItems([{ name: '', qty: 1 }]); setError(''); setSuccess('') }
+  const resetAll = () => { setResumeFrom(''); setResumeTo(''); setResumeMealType(null); setStopFrom(''); setStopTo(''); setStopMealType(null); setMiqaatOption(null); setExtraItems([{ name: '', qty: 1 }]); setError(''); setSuccess('') }
   const openRequest = (type) => { resetAll(); setActiveRequest(activeRequest === type ? null : type) }
   const addExtraItem = () => setExtraItems(prev => [...prev, { name: '', qty: 1 }])
   const removeExtraItem = i => setExtraItems(prev => prev.filter((_, idx) => idx !== i))
@@ -2028,8 +2058,8 @@ function ThaliRequestsSection() {
     setError(''); setSuccess(''); setSubmitting(true)
     try {
       let payload = { user_id: user.id, request_type: type, status: 'pending' }
-      if (type === 'resume') { if (!resumeFrom) throw new Error('Please select a date'); payload = { ...payload, from_date: resumeFrom, to_date: null } }
-      else if (type === 'stop') { if (!stopFrom || !stopTo) throw new Error('Please select both dates'); payload = { ...payload, from_date: stopFrom, to_date: stopTo } }
+      if (type === 'resume') {        if (!resumeMealType) throw new Error('Please select a meal option (Lunch, Dinner, or Both)');        if (!resumeFrom) throw new Error('Please select a date');        payload = { ...payload, from_date: resumeFrom, to_date: null, meal_type: resumeMealType }      }
+      else if (type === 'stop') {        if (!stopMealType) throw new Error('Please select a meal option (Lunch, Dinner, or Both)');        if (!stopFrom || !stopTo) throw new Error('Please select both dates');        payload = { ...payload, from_date: stopFrom, to_date: stopTo, meal_type: stopMealType }      }
       else if (type === 'miqaat') { if (!miqaatOption) throw new Error('Please select an option'); payload = { ...payload, details: `Option ${miqaatOption}` } }
       else if (type === 'extra') { const valid = extraItems.filter(i => i.name.trim()); if (!valid.length) throw new Error('Please add at least one item'); payload = { ...payload, extra_items: valid } }
       const { error: dbErr } = await supabase.from('thali_requests').insert([payload])
@@ -2066,12 +2096,32 @@ function ThaliRequestsSection() {
         <HdrBtn activeRequest={activeRequest} openRequest={openRequest} t={t} type="resume" emoji="▶️" label="Resume Thali" desc="Restart your thali service" />
         {activeRequest === 'resume' && (
           <div style={{ padding: '0 16px 16px' }}>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>RESUME FROM</label>
-              <input type="date" name="resumeFrom" value={resumeFrom} min={today} onChange={e => setResumeFrom(e.target.value)} style={inp} />
-            </div>
-            {error && <ErrorBanner msg={error} />}
-            <button onClick={() => handleSubmit('resume')} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting…' : '✅ Submit Resume Request'}</button>
+            {!resumeMealType ? (
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>SELECT MEAL TO RESUME</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {['lunch', 'dinner', 'both'].map(m => (
+                    <button key={m} onClick={() => setResumeMealType(m)}
+                      style={{ flex: 1, padding: '12px 8px', borderRadius: 11, border: `1.5px solid ${t.border}`, background: t.inputBg, color: t.text, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", textTransform: 'capitalize' }}>
+                      {m === 'both' ? 'Both' : m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ marginBottom: 12, padding: 10, borderRadius: 10, background: t.accentBg, border: `1px solid ${t.accentBorder}`, textAlign: 'center' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>Meal: {resumeMealType === 'both' ? 'Both (Lunch & Dinner)' : resumeMealType.charAt(0).toUpperCase() + resumeMealType.slice(1)}</span>
+                  <button onClick={() => setResumeMealType(null)} style={{ marginLeft: 10, background: 'none', border: 'none', color: t.textSub, cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>Change</button>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>RESUME FROM</label>
+                  <input type="date" name="resumeFrom" value={resumeFrom} min={today} onChange={e => setResumeFrom(e.target.value)} style={inp} />
+                </div>
+                {error && <ErrorBanner msg={error} />}
+                <button onClick={() => handleSubmit('resume')} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting...' : 'Submit Resume Request'}</button>
+              </>
+            )}
           </div>
         )}
       </RCard>
@@ -2079,12 +2129,32 @@ function ThaliRequestsSection() {
         <HdrBtn activeRequest={activeRequest} openRequest={openRequest} t={t} type="stop" emoji="⏹️" label="Stop Thali" desc="Pause your thali service" />
         {activeRequest === 'stop' && (
           <div style={{ padding: '0 16px 16px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-              <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>FROM</label><input type="date" name="stopFrom" value={stopFrom} min={today} onChange={e => setStopFrom(e.target.value)} style={inp} /></div>
-              <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>TO</label><input type="date" name="stopTo" value={stopTo} min={stopFrom || today} onChange={e => setStopTo(e.target.value)} style={inp} /></div>
-            </div>
-            {error && <ErrorBanner msg={error} />}
-            <button onClick={() => handleSubmit('stop')} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : 'linear-gradient(135deg,#e05555,#c03030)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting…' : '⏹️ Submit Stop Request'}</button>
+            {!stopMealType ? (
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>SELECT MEAL TO STOP</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {['lunch', 'dinner', 'both'].map(m => (
+                    <button key={m} onClick={() => setStopMealType(m)}
+                      style={{ flex: 1, padding: '12px 8px', borderRadius: 11, border: `1.5px solid ${t.border}`, background: t.inputBg, color: t.text, fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", textTransform: 'capitalize' }}>
+                      {m === 'both' ? 'Both' : m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ marginBottom: 12, padding: 10, borderRadius: 10, background: t.accentBg, border: `1px solid ${t.accentBorder}`, textAlign: 'center' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>Meal: {stopMealType === 'both' ? 'Both (Lunch & Dinner)' : stopMealType.charAt(0).toUpperCase() + stopMealType.slice(1)}</span>
+                  <button onClick={() => setStopMealType(null)} style={{ marginLeft: 10, background: 'none', border: 'none', color: t.textSub, cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>Change</button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                  <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>FROM</label><input type="date" name="stopFrom" value={stopFrom} min={today} onChange={e => setStopFrom(e.target.value)} style={inp} /></div>
+                  <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>TO</label><input type="date" name="stopTo" value={stopTo} min={stopFrom || today} onChange={e => setStopTo(e.target.value)} style={inp} /></div>
+                </div>
+                {error && <ErrorBanner msg={error} />}
+                <button onClick={() => handleSubmit('stop')} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : 'linear-gradient(135deg,#e05555,#c03030)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting...' : 'Submit Stop Request'}</button>
+              </>
+            )}
           </div>
         )}
       </RCard>

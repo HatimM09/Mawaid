@@ -182,10 +182,14 @@ export default function RequestsAdminPage() {
           </div>
         ) : r.date ? (
           <div style={{ fontSize: 12, fontWeight: 700, color: T.accent }}>{fmtDate(r.date)}</div>
-        ) : (
-          <span style={{ opacity: 0.3 }}>—</span>
-        )}
-      </div>,
+        ) : (                      <span style={{ opacity: 0.3 }}>—</span>
+                      )}
+                      {r.meal_type && (
+                        <div style={{ marginTop: 4, fontSize: 10, fontWeight: 600, color: '#9b8de0', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          Meal: {r.meal_type === 'both' ? 'Both' : r.meal_type}
+                        </div>
+                      )}
+                    </div>,
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         {STATUS_ICONS[status]}
         <Badge color={STATUS_COLORS[status]}>{status}</Badge>

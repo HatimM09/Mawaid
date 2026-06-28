@@ -145,12 +145,9 @@ export default function QRManagement() {
 
       // Show the TV View pop-up directly
       const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-      const today = days[new Date().getDay()]
-      const h = new Date().getHours()
-      const m = new Date().getMinutes()
-      const mealName = (h < 15 || (h === 15 && m < 30)) ? 'lunch' : 'dinner'
+      let today = days[new Date().getDay()]
+      if (today === 'sunday') today = 'monday'
       const dayKey = today.substring(0, 3).toLowerCase()
-      const mealKey = mealName === 'lunch' ? 'l' : 'd'
       
       const weekId = getWeekDate()
       const { data: submission } = await supabase
@@ -160,9 +157,22 @@ export default function QRManagement() {
         .eq('week_id', weekId)
         .maybeSingle()
 
+      // Data-driven meal selection: use actual survey data, NOT current time
+      const lunchStatus = submission ? submission[`${dayKey}_l_status`] : null
+      const dinnerStatus = submission ? submission[`${dayKey}_d_status`] : null
+      let mealName, mealKey
+      if (lunchStatus === 'Applied') {
+        mealName = 'lunch'; mealKey = 'l'
+      } else if (dinnerStatus === 'Applied') {
+        mealName = 'dinner'; mealKey = 'd'
+      } else {
+        mealName = lunchStatus ? 'lunch' : 'dinner'
+        mealKey = mealName === 'lunch' ? 'l' : 'd'
+      }
+
       const dishRes = {}
-      if (submission && submission[`${dayKey}_${mealKey}_status`] === 'Applied') {
-        // Simple mapping for display
+      const statusKey = `${dayKey}_${mealKey}_status`
+      if (submission && submission[statusKey] === 'Applied') {
         const { data: menuRow } = await supabase.from('weekly_menu').select('*').eq('day_name', today.charAt(0).toUpperCase() + today.slice(1)).eq('week_start', getWeekDate()).maybeSingle()
         if (menuRow) {
           const dishList = (menuRow[mealName] || '').split(',').map(s => s.trim()).filter(Boolean)
@@ -177,7 +187,7 @@ export default function QRManagement() {
 
       setScanResult({
         ...user,
-        status: submission ? submission[`${dayKey}_${mealKey}_status`] : 'Not Submitted',
+        status: submission ? submission[statusKey] : 'Not Submitted',
         dishResponses: dishRes,
         currentDay: today,
         currentMeal: mealName,
