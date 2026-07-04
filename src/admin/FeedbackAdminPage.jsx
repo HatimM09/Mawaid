@@ -13,11 +13,11 @@ const TooltipStyle = {
 }
 
 const Stars = ({ n }) => (
-  <div style={{ display: 'flex', gap: 2 }}>
+  <div style={{ display: 'flex', gap: 2, whiteSpace: 'nowrap', flexShrink: 0 }}>
     {[1,2,3,4,5].map(i => (
-      <Star key={i} size={13} fill={i <= n ? '#c49c5a' : 'none'} color={i <= n ? '#c49c5a' : T.border} />
+      <Star key={i} size={11} fill={i <= n ? '#c49c5a' : 'none'} color={i <= n ? '#c49c5a' : T.border} />
     ))}
-    <span style={{ marginLeft: 4, fontSize: 12, color: T.textSub }}>{n}</span>
+    <span style={{ marginLeft: 2, fontSize: 11, color: T.textSub, fontWeight: 600, minWidth: 16 }}>{n}</span>
   </div>
 )
 
@@ -33,6 +33,7 @@ export default function FeedbackAdminPage() {
   const [menu, setMenu] = useState({})
   const [totals, setTotals] = useState({ count: 0, recentCount: 0, avgLunch: 0, avgDinner: 0 })
 
+  // ── Initial load on mount ──
   useEffect(() => { load() }, [])
 
   const load = async () => {
@@ -58,6 +59,20 @@ export default function FeedbackAdminPage() {
     buildStats(data)
     setLoading(false)
   }
+
+  // ── REALTIME SUBSCRIPTION (replaces 60s polling) ──
+  useEffect(() => {
+    const channel = supabase
+      .channel('feedback-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_feedback' }, () => {
+        load()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [load])
 
   const buildStats = (data) => {
     // Avg per day
@@ -108,15 +123,15 @@ export default function FeedbackAdminPage() {
         <div style={{ color: T.textSub, fontSize: 11 }}>#{u.thali_number || '—'}</div>
       </div>,
       <Badge color="#c49c5a">{r.day}</Badge>,
-      <div style={{ minWidth: 100 }}>
+      <div style={{ whiteSpace: 'nowrap' }}>
         <Stars n={r.lunch_stars}  />
-        <div style={{ fontSize: 9, color: T.textSub, marginTop: 4, fontStyle: 'italic' }}>{lunchDishes || '—'}</div>
+        <div style={{ fontSize: 9, color: T.textSub, marginTop: 2, fontStyle: 'italic', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{lunchDishes || '—'}</div>
       </div>,
-      <div style={{ minWidth: 100 }}>
+      <div style={{ whiteSpace: 'nowrap' }}>
         <Stars n={r.dinner_stars} />
-        <div style={{ fontSize: 9, color: T.textSub, marginTop: 4, fontStyle: 'italic' }}>{dinnerDishes || '—'}</div>
+        <div style={{ fontSize: 9, color: T.textSub, marginTop: 2, fontStyle: 'italic', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{dinnerDishes || '—'}</div>
       </div>,
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 200 }}>
+      <div style={{ maxWidth: 180, overflow: 'hidden' }}>
         <div style={{ fontSize: 11, color: T.accent, fontWeight: 700 }}>Lunch</div>
         <span style={{ color: T.textSub, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{r.lunch_comment || '—'}</span>
         <div style={{ fontSize: 11, color: '#5e9ce0', fontWeight: 700, marginTop: 4 }}>Dinner</div>
@@ -131,11 +146,11 @@ export default function FeedbackAdminPage() {
       <PageTitle>Meal Feedback</PageTitle>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))', gap: 16, marginBottom: 24 }}>
-        <StatCard icon="📋" label="Total Feedbacks" value={totals.count} />
+      <div className="feedback-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
+        <StatCard icon="📋" label="Total" value={totals.count} />
         <StatCard icon="🕐" label="Last 24h" value={recentCount} color="#e09855" />
-        <StatCard icon="🍛" label="Avg Lunch Rating"  value={`${totals.avgLunch}★`}  color="#c49c5a" />
-        <StatCard icon="🌙" label="Avg Dinner Rating" value={`${totals.avgDinner}★`} color="#5e9ce0" />
+        <StatCard icon="🍛" label="Avg Lunch"  value={`${totals.avgLunch}★`}  color="#c49c5a" />
+        <StatCard icon="🌙" label="Avg Dinner" value={`${totals.avgDinner}★`} color="#5e9ce0" />
       </div>
 
       {/* Chart */}

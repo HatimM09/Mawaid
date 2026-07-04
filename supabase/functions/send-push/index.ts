@@ -89,9 +89,33 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { user_id, title, body, url, type = 'info', target_type } = await req.json()
+    const { user_id, title, body, url, type = 'info', target_type, scheduled_for, sender_name } = await req.json()
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+    // ── If scheduled_for is set and in the future, save to broadcast_schedule ──
+    if (scheduled_for) {
+      const schedDate = new Date(scheduled_for)
+      if (schedDate.getTime() > Date.now()) {
+        const { error: schedError } = await supabase
+          .from('broadcast_schedule')
+          .insert([{
+            title,
+            body,
+            media_url: url || null,
+            target_type: target_type || 'all',
+            target_user_id: user_id || null,
+            status: 'scheduled',
+            scheduled_for: scheduled_for,
+            sender_name: sender_name || 'System',
+            total_targets: 0,
+            sent_count: 0,
+            failed_count: 0,
+          }])
+        if (schedError) throw schedError
+        return jsonResponse({ ok: true, scheduled: true, message: 'Notification scheduled for ' + scheduled_for })
+      }
+    }
 
     // 1. Determine target users
     let targetUserIds: string[] = []
@@ -99,6 +123,14 @@ Deno.serve(async (req) => {
     if (user_id && target_type === 'specific') {
       // Specific user
       targetUserIds = [user_id]
+    } else if (target_type === 'admins') {
+      // Admin staff only
+      const { data: staff, error: staffError } = await supabase
+        .from('staff')
+        .select('user_id')
+        .eq('role', 'admin')
+      if (staffError) throw staffError
+      targetUserIds = (staff || []).map(s => s.user_id)
     } else if (target_type === 'all' || !target_type) {
       // All users - fetch from user_stats (all registered users)
       const { data: allUsers, error: usersError } = await supabase
@@ -137,6 +169,10 @@ Deno.serve(async (req) => {
       const { data: subs, error: subsError } = await query
       if (subsError) throw subsError
       targetUserIds = [...new Set((subs || []).map(s => s.user_id))]
+    }
+
+    if (targetUserIds.length === 0) {
+      return jsonResponse({ ok: true, sent: 0, message: 'No target users found' })
     }
 
     // 2. Fetch push subscriptions for target users
@@ -179,7 +215,6 @@ Deno.serve(async (req) => {
         if (r.status === 'rejected') {
           const errMsg = r.reason?.message || String(r.reason)
           console.error('[send-push] Web Push failed:', errMsg)
-          // Remove subscription if it's expired or invalid (410 Gone / 404 Not Found)
           if (errMsg.includes('410') || errMsg.includes('404') || errMsg.includes('expired')) {
             await supabase
               .from('push_subscriptions')

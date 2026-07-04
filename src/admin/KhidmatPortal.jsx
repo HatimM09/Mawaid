@@ -132,40 +132,36 @@ export default function KhidmatPortal({ signOut, user }) {
       
       const { data: row } = await supabase.from('survey_submissions_flat')
         .select('*').eq('user_id', userId).eq('week_id', weekId).maybeSingle()
-      
-      // Data-driven meal selection: use actual survey data, NOT current time
-      const lunchStatus = row ? row[`${dayKey}_l_status`] : null
-      const dinnerStatus = row ? row[`${dayKey}_d_status`] : null
-      let meal, mealKey
-      if (lunchStatus === 'Applied') {
-        meal = 'lunch'; mealKey = 'l'
-      } else if (dinnerStatus === 'Applied') {
-        meal = 'dinner'; mealKey = 'd'
-      } else {
-        // Neither Applied — show the meal that has a status
-        meal = lunchStatus ? 'lunch' : 'dinner'
-        mealKey = meal === 'lunch' ? 'l' : 'd'
-      }
-      
-      const { data: menuRow } = await supabase.from('weekly_menu').select('*').eq('day_name', today.charAt(0).toUpperCase() + today.slice(1)).eq('week_start', getWeekDate()).maybeSingle()
-      let dishRes = {}
-      const statusKey = `${dayKey}_${mealKey}_status`
-      if (row && row[statusKey] === 'Applied' && menuRow) {
-        const dishList = (menuRow[meal] || '').split(',').map(s => s.trim()).filter(Boolean)
-        dishList.forEach((dish, idx) => {
-          const val = row[`${dayKey}_${mealKey}_dish_${idx + 1}`]
-          if (val !== undefined && val !== null) {
-            dishRes[dish] = val === 'Yes' ? 'yes' : (val === 'No' ? 'no' : val)
-          }
-        })
+
+      const { data: menuRow } = await supabase
+        .from('weekly_menu')
+        .select('*')
+        .eq('day_name', today.charAt(0).toUpperCase() + today.slice(1))
+        .eq('week_start', getWeekDate())
+        .maybeSingle()
+
+      const buildMealData = (meal) => {
+        const mealKey = meal === 'lunch' ? 'l' : 'd'
+        const statusKey = `${dayKey}_${mealKey}_status`
+        const status = row ? row[statusKey] : null
+        const dishes = {}
+        if (row && status === 'Applied' && menuRow) {
+          const dishList = (menuRow[meal] || '').split(',').map(s => s.trim()).filter(Boolean)
+          dishList.forEach((dish, idx) => {
+            const val = row[`${dayKey}_${mealKey}_dish_${idx + 1}`]
+            if (val !== undefined && val !== null) {
+              dishes[dish] = val === 'Yes' ? 'yes' : (val === 'No' ? 'no' : val)
+            }
+          })
+        }
+        return { status: status || 'Not Submitted', dishes }
       }
 
       setScannedUser({
         ...u,
-        status: row ? row[statusKey] : 'Not Submitted',
-        dishResponses: dishRes,
         currentDay: today,
-        currentMeal: meal
+        lunch: buildMealData('lunch'),
+        dinner: buildMealData('dinner')
       })
     } catch (e) { console.error(e) }
   }
@@ -323,11 +319,13 @@ export default function KhidmatPortal({ signOut, user }) {
               <div style={{ display: 'flex', gap: 10 }}>
                 <button
                   onClick={() => setIsScanning(true)}
+                  aria-label="Scan QR code"
                   style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)', borderRadius: 12, padding: 10, cursor: 'pointer', color: 'var(--accent-primary)' }}>
                   <Scan size={20} />
                 </button>
                 <button
                   onClick={() => setActiveTab('notices')}
+                  aria-label="View notices"
                   style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)', borderRadius: 12, padding: 10, cursor: 'pointer', color: 'var(--accent-primary)' }}>
                   <Bell size={20} />
                 </button>
@@ -338,7 +336,7 @@ export default function KhidmatPortal({ signOut, user }) {
             {isScanning && (
               <div style={{ position: 'fixed', inset: 0, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.9)', padding: 20 }}>
                 <div style={{ position: 'relative', width: '100%', maxWidth: 400 }}>
-                  <button onClick={() => setIsScanning(false)} style={{ position: 'absolute', top: -50, right: 0, background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}><X size={32} /></button>
+                  <button onClick={() => setIsScanning(false)} aria-label="Close scanner" style={{ position: 'absolute', top: -50, right: 0, background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}><X size={32} /></button>
                   <Card style={{ padding: 10, background: '#fff' }}><div id="portal-reader" style={{ width: '100%' }}></div></Card>
                   <p style={{ color: '#fff', textAlign: 'center', marginTop: 20, fontWeight: 600 }}>Scan Member QR Code</p>
                 </div>
@@ -378,7 +376,7 @@ export default function KhidmatPortal({ signOut, user }) {
           </div>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: 'var(--accent-primary)' }}>KHIDMAT</h2>
           <div style={{ flex: 1 }} />
-          <button onClick={() => setIsSidebarOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={24} /></button>
+          <button onClick={() => setIsSidebarOpen(false)} aria-label="Close sidebar" style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={24} /></button>
         </div>
 
         <div style={{ flex: 1 }}>

@@ -21,6 +21,20 @@ export default function StaffPage() {
     setLoading(false)
   }
 
+  // ── REALTIME SUBSCRIPTION ──
+  useEffect(() => {
+    const channel = supabase
+      .channel('staff-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff' }, () => {
+        load()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [load])
+
   const handleAdd = async (e) => {
     e.preventDefault()
     if (!form.name || !form.email) return setMsg({ text: 'Name and email are required.', type: 'error' })
@@ -96,8 +110,8 @@ export default function StaffPage() {
               <Input label="Email" name="staffEmail" type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="hussain@email.com" required />
               <Input label="Phone" name="staffPhone" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+91 99999 00000" />
               <div>
-                <label style={{ display: 'block', color: T.textSub, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>Role</label>
-                <select name="staffRole" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
+                <label htmlFor="staffRole" style={{ display: 'block', color: T.textSub, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>Role</label>
+                <select id="staffRole" name="staffRole" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
                   style={{ width: '100%', padding: '12px 14px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit' }}>
                   <option value="khidmat_guzar">Khidmat Guzar</option>
                   <option value="khidmat">Al-Mawaid Team (Khidmat)</option>

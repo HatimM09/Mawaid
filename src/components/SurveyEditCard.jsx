@@ -148,6 +148,7 @@ export default function SurveyEditCard({
                 <input
                   type="number"
                   min="0"
+                  name="portionCount"
                   value={currentResponse.value}
                   onChange={(e) => {
                     const val = parseInt(e.target.value, 10) || 0

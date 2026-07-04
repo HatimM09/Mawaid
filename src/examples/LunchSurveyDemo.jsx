@@ -49,7 +49,7 @@ export default function LunchSurveyDemo() {
             
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
               <div>
-                <label style={{
+                <label htmlFor="demoTheme" style={{
                   fontSize: 14,
                   fontWeight: 600,
                   color: theme === 'dark' ? '#FFF8E7' : '#2d2416',
@@ -58,6 +58,8 @@ export default function LunchSurveyDemo() {
                   Theme:
                 </label>
                 <select
+                  id="demoTheme"
+                  name="theme"
                   value={theme}
                   onChange={(e) => handleThemeChange(e.target.value)}
                   style={{
@@ -76,7 +78,7 @@ export default function LunchSurveyDemo() {
               </div>
               
               <div>
-                <label style={{
+                <label htmlFor="demoUserId" style={{
                   fontSize: 14,
                   fontWeight: 600,
                   color: theme === 'dark' ? '#FFF8E7' : '#2d2416',
@@ -86,6 +88,8 @@ export default function LunchSurveyDemo() {
                 </label>
                 <input
                   type="text"
+                  id="demoUserId"
+                  name="userId"
                   value={userId}
                   onChange={(e) => setUserId(e.target.value)}
                   style={{

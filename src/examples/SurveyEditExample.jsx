@@ -86,7 +86,7 @@ export default function SurveyEditExample() {
 
         {/* Theme switcher */}
         <div style={{ marginBottom: 40 }}>
-          <label style={{
+          <label htmlFor="themeSelect" style={{
             fontSize: 14,
             fontWeight: 600,
             color: theme === 'dark' ? '#FFF8E7' : '#2d2416',
@@ -95,6 +95,8 @@ export default function SurveyEditExample() {
             Theme:
           </label>
           <select
+            id="themeSelect"
+            name="theme"
             value={theme}
             onChange={(e) => setTheme(e.target.value)}
             style={{

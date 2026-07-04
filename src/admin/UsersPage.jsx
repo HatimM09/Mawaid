@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase, supabaseUrl, supabaseAnonKey } from './supabaseClient'
 import { createClient } from '@supabase/supabase-js'
-import { Search, RefreshCw, UserPlus, Edit2, Trash2, X, Shield, Phone, MapPin, UserCheck, QrCode } from 'lucide-react'
+import { Search, RefreshCw, UserPlus, Edit2, Trash2, X, Shield, Phone, MapPin, UserCheck, QrCode, Download, Printer } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Input, Grid, SectionHeader, fmtDate, Alert } from './ui'
 import { useOutletContext } from 'react-router-dom'
@@ -23,6 +23,9 @@ export default function UsersPage() {
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
   const [fetchingMore, setFetchingMore] = useState(false)
+  const [qrPrintMode, setQrPrintMode] = useState(false)
+  const [qrDetailUser, setQrDetailUser] = useState(null)
+  const [showAllQr, setShowAllQr] = useState(false)
   const sentinelRef = useRef(null)
 
   // ── Infinite Scroll: auto-load when sentinel is visible (stable ref avoids stale closures) ──
@@ -140,6 +143,50 @@ export default function UsersPage() {
     }
   }
 
+  // ── Download individual user QR as JPG ──
+  const downloadUserQr = (userId, userName) => {
+    const qrEl = document.getElementById(`user-qr-${userId}`)
+    if (!qrEl) return
+    const canvas = qrEl.querySelector('canvas')
+    if (!canvas) return
+    const safeName = (userName || 'user').replace(/[^a-z0-9]/gi, '_').toLowerCase()
+    const link = document.createElement('a')
+    link.download = `al-mawaid-${safeName}-${new Date().toISOString().split('T')[0]}.jpg`
+    link.href = canvas.toDataURL('image/jpeg', 0.92)
+    link.click()
+  }
+
+  // ── Print all QR labels ──
+  const printAllQrLabels = () => {
+    setQrPrintMode(true)
+    // Close detail overlay if open
+    setQrDetailUser(null)
+    // A small delay to let the print-optimized content render
+    setTimeout(() => {
+      window.print()
+    }, 200)
+  }
+
+  // ── Close print overlay with Escape key ──
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && qrPrintMode) {
+        setQrPrintMode(false)
+      }
+    }
+    const handlePrint = () => {
+      if (qrPrintMode) {
+        setQrPrintMode(false)
+      }
+    }
+    window.addEventListener('afterprint', handlePrint)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('afterprint', handlePrint)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [qrPrintMode])
+
   const handleDelete = async (user) => {
     if (!window.confirm(`Are you sure you want to delete ${user.name || 'this user'}?`)) return
     try {
@@ -189,7 +236,50 @@ export default function UsersPage() {
     <div style={{ fontSize: 13, color: T.text }}>{u.phone || '—'}</div>,
     <div style={{ fontSize: 12, color: T.textSub, maxWidth: 180 }}>{u.address || '—'}</div>,
     <div style={{ fontSize: 12, color: T.textSub }}>{fmtDate(u.created_at)}</div>,
-    <div style={{ display: 'flex', gap: 8 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      {/* QR Code mini + download */}
+      <div id={`user-qr-${u.user_id || u.id}`} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div
+          onClick={() => setQrDetailUser(u)}
+          style={{
+            width: 34, height: 34, borderRadius: 8,
+            background: '#fff', padding: 2, cursor: 'pointer',
+            border: `1px solid ${T.borderGlass || 'rgba(197,160,89,0.15)'}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'transform 0.2s, box-shadow 0.2s',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.1)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.25)'; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.15)'; }}
+          title="View & Download QR"
+        >
+          <QRCodeCanvas value={`ALMAWAID:${u.user_id || u.id}`} size={28} level="H" style={{ display: 'block', borderRadius: 4 }} />
+        </div>          <button onClick={(e) => { e.stopPropagation(); downloadUserQr(u.user_id || u.id, u.name || u.thali_number) }}
+          style={{
+            padding: '4px 6px', borderRadius: 6, border: `1px solid ${T.border}`,
+            background: 'transparent', color: T.textSub, cursor: 'pointer', fontSize: 9, fontWeight: 700,
+            fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 3, transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(197,160,89,0.08)'; e.currentTarget.style.color = T.accent; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = T.textSub; }}
+          title="Download JPG"
+        >
+          <Download size={9} /> JPG
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); printAllQrLabels() }}
+          style={{
+            padding: '4px 6px', borderRadius: 6, border: `1px solid rgba(96,165,250,0.2)`,
+            background: 'transparent', color: '#60a5fa', cursor: 'pointer', fontSize: 9, fontWeight: 700,
+            fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 3, transition: 'all 0.2s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(96,165,250,0.08)'; e.currentTarget.style.color = '#93c5fd'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#60a5fa'; }}
+          title="Print / Save as PDF"
+        >
+          <Printer size={9} /> PDF
+        </button>
+      </div>
+      {/* Actions */}
       {isAdmin ? (
         <>
           <Btn size="sm" variant="outline" onClick={() => setEditForm(u)} title="Edit"><Edit2 size={13} /></Btn>
@@ -205,9 +295,13 @@ export default function UsersPage() {
     <PageWrap>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>
         <PageTitle>Thali Users Database</PageTitle>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <Btn variant="outline" onClick={() => window.print()}>
-            <QrCode size={16} /> <span className="desktop-only">Print All QR Labels</span>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <Btn variant="outline" onClick={() => setShowAllQr(!showAllQr)}>
+            <QrCode size={16} />
+            <span className="desktop-only">{showAllQr ? 'Hide QR Grid' : 'QR Code Gallery'}</span>
+          </Btn>
+          <Btn variant="outline" onClick={printAllQrLabels}>
+            <Printer size={16} /> <span className="desktop-only">Print All Labels</span>
           </Btn>
           {isAdmin && (
             <Btn onClick={() => {            setEditForm({ name: '', email: '', thali_number: '', phone: '', address: '', password: '', avatar_url: '', snack_defaults: { dish_1: 0, dish_2: 0, dish_3: 0, dish_4: 0 } }); setIsAdding(true); }}>
@@ -255,7 +349,7 @@ export default function UsersPage() {
         <>
           <AdminCard style={{ padding: 0, overflow: 'hidden' }}>
             <Table
-              headers={['User Identity', 'Thali #', 'Contact', 'Address', 'Joined On', 'Actions']}
+              headers={['User Identity', 'Thali #', 'Contact', 'Address', 'Joined On', 'QR Code & Actions']}
               rows={rows}
               emptyMsg="No thali users found matching your search."
             />
@@ -282,9 +376,194 @@ export default function UsersPage() {
         </>
       )}
 
-      {/* Edit/Add Modal */}
-      {/* ... (existing edit modal) ... */}
-      
+      {/* ── QR CODE GALLERY (expandable grid) ── */}
+      {showAllQr && (
+        <AdminCard style={{ marginTop: 20, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <QrCode size={18} color={T.accent} />
+              <span style={{ fontSize: 16, fontWeight: 800, color: T.text }}>All Member QR Codes</span>
+              <Badge color={T.accent}>{filtered.length} members</Badge>
+            </div>
+            <Btn size="sm" variant="outline" onClick={printAllQrLabels}>
+              <Printer size={14} /> Print All
+            </Btn>
+          </div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+            gap: 16,
+          }}>
+            {filtered.map(u => (
+              <div key={u.user_id || u.id} style={{
+                textAlign: 'center',
+                padding: 14, borderRadius: 14,
+                background: 'rgba(255,255,255,0.02)',
+                border: `1px solid ${T.border}`,
+                transition: 'all 0.2s',
+              }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(197,160,89,0.06)'; e.currentTarget.style.borderColor = 'rgba(197,160,89,0.2)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; e.currentTarget.style.borderColor = T.border; }}
+              >
+                <div style={{ background: '#fff', borderRadius: 10, padding: 6, display: 'inline-block', marginBottom: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
+                  <QRCodeCanvas value={`ALMAWAID:${u.user_id || u.id}`} size={80} level="H" style={{ display: 'block', cursor: 'pointer' }}
+                    onClick={() => setQrDetailUser(u)}
+                  />
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.accent }}>#{u.thali_number || '—'}</div>
+                <div style={{ fontSize: 11, color: T.textSub, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name || u.email || ''}</div>
+                <div style={{ display: 'flex', gap: 4, marginTop: 8, justifyContent: 'center' }}>
+                  <button onClick={() => downloadUserQr(u.user_id || u.id, u.name || u.thali_number)}
+                    style={{
+                      padding: '3px 8px', borderRadius: 6, border: `1px solid ${T.border}`,
+                      background: 'transparent', color: T.textSub, cursor: 'pointer', fontSize: 9, fontWeight: 700,
+                      fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 3,
+                    }}
+                  >
+                    <Download size={8} /> JPG
+                  </button>
+                  <button onClick={() => printAllQrLabels()}
+                    style={{
+                      padding: '3px 8px', borderRadius: 6, border: `1px solid rgba(96,165,250,0.2)`,
+                      background: 'transparent', color: '#60a5fa', cursor: 'pointer', fontSize: 9, fontWeight: 700,
+                      fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 3,
+                    }}
+                  >
+                    <Printer size={8} /> PDF
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </AdminCard>
+      )}
+
+      {/* ── QR DETAIL OVERLAY (individual user) ── */}
+      {qrDetailUser && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)',
+          backdropFilter: 'blur(16px)', zIndex: 200,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: 20,
+        }} onClick={() => setQrDetailUser(null)}>
+          <AdminCard style={{
+            maxWidth: 340, width: '100%', position: 'relative', textAlign: 'center',
+            boxShadow: '0 40px 80px rgba(0,0,0,0.6)',
+          }} onClick={e => e.stopPropagation()}>
+            <button
+              onClick={() => setQrDetailUser(null)}
+              style={{
+                position: 'absolute', top: 12, right: 12, background: 'rgba(255,255,255,0.05)',
+                border: 'none', color: T.textSub, cursor: 'pointer', padding: 8, borderRadius: 10,
+                display: 'flex', alignItems: 'center',
+              }}
+            >
+              <X size={18} />
+            </button>
+
+            <div style={{ marginBottom: 16, paddingTop: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: T.textSub, textTransform: 'uppercase', letterSpacing: '0.15em' }}>Member QR Code</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: T.accent, marginTop: 4 }}>
+                <span style={{ color: T.textSub, fontSize: 14 }}>Thali #{qrDetailUser.thali_number || '—'}</span>
+              </div>
+            </div>
+
+            <div id={`user-qr-detail-${qrDetailUser.user_id || qrDetailUser.id}`} style={{
+              background: '#fff', borderRadius: 16, padding: 16, display: 'inline-block',
+              marginBottom: 20, boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+            }}>
+              <QRCodeCanvas value={`ALMAWAID:${qrDetailUser.user_id || qrDetailUser.id}`} size={200} level="H" />
+            </div>
+
+            <div style={{ fontSize: 12, color: T.textSub, marginBottom: 16, fontFamily: 'monospace', wordBreak: 'break-all', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: 8 }}>
+              ALMAWAID:{qrDetailUser.user_id || qrDetailUser.id}
+            </div>
+
+            <div style={{ display: 'flex', gap: 12 }}>
+              <Btn style={{ flex: 1 }} onClick={() => {
+                const qrEl = document.getElementById(`user-qr-detail-${qrDetailUser.user_id || qrDetailUser.id}`)
+                if (!qrEl) return
+                const canvas = qrEl.querySelector('canvas')
+                if (!canvas) return
+                const link = document.createElement('a')
+                link.download = `al-mawaid-${(qrDetailUser.name || 'user').replace(/[^a-z0-9]/gi, '_').toLowerCase()}-${new Date().toISOString().split('T')[0]}.jpg`
+                link.href = canvas.toDataURL('image/jpeg', 0.92)
+                link.click()
+              }}>
+                <Download size={14} /> Download JPG
+              </Btn>
+              <Btn variant="outline" style={{ flex: 1 }} onClick={() => {
+                setQrDetailUser(null)
+                printAllQrLabels()
+              }}>
+                <Printer size={14} /> Print All / PDF
+              </Btn>
+            </div>
+          </AdminCard>
+        </div>
+      )}
+
+      {/* ── PRINT OVERLAY (all QR labels in a print-friendly grid) ── */}
+      {qrPrintMode && (
+        <div className="qr-print-overlay" style={{
+          position: 'fixed', inset: 0, zIndex: 99999,
+          background: '#fff', overflow: 'auto',
+          padding: '40px 30px', boxSizing: 'border-box',
+        }}>
+          <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+            <div style={{ textAlign: 'center', marginBottom: 30 }}>
+              <h1 style={{ fontSize: 22, fontWeight: 900, color: '#000', margin: 0, fontFamily: "'DM Sans',sans-serif" }}>Al-Mawaid — Member QR Code Labels</h1>
+              <p style={{ fontSize: 13, color: '#666', marginTop: 6, fontFamily: "'DM Sans',sans-serif" }}>
+                {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })} • {filtered.length} members
+              </p>
+              <p style={{ fontSize: 11, color: '#999', marginTop: 4, fontFamily: "'DM Sans',sans-serif" }}>
+                Scan with wireless scanner for quick check-in. Print on A4, cut along labels.
+              </p>
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+              gap: 16,
+            }}>
+              {filtered.map(u => (
+                <div key={u.user_id || u.id} className="qr-label-print" style={{
+                  textAlign: 'center',
+                  border: '1.5px dashed #ddd',
+                  borderRadius: 12,
+                  padding: '16px 12px',
+                  pageBreakInside: 'avoid',
+                  breakInside: 'avoid',
+                  background: '#fafafa',
+                }}>
+                  <div style={{ marginBottom: 8 }}>
+                    <QRCodeCanvas value={`ALMAWAID:${u.user_id || u.id}`} size={120} level="H" style={{ display: 'block', margin: '0 auto' }} />
+                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: '#b8860b', fontFamily: "'DM Sans',sans-serif" }}>#{u.thali_number || '—'}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#222', marginTop: 2, fontFamily: "'DM Sans',sans-serif" }}>{u.name || 'User'}</div>
+                  <div style={{ fontSize: 8, color: '#999', marginTop: 4, fontFamily: 'monospace', wordBreak: 'break-all' }}>ALMAWAID:{u.user_id?.slice(0, 12) || u.id?.slice(0, 12) || ''}…</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ textAlign: 'center', marginTop: 40 }} className="no-print">
+              <button onClick={() => setQrPrintMode(false)}
+                style={{
+                  padding: '12px 32px', borderRadius: 10, background: '#111',
+                  color: '#fff', border: 'none', cursor: 'pointer',
+                  fontSize: 14, fontWeight: 700, fontFamily: "'DM Sans',sans-serif",
+                  transition: 'background 0.2s',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = '#333'}
+                onMouseLeave={e => e.currentTarget.style.background = '#111'}
+              >
+                ✕ Close &mdash; or press Esc
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editForm && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
@@ -308,7 +587,7 @@ export default function UsersPage() {
               <Input label="Email (Primary Key)" name="userEmail" value={editForm.email} onChange={e => setEditForm({...editForm, email: e.target.value})} disabled={!isAdding} required />
               <Grid cols={2}>
                 <Input label="Full Name" name="userName" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} />
-                <Input label="Thali Number" name="userThali" value={editForm.thali_number} onChange={e => setEditForm({...editForm, thali_number: e.target.value})} type="number" />
+                <Input label="Thali Number" name="userThali" value={editForm.thali_number} onChange={e => setEditForm({...editForm, thali_number: e.target.value})} />
               </Grid>
               <Input label="Phone Number" name="userPhone" value={editForm.phone} onChange={e => setEditForm({...editForm, phone: e.target.value})} />
               <Input label="Residential Address" name="userAddress" value={editForm.address} onChange={e => setEditForm({...editForm, address: e.target.value})} />
@@ -359,6 +638,23 @@ export default function UsersPage() {
         .spin { animation: spin 1s linear infinite } @keyframes spin { to { transform: rotate(360deg) } }
         .admin-page-wrap { animation: fadeSlideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
         @keyframes fadeSlideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Print-optimized QR label layout */
+        @media print {
+          body > *:not(.qr-print-overlay) { display: none !important; }
+          .qr-print-overlay {
+            position: static !important;
+            background: #fff !important;
+            padding: 20px !important;
+          }
+          .qr-print-overlay .no-print { display: none !important; }
+          .qr-label-print {
+            border: 1px solid #ccc !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          .qr-label-print canvas { margin: 0 auto !important; }
+        }
       `}</style>
     </PageWrap>
   )

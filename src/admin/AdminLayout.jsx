@@ -434,11 +434,12 @@ export default function AdminLayout() {
             </div>
             <button 
               onClick={() => window.location.reload()} 
+              aria-label="Refresh page"
               style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               <RefreshCw size={18} />
             </button>
-            <button onClick={handleLogout} style={{ background: 'none', border: 'none', color: '#ff5c5c', cursor: 'pointer' }}><LogOut size={20} /></button>
+            <button onClick={handleLogout} aria-label="Log out" style={{ background: 'none', border: 'none', color: '#ff5c5c', cursor: 'pointer' }}><LogOut size={20} /></button>
           </div>
         </header>
 
@@ -501,6 +502,18 @@ export default function AdminLayout() {
 
           {/* Dynamic content */}
           <main key={location.pathname} className="smooth-appear scroll-container" style={{ flex: 1, padding: 'clamp(12px, 3vw, 24px)', paddingBottom: 120, overflowY: 'auto', overflowX: 'hidden' }}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 100, marginBottom: 8, display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                padding: '3px 10px', borderRadius: 10,
+                background: 'rgba(57,255,20,0.06)', border: '1px solid rgba(57,255,20,0.15)',
+                fontSize: 9, fontWeight: 700, color: 'rgba(57,255,20,0.7)',
+                textTransform: 'uppercase', letterSpacing: '0.1em'
+              }}>
+                <span className="live-dot" style={{ width: 5, height: 5, borderRadius: '50%', background: '#39ff14', display: 'inline-block' }} />
+                Real-time
+              </div>
+            </div>
             <Outlet context={{ role }} />
           </main>
         </div>
@@ -585,7 +598,7 @@ export default function AdminLayout() {
               <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent-gold)', marginBottom: 2 }}>{toastNotice.title}</div>
               <div style={{ fontSize: 12, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{toastNotice.body}</div>
             </div>
-            <button onClick={(e) => { e.stopPropagation(); setToastNotice(null) }} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', padding: 4, cursor: 'pointer' }}>
+            <button onClick={(e) => { e.stopPropagation(); setToastNotice(null) }} aria-label="Dismiss notification" style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', padding: 4, cursor: 'pointer' }}>
               <X size={16} />
             </button>
           <div style={{position:"absolute",bottom:0,left:0,height:3,right:0,background:"var(--accent-primary)",borderRadius:"0 0 20px 20px",animation:"toastCountdown 8s linear forwards"}} />
@@ -628,6 +641,51 @@ export default function AdminLayout() {
       <style>{`
         main::-webkit-scrollbar { width: 4px; }
         main::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+
+        .smooth-appear {
+          animation: fadeSlideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        @keyframes fadeSlideIn {
+          from { opacity: 0; transform: translateY(12px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        .scroll-container {
+          scroll-behavior: smooth;
+        }
+
+        .hover-lift {
+          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
+        }
+        .hover-lift:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 12px 40px rgba(212, 175, 55, 0.15);
+        }
+
+        @keyframes staggerFadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .stagger-item {
+          animation: staggerFadeIn 0.4s ease-out forwards;
+          opacity: 0;
+        }
+        .stagger-item:nth-child(1) { animation-delay: 0.05s; }
+        .stagger-item:nth-child(2) { animation-delay: 0.1s; }
+        .stagger-item:nth-child(3) { animation-delay: 0.15s; }
+        .stagger-item:nth-child(4) { animation-delay: 0.2s; }
+        .stagger-item:nth-child(5) { animation-delay: 0.25s; }
+        .stagger-item:nth-child(6) { animation-delay: 0.3s; }
+        .stagger-item:nth-child(7) { animation-delay: 0.35s; }
+        .stagger-item:nth-child(8) { animation-delay: 0.4s; }
+
+        @keyframes livePulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+        .live-dot {
+          animation: livePulse 1.5s ease-in-out infinite;
+        }
       `}</style>
     </div>
   )

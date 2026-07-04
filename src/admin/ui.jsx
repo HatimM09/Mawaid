@@ -173,7 +173,7 @@ export const SlideDrawer = ({ isOpen, onClose, title, children, width = 480 }) =
     }}>
       <div style={{ padding: '28px 36px', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h3 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--text-primary)' }}>{title}</h3>
-        <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', cursor: 'pointer', padding: 10, borderRadius: 12, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <button onClick={onClose} aria-label="Close drawer" style={{ background: 'rgba(255,255,255,0.05)', border: 'none', cursor: 'pointer', padding: 10, borderRadius: 12, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <X size={22} />
         </button>
       </div>
@@ -186,28 +186,28 @@ export const SlideDrawer = ({ isOpen, onClose, title, children, width = 480 }) =
 
 export const StatCard = ({ icon, label, value, color, sub }) => (
   <AdminCard style={{ 
-    display: 'flex', alignItems: 'center', gap: 'clamp(16px, 4vw, 24px)',
+    display: 'flex', alignItems: 'center', gap: 14,
     border: `1.5px solid ${color ? `${color}30` : 'rgba(197, 160, 89, 0.15)'}`,
     boxShadow: `0 12px 40px rgba(0,0,0,0.25)`,
-    padding: '24px'
+    padding: '18px', overflow: 'hidden',
   }}>
     <div style={{
-      width: 'clamp(52px, 13vw, 64px)', height: 'clamp(52px, 13vw, 64px)', borderRadius: 16, flexShrink: 0,
+      width: 44, height: 44, borderRadius: 12, flexShrink: 0,
       background: color ? `${color}12` : 'rgba(197, 160, 89, 0.08)',
       border: `1.5px solid ${color ? `${color}30` : 'rgba(197, 160, 89, 0.2)'}`,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: 'clamp(24px, 5.5vw, 32px)', color: color || 'var(--accent-primary)',
+      fontSize: 20, color: color || 'var(--accent-primary)',
     }}>
       {icon}
     </div>
-    <div style={{ flex: 1 }}>
-      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.15em' }}>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {label}
       </div>
-      <div style={{ fontSize: 'clamp(26px, 6vw, 36px)', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1, marginTop: 6 }}>
+      <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1, marginTop: 4 }}>
         {value}
       </div>
-      {sub && <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 6, opacity: 0.8 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, opacity: 0.8 }}>{sub}</div>}
     </div>
   </AdminCard>
 )
@@ -277,41 +277,48 @@ export const Badge = ({ children, color = 'var(--accent-cyan)', style = {} }) =>
   )
 }
 
-export const Input = ({ label, ...props }) => (
-  <div style={{ width: '100%' }}>
-    {label && <label style={{
-      display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
-      fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
-    }}>{label}</label>}
-    <input style={{
-      width: '100%', boxSizing: 'border-box',
-      padding: '12px 16px', borderRadius: 12,
-      background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
-      color: 'var(--text-primary)', fontSize: 14, outline: 'none', fontFamily: 'inherit',
-    }} {...props} />
-  </div>
-)
+export const Input = ({ label, ...props }) => {
+  const autoId = label ? label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') : undefined
+  return (
+    <div style={{ width: '100%' }}>
+      {label && <label htmlFor={props.id || autoId} style={{
+        display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
+        fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
+      }}>{label}</label>}
+      <input id={props.id || autoId} name={props.name || autoId} style={{
+        width: '100%', boxSizing: 'border-box',
+        padding: '12px 16px', borderRadius: 12,
+        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
+        color: 'var(--text-primary)', fontSize: 14, outline: 'none', fontFamily: 'inherit',
+      }} {...props} />
+    </div>
+  )
+}
 
-export const Select = ({ label, children, ...props }) => (
-  <div style={{ width: '100%' }}>
-    {label && <label style={{
-      display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
-      fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
-    }}>{label}</label>}
-    <select style={{
-      width: '100%', boxSizing: 'border-box',
-      padding: '12px 16px', borderRadius: 12,
-      background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
-      color: 'var(--text-primary)', fontSize: 14, outline: 'none', fontFamily: 'inherit',
-    }} {...props}>
-      {children}
-    </select>
-  </div>
-)
+export const Select = ({ label, children, ...props }) => {
+  const autoId = label ? label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') : undefined
+  return (
+    <div style={{ width: '100%' }}>
+      {label && <label htmlFor={props.id || autoId} style={{
+        display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
+        fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
+      }}>{label}</label>}
+      <select id={props.id || autoId} name={props.name || autoId} style={{
+        width: '100%', boxSizing: 'border-box',
+        padding: '12px 16px', borderRadius: 12,
+        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
+        color: 'var(--text-primary)', fontSize: 14, outline: 'none', fontFamily: 'inherit',
+      }} {...props}>
+        {children}
+      </select>
+    </div>
+  )
+}
 
 export const Btn = ({ children, variant = 'primary', size = 'md', ...props }) => {
   const styles = {
     primary: { background: 'var(--accent-cyan)', color: 'var(--bg-deep)', border: 'none' },
+    solid: { background: 'var(--accent-gold)', color: 'var(--bg-deep)', border: 'none' },
     outline: { background: 'rgba(25, 20, 10, 0.4)', color: 'var(--text-primary)', border: '1px solid rgba(212, 175, 55, 0.25)' },
     danger: { background: 'rgba(224, 85, 85, 0.1)', color: '#e05555', border: '1px solid rgba(224, 85, 85, 0.25)' },
     ghost: { background: 'var(--accent-bg)', color: 'var(--text-tertiary)', border: 'none' },
@@ -327,17 +334,23 @@ export const Btn = ({ children, variant = 'primary', size = 'md', ...props }) =>
       fontFamily: 'inherit', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
       ...styles[variant], ...sizes[size],
-      boxShadow: variant === 'primary' ? '0 8px 20px rgba(0, 229, 255, 0.3)' : 'none'
+      boxShadow: variant === 'primary' 
+        ? '0 8px 20px rgba(0, 229, 255, 0.3)' 
+        : variant === 'solid'
+          ? '0 8px 20px rgba(212, 175, 55, 0.3)'
+          : 'none'
     }}
       onMouseEnter={e => { 
         e.currentTarget.style.transform = 'translateY(-2px)'; 
-        e.currentTarget.style.boxShadow = variant === 'primary' 
+        const isFilled = variant === 'primary' || variant === 'solid'
+        e.currentTarget.style.boxShadow = isFilled 
           ? '0 12px 25px rgba(212, 175, 55, 0.5)' 
           : '0 8px 15px rgba(0, 0, 0, 0.2)';
       }}
       onMouseLeave={e => { 
         e.currentTarget.style.transform = 'translateY(0)'; 
-        e.currentTarget.style.boxShadow = variant === 'primary' 
+        const isFilled = variant === 'primary' || variant === 'solid'
+        e.currentTarget.style.boxShadow = isFilled 
           ? '0 8px 20px rgba(212, 175, 55, 0.3)' 
           : 'none';
       }}
@@ -421,7 +434,7 @@ export const Modal = ({ isOpen, onClose, title, children, maxWidth = 440 }) => {
       <AdminCard style={{ width: '100%', maxWidth, position: 'relative' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
           <h3 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.text }}>{title}</h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: T.textSub, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+          <button onClick={onClose} aria-label="Close modal" style={{ background: 'none', border: 'none', color: T.textSub, cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
             <X size={20} />
           </button>
         </div>
@@ -493,264 +506,205 @@ const pctColor = (val, isRoti, rotiVal) => {
 }
 
 export const PackingTVView = ({ user, onClose }) => {
-  const responses = user.dishResponses || {}
-  const dishEntries = Object.entries(responses)
   const [imgError, setImgError] = React.useState(false)
+
+  // Support both new format (lunch/dinner objects) and legacy (flat dishResponses)
+  const hasBothMeals = user.lunch && user.dinner
+  const meals = hasBothMeals
+    ? [
+        { name: 'Lunch', key: 'lunch', data: user.lunch, icon: '☀️' },
+        { name: 'Dinner', key: 'dinner', data: user.dinner, icon: '🌙' }
+      ]
+    : [
+        { name: (user.currentMeal || 'Meal').charAt(0).toUpperCase() + (user.currentMeal || 'Meal').slice(1), key: 'meal', data: { status: user.status || 'Not Submitted', dishes: user.dishResponses || {} }, icon: '🍽️' }
+      ]
+
+  const MealSection = ({ meal }) => {
+    const { status, dishes } = meal.data
+    const dishEntries = Object.entries(dishes)
+    const isApplied = status === 'Applied'
+
+    if (!isApplied) {
+      return (
+        <div style={{
+          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(244, 63, 94, 0.08)', border: 'clamp(3px, 0.6vh, 8px) solid rgba(244, 63, 94, 0.3)', borderRadius: '2.5vh',
+          padding: '2vh 2vw', minHeight: 0
+        }}>
+          <div style={{ fontSize: 'clamp(28px, 8vh, 90px)', fontWeight: 1000, color: '#f43f5e', textAlign: 'center', lineHeight: 1.1 }}>
+            {meal.icon} NO {meal.name.toUpperCase()}
+          </div>
+          <div style={{ fontSize: 'clamp(14px, 3vh, 36px)', color: 'rgba(244, 63, 94, 0.5)', marginTop: '1vh', fontWeight: 600 }}>
+            {status === 'Not Submitted' ? 'Not yet submitted' : 'Skipped'}
+          </div>
+        </div>
+      )
+    }
+
+    const total = dishEntries.length
+    const gridCols = total === 1 ? '1fr' : total === 2 ? 'repeat(2, 1fr)' : total <= 4 ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)'
+
+    return (
+      <div style={{
+        flex: 1, display: 'grid',
+        gridTemplateColumns: gridCols,
+        gap: '1.5vh 1.5vw',
+        minHeight: 0,
+        alignContent: 'center'
+      }}>
+        {dishEntries.map(([dish, pct], idx) => {
+          const isCount = typeof pct === 'string' && !pct.endsWith('%') && pct !== 'yes' && pct !== 'no'
+          const isRoti = dish.toLowerCase().includes('roti') || dish.toLowerCase().includes('naan')
+          const val = parseInt(pct) || 0
+          const fillHeight = isRoti ? (pct === 'yes' ? '100%' : '0%') : (isCount ? (val > 0 ? '100%' : '0%') : `${val}%`)
+          const clr = pctColor(isCount || isRoti ? (val > 0 ? 100 : 0) : val, isRoti, pct)
+          
+          return (
+            <div key={dish} style={{
+              background: clr.bg,
+              border: `clamp(2px, 0.4vh, 5px) solid ${clr.border}`,
+              borderRadius: '2vh',
+              display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center',
+              padding: '1.5vh 1.5vw', position: 'relative', overflow: 'hidden',
+              boxShadow: `0 0 20px ${clr.shadow}`,
+              textAlign: 'center',
+              minWidth: 0, minHeight: 0,
+              boxSizing: 'border-box'
+            }}>
+              <div style={{
+                position: 'absolute', left: 0, right: 0, bottom: 0,
+                height: fillHeight,
+                background: clr.fill,
+                opacity: 0.1,
+                transition: 'height 1.5s cubic-bezier(0.4, 0, 0.2, 1)',
+                zIndex: 1
+              }} />
+              <div style={{
+                width: 'clamp(40px, 6vh, 70px)', height: 'clamp(40px, 6vh, 70px)', borderRadius: '50%',
+                background: clr.badge,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 'clamp(16px, 3vh, 36px)', fontWeight: 1000, color: '#fff', zIndex: 2,
+                boxShadow: `0 0 15px ${clr.shadow}`
+              }}>
+                {idx + 1}
+              </div>
+              <div style={{
+                fontSize: 'clamp(14px, 2.8vh, 32px)',
+                fontWeight: 1000, color: '#fff',
+                textTransform: 'uppercase', letterSpacing: '0.01em',
+                margin: '0.8vh 0', zIndex: 2,
+                lineHeight: 1.1,
+                wordBreak: 'break-word',
+                maxWidth: '100%'
+              }}>{dish}</div>
+              <div style={{ zIndex: 2 }}>
+                {val > 0 && !isRoti && (
+                  <div style={{
+                    display: 'inline-block', padding: '0.4vh 1.5vw', borderRadius: '0.8vh',
+                    background: clr.tagBg, color: clr.tagColor,
+                    fontSize: 'clamp(10px, 1.8vh, 22px)', fontWeight: 900,
+                    border: `1px solid ${clr.tagBorder}`
+                  }}>
+                    {isCount ? `${val} pcs` : (val === 100 ? 'FULL' : (val === 50 ? 'HALF' : (val === 25 ? 'QUARTER' : `${val}%`)))}
+                  </div>
+                )}
+                <div style={{
+                  fontSize: 'clamp(20px, 4.5vh, 55px)',
+                  fontWeight: 1000, color: clr.text,
+                  textShadow: `0 3px 10px ${clr.shadow}`, lineHeight: 1
+                }}>
+                  {isRoti ? (pct === 'yes' ? 'YES' : 'NO') : (isCount ? `${val}` : `${val}%`)}
+                </div>
+                <div style={{
+                  fontSize: 'clamp(9px, 1.5vh, 18px)', fontWeight: 800,
+                  color: 'var(--text-tertiary)', textTransform: 'uppercase',
+                  marginTop: '0.3vh', letterSpacing: '0.1em'
+                }}>
+                  {isRoti ? 'Response' : (isCount ? 'Pieces' : 'Portion')}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
   
   return (
     <div style={{ 
       position: 'fixed', inset: 0, zIndex: 9999, 
       background: '#000', color: '#fff',
       display: 'flex', flexDirection: 'column',
-      padding: '4vh 4vw', boxSizing: 'border-box',
+      padding: '3vh 3vw', boxSizing: 'border-box',
       overflow: 'hidden', animation: 'fadeIn 0.3s ease-out',
       height: '100vh', width: '100vw'
     }}>
       <style>{`
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes pulseBorder { 
-          0% { border-color: rgba(212, 175, 55, 0.2); } 
-          50% { border-color: rgba(212, 175, 55, 1); } 
-          100% { border-color: rgba(212, 175, 55, 0.2); } 
-        }
-        .tv-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 3vh;
-        }
-        .tv-grid {
-          display: grid;
-          width: 100%;
-          box-sizing: border-box;
-          margin-bottom: 2vh;
-        }
         @media (max-width: 768px) {
-          .tv-header {
-            flex-direction: row !important;
-            justify-content: space-between !important;
-            align-items: center !important;
-            margin-bottom: 2vh !important;
-            gap: 12px;
-          }
-          .tv-header-right {
-            text-align: right !important;
-          }
-          .tv-grid {
-            grid-template-columns: repeat(2, 1fr) !important;
-            gap: 12px !important;
-          }
+          .tv-header { flex-direction: row !important; justify-content: space-between !important; align-items: center !important; gap: 12px; }
+          .tv-header-right { text-align: right !important; }
+          .meal-split { flex-direction: column !important; }
         }
       `}</style>
 
-      {/* Absolute Top-Right Dismiss Button */}
-      <button 
-        onClick={onClose}
-        style={{
-          position: 'absolute', top: '3vh', right: '3vw',
-          background: 'rgba(244, 63, 94, 0.15)', border: '2px solid rgba(244, 63, 94, 0.4)',
-          color: '#f43f5e', width: 'clamp(50px, 7vh, 80px)', height: 'clamp(50px, 7vh, 80px)', borderRadius: '50%',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 'clamp(20px, 3.5vh, 36px)', fontWeight: 900, cursor: 'pointer', zIndex: 10005,
-          boxShadow: '0 0 20px rgba(244, 63, 94, 0.2)',
-          transition: 'all 0.2s',
-          lineHeight: 1
-        }}
-        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(244, 63, 94, 0.3)'; e.currentTarget.style.transform = 'scale(1.1)' }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(244, 63, 94, 0.15)'; e.currentTarget.style.transform = 'scale(1)' }}
-      >
-        ✕
-      </button>
+      {/* Dismiss Button */}
+      <button onClick={onClose} style={{
+        position: 'absolute', top: '2vh', right: '2vw',
+        background: 'rgba(244, 63, 94, 0.15)', border: '2px solid rgba(244, 63, 94, 0.4)',
+        color: '#f43f5e', width: 'clamp(44px, 5vh, 60px)', height: 'clamp(44px, 5vh, 60px)', borderRadius: '50%',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 'clamp(18px, 2.5vh, 28px)', fontWeight: 900, cursor: 'pointer', zIndex: 10005,
+        boxShadow: '0 0 20px rgba(244, 63, 94, 0.2)', lineHeight: 1
+      }}>✕</button>
 
-      {/* TOP HEADER: USER PROFILE WITH PIC */}
-      <div className="tv-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '2vw' }}>
-           {user.avatar_url && !imgError ? (
-             <img 
-               src={user.avatar_url} 
-               alt={user.name} 
-               onError={() => setImgError(true)}
-               style={{ 
-                 width: 'clamp(60px, 12vh, 120px)', 
-                 height: 'clamp(60px, 12vh, 120px)', 
-                 borderRadius: '3vh', 
-                 objectFit: 'cover',
-                 border: '3px solid var(--accent-gold)',
-                 boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-                 flexShrink: 0 
-               }} 
-             />
-           ) : (
-             <div style={{ 
-               width: 'clamp(60px, 12vh, 120px)', height: 'clamp(60px, 12vh, 120px)', borderRadius: '3vh', background: 'var(--accent-grad)',
-               display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'clamp(24px, 5vh, 48px)', fontWeight: 900, color: '#000',
-               flexShrink: 0,
-               border: '3px solid var(--accent-gold)',
-               boxShadow: '0 8px 24px rgba(0,0,0,0.3)'
-             }}>
-               {(user.name || 'U').charAt(0).toUpperCase()}
-             </div>
-           )}
-           <div>
-             <div style={{ fontSize: 'clamp(16px, 3.5vh, 32px)', fontWeight: 800, color: 'var(--accent-gold)', textTransform: 'uppercase', letterSpacing: '0.15em', display: 'flex', alignItems: 'center', gap: '1.5vh', flexWrap: 'wrap' }}>
-               Thali Dispatch Station
-               {user.currentDay && (
-                 <span style={{ fontSize: 'clamp(12px, 2.8vh, 20px)', background: 'rgba(212, 175, 55, 0.15)', padding: '4px 12px', borderRadius: '0.8vh', color: '#fff', fontWeight: 900 }}>
-                   {user.currentDay.toUpperCase()} • {user.currentMeal.toUpperCase()}
-                 </span>
-               )}
-             </div>
-             <div style={{ fontSize: 'clamp(32px, 8vh, 80px)', fontWeight: 1000, lineHeight: 1.1, letterSpacing: '-0.02em', marginTop: '0.5vh' }}>{user.name}</div>
-           </div>
+      {/* Header */}
+      <div className="tv-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2vh', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5vw' }}>
+          {user.avatar_url && !imgError ? (
+            <img src={user.avatar_url} alt={user.name} onError={() => setImgError(true)}
+              style={{ width: 'clamp(50px, 8vh, 90px)', height: 'clamp(50px, 8vh, 90px)', borderRadius: '2vh', objectFit: 'cover',
+                border: '3px solid var(--accent-gold)', boxShadow: '0 8px 24px rgba(0,0,0,0.3)', flexShrink: 0 }} />
+          ) : (
+            <div style={{ width: 'clamp(50px, 8vh, 90px)', height: 'clamp(50px, 8vh, 90px)', borderRadius: '2vh',
+              background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 'clamp(20px, 3.5vh, 40px)', fontWeight: 900, color: '#000', flexShrink: 0,
+              border: '3px solid var(--accent-gold)', boxShadow: '0 8px 24px rgba(0,0,0,0.3)' }}>
+              {(user.name || 'U').charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div>
+            <div style={{ fontSize: 'clamp(14px, 2.5vh, 28px)', fontWeight: 800, color: 'var(--accent-gold)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+              Thali Dispatch • {user.currentDay ? user.currentDay.toUpperCase() : ''}
+            </div>
+            <div style={{ fontSize: 'clamp(24px, 5vh, 55px)', fontWeight: 1000, lineHeight: 1.1, marginTop: '0.3vh' }}>{user.name}</div>
+          </div>
         </div>
-        
-        <div className="tv-header-right" style={{ textAlign: 'right', marginRight: '80px' }}>
-          <div style={{ fontSize: 'clamp(16px, 4vh, 30px)', color: 'var(--text-tertiary)', fontWeight: 700 }}>Thali Reference</div>
-          <div style={{ fontSize: 'clamp(48px, 12vh, 120px)', fontWeight: 1000, lineHeight: 1, color: '#fff' }}>#{user.thali_number}</div>
+        <div className="tv-header-right" style={{ textAlign: 'right', marginRight: 'clamp(50px, 5vw, 80px)' }}>
+          <div style={{ fontSize: 'clamp(12px, 2.5vh, 24px)', color: 'var(--text-tertiary)', fontWeight: 700 }}>Thali</div>
+          <div style={{ fontSize: 'clamp(36px, 8vh, 90px)', fontWeight: 1000, lineHeight: 1, color: '#fff' }}>#{user.thali_number}</div>
         </div>
       </div>
 
-      {/* DISH LIST - AUTOMATICALLY ADJUSTS GRID & FONT SIZES FOR 1-6 DISHES */}
-      {user.status === 'Applied' ? (() => {
-        const totalDishes = dishEntries.length
-        const isMultiRow = totalDishes > 3
-        
-        // Define dynamic grid rows/columns
-        let gridCols = 'repeat(3, 1fr)'
-        if (totalDishes === 1) gridCols = '1fr'
-        else if (totalDishes === 2) gridCols = 'repeat(2, 1fr)'
-        else if (totalDishes === 3) gridCols = 'repeat(3, 1fr)'
-        else if (totalDishes === 4) gridCols = 'repeat(2, 1fr)'
-        else if (totalDishes >= 5) gridCols = 'repeat(3, 1fr)'
-
-        const gridRows = isMultiRow ? 'repeat(2, 1fr)' : '1fr'
-
-        // Scale styles dynamically
-        // Scale styles dynamically - made larger for readability
-        const cardPadding = isMultiRow ? '2vh 2.5vw' : '3.5vh 3.5vw'
-        const badgeSize = isMultiRow ? 'clamp(60px, 10vh, 110px)' : 'clamp(80px, 15vh, 150px)'
-        const badgeFontSize = isMultiRow ? 'clamp(22px, 4.5vh, 44px)' : 'clamp(32px, 6.5vh, 60px)'
-        const dishFontSize = isMultiRow ? 'clamp(28px, 5.5vh, 60px)' : 'clamp(38px, 8vh, 80px)'
-        const dishMargin = isMultiRow ? '1.2vh 0' : '2vh 0'
-        const tagPadding = isMultiRow ? '0.6vh 2vh' : '1vh 3vh'
-        const tagFontSize = isMultiRow ? '2vh' : '2.8vh'
-        const amountFontSize = isMultiRow ? 'clamp(38px, 9vh, 110px)' : 'clamp(56px, 13vh, 160px)'
-        const labelFontSize = isMultiRow ? '1.8vh' : '2.6vh'
-
-        return (
-          <div className="tv-grid" style={{ 
-            flex: 1, 
-            minHeight: 0,
-            gridTemplateColumns: gridCols,
-            gridTemplateRows: gridRows,
-            gap: isMultiRow ? '2vh 2vw' : '0 2.5vw', 
-          }}>
-            {dishEntries.map(([dish, pct], idx) => {
-              const isCount = typeof pct === 'string' && !pct.endsWith('%') && pct !== 'yes' && pct !== 'no'
-              const isRoti = dish.toLowerCase().includes('roti') || dish.toLowerCase().includes('naan')
-              const val = parseInt(pct) || 0
-              const fillHeight = isRoti ? (pct === 'yes' ? '100%' : '0%') : (isCount ? (val > 0 ? '100%' : '0%') : `${val}%`)
-              const clr = pctColor(isCount || isRoti ? (val > 0 ? 100 : 0) : val, isRoti, pct)
-              
-              return (
-                <div key={dish} style={{ 
-                  background: clr.bg,
-                  border: `clamp(3px, 0.6vh, 8px) solid ${clr.border}`,
-                  borderRadius: '3vh',
-                  display: 'flex', flexDirection: 'column', 
-                  alignItems: 'center', justifyContent: 'space-between',
-                  padding: cardPadding, position: 'relative', overflow: 'hidden',
-                  boxShadow: `0 0 30px ${clr.shadow}`,
-                  textAlign: 'center',
-                  minWidth: 0,
-                  height: '100%',
-                  boxSizing: 'border-box'
-                }}>
-                  {/* Vertical Fill Animation */}
-                  <div style={{ 
-                    position: 'absolute', left: 0, right: 0, bottom: 0,
-                    height: fillHeight,
-                    background: clr.fill,
-                    opacity: 0.12,
-                    transition: 'height 1.5s cubic-bezier(0.4, 0, 0.2, 1)',
-                    zIndex: 1
-                  }} />
-
-                  {/* Index Badge */}
-                  <div style={{ 
-                    width: badgeSize, height: badgeSize, borderRadius: '50%',
-                    background: clr.badge,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: badgeFontSize, fontWeight: 1000, color: '#fff', zIndex: 2,
-                    boxShadow: `0 0 20px ${clr.shadow}`
-                  }}>
-                    {idx + 1}
-                  </div>
-
-                  {/* Dish Name */}
-                  <div style={{ 
-                    fontSize: dishFontSize, 
-                    fontWeight: 1000, color: '#fff', 
-                    textTransform: 'uppercase', letterSpacing: '0.01em',
-                    margin: dishMargin, zIndex: 2,
-                    lineHeight: 1.1,
-                    wordBreak: 'break-word',
-                    maxWidth: '100%'
-                  }}>{dish}</div>
-                  
-                  {/* Portion/Quantity display */}
-                  <div style={{ zIndex: 2, width: '100%' }}>
-                    {val > 0 && !isRoti && (
-                       <div style={{ 
-                         display: 'inline-block', padding: tagPadding, borderRadius: '1vh', 
-                         background: clr.tagBg, color: clr.tagColor, 
-                         fontSize: tagFontSize, fontWeight: 900, marginBottom: '0.5vh',
-                         border: `1px solid ${clr.tagBorder}`
-                       }}>
-                         {isCount ? `${val} pcs` : (val === 100 ? 'FULL' : (val === 50 ? 'HALF' : (val === 25 ? 'QUARTER' : `${val}%`)))}
-                       </div>
-                     )}
-                      
-                    <div style={{ 
-                      fontSize: amountFontSize, 
-                      fontWeight: 1000, color: clr.text, 
-                      textShadow: `0 5px 15px ${clr.shadow}`, lineHeight: 1 
-                    }}>
-                      {isRoti ? (pct === 'yes' ? 'YES' : 'NO') : (isCount ? `${val}` : `${val}%`)}
-                    </div>
-
-                    <div style={{ 
-                      fontSize: labelFontSize, fontWeight: 800, 
-                      color: 'var(--text-tertiary)', textTransform: 'uppercase', 
-                      marginTop: '0.4vh', letterSpacing: '0.1em' 
-                    }}>
-                      {isRoti ? 'Response' : (isCount ? 'Pieces' : 'Portion')}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
+      {/* Meals Content */}
+      <div className="meal-split" style={{ flex: 1, display: 'flex', gap: '2vh 2vw', minHeight: 0 }}>
+        {meals.map((meal) => (
+          <div key={meal.key} style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+            <div style={{ fontSize: 'clamp(12px, 2vh, 24px)', fontWeight: 900, color: 'var(--accent-gold)', marginBottom: '1vh', letterSpacing: '0.15em', flexShrink: 0 }}>
+              {meal.icon} {meal.name.toUpperCase()}
+            </div>
+            <MealSection meal={meal} />
           </div>
-        )
-      })() : (
-        <div style={{ 
-          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(244, 63, 94, 0.1)', border: 'clamp(6px, 1.2vh, 16px) solid #f43f5e', borderRadius: '4vh',
-          padding: '20px'
-        }}>
-           <div style={{ fontSize: 'clamp(48px, 16vh, 180px)', fontWeight: 1000, color: '#f43f5e', textAlign: 'center' }}>NO MEAL</div>
-        </div>
-      )}
+        ))}
+      </div>
 
-      {/* FOOTER ACTION */}
-      <div style={{ marginTop: '2vh', display: 'flex', justifyContent: 'center', paddingBottom: '1vh' }}>
-        <button 
-          onClick={onClose}
-          style={{ 
-            background: 'rgba(255,255,255,0.1)', border: '2px solid rgba(255,255,255,0.2)', color: '#fff',
-            padding: '2vh 6vh', borderRadius: '1.5vh', fontSize: 'clamp(18px, 3vh, 28px)', fontWeight: 800, cursor: 'pointer'
-          }}
-        >
+      {/* Footer */}
+      <div style={{ marginTop: '1.5vh', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+        <button onClick={onClose} style={{
+          background: 'rgba(255,255,255,0.1)', border: '2px solid rgba(255,255,255,0.2)', color: '#fff',
+          padding: '1.5vh 5vh', borderRadius: '1.5vh', fontSize: 'clamp(14px, 2vh, 22px)', fontWeight: 800, cursor: 'pointer'
+        }}>
           DISMISS (X)
         </button>
       </div>

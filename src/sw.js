@@ -5,11 +5,13 @@ import { ExpirationPlugin } from 'workbox-expiration'
 
 precacheAndRoute(self.__WB_MANIFEST)
 
-// Handle SKIP_WAITING message from vite-plugin-pwa to prevent
-// "message channel closed" errors and enable silent SW updates
+// Handle SKIP_WAITING message from vite-plugin-pwa to enable silent SW updates
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting()
+    event.waitUntil(self.skipWaiting())
+    if (event.ports?.length) {
+      event.ports[0].postMessage({ type: 'SKIP_WAITING_ACK' })
+    }
   }
 })
 

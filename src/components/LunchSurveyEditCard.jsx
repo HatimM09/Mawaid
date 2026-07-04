@@ -302,6 +302,7 @@ export default function LunchSurveyEditCard({
                 type="number"
                 min="0"
                 max={maxCount}
+                name="portionCount"
                 value={currentResponse.value}
                 onChange={(e) => handleCountChange(e.target.value)}
                 style={{

@@ -41,7 +41,183 @@ export default function Dashboard() {
   const toastTimer = useRef(null)
   const navigate = useNavigate()
 
-  const downloadSticker = (u, format = 'png') => {
+  // ── CRC32 table for PNG DPI chunk ──
+  const crcTable = (() => {
+    const table = [];
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      table[n] = c;
+    }
+    return table;
+  })();
+  function crc32(data) {
+    let crc = 0xFFFFFFFF;
+    for (let i = 0; i < data.length; i++) crc = crcTable[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  // ── Export canvas with 600 DPI metadata ──
+  async function canvasToBlobWithDPI(canvas, dpi = 600) {
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    const buffer = await blob.arrayBuffer();
+    const uint8 = new Uint8Array(buffer);
+    const ppm = Math.round(dpi / 0.0254);
+    const physData = new Uint8Array(17);
+    const view = new DataView(physData.buffer);
+    view.setUint32(0, 9, false);
+    physData[4] = 0x70; physData[5] = 0x48; physData[6] = 0x59; physData[7] = 0x73;
+    view.setUint32(8, ppm, false);
+    view.setUint32(12, ppm, false);
+    physData[16] = 1;
+    const crcVal = crc32(physData.slice(4, 17));
+    const crcBytes = new Uint8Array(4);
+    new DataView(crcBytes.buffer).setUint32(0, crcVal, false);
+    const result = new Uint8Array(uint8.length + 17);
+    result.set(uint8.slice(0, 33), 0);
+    result.set(physData, 33);
+    result.set(crcBytes, 50);
+    result.set(uint8.slice(33), 54);
+    return new Blob([result], { type: 'image/png' });
+  }
+
+  const drawStickerContent = (ctx, w, h, u, logo) => {
+    // ── Gold gradient colors ──
+    const goldLight = '#d4af37';
+    const goldDark = '#8b6914';
+
+    // ── Top header bar (gold gradient) ──
+    const headerGrad = ctx.createLinearGradient(0, 0, w, 0);
+    headerGrad.addColorStop(0, goldDark);
+    headerGrad.addColorStop(0.5, goldLight);
+    headerGrad.addColorStop(1, goldDark);
+    ctx.fillStyle = headerGrad;
+    ctx.fillRect(0, 0, w, 64);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 28px "DM Sans", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('AL-MAWAID  \u2022  \u0627\u0644\u0645\u064e\u0648\u064e\u0627\u0626\u0650\u062f', w / 2, 32);
+
+    // ── Bottom footer bar ──
+    const footerGrad = ctx.createLinearGradient(0, 0, w, 0);
+    footerGrad.addColorStop(0, goldDark);
+    footerGrad.addColorStop(0.5, goldLight);
+    footerGrad.addColorStop(1, goldDark);
+    ctx.fillStyle = footerGrad;
+    ctx.fillRect(0, h - 32, w, 32);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = '500 12px "DM Sans", sans-serif';
+    ctx.fillText('Al-Mawaid Food Service  \u2022  Member Identity Card  \u2022  Scan for meal check-in', w / 2, h - 10);
+
+    // ── Subtle background decoration ──
+    ctx.fillStyle = 'rgba(184,134,11,0.03)';
+    for (let x = 40; x < w - 40; x += 76) {
+      ctx.beginPath();
+      ctx.arc(x, h / 2, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // ── Vertical divider ──
+    const dividerX = 680;
+    const dividerGrad = ctx.createLinearGradient(0, 70, 0, h - 32);
+    dividerGrad.addColorStop(0, 'rgba(184,134,11,0)');
+    dividerGrad.addColorStop(0.15, 'rgba(184,134,11,0.15)');
+    dividerGrad.addColorStop(0.5, 'rgba(184,134,11,0.4)');
+    dividerGrad.addColorStop(0.85, 'rgba(184,134,11,0.15)');
+    dividerGrad.addColorStop(1, 'rgba(184,134,11,0)');
+    ctx.fillStyle = dividerGrad;
+    ctx.fillRect(dividerX, 64, 2, h - 96);
+
+    // ── LEFT SECTION: Logo + Identity ──
+    const leftCenter = 330;
+    const bodyTop = 80;
+
+    // Logo circle with gold border
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(leftCenter, bodyTop + 100, 90, 0, Math.PI * 2);
+    ctx.strokeStyle = goldLight;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.closePath();
+    ctx.beginPath();
+    ctx.arc(leftCenter, bodyTop + 100, 86, 0, Math.PI * 2);
+    ctx.clip();
+    const s = Math.max(172 / logo.width, 172 / logo.height);
+    const dw = logo.width * s, dh = logo.height * s;
+    ctx.drawImage(logo, leftCenter - dw / 2, bodyTop + 100 - dh / 2, dw, dh);
+    ctx.restore();
+
+    // Horizontal gold accent line
+    ctx.strokeStyle = 'rgba(184,134,11,0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(50, bodyTop + 200);
+    ctx.lineTo(610, bodyTop + 200);
+    ctx.stroke();
+
+    // Member label
+    ctx.font = '600 13px "DM Sans", sans-serif';
+    ctx.fillStyle = '#666';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('MEMBER IDENTITY', leftCenter, bodyTop + 222);
+
+    // Thali number (large, bold)
+    ctx.font = '900 110px "DM Sans", sans-serif';
+    ctx.fillStyle = '#000000';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('#' + (u.thali_number || ''), leftCenter, bodyTop + 290);
+
+    // Small ID reference
+    ctx.font = '400 10px "DM Sans", sans-serif';
+    ctx.fillStyle = '#aaa';
+    ctx.fillText('ID: ' + (u.user_id ? u.user_id.slice(0, 10) : ''), leftCenter, bodyTop + 340);
+
+    // ── RIGHT SECTION: QR Code ──
+    const qrCanvas = document.getElementById('qr-canvas-' + u.user_id);
+    if (qrCanvas) {
+      const qrSize = 440;
+      const qrRightArea = w - dividerX - 10;
+      const qrRightX = dividerX + 10;
+      const qrX = qrRightX + (qrRightArea - qrSize) / 2;
+      const qrY = (h - qrSize) / 2 - 8;
+
+      // QR background with shadow
+      ctx.shadowColor = 'rgba(0,0,0,0.10)';
+      ctx.shadowBlur = 24;
+      ctx.shadowOffsetY = 4;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.roundRect(qrX - 16, qrY - 16, qrSize + 32, qrSize + 32, 20);
+      ctx.fill();
+
+      // Reset shadow
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+
+      // Gold border around QR
+      ctx.strokeStyle = 'rgba(184,134,11,0.25)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(qrX - 16, qrY - 16, qrSize + 32, qrSize + 32, 20);
+      ctx.stroke();
+
+      // Draw QR code
+      ctx.drawImage(qrCanvas, qrX, qrY, qrSize, qrSize);
+
+      // Scan instruction below QR
+      ctx.font = '500 13px "DM Sans", sans-serif';
+      ctx.fillStyle = '#888';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('Scan QR code for meal check-in', qrRightX + qrRightArea / 2, h - 52);
+    }
+  }
+
+  const downloadSticker = async (u, format = 'png') => {
     const canvas = document.createElement('canvas');
     const w = 1500, h = 798;
     canvas.width = w;
@@ -54,49 +230,38 @@ export default function Dashboard() {
 
     const logo = new Image();
     logo.src = '/al-mawaid.png';
-    logo.onload = () => {
-      const logoCx = 250, logoCy = 220, logoR = 170;
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(logoCx, logoCy, logoR, 0, Math.PI * 2);
-      ctx.clip();
-      const s = Math.max((logoR * 2) / logo.width, (logoR * 2) / logo.height);
-      const dw = logo.width * s, dh = logo.height * s;
-      ctx.drawImage(logo, logoCx - dw / 2, logoCy - dh / 2, dw, dh);
-      ctx.restore();
-
-      const thaliText = `${u.thali_number || '—'}`;
-      ctx.font = '900 120px "DM Sans", sans-serif';
-      ctx.fillStyle = '#000000';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(thaliText, 250, 520);
-
-      const qrCanvas = document.getElementById(`qr-canvas-${u.user_id}`);
-      if (qrCanvas) {
-        const qrSize = 480;
-        ctx.drawImage(qrCanvas, w - qrSize - 120, (h - qrSize) / 2, qrSize, qrSize);
-      }
+    logo.onload = async () => {
+      drawStickerContent(ctx, w, h, u, logo);
 
       if (format === 'pdf') {
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF({
-          orientation: 'landscape',
-          unit: 'mm',
-          format: [150, 79.8]
-        });
-        pdf.addImage(imgData, 'PNG', 0, 0, 150, 79.8);
-        pdf.save(`Sticker_${u.thali_number}_${u.name}.pdf`);
+        const blob = await canvasToBlobWithDPI(canvas, 600);
+        const reader = new FileReader();
+        reader.onload = () => {
+          const imgData = reader.result;
+          const printW = (w / 600 * 25.4).toFixed(1);
+          const printH = (h / 600 * 25.4).toFixed(1);
+          const pdf = new jsPDF({
+            orientation: 'landscape',
+            unit: 'mm',
+            format: [parseFloat(printW), parseFloat(printH)]
+          });
+          pdf.addImage(imgData, 'PNG', 0, 0, parseFloat(printW), parseFloat(printH));
+          pdf.save(`Sticker_${u.thali_number}_${u.name}.pdf`);
+        };
+        reader.readAsDataURL(blob);
       } else {
+        const blob = await canvasToBlobWithDPI(canvas, 600);
         const link = document.createElement('a');
         link.download = `Sticker_${u.thali_number}_${u.name}.png`;
-        link.href = canvas.toDataURL('image/png');
+        link.href = URL.createObjectURL(blob);
         link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 10000);
       }
     };
   }
 
-  const printSticker = (u) => {
+
+  const printSticker = async (u) => {
     const canvas = document.createElement('canvas');
     const w = 1500, h = 798;
     canvas.width = w;
@@ -109,74 +274,35 @@ export default function Dashboard() {
 
     const logo = new Image();
     logo.src = '/al-mawaid.png';
-    logo.onload = () => {
-      const logoCx = 250, logoCy = 220, logoR = 170;
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(logoCx, logoCy, logoR, 0, Math.PI * 2);
-      ctx.clip();
-      const s = Math.max((logoR * 2) / logo.width, (logoR * 2) / logo.height);
-      const dw = logo.width * s, dh = logo.height * s;
-      ctx.drawImage(logo, logoCx - dw / 2, logoCy - dh / 2, dw, dh);
-      ctx.restore();
+    logo.onload = async () => {
+      drawStickerContent(ctx, w, h, u, logo);
 
-      const thaliText = `${u.thali_number || '—'}`;
-      ctx.font = '900 120px "DM Sans", sans-serif';
-      ctx.fillStyle = '#000000';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(thaliText, 250, 520);
-
-      const qrCanvas = document.getElementById(`qr-canvas-${u.user_id}`);
-      if (qrCanvas) {
-        const qrSize = 480;
-        ctx.drawImage(qrCanvas, w - qrSize - 120, (h - qrSize) / 2, qrSize, qrSize);
-      }
-
-      const imgData = canvas.toDataURL('image/png');
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) {
-        alert("Please allow popups to print the sticker.");
-        return;
-      }
-      printWindow.document.write(`
-        <html>
-          <head>
-            <title>Print Sticker - Thali #${u.thali_number || '—'}</title>
-            <style>
-              @page {
-                size: 150mm 79.8mm;
-                margin: 0;
-              }
-              body {
-                margin: 0;
-                padding: 0;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                height: 100vh;
-                width: 100vw;
-                background: #ffffff;
-              }
-              img {
-                width: 150mm;
-                height: 79.8mm;
-                display: block;
-              }
-            </style>
-          </head>
-          <body>
-            <img src="${imgData}" />
-            <script>
-              window.onload = () => {
-                window.print();
-                setTimeout(() => { window.close(); }, 500);
-              };
-            </script>
-          </body>
-        </html>
-      `);
-      printWindow.document.close();
+      const blob = await canvasToBlobWithDPI(canvas, 600);
+      const reader = new FileReader();
+      reader.onload = () => {
+        const imgData = reader.result;
+        const printW = (w / 600 * 25.4).toFixed(1);
+        const printH = (h / 600 * 25.4).toFixed(1);
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+          alert('Please allow popups to print the sticker.');
+          return;
+        }
+        printWindow.document.write([
+          '<html><head>',
+          '<title>Print Sticker - Thali #' + (u.thali_number || '\u2014') + '</title>',
+          '<style>',
+          '@page { size: ' + printW + 'mm ' + printH + 'mm; margin: 0; }',
+          'body { margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; height: 100vh; width: 100vw; background: #ffffff; }',
+          'img { width: ' + printW + 'mm; height: ' + printH + 'mm; display: block; image-rendering: auto; }',
+          '</style></head><body>',
+          '<img src="' + imgData + '" />',
+          '<script>window.onload = function() { window.print(); setTimeout(function() { window.close(); }, 500); };<' + '/script>',
+          '</body></html>'
+        ].join('\n'));
+        printWindow.document.close();
+      };
+      reader.readAsDataURL(blob);
     };
   }
 
@@ -734,36 +860,45 @@ export default function Dashboard() {
             <div style={{ flex: 1.2, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
               {selectedQRUser ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-                  {/* Sticker Container */}
+                  {/* Sticker Container - redesigned to match 1500x798 final output */}
                   <div style={{ 
                     width: '375px', height: '200px', 
                     background: '#fff', 
-                    color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    boxSizing: 'border-box', border: '1px solid #eee', position: 'relative',
-                    overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.3)', padding: '0 30px',
-                    borderRadius: 12
+                    color: '#000', boxSizing: 'border-box',
+                    border: '1px solid #d4af37', position: 'relative',
+                    overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                    borderRadius: 12, display: 'flex', flexDirection: 'row'
                   }}>
-                    {/* Left: Logo + Thali */}
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, zIndex: 2 }}>
-                      <div style={{ 
-                        width: 110, height: 110, borderRadius: '50%', overflow: 'hidden',
-                        border: '1px solid #eee', flexShrink: 0
-                      }}>
-                        <img src="/al-mawaid.png" alt="Al Mawaid" style={{ 
-                          width: '100%', height: '100%', objectFit: 'cover'
-                        }} />
+                    {/* Top gold header bar */}
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 24, background: 'linear-gradient(90deg, #8b6914, #d4af37, #8b6914)', zIndex: 1 }}>
+                      <div style={{ color: '#fff', fontSize: 10, fontWeight: 800, textAlign: 'center', lineHeight: '24px', fontFamily: "'DM Sans',sans-serif" }}>
+                        AL-MAWAID  •  المَوَائِد
                       </div>
-                      <div style={{ fontSize: '22pt', fontWeight: 900, color: '#000' }}>{selectedQRUser.thali_number || '—'}</div>
+                    </div>
+                    {/* Bottom gold footer bar */}
+                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 14, background: 'linear-gradient(90deg, #8b6914, #d4af37, #8b6914)', zIndex: 1 }} />
+                    {/* Vertical divider */}
+                    <div style={{ position: 'absolute', left: '50%', top: 24, bottom: 14, width: 1, background: 'linear-gradient(180deg, transparent 0%, rgba(184,134,11,0.3) 20%, rgba(184,134,11,0.3) 80%, transparent 100%)', zIndex: 1 }} />
+                    
+                    {/* Left: Logo + Identity */}
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, paddingTop: 24, paddingBottom: 14, zIndex: 2 }}>
+                      <div style={{ width: 60, height: 60, borderRadius: '50%', overflow: 'hidden', border: '2px solid #d4af37', flexShrink: 0 }}>
+                        <img src="/al-mawaid.png" alt="Al Mawaid" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      </div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: '#888', fontFamily: "'DM Sans',sans-serif" }}>MEMBER IDENTITY</div>
+                      <div style={{ fontSize: 28, fontWeight: 900, color: '#000', fontFamily: "'DM Sans',sans-serif", lineHeight: 1 }}>#{selectedQRUser.thali_number || ''}</div>
                     </div>
                     
                     {/* Right: QR Code */}
-                    <div style={{ 
-                      background: '#fff', padding: '6px', borderRadius: '8px',
-                      border: '1px solid #eee', display: 'inline-block',
-                      position: 'relative', zIndex: 2,
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                    }}>
-                      <QRCodeCanvas value={`ALMAWAID:${selectedQRUser.user_id}`} size={120} level="H" includeMargin={false} />
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', paddingTop: 24, paddingBottom: 14, zIndex: 2 }}>
+                      <div style={{ 
+                        background: '#fff', padding: 4, borderRadius: 8,
+                        border: '1px solid rgba(184,134,11,0.25)', display: 'inline-block',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+                      }}>
+                        <QRCodeCanvas value={`ALMAWAID:${selectedQRUser.user_id}`} size={110} level="H" includeMargin={false} />
+                      </div>
+                      <div style={{ fontSize: 8, fontWeight: 500, color: '#888', marginTop: 6, fontFamily: "'DM Sans',sans-serif" }}>Scan for check-in</div>
                     </div>
                   </div>
 
@@ -791,13 +926,13 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Hidden QR code canvas for printing/downloading */}
+        {/* Hidden QR code canvas for printing/downloading (700px for 600 DPI quality) */}
         {selectedQRUser && (
           <div style={{ display: 'none' }}>
             <QRCodeCanvas
               id={`qr-canvas-${selectedQRUser.user_id}`}
               value={`ALMAWAID:${selectedQRUser.user_id}`}
-              size={512}
+              size={640}
               level="H"
             />
           </div>

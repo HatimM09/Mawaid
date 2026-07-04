@@ -46,38 +46,51 @@ const SkeletonBlock = ({ t, count = 3 }) => (
   </div>
 )
 
-export const getCardMealInfo = (weeklyMenu) => {
+export const getCardMealInfo = (weeklyMenu, appSettings = {}) => {
   const now = new Date()
   const curMin = now.getHours() * 60 + now.getMinutes()
   const map = { 1: 'monday', 2: 'tuesday', 3: 'wednesday', 4: 'thursday', 5: 'friday', 6: 'saturday' }
   const dayIdx = now.getDay()
   if (dayIdx === 0) return null  // Sunday — no card
 
-  const LUNCH_CLOSE = 690       // 11:30 AM
-  const DINNER_START = 720      // 12:00 PM
-  const DINNER_END = 1080       // 6:00 PM
-  const NEXT_LUNCH_START = 1260 // 9:00 PM
+  // Parse configurable timings from appSettings (fall back to sensible defaults)
+  const parseHm = (val, defaultH, defaultM) => {
+    const p = (val || '').split(':').map(Number)
+    return (p.length === 2 && !isNaN(p[0]) && !isNaN(p[1]))
+      ? { h: p[0], m: p[1] }
+      : { h: defaultH, m: defaultM }
+  }
+
+  const lunchClose = parseHm(appSettings.lunch_edit_close, 11, 0)
+  const dinnerOpen = parseHm(appSettings.dinner_edit_open, 12, 0)
+  const dinnerClose = parseHm(appSettings.dinner_edit_close, 15, 30)
+  const nextLunchOpen = parseHm(appSettings.lunch_edit_open, 20, 0)
+
+  const LUNCH_CLOSE = lunchClose.h * 60 + lunchClose.m
+  const DINNER_START = dinnerOpen.h * 60 + dinnerOpen.m
+  const DINNER_END = dinnerClose.h * 60 + dinnerClose.m
+  const NEXT_LUNCH_START = nextLunchOpen.h * 60 + nextLunchOpen.m
 
   let targetDay, targetMeal
 
   if (curMin < LUNCH_CLOSE) {
-    // Midnight to 11:30 AM → Today's Lunch
+    // Midnight to lunch close → Today's Lunch
     targetDay = map[dayIdx]
     targetMeal = 'lunch'
   } else if (curMin >= DINNER_START && curMin < DINNER_END) {
-    // 12 PM to 6 PM → Today's Dinner
+    // Dinner open to dinner close → Today's Dinner
     targetDay = map[dayIdx]
     targetMeal = 'dinner'
   } else if (curMin >= NEXT_LUNCH_START) {
-    // 9 PM to midnight → Next day's Lunch
+    // Next lunch open to midnight → Next day's Lunch
     if (dayIdx === 6) {
-      targetDay = 'monday'  // Saturday 9PM+ → Monday
+      targetDay = 'monday'  // Saturday → Monday
     } else {
       targetDay = map[dayIdx + 1]
     }
     targetMeal = 'lunch'
   } else {
-    // Gap periods: 11:30–12:00 or 6PM–9PM → no card
+    // Gap periods (between meals) → no card
     return null
   }
 
@@ -87,7 +100,7 @@ export const getCardMealInfo = (weeklyMenu) => {
 
 export const getSurveyCloseHour = (appSettings = {}) => {
   const h = parseInt(appSettings.survey_close_hour);
-  return !isNaN(h) && h >= 0 && h <= 23 ? h : 8;
+  return !isNaN(h) && h >= 0 && h <= 23 ? h : 10;
 }
 
 export const getEditCloseTime = (appSettings, mealType) => {
@@ -154,7 +167,7 @@ const isRotiItem = (dish) => {
   return rotiKeywords.some(k => dish.toLowerCase().includes(k))
 }
 
-export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () => {} }) {
+export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () => {}, appSettings }) {
   const t = useTheme()
   const { user } = useAuth()
   const [userResponses, setUserResponses] = useState({})
@@ -167,7 +180,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
     setDataLoading(true)
     const loadData = async () => {
       const weekId = getWeekDate()
-      const mi = getCardMealInfo(weeklyMenu)
+      const mi = getCardMealInfo(weeklyMenu, appSettings)
       if (!mi) return
       const dayKey = mi.day.substring(0, 3).toLowerCase()
       const mealKey = mi.meal === 'lunch' ? 'l' : 'd'
@@ -195,7 +208,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
     if (!user || saving) return
     setSaving(true)
     try {
-      const mi = getCardMealInfo(weeklyMenu)
+      const mi = getCardMealInfo(weeklyMenu, appSettings)
       if (!mi) return
       const weekId = getWeekDate()
       const dayKey = mi.day.substring(0, 3).toLowerCase()
@@ -230,7 +243,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
     }
   }
 
-  const mealInfo = weeklyMenu ? getCardMealInfo(weeklyMenu) : null
+  const mealInfo = weeklyMenu ? getCardMealInfo(weeklyMenu, appSettings) : null
   
   if (!mealInfo || !isOpen) return null
 

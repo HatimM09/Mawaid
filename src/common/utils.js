@@ -2,15 +2,17 @@
 
 /**
  * Returns the Monday of the target survey week as YYYY-MM-DD.
- * During the survey window (Saturday 8PM+ through Sunday), it advances
+ * During the survey window (Saturday survey_open_hour+ through Sunday), it advances
  * to the NEXT Monday since users are filling for the upcoming week.
+ * @param {Object} [appSettings={}] - app_settings to read survey_open_hour from
  */
-export const getWeekDate = () => {
+export const getWeekDate = (appSettings = {}) => {
   const now = new Date()
   const day = now.getDay()
   const hour = now.getHours()
+  const openHour = parseInt(appSettings.survey_open_hour) || 20
   let diff = now.getDate() - day + (day === 0 ? -6 : 1)
-  if (day === 0 || (day === 6 && hour >= 20)) {
+  if (day === 0 || (day === 6 && hour >= openHour)) {
     diff += 7
   }
   const monday = new Date(now.setDate(diff))

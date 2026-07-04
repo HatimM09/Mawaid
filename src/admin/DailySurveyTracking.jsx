@@ -11,8 +11,7 @@ import {
   T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner, Grid,
   SectionHeader, Modal, PackingTVView, fmtDate, ErrorBanner
 } from './ui'
-import SurveyAccessManager from './SurveyAccessManager'
-import { Shield } from 'lucide-react'
+
 import { getWeekDate, DAYS } from '../common/utils'
 
 export default function DailySurveyTracking() {
@@ -30,7 +29,6 @@ export default function DailySurveyTracking() {
   const [selectedUser, setSelectedUser] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [isScanning, setIsScanning] = useState(false)
-  const [isAccessManagerOpen, setIsAccessManagerOpen] = useState(false)
   const [weekFilter, setWeekFilter] = useState('all')
   const [availableWeeks, setAvailableWeeks] = useState([])
   const [dishInputConfig, setDishInputConfig] = useState({})
@@ -268,9 +266,6 @@ export default function DailySurveyTracking() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 16, flexWrap: 'wrap' }}>
           <PageTitle style={{ margin: 0 }}>Daily Survey Tracker</PageTitle>
           <div style={{ display: 'flex', gap: 10 }}>
-            <Btn variant="outline" onClick={() => setIsAccessManagerOpen(true)}>
-              <Shield size={16} /> Access
-            </Btn>
             <Btn variant="primary" onClick={() => setIsScanning(true)}>
               <Scan size={16} /> Scan Tiffin
             </Btn>
@@ -320,7 +315,7 @@ export default function DailySurveyTracking() {
           </div>
 
           {/* Week Filter */}
-          <select value={weekFilter} onChange={e => setWeekFilter(e.target.value)}
+          <select value={weekFilter} onChange={e => setWeekFilter(e.target.value)} name="weekFilter"
             style={{ padding: '6px 12px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.border}`, color: T.text, fontSize: 11, fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
             <option value="all">Latest Week</option>
             {availableWeeks.map(w => (
@@ -534,8 +529,6 @@ export default function DailySurveyTracking() {
           onClose={() => setSelectedUser(null)} 
         />
       )}
-
-      <SurveyAccessManager isOpen={isAccessManagerOpen} onClose={() => setIsAccessManagerOpen(false)} />
 
       <style>{`.spin { animation: spin 1s linear infinite } @keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </PageWrap>

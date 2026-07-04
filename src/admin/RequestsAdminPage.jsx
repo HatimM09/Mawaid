@@ -121,7 +121,7 @@ export default function RequestsAdminPage() {
             title,
             body,
             target_type: 'specific',
-            target_user_id: userId,
+            user_id: userId,
             url: '/post'
           }
         })

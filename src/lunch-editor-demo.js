@@ -116,6 +116,7 @@ function LunchSurveyEditorDemo() {
                   type="number"
                   min="0"
                   max={mockData.defaults[dish]}
+                  name="portionCount"
                   value={responses[dish]?.value || 0}
                   onChange={(e) => {
                     const value = Math.max(0, parseInt(e.target.value) || 0)

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../admin/supabaseClient';
-import { getWeekDate, addWeeks } from './utils';
+import { getWeekDate } from './utils';
 
 let hookInstance = 0
 export const useWeeklyMenu = () => {
@@ -29,47 +29,16 @@ export const useWeeklyMenu = () => {
 
   const load = useCallback(async () => {
     const currentWeekId = getWeekDate();
-    const nextWeekId = addWeeks(currentWeekId, 1);
     
-    // Fetch both current and next week menus
+    // Only fetch current week's menu — users should always see the current week
     const { data, error } = await supabase
       .from('weekly_menu')
       .select('*')
-      .in('week_start', [currentWeekId, nextWeekId]);
+      .eq('week_start', currentWeekId);
       
     if (!error && data) {
-      // First try to get current week menu
-      let currentWeekMenu = formatMenu(data);
-      
-      // If current week is empty, check if next week is published
-      const hasCurrentWeekData = Object.keys(currentWeekMenu).length > 0;
-      
-      if (!hasCurrentWeekData) {
-        // Check next week for published menus
-        const nextWeekData = data.filter(row => row.week_start === nextWeekId);
-        const publishedNextWeek = nextWeekData.filter(row => 
-          !row.publish_at || new Date(row.publish_at).getTime() <= Date.now()
-        );
-        
-        if (publishedNextWeek.length > 0) {
-          // Format next week menu as current week
-          const formatted: any = {};
-          publishedNextWeek.forEach(row => {
-            const dayKey = row.day_name.toLowerCase();
-            formatted[dayKey] = {
-              en: row.day_name,
-              ar: row.day_ar,
-              lunch: row.lunch ? row.lunch.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
-              dinner: row.dinner ? row.dinner.split(',').map((s: string) => s.trim()).filter(Boolean) : []
-            };
-          });
-          setMenu(formatted);
-        } else {
-          setMenu({});
-        }
-      } else {
-        setMenu(currentWeekMenu);
-      }
+      const currentWeekMenu = formatMenu(data);
+      setMenu(currentWeekMenu);
     } else {
       setMenu({});
     }

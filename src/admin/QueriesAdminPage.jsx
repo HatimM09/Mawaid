@@ -207,8 +207,9 @@ export default function QueriesAdminPage() {
                 {isExpanded && (
                   <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${T.border}` }}>
                     <div style={{ marginBottom: 10 }}>
-                      <label style={{ display: 'block', color: T.textSub, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>Reply</label>
+                      <label htmlFor="queryReply" style={{ display: 'block', color: T.textSub, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>Reply</label>
                       <textarea
+                        id="queryReply"
                         name="queryReply"
                         value={reply}
                         onChange={e => setReply(e.target.value)}

@@ -174,23 +174,35 @@ const canEditMeal = (dayName, weekId, mealType, appSettings = {}, userId = null)
   const mealDate = new Date(weekStart)
   mealDate.setDate(mealDate.getDate() + dayIdx)
 
+  // Parse configurable timings from appSettings (used when status is AUTO)
+  const parseHm = (val, defaultH, defaultM) => {
+    const p = (val || '').split(':').map(Number)
+    return (p.length === 2 && !isNaN(p[0]) && !isNaN(p[1]))
+      ? { h: p[0], m: p[1] }
+      : { h: defaultH, m: defaultM }
+  }
+
   if (mealType === 'lunch') {
-    // Lunch edit: Opens 8 PM night before, closes 11 AM same day
+    const open = parseHm(appSettings.lunch_edit_open, 20, 0)
+    const close = parseHm(appSettings.lunch_edit_close, 11, 0)
+    // Lunch edit: Opens prev night at lunch_edit_open, closes same day at lunch_edit_close
     const openDate = new Date(mealDate)
     openDate.setDate(openDate.getDate() - 1)
-    openDate.setHours(20, 0, 0, 0) // 8 PM previous night
+    openDate.setHours(open.h, open.m, 0, 0)
 
     const closeDate = new Date(mealDate)
-    closeDate.setHours(11, 0, 0, 0) // 11 AM same day
+    closeDate.setHours(close.h, close.m, 0, 0)
 
     return now >= openDate && now < closeDate
   } else {
-    // Dinner edit: Opens 12 PM (noon) same day, closes 4 PM same day
+    const open = parseHm(appSettings.dinner_edit_open, 12, 0)
+    const close = parseHm(appSettings.dinner_edit_close, 15, 30)
+    // Dinner edit: Opens same day at dinner_edit_open, closes same day at dinner_edit_close
     const openDate = new Date(mealDate)
-    openDate.setHours(12, 0, 0, 0) // 12 PM same day
+    openDate.setHours(open.h, open.m, 0, 0)
 
     const closeDate = new Date(mealDate)
-    closeDate.setHours(16, 0, 0, 0) // 4 PM same day
+    closeDate.setHours(close.h, close.m, 0, 0)
 
     return now >= openDate && now < closeDate
   }
@@ -497,7 +509,7 @@ const GlobalStyles = () => {
 }
 
 // ══════════════════════════════════════════════════════════════
-// SURVEY MODAL (FULL WEEK: MONDAY – SATURDAY)
+// SURVEY MODAL (REDESIGNED: DAY BAR + AUTO-SAVE + COUNT/PERCENT)
 // ══════════════════════════════════════════════════════════════
 function SurveyModal({ onClose, appSettings = {} }) {
   const t = THEMES.bright
@@ -516,10 +528,12 @@ function SurveyModal({ onClose, appSettings = {} }) {
   const [dataLoaded, setDataLoaded] = useState(false)
   const [hasFirstSave, setHasFirstSave] = useState(false)
   const justLoadedRef = useRef(false)
-  const userInteractedRef = useRef(false)
 
   const [userData, setUserData] = useState({ thali_no: '', email: user.email })
   const [snackDefaults, setSnackDefaults] = useState({ dish_1: 0, dish_2: 0, dish_3: 0, dish_4: 0 })
+  const [autoSaveStatus, setAutoSaveStatus] = useState('idle')
+  const saveTimerRef = useRef(null)
+  const advancingRef = useRef(false)
 
   const currentDay = DAYS[currentDayIndex]
   const menu = weeklyMenu[currentDay] || { lunch: [], dinner: [] }
@@ -527,45 +541,92 @@ function SurveyModal({ onClose, appSettings = {} }) {
   const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
 
   const isEditable = canEditMeal(currentDay, currentWeekId, currentMeal, appSettings, user.id)
+  const surveyOpen = isSurveyOpen(appSettings, user.id)
   const editCount = existingData ? (existingData.edit_metadata?.[`${dayKey}_${mealKey}`] || 0) : 0
-  const editBlocked = !isEditable || (!isSurveyOpen(appSettings, user.id) && editCount >= 100)
+  const editBlocked = !isEditable || (!surveyOpen && editCount >= 100)
 
   const totalSlots = 12
   const currentSlot = currentDayIndex * 2 + (currentMeal === 'lunch' ? 0 : 1)
   const isFirst = currentDayIndex === 0 && currentMeal === 'lunch'
   const isLast = currentDayIndex === 5 && currentMeal === 'dinner'
-  const progress = (currentSlot / totalSlots) * 100
 
-  // Load all existing data once on mount
+  const dishes = menu[currentMeal] || []
+
+  // ── Day status summary for the day bar ──
+  const dayStatusSummary = DAYS.map((day, idx) => {
+    const dk = day.substring(0, 3).toLowerCase()
+    const lStatus = existingData?.[`${dk}_l_status`]
+    const dStatus = existingData?.[`${dk}_d_status`]
+    if (lStatus && dStatus) return 'complete'
+    if (lStatus || dStatus) return 'partial'
+    return 'pending'
+  })
+
+  const isCountInput = (idx) => {
+    try {
+      const config = appSettings?.dish_input_config
+      if (config) {
+        const parsed = typeof config === 'string' ? JSON.parse(config) : config
+        const dayName = currentDay.charAt(0).toUpperCase() + currentDay.slice(1)
+        const key = `${dayName}_${currentMeal}`
+        const types = parsed[key]
+        if (types && types[idx]) return types[idx] === 'count'
+      }
+    } catch {}
+    return currentMeal === 'lunch' && idx <= 3
+  }
+
+  // ── Load existing data on mount and find resume point ──
   useEffect(() => {
     loadExisting()
   }, [])
 
-  // When day/meal/menu changes, populate responses from existing data
   useEffect(() => {
     if (!dataLoaded) return
     populateFromExisting()
   }, [currentDayIndex, currentMeal, dataLoaded, weeklyMenu])
 
+  useEffect(() => {
+    if (loading) setAutoSaveStatus('idle')
+  }, [loading])
+
   const loadExisting = async () => {
     try {
       if (!userData.thali_no) {
-        const { data: u } = await supabase.from('user_stats').select('thali_number, email, snack_defaults').eq('user_id', user.id).maybeSingle()
+        const { data: u } = await supabase.from('user_stats')
+          .select('thali_number, email, snack_defaults')
+          .eq('user_id', user.id).maybeSingle()
         if (u) {
           setUserData({ thali_no: u.thali_number || '', email: u.email || user.email })
           if (u.snack_defaults) setSnackDefaults(u.snack_defaults)
         }
       }
-
       const { data } = await supabase.from('survey_submissions_flat')
-        .select('*').eq('user_id', user.id).order('week_id', { ascending: false }).limit(1).maybeSingle()
+        .select('*').eq('user_id', user.id)
+        .order('week_id', { ascending: false }).limit(1).maybeSingle()
 
+      let existing = null
       if (data && data.week_id === currentWeekId) {
-        setExistingData(data)
-      } else {
-        setExistingData(null)
+        existing = data
       }
+      setExistingData(existing)
       setDataLoaded(true)
+
+      // Resume: find first incomplete slot (only in fill mode)
+      if (existing && surveyOpen) {
+        for (let d = 0; d < 6; d++) {
+          const day = DAYS[d]
+          const dk = day.substring(0, 3).toLowerCase()
+          for (const meal of ['lunch', 'dinner']) {
+            const mk = meal === 'lunch' ? 'l' : 'd'
+            if (!existing[`${dk}_${mk}_status`]) {
+              setCurrentDayIndex(d)
+              setCurrentMeal(meal)
+              return
+            }
+          }
+        }
+      }
     } catch (err) {
       console.error('Error loading survey:', err)
       setDataLoaded(true)
@@ -579,28 +640,28 @@ function SurveyModal({ onClose, appSettings = {} }) {
       setResponses({})
       return
     }
-
     const statusKey = `${dayKey}_${mealKey}_status`
     const status = existingData[statusKey]
-
     if (status) {
       wantsFoodRef.current = status === 'Applied'
       if (status === 'Applied') {
-        const activeDishes = menu[currentMeal] || []
-        if (activeDishes.length === 0 && existingData[`${dayKey}_${mealKey}_dish_1`] !== undefined) {
-          return
-        }
         setWantsFood(true)
         const dishRes = {}
-        activeDishes.forEach((dish, idx) => {
+        dishes.forEach((dish, idx) => {
           const val = existingData[`${dayKey}_${mealKey}_dish_${idx + 1}`]
           if (val !== undefined && val !== null) {
-            if (typeof val === 'object' && val.status) {
-              dishRes[dish] = val
-            } else if (val === 'Yes') dishRes[dish] = 'yes'
-            else if (val === 'No') dishRes[dish] = 'no'
-            else if (typeof val === 'string' && val.includes('Skip')) dishRes[dish] = 'Skipped'
-            else dishRes[dish] = parseInt(val) || 0
+            if (isCountInput(idx)) {
+              if (val === 'No') dishRes[dish] = 'no'
+              else dishRes[dish] = { status: 'yes', value: parseInt(val) || 0 }
+            } else {
+              if (typeof val === 'string' && val.endsWith('%')) {
+                dishRes[dish] = parseInt(val) || 0
+              } else if (val === 'Yes') {
+                dishRes[dish] = 100
+              } else if (val === 'No') {
+                dishRes[dish] = 0
+              }
+            }
           }
         })
         setResponses(dishRes)
@@ -614,22 +675,48 @@ function SurveyModal({ onClose, appSettings = {} }) {
     }
   }
 
-  // Auto-advance when all dishes selected (except last slot) — only after user interaction
+  // ── Auto-save (debounced) ──
   useEffect(() => {
-    if (justLoadedRef.current) {
-      return
-    }
-    if (!editBlocked && wantsFood === true && !loading) {
-      const dishes = menu[currentMeal] || []
-      if (dishes.length > 0 && Object.keys(responses).length === dishes.length && !isLast) {
-        handleNext()
+    if (justLoadedRef.current) return
+    if (wantsFood === null && Object.keys(responses).length === 0) return
+    if (!dataLoaded) return
+    if (loading) return
+    if (advancingRef.current) return
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(async () => {
+      if (wantsFoodRef.current === null && wantsFood === null) return
+      setAutoSaveStatus('saving')
+      try {
+        await saveCurrentSlot()
+        setAutoSaveStatus('saved')
+        setTimeout(() => setAutoSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 2000)
+      } catch {
+        setAutoSaveStatus('idle')
       }
+    }, 600)
+
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     }
-  }, [responses, wantsFood, editBlocked, loading])
+  }, [wantsFood, responses, currentDayIndex, currentMeal, dataLoaded])
+
+  // ── Auto-advance when all dishes selected (never for last slot) ──
+  useEffect(() => {
+    if (justLoadedRef.current) { justLoadedRef.current = false; return }
+    if (!surveyOpen && !isEditable) return
+    if (advancingRef.current) return
+    if (loading) return
+    if (editBlocked) return
+    if (isLast) return
+
+    if (wantsFood === true && dishes.length > 0 && Object.keys(responses).length === dishes.length) {
+      advanceToNext()
+    }
+  }, [responses, wantsFood])
 
   const saveCurrentSlot = async () => {
     if (wantsFoodRef.current === null) return true
-    setLoading(true)
     let success = true
     try {
       const currentEdits = (existingData || {}).edit_metadata || {}
@@ -647,15 +734,12 @@ function SurveyModal({ onClose, appSettings = {} }) {
       }
 
       if (wantsFoodRef.current) {
-        const activeDishes = menu[currentMeal] || []
-        activeDishes.forEach((dish, idx) => {
+        dishes.forEach((dish, idx) => {
           const colName = `${dayKey}_${mealKey}_dish_${idx + 1}`
           const val = responses[dish]
           if (val !== undefined) {
             if (typeof val === 'object' && val.status) {
               updateObj[colName] = val.status === 'yes' ? String(val.value) : 'No'
-            } else if (val === 'yes') {
-              updateObj[colName] = 'Yes'
             } else if (val === 'no') {
               updateObj[colName] = 'No'
             } else if (typeof val === 'number') {
@@ -665,13 +749,12 @@ function SurveyModal({ onClose, appSettings = {} }) {
         })
       }
 
-      const { error } = await supabase.from('survey_submissions_flat').upsert([updateObj], { onConflict: 'user_id,week_id' })
+      const { error } = await supabase.from('survey_submissions_flat')
+        .upsert([updateObj], { onConflict: 'user_id,week_id' })
       if (error) throw error
 
-      // Update local cache with saved data
       setExistingData(prev => ({ ...prev, ...updateObj }))
 
-      // Call increment_user_surveys RPC once for brand-new submissions
       if (isNew && !hasFirstSave) {
         setHasFirstSave(true)
         await supabase.rpc('increment_user_surveys', { p_user_id: user.id }).catch(() => {})
@@ -679,105 +762,194 @@ function SurveyModal({ onClose, appSettings = {} }) {
     } catch (err) {
       alert('Error saving: ' + err.message)
       success = false
-    } finally {
-      setLoading(false)
     }
     return success
   }
 
-  const handleNext = async () => {
-    justLoadedRef.current = false
-    const saved = await saveCurrentSlot()
-    if (!saved) return
-
-    if (isLast) {
-      // Send survey completion notification
-      try {
-        await supabase.functions.invoke('send-push', {
-          body: {
-            title: '✅ Weekly Survey Submitted',
-            body: 'Your full week survey (Mon–Sat) has been saved.',
-            target_type: 'specific',
-            target_user_id: user.id,
-            url: '/post'
-          }
-        })
-      } catch (notifyErr) {
-        console.warn('Survey notification failed:', notifyErr)
-      }
-      alert('🎉 Full week survey complete! Shukran Jazeelan.')
-      onClose()
-      return
+  const advanceToNext = async () => {
+    if (advancingRef.current) return
+    advancingRef.current = true
+    if (wantsFoodRef.current !== null) {
+      await saveCurrentSlot()
     }
-
     wantsFoodRef.current = null
     setWantsFood(null)
     setResponses({})
-
     if (currentMeal === 'lunch') {
       setCurrentMeal('dinner')
     } else {
       setCurrentDayIndex(prev => prev + 1)
       setCurrentMeal('lunch')
     }
+    setTimeout(() => { advancingRef.current = false }, 300)
   }
 
-  const handlePrev = () => {
-    if (currentMeal === 'dinner') {
-      setCurrentMeal('lunch')
-      wantsFoodRef.current = null
-      setWantsFood(null)
-      setResponses({})
-    } else if (currentDayIndex > 0) {
-      setCurrentDayIndex(prev => prev - 1)
-      setCurrentMeal('dinner')
-      wantsFoodRef.current = null
-      setWantsFood(null)
-      setResponses({})
+  // ── Handle meal Yes/No click ──
+  const handleMealChoice = (want) => {
+    justLoadedRef.current = false
+    wantsFoodRef.current = want
+    setWantsFood(want)
+    if (!want && !isLast) {
+      // If No for meal (not last slot), save and advance
+      setTimeout(async () => {
+        await saveCurrentSlot()
+        advanceToNext()
+      }, 300)
+    } else if (!want && isLast) {
+      // Last slot: save but don't advance; show Submit button
+      setTimeout(async () => {
+        await saveCurrentSlot()
+      }, 300)
     }
   }
 
-  const isCountInput = (idx) => {
-    try {
-      const config = appSettings?.dish_input_config
-      if (config) {
-        const parsed = typeof config === 'string' ? JSON.parse(config) : config
-        const dayName = currentDay.charAt(0).toUpperCase() + currentDay.slice(1)
-        const key = `${dayName}_${currentMeal}`
-        const types = parsed[key]
-        if (types && types[idx]) return types[idx] === 'count'
-      }
-    } catch {}
-    return currentMeal === 'lunch' && idx <= 3
+  // ── Handle dish count Yes/No click ──
+  const handleDishYesNo = (dish, idx, want) => {
+    if (want) {
+      const defVal = snackDefaults?.[`dish_${idx + 1}`] ?? 0
+      setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: defVal } }))
+    } else {
+      setResponses(prev => ({ ...prev, [dish]: 'no' }))
+    }
   }
 
-  const dishes = menu[currentMeal] || []
-  const hasOverload = dishes.some((dish, idx) => {
-    if (currentMeal === 'lunch' && idx < 4) {
-      const val = responses[dish]
-      if (typeof val === 'object' && val.status === 'yes') {
-        return val.value > (snackDefaults?.[`dish_${idx + 1}`] ?? 0)
-      }
+  // ── Handle submit for last slot (Saturday dinner) ──
+  const handleSubmitAll = async () => {
+    advancingRef.current = true
+    if (wantsFoodRef.current !== null) {
+      await saveCurrentSlot()
     }
-    return false
-  })
+    supabase.functions.invoke('send-push', {
+      body: {
+        title: 'Weekly Survey Submitted',
+        body: 'Your full week survey (Mon–Sat) has been saved.',
+        target_type: 'specific',
+        target_user_id: user.id,
+        url: '/post'
+      }
+    }).catch(() => {})
+    alert('Full week survey complete! Shukran Jazeelan.')
+    onClose()
+  }
+
+  // ── Render dish controls ──
+  const renderDishControl = (dish, idx) => {
+    const isCount = isCountInput(idx)
+    if (isCount) {
+      // Count mode: show Yes/No per dish
+      const resp = responses[dish]
+      const isYes = typeof resp === 'object' && resp.status === 'yes'
+      const isNo = resp === 'no'
+      return (
+        <div key={dish} style={{
+          background: t.card, borderRadius: 16, padding: 16,
+          border: `1px solid ${t.border}`, marginBottom: 12,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h3 style={{ color: t.text, margin: 0, fontSize: 14, fontWeight: 600 }}>{dish}</h3>
+            <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 12, background: t.accentBg, color: t.accent, fontWeight: 600 }}>
+              Default: {snackDefaults?.[`dish_${idx + 1}`] ?? 0}
+            </span>
+          </div>
+          {!isYes && !isNo ? (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => handleDishYesNo(dish, idx, true)}
+                style={{ flex: 1, padding: 10, borderRadius: 8, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                ✅ Yes
+              </button>
+              <button onClick={() => handleDishYesNo(dish, idx, false)}
+                style={{ flex: 1, padding: 10, borderRadius: 8, border: `1px solid ${t.border}`, background: 'transparent', color: t.text, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                ❌ No
+              </button>
+            </div>
+          ) : isYes ? (
+            <div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: t.textSub }}>Count:</span>
+                <input type="number" min="0"
+                  max={snackDefaults?.[`dish_${idx + 1}`] ?? 0}
+                  value={resp.value}
+                  onChange={(e) => {
+                    const raw = parseInt(e.target.value) || 0
+                    const maxVal = snackDefaults?.[`dish_${idx + 1}`] ?? 0
+                    const finalValue = Math.max(0, Math.min(raw, maxVal))
+                    setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: finalValue } }))
+                  }}
+                  style={{ width: 70, padding: '6px 8px', borderRadius: 6, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, fontSize: 13, fontWeight: 700, textAlign: 'center', outline: 'none' }} />
+                <span style={{ fontSize: 11, color: t.textSub }}>Max: {snackDefaults?.[`dish_${idx + 1}`] ?? 0}</span>
+              </div>
+              <button onClick={() => setResponses(prev => ({ ...prev, [dish]: 'no' }))}
+                style={{ padding: '6px 14px', borderRadius: 6, border: `1px solid #e05555`, background: 'rgba(224,85,85,0.1)', color: '#e05555', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                Change to No
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <span style={{ flex: 1, padding: 10, borderRadius: 8, background: 'rgba(224,85,85,0.1)', color: '#e05555', fontSize: 13, fontWeight: 700, textAlign: 'center' }}>Skipped</span>
+              <button onClick={() => handleDishYesNo(dish, idx, true)}
+                style={{ padding: '10px 16px', borderRadius: 8, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                Change to Yes
+              </button>
+            </div>
+          )}
+        </div>
+      )
+    } else {
+      // Percentage mode: no Yes/No, just percentage buttons
+      const resp = responses[dish]
+      return (
+        <div key={dish} style={{ marginBottom: 10, padding: 12, background: t.inputBg, borderRadius: 11 }}>
+          <p style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: t.text }}>{dish}</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+            {[0, 25, 50, 100].map(pct => (
+              <button key={pct} onClick={() => setResponses(prev => ({ ...prev, [dish]: pct }))}
+                style={{ padding: '16px 4px', borderRadius: 14, border: `2px solid ${resp === pct ? t.accent : t.border}`, background: resp === pct ? t.accentBg : 'transparent', color: resp === pct ? t.accent : t.text, fontSize: 18, fontWeight: 800, cursor: 'pointer', transition: '0.2s' }}>
+                {pct}%
+              </button>
+            ))}
+          </div>
+        </div>
+      )
+    }
+  }
+
+  const allDishesSelected = dishes.length === 0 || Object.keys(responses).length === dishes.length
+  const allDishesFilled = wantsFood !== true || allDishesSelected
+
+  if (!dataLoaded) return null
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.82)', padding: 16, backdropFilter: 'blur(12px)', overflowY: 'auto' }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{ background: t.card, borderRadius: 32, padding: 22, maxWidth: 500, width: '100%', border: `1px solid ${t.borderActive}`, boxShadow: '0 28px 70px rgba(0,0,0,0.55)', maxHeight: '92vh', overflowY: 'auto', paddingBottom: 40 }}>
-        {/* Progress bar */}
-        <div style={{ height: 3, background: t.inputBg, borderRadius: 2, marginBottom: 16, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${progress}%`, background: t.accentGrad, borderRadius: 2, transition: 'width 0.4s ease' }} />
+
+        {/* ── Day Indicator Bar ── */}
+        <div style={{ display: 'flex', gap: 4, marginBottom: 16, justifyContent: 'center' }}>
+          {DAYS.map((day, idx) => {
+            const isActive = idx === currentDayIndex
+            const status = dayStatusSummary[idx]
+            let barColor = t.border
+            let label = day.slice(0, 3)
+            if (status === 'complete') { barColor = '#34d399'; label = day.slice(0, 3) }
+            else if (status === 'partial') { barColor = t.accent }
+            return (
+              <div key={day} style={{
+                flex: 1, textAlign: 'center', padding: '6px 2px',
+                borderRadius: 8, cursor: 'default',
+                background: isActive ? t.accentBg : 'transparent',
+                border: `1px solid ${isActive ? t.accent : 'transparent'}`,
+                transition: 'all 0.2s'
+              }}>
+                <div style={{ fontSize: 9, fontWeight: isActive ? 800 : 600, color: isActive ? t.accent : t.textSub, fontFamily: "'DM Sans',sans-serif", textTransform: 'uppercase' }}>
+                  {label}
+                </div>
+                <div style={{ margin: '3px auto 0', width: 6, height: 6, borderRadius: '50%', background: barColor }} />
+              </div>
+            )
+          })}
         </div>
 
-        {/* Day indicator */}
-        <div style={{ textAlign: 'center', marginBottom: 14, padding: '8px', background: t.accentBg, borderRadius: 8, border: `1px solid ${t.border}` }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>
-            {currentDay.charAt(0).toUpperCase() + currentDay.slice(1)} · {currentSlot + 1} of {totalSlots}
-          </span>
-        </div>
-
-        {/* Header */}
+        {/* ── Header ── */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -785,189 +957,124 @@ function SurveyModal({ onClose, appSettings = {} }) {
               <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{menu.en || currentDay}</h2>
             </div>
             <div style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 3 }}>
-              {currentMeal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}<span style={{ margin: '0 6px', opacity: .3 }}>·</span>
+              {currentMeal === 'lunch' ? 'Sun Lunch' : 'Moon Dinner'}
+              <span style={{ margin: '0 6px', opacity: .3 }}>·</span>
               <span style={{ fontFamily: "'Amiri',serif", fontSize: 14 }}>{menu.ar}</span>
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><X size={18} color={t.textSub} /></button>
         </div>
 
-        {editBlocked && (
-          <div style={{ marginBottom: 12, padding: 11, borderRadius: 10, background: 'rgba(220,140,40,0.10)', border: '1px solid rgba(220,140,40,0.28)', color: '#d4882a', fontSize: 12, fontFamily: "'DM Sans',sans-serif" }}>
-            {!isEditable ? `⚠️ This meal is locked (${currentMeal === 'lunch' ? 'passed 11am' : 'passed 3:30pm'}) — view only.` : '⚠️ Edit limit reached — view only.'}
+        {/* ── Navigation (Edit/View modes only) ── */}
+        {!surveyOpen && (
+          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+            <button
+              onClick={() => {
+                if (currentMeal === 'dinner') { setCurrentMeal('lunch'); wantsFoodRef.current = null; setWantsFood(null); setResponses({}) }
+                else if (currentDayIndex > 0) { setCurrentDayIndex(prev => prev - 1); setCurrentMeal('dinner'); wantsFoodRef.current = null; setWantsFood(null); setResponses({}) }
+              }}
+              disabled={isFirst}
+              style={{ flex: 1, padding: '8px 12px', borderRadius: 10, border: `1px solid ${t.border}`, background: 'transparent', color: isFirst ? t.border : t.textSub, fontSize: 13, fontWeight: 600, cursor: isFirst ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+              <ChevronLeft size={13} /> Prev
+            </button>
+            <button
+              onClick={async () => {
+                if (wantsFoodRef.current !== null) await saveCurrentSlot()
+                wantsFoodRef.current = null; setWantsFood(null); setResponses({})
+                if (currentMeal === 'lunch') setCurrentMeal('dinner')
+                else if (currentDayIndex < 5) { setCurrentDayIndex(prev => prev + 1); setCurrentMeal('lunch') }
+              }}
+              disabled={isLast}
+              style={{ flex: 1, padding: '8px 12px', borderRadius: 10, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+              {currentMeal === 'lunch' ? 'Dinner \u2192' : 'Next'} <ChevronRight size={13} />
+            </button>
           </div>
         )}
 
-        {/* Prev / Next */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-          <button onClick={handlePrev} disabled={isFirst}
-            style={{ flex: 1, padding: '8px 12px', borderRadius: 10, border: `1px solid ${t.border}`, background: 'transparent', color: isFirst ? t.border : t.textSub, fontSize: 13, fontWeight: 600, cursor: isFirst ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontFamily: "'DM Sans',sans-serif" }}>
-            <ChevronLeft size={13} /> Prev
-          </button>
-          <button onClick={handleNext} disabled={loading}
-            style={{ flex: 1, padding: '8px 12px', borderRadius: 10, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontFamily: "'DM Sans',sans-serif" }}>
-            {isLast ? 'Finish ✓' : currentMeal === 'lunch' ? 'Dinner →' : 'Next'} {!isLast && <ChevronRight size={13} />}
-          </button>
-        </div>
-
-        {/* Content */}
+        {/* ── Content ── */}
         {editBlocked ? (
           <div style={{ padding: 14, background: t.inputBg, borderRadius: 12, border: `1px solid ${t.border}` }}>
-            <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{wantsFood ? 'Responded: Yes' : 'Responded: No (skipped)'}</p>
+            <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>
+              {wantsFood ? 'Responded: Yes' : 'Responded: No (skipped)'}
+            </p>
             {wantsFood && Object.entries(responses).map(([dish, val]) => (
               <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${t.border}` }}>
-                <span style={{ fontSize: 15, fontWeight: 500, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</span>
-                <span style={{ fontSize: 16, fontWeight: 800, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>
-                  {val === 'no' ? '❌' : 
-                   typeof val === 'object' && val.status === 'yes' ? `✅ ${val.value}` : 
-                   (typeof val === 'number' ? (val === 0 ? '0%' : `${val}%`) : (val === 'Skipped' ? 'SKIP' : `${val}%`))}
+                <span style={{ fontSize: 15, fontWeight: 500, color: t.text }}>{dish}</span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: t.accent }}>
+                  {val === 'no' ? 'Skipped' :
+                   typeof val === 'object' && val.status === 'yes' ? `${val.value}` :
+                   typeof val === 'number' ? `${val}%` : ''}
                 </span>
               </div>
             ))}
+            {!wantsFood && (
+              <div style={{ textAlign: 'center', color: t.textSub, fontSize: 13 }}>Skipped this meal</div>
+            )}
           </div>
         ) : wantsFood === null ? (
           <div>
             <p style={{ fontSize: 15, fontWeight: 600, color: t.text, marginBottom: 14, fontFamily: "'DM Sans',sans-serif" }}>
-              Do you want {currentMeal} for {menu.en || currentDay}?
+              Do you want {currentMeal === 'lunch' ? 'Lunch' : 'Dinner'} for {menu.en || currentDay}?
             </p>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button className="stagger-item" onClick={() => { wantsFoodRef.current = true; setWantsFood(true); justLoadedRef.current = false }}
-                style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>✅ Yes</button>
-              <button className="stagger-item" onClick={() => { wantsFoodRef.current = false; setWantsFood(false); justLoadedRef.current = false; setTimeout(handleNext, 200) }}
-                style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${t.border}`, background: 'transparent', color: t.text, fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>❌ No</button>
+              <button onClick={() => handleMealChoice(true)}
+                style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>Yes</button>
+              <button onClick={() => handleMealChoice(false)}
+                style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${t.border}`, background: 'transparent', color: t.text, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>No</button>
             </div>
           </div>
         ) : wantsFood ? (
           <div>
-            <p style={{ fontSize: 12, fontWeight: 600, color: t.textSub, marginBottom: 10, fontFamily: "'DM Sans',sans-serif" }}>Select portion for each dish:</p>
-            {currentMeal === 'lunch' ? dishes.map((dish, idx) => (
-              <div key={dish} style={{ 
-                background: t.card, 
-                borderRadius: '16px', 
-                padding: '16px', 
-                border: `1px solid ${t.border}`,
-                marginBottom: '12px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <h3 style={{ color: t.text, margin: 0, fontSize: '14px', fontWeight: '600' }}>{dish}</h3>
-                  <span style={{ 
-                    fontSize: '11px', 
-                    color: t.textSub,
-                    padding: '4px 8px',
-                    borderRadius: '12px',
-                    background: t.accentBg,
-                    color: t.accent,
-                    fontWeight: '600'
-                  }}>
-                    {isRotiItem(dish) ? 'Roti' : `Default: ${snackDefaults?.[`dish_${idx + 1}`] ?? 0}`}
-                  </span>
-                </div>
-                
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                  <button
-                    onClick={() => {
-                      if (isRotiItem(dish)) {
-                        setResponses(prev => ({ ...prev, [dish]: 'yes' }))
-                      } else {
-                        const defVal = snackDefaults?.[`dish_${idx + 1}`] ?? 0
-                        setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: defVal } }))
-                      }
-                    }}
-                    style={{
-                      flex: 1,
-                      padding: '8px',
-                      borderRadius: '8px',
-                      border: `1px solid ${responses[dish] === 'yes' || (typeof responses[dish] === 'object' && responses[dish].status === 'yes') ? t.accent : t.border}`,
-                      background: responses[dish] === 'yes' || (typeof responses[dish] === 'object' && responses[dish].status === 'yes') ? t.accentBg : t.inputBg,
-                      color: responses[dish] === 'yes' || (typeof responses[dish] === 'object' && responses[dish].status === 'yes') ? t.accent : t.text,
-                      fontSize: '12px',
-                      fontWeight: '600'
-                    }}
-                  >
-                    ✅ Yes
-                  </button>
-                  <button
-                    onClick={() => setResponses(prev => ({ ...prev, [dish]: 'no' }))}
-                    style={{
-                      flex: 1,
-                      padding: '8px',
-                      borderRadius: '8px',
-                      border: `1px solid ${responses[dish] === 'no' ? '#e05555' : t.border}`,
-                      background: responses[dish] === 'no' ? 'rgba(224,85,85,0.1)' : t.inputBg,
-                      color: responses[dish] === 'no' ? '#e05555' : t.text,
-                      fontSize: '12px',
-                      fontWeight: '600'
-                    }}
-                  >
-                    ❌ No
-                  </button>
-                </div>
+            <p style={{ fontSize: 12, fontWeight: 600, color: t.textSub, marginBottom: 10 }}>Select portion for each dish:</p>
+            {dishes.map((dish, idx) => renderDishControl(dish, idx))}
 
-                {((isRotiItem(dish) && responses[dish] === 'yes') || (!isRotiItem(dish) && responses[dish]?.status === 'yes')) && (
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '12px', color: t.textSub }}>
-                      {isRotiItem(dish) ? 'Roti' : 'Count:'}
-                    </span>
-                    {!isRotiItem(dish) && (
-                      <input
-                        type="number"
-                        min="0"
-                        max={snackDefaults?.[`dish_${idx + 1}`] ?? Infinity}
-                        value={responses[dish]?.value ?? 0}
-                        onChange={(e) => {
-                          const value = Math.max(0, parseInt(e.target.value) || 0)
-                          const maxVal = snackDefaults?.[`dish_${idx + 1}`] ?? Infinity
-                          const finalValue = Math.min(value, maxVal)
-                          setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: finalValue } }))
-                        }}
-                        style={{
-                          width: '60px',
-                          padding: '6px',
-                          borderRadius: '6px',
-                          border: `1px solid ${t.border}`,
-                          background: t.inputBg,
-                          color: t.text,
-                          fontSize: '12px',
-                          textAlign: 'center'
-                        }}
-                      />
-                    )}
-                    {!isRotiItem(dish) && (
-                      <span style={{ fontSize: '11px', color: t.textSub }}>
-                        Default: {snackDefaults?.[`dish_${idx + 1}`] ?? 0}
-                      </span>
-                    )}
-                  </div>
+            {/* Last slot: Saturday dinner → Submit button */}
+            {isLast && allDishesFilled && (
+              <button onClick={handleSubmitAll}
+                disabled={loading || !allDishesFilled}
+                style={{ width: '100%', padding: 14, borderRadius: 11, border: 'none', marginTop: 8,
+                  background: 'linear-gradient(135deg, #F0C239, #D4A017)', color: '#000',
+                  fontSize: 16, fontWeight: 900, cursor: 'pointer',
+                  boxShadow: '0 8px 20px rgba(240,194,57,0.4)' }}>
+                {loading ? 'Saving...' : 'Submit for Whole Week'}
+              </button>
+            )}
+
+            {/* Auto-save indicator */}
+            {autoSaveStatus !== 'idle' && (
+              <div style={{ textAlign: 'center', marginTop: 8, fontSize: 10, fontWeight: 600, color: autoSaveStatus === 'saved' ? '#34d399' : t.textSub, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                {autoSaveStatus === 'saving' ? (
+                  <><div className="spin" style={{ width: 10, height: 10, border: '1.5px solid rgba(255,255,255,0.2)', borderTopColor: t.accent, borderRadius: '50%' }} /> Auto-saving...</>
+                ) : (
+                  <><Check size={12} /> Auto-saved</>
                 )}
-
-                <div style={{ marginTop: '8px', fontSize: '11px', color: t.textSub }}>
-                  Current: {responses[dish] === 'no' ? '❌ No' : 
-                           (isRotiItem(dish) ? (responses[dish] === 'yes' ? '✅ Roti' : 'Not selected') :
-                           (typeof responses[dish] === 'object' && responses[dish].status === 'yes' ? `✅ ${responses[dish].value} portions` : 
-                           'Not selected'))}
-                </div>
               </div>
-            )) : dishes.map((dish, idx) => (
-              <div key={dish} style={{ marginBottom: 10, padding: 12, background: t.inputBg, borderRadius: 11 }}>
-                <p style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-                  {[0, 25, 50, 100].map(pct => (
-                    <button key={pct} onClick={() => setResponses(prev => ({ ...prev, [dish]: pct }))}
-                      style={{ padding: '16px 4px', borderRadius: 14, border: `2px solid ${responses[dish] === pct ? t.accent : t.border}`, background: responses[dish] === pct ? t.accentBg : 'transparent', color: responses[dish] === pct ? t.accent : t.text, fontSize: 18, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: '0.2s' }}>
-                      {pct}%
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-            <button onClick={handleNext} disabled={loading || Object.keys(responses).length < dishes.length || hasOverload }
-              style={{ width: '100%', padding: 13, borderRadius: 11, border: 'none', marginTop: 6, background: Object.keys(responses).length < dishes.length || hasOverload ? t.border : t.accentGrad, color: '#fff', fontSize: 14, fontWeight: 700, cursor: Object.keys(responses).length < dishes.length || hasOverload ? 'not-allowed' : 'pointer', opacity: Object.keys(responses).length < dishes.length || hasOverload ? .5 : 1, fontFamily: "'DM Sans',sans-serif" }}>
-              {loading ? 'Saving…' : hasOverload ? '⚠️ Over limit' : isLast ? 'Complete Survey ✓' : 'Save & Next →'}
-            </button>
+            )}
           </div>
         ) : (
-          <div style={{ textAlign: 'center', padding: 20, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>Skipping this meal…</div>
+          <div style={{ textAlign: 'center', padding: 20, color: t.textSub }}>
+            {isLast ? 'Dinner skipped for Saturday.' : 'Skipping this meal...'}
+            {/* Last slot even when No: show Submit button */}
+            {isLast && (
+              <button onClick={handleSubmitAll}
+                disabled={loading}
+                style={{ width: '100%', padding: 14, borderRadius: 11, border: 'none', marginTop: 16,
+                  background: 'linear-gradient(135deg, #F0C239, #D4A017)', color: '#000',
+                  fontSize: 16, fontWeight: 900, cursor: 'pointer',
+                  boxShadow: '0 8px 20px rgba(240,194,57,0.4)' }}>
+                {loading ? 'Saving...' : 'Submit for Whole Week'}
+              </button>
+            )}
+            {autoSaveStatus !== 'idle' && (
+              <div style={{ textAlign: 'center', marginTop: 8, fontSize: 10, fontWeight: 600, color: autoSaveStatus === 'saved' ? '#34d399' : t.textSub, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+                {autoSaveStatus === 'saving' ? (
+                  <><div className="spin" style={{ width: 10, height: 10, border: '1.5px solid rgba(255,255,255,0.2)', borderTopColor: t.accent, borderRadius: '50%' }} /> Auto-saving...</>
+                ) : (
+                  <><Check size={12} /> Auto-saved</>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -987,6 +1094,8 @@ function DailySurveyModal({ onClose, appSettings = {} }) {
   const [rotiStatus, setRotiStatus] = useState(null) // true/false
   const [responses, setResponses] = useState({})
   const [loading, setLoading] = useState(false)
+  const [autoSaveStatus, setAutoSaveStatus] = useState('idle') // 'idle', 'saving', 'saved'
+  const saveTimerRef = useRef(null)
   const [userData, setUserData] = useState({ thali_no: '', email: user.email })
 
   const today = getTodayKey()
@@ -1006,6 +1115,72 @@ function DailySurveyModal({ onClose, appSettings = {} }) {
     } catch {}
     return meal === 'lunch' && idx <= 3
   }
+
+  // ── Hide auto-save indicator when manual save happens ──
+  useEffect(() => {
+    if (loading) setAutoSaveStatus('idle')
+  }, [loading])
+
+  // ── Auto-save dish selections (debounced) ──
+  useEffect(() => {
+    if (Object.keys(responses).length === 0) return
+    if (loading) return
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+
+    saveTimerRef.current = setTimeout(async () => {
+      setAutoSaveStatus('saving')
+      try {
+        // Auto-save uses a mini-upsert with current responses
+        const { user } = await supabase.auth.getUser()
+        const currentWeekId = getWeekDate()
+        const updateObj = {
+          user_id: user.id,
+          week_id: currentWeekId,
+          thali_number: userData.thali_no,
+          email: userData.email,
+          updated_at: new Date().toISOString()
+        }
+        // Add lunch dishes if user has selected them
+        if (lunchStatus !== null) {
+          updateObj[`${dayKey}_l_status`] = lunchStatus ? 'Applied' : 'Skipped'
+          if (lunchStatus) {
+            menu.lunch.forEach((dish, idx) => {
+              const val = responses[dish]
+              if (val !== undefined) {
+                updateObj[`${dayKey}_l_dish_${idx + 1}`] = isCountInput('lunch', idx) ? String(val) : `${val}%`
+              }
+            })
+          }
+        }
+        // Add dinner dishes if user has selected them
+        if (dinnerStatus !== null) {
+          updateObj[`${dayKey}_d_status`] = dinnerStatus ? 'Applied' : 'Skipped'
+          if (dinnerStatus) {
+            otherDinnerDishes.forEach((dish) => {
+              const menuIdx = dinnerDishes.indexOf(dish)
+              const val = responses[dish]
+              if (val !== undefined) {
+                updateObj[`${dayKey}_d_dish_${menuIdx + 1}`] = isCountInput('dinner', menuIdx) ? String(val) : `${val}%`
+              }
+            })
+          }
+        }
+
+        await supabase.from('survey_submissions_flat')
+          .upsert([updateObj], { onConflict: 'user_id,week_id' })
+
+        setAutoSaveStatus('saved')
+        setTimeout(() => setAutoSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 2000)
+      } catch {
+        setAutoSaveStatus('idle')
+      }
+    }, 600)
+
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    }
+  }, [responses, lunchStatus, dinnerStatus, dayKey, loading])
 
   useEffect(() => {
     supabase.from('user_stats').select('thali_number, email').eq('user_id', user.id).single()
@@ -1248,10 +1423,27 @@ function DailySurveyModal({ onClose, appSettings = {} }) {
 
         <div style={{ marginTop: 24, display: 'flex', gap: 10 }}>
           {step > 1 && <button onClick={() => setStep(prev => prev === 5 && rotiItems.length === 0 ? 3 : prev - 1)} style={{ flex: 1, padding: 14, borderRadius: 14, border: `1px solid ${t.border}`, background: 'transparent', color: t.textSub, fontWeight: 700, cursor: 'pointer' }}>Back</button>}
-          <button onClick={handleNext} disabled={loading} style={{ flex: 2, padding: 14, borderRadius: 14, border: 'none', background: t.accentGrad, color: '#000', fontWeight: 900, cursor: 'pointer', boxShadow: `0 8px 20px ${t.accentBg}` }}>
-            {loading ? 'Submitting...' : (step === 3 && !dinnerStatus) || step === 5 ? 'Submit Survey ✓' : 'Continue →'}
+          <button onClick={handleNext} disabled={loading} style={{ 
+            flex: 2, padding: 14, borderRadius: 14, border: 'none', 
+            background: (step === 5 || (step === 3 && !dinnerStatus)) ? 'linear-gradient(135deg, #F0C239, #D4A017)' : t.accentGrad, 
+            color: '#000', fontWeight: 900, cursor: 'pointer', 
+            boxShadow: (step === 5 || (step === 3 && !dinnerStatus)) ? '0 8px 20px rgba(240,194,57,0.4)' : `0 8px 20px ${t.accentBg}`,
+            transition: 'all 0.3s',
+            fontSize: (step === 5 || (step === 3 && !dinnerStatus)) ? 15 : 14
+          }}>
+            {loading ? 'Submitting...' : (step === 3 && !dinnerStatus) || step === 5 ? '🎉 Submit All ✓' : 'Continue →'}
           </button>
         </div>
+        {/* Auto-save status indicator */}
+        {autoSaveStatus !== 'idle' && (
+          <div style={{ textAlign: 'center', marginTop: 10, fontSize: 10, fontWeight: 600, color: autoSaveStatus === 'saved' ? '#34d399' : t.textSub, fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
+            {autoSaveStatus === 'saving' ? (
+              <><div className="spin" style={{ width: 10, height: 10, border: '1.5px solid rgba(255,255,255,0.2)', borderTopColor: t.accent, borderRadius: '50%' }} /> Auto-saving…</>
+            ) : (
+              <><Check size={12} style={{ display: 'inline' }} /> Auto-saved ✓</>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -2211,26 +2403,33 @@ function RecentRequestsList() {
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    const fetch = async () => {
-      // Fetch more than needed to account for filtering
-      const { data } = await supabase.from('thali_requests')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('status', 'pending')  // Only show pending requests in recent
-        .order('created_at', { ascending: false })
-        .limit(5)
+  const fetchPending = async () => {
+    if (!user?.id) return
+    const { data } = await supabase.from('thali_requests')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(5)
+    setRequests(data || [])
+    setLoading(false)
+  }
 
-      setRequests(data || [])
-      setLoading(false)
-    }
-    fetch()
+  useEffect(() => {
+    fetchPending()
+    const channel = supabase
+      .channel('recent-requests-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'thali_requests', filter: `user_id=eq.${user.id}` }, () => {
+        fetchPending()
+      })
+      .subscribe()
+    return () => supabase.removeChannel(channel)
   }, [user.id])
 
   const statusColor = (s) => s === 'pending' ? '#d4882a' : s === 'approved' ? '#5eba82' : '#e05555'
 
   if (loading) return <Spinner />
-  if (requests.length === 0) return <div style={{ textAlign: 'center', padding: 20, color: t.textSub, fontSize: 13, opacity: 0.6 }}>No pending requests.</div>
+  if (requests.length === 0) return <div style={{ textAlign: 'center', padding: 20, color: t.textSub, fontSize: 13, opacity: 0.6 }}>No active requests.</div>
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -2268,17 +2467,26 @@ function QueriesSection() {
       .then(({ data }) => { if (data) setHelpline(data.value) })
   }, [])
 
-  useEffect(() => { loadQueries() }, [])
+  useEffect(() => {
+    loadQueries()
+    const channel = supabase
+      .channel('queries-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'queries', filter: `user_id=eq.${user.id}` }, () => {
+        loadQueries()
+      })
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [])
   const loadQueries = async () => {
     try {
       const { data } = await supabase.from('queries')
         .select('*')
         .eq('user_id', user.id)
+        .in('status', ['open', 'in_progress'])
         .order('created_at', { ascending: false })
-        .limit(30)
+        .limit(20)
 
-      const filtered = (data || []).slice(0, 20)
-      setQueries(filtered)
+      setQueries(data || [])
     } catch { } finally { setLoading(false) }
   }
   const handleFileSelect = (e) => {
@@ -2612,46 +2820,168 @@ function MySurveysPage({ onBack }) {
 
 function MyRequestsPage({ onBack }) {
   const t = useTheme(), { user } = useAuth()
+  const [filterTab, setFilterTab] = useState('all')
   const [requests, setRequests] = useState([])
+  const [queries, setQueries] = useState([])
+  const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const fetchRequests = async () => {
-      const { data, error } = await supabase
-        .from('thali_requests')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-      if (!error) setRequests(data || [])
+    const fetchAll = async () => {
+      const [reqRes, queryRes] = await Promise.all([
+        supabase.from('thali_requests').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+        supabase.from('queries').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+      ])
+      if (!reqRes.error) setRequests(reqRes.data || [])
+      if (!queryRes.error) {
+        const allQueries = queryRes.data || []
+        setQueries(allQueries.filter(q => !(q.comment || '').startsWith('[Support Ticket]')))
+        setTickets(allQueries.filter(q => (q.comment || '').startsWith('[Support Ticket]')))
+      }
       setLoading(false)
     }
-    fetchRequests()
+    fetchAll()
+    const ch = supabase.channel('my-requests-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'thali_requests', filter: `user_id=eq.${user.id}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'queries', filter: `user_id=eq.${user.id}` }, fetchAll)
+      .subscribe()
+    return () => supabase.removeChannel(ch)
   }, [user.id])
 
   const typeLabel = (type) => {
-    const labels = { resume: '▶️ Resume Thali', stop: '⏹️ Stop Thali', miqaat: '🕌 Miqaat Pirsu', extra: '➕ Extra Food' }
+    const labels = { resume: 'Resume Thali', stop: 'Stop Thali', miqaat: 'Miqaat Pirsu', extra: 'Extra Food' }
     return labels[type] || type
   }
-  const statusColor = (s) => s === 'pending' ? '#d4882a' : s === 'approved' ? '#5eba82' : '#e05555'
+  const statusColor = (s) => s === 'pending' || s === 'open' || s === 'in_progress' ? '#d4882a' : s === 'approved' || s === 'resolved' ? '#5eba82' : '#e05555'
+  const statusIcon = (s) => s === 'pending' || s === 'open' ? '⏳' : s === 'in_progress' ? '🔄' : s === 'approved' || s === 'resolved' ? '✅' : s === 'rejected' || s === 'closed' ? '❌' : ''
+
+  const tabs = [
+    { id: 'all', label: 'All Activity' },
+    { id: 'requests', label: `Requests (${requests.length})` },
+    { id: 'queries', label: `Queries (${queries.length})` },
+    { id: 'tickets', label: `Tickets (${tickets.length})` },
+  ]
+
+  const renderRequestCard = (r) => (
+    <Card key={r.id} style={{ marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: t.text }}>{typeLabel(r.request_type)}</span>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 10px', borderRadius: 20, background: `${statusColor(r.status)}20`, color: statusColor(r.status), border: `1px solid ${statusColor(r.status)}40` }}>
+              {statusIcon(r.status)} {r.status?.toUpperCase()}
+            </span>
+          </div>
+          {r.meal_type && <div style={{ fontSize: 12, color: t.textSub, marginTop: 4 }}>Meal: {r.meal_type}</div>}
+          {r.from_date && <div style={{ fontSize: 12, color: t.textSub, marginTop: 4 }}>{r.from_date} {r.to_date ? `\u2192 ${r.to_date}` : ''}</div>}
+          {r.extra_items && <div style={{ fontSize: 12, color: t.textSub, marginTop: 4 }}>{r.extra_items.map(i => `${i.name} x${i.qty}`).join(', ')}</div>}
+          {r.details && <div style={{ fontSize: 12, color: t.textSub, marginTop: 4 }}>{r.details}</div>}
+        </div>
+      </div>
+      {r.admin_note && <div style={{ marginTop: 8, padding: 8, borderRadius: 8, background: t.accentBg, fontSize: 12, color: t.accent }}>Note: {r.admin_note}</div>}
+      <div style={{ fontSize: 10, color: t.textSub, marginTop: 8, opacity: .5 }}>{new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+    </Card>
+  )
+
+  const renderQueryCard = (q, isTicket = false) => (
+    <Card key={q.id} style={{ marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            {q.subject && <span style={{ fontSize: 14, fontWeight: 700, color: t.text }}>{q.subject}</span>}
+            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 10px', borderRadius: 20, background: `${statusColor(q.status)}20`, color: statusColor(q.status), border: `1px solid ${statusColor(q.status)}40` }}>
+              {statusIcon(q.status)} {q.status?.toUpperCase()}
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: t.textSub, marginTop: 4 }}>{new Date(q.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+        </div>
+      </div>
+      {q.comment && <p style={{ margin: '6px 0 0', fontSize: 13, color: t.textBody, lineHeight: 1.6, whiteSpace: 'pre-line' }}>
+        {isTicket ? q.comment.replace('[Support Ticket]\n', '') : q.comment}
+      </p>}
+      {q.media && q.media.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+          {q.media.map((m, i) => m.path && m.type === 'image' && <img key={i} src={m.path} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover' }} />)}
+        </div>
+      )}
+      {q.admin_reply && <div style={{ marginTop: 8, padding: 8, borderRadius: 8, background: t.accentBg, fontSize: 12, color: t.accent }}>Reply: {q.admin_reply}</div>}
+    </Card>
+  )
+
+  if (loading) return (
+    <main style={{ flex: 1, padding: '16px 16px 160px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+      <BackHeader title="My Requests" onBack={onBack} />
+      <Spinner />
+    </main>
+  )
+
+  const hasAny = requests.length > 0 || queries.length > 0 || tickets.length > 0
 
   return (
     <main style={{ flex: 1, padding: '16px 16px 160px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       <BackHeader title="My Requests" onBack={onBack} />
-      {loading ? <Spinner /> : requests.length === 0 ? <EmptyState msg="No requests yet." /> : requests.map(r => (
-        <Card key={r.id} style={{ marginBottom: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
+
+      {/* Filter tabs */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 18, background: t.card, borderRadius: 13, padding: 5, border: `1px solid ${t.border}`, overflowX: 'auto' }}>
+        {tabs.map(({ id, label }) => (
+          <button key={id} onClick={() => setFilterTab(id)}
+            style={{ flex: 1, padding: '8px 10px', borderRadius: 9, border: 'none', whiteSpace: 'nowrap', background: filterTab === id ? t.accentGrad : 'transparent', color: filterTab === id ? '#fff' : t.textSub, fontWeight: 700, fontSize: 12, cursor: 'pointer', transition: 'all 0.25s' }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {!hasAny ? <EmptyState msg="No activity yet. Raise a request, query, or support ticket to see it here." /> : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {/* Pending Requests */}
+          {(filterTab === 'all' || filterTab === 'requests') && requests.filter(r => r.status === 'pending').length > 0 && (
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{typeLabel(r.request_type)}</div>
-              <span style={{ display: 'inline-flex', marginTop: 6, fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: `${statusColor(r.status)}20`, color: statusColor(r.status), border: `1px solid ${statusColor(r.status)}40`, fontFamily: "'DM Sans',sans-serif" }}>{r.status?.toUpperCase()}</span>
+              <SectionLabel>Pending Requests</SectionLabel>
+              {requests.filter(r => r.status === 'pending').map(renderRequestCard)}
             </div>
-          </div>
-          {r.from_date && <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{r.from_date} → {r.to_date}</div>}
-          {r.extra_items && <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{r.extra_items.map(i => `${i.name} x${i.qty}`).join(', ')}</div>}
-          {r.details && <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{r.details}</div>}
-          {r.admin_note && <div style={{ marginTop: 8, fontSize: 12, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>Note: {r.admin_note}</div>}
-          <div style={{ fontSize: 10, color: t.textSub, marginTop: 6, opacity: .5, fontFamily: "'DM Sans',sans-serif" }}>{new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
-        </Card>
-      ))}
+          )}
+
+          {/* Approved Requests */}
+          {(filterTab === 'all' || filterTab === 'requests') && requests.filter(r => r.status === 'approved').length > 0 && (
+            <div style={{ marginTop: filterTab === 'all' ? 16 : 0 }}>
+              {filterTab === 'all' && requests.filter(r => r.status === 'pending').length > 0 && <div style={{ height: 1, background: t.border, marginBottom: 16 }} />}
+              <SectionLabel>Approved Requests</SectionLabel>
+              {requests.filter(r => r.status === 'approved').map(renderRequestCard)}
+            </div>
+          )}
+
+          {/* Rejected Requests */}
+          {(filterTab === 'all' || filterTab === 'requests') && requests.filter(r => r.status === 'rejected').length > 0 && (
+            <div style={{ marginTop: filterTab === 'all' ? 16 : 0 }}>
+              {(requests.filter(r => r.status === 'pending').length > 0 || requests.filter(r => r.status === 'approved').length > 0) && filterTab === 'all' && <div style={{ height: 1, background: t.border, marginBottom: 16 }} />}
+              <SectionLabel>Rejected Requests</SectionLabel>
+              {requests.filter(r => r.status === 'rejected').map(renderRequestCard)}
+            </div>
+          )}
+
+          {filterTab === 'requests' && requests.length === 0 && <div style={{ textAlign: 'center', padding: 30, color: t.textSub, fontSize: 13 }}>No thali requests yet.</div>}
+
+          {/* Queries */}
+          {(filterTab === 'all' || filterTab === 'queries') && queries.length > 0 && (
+            <div style={{ marginTop: (filterTab === 'all' && requests.length > 0) ? 16 : 0 }}>
+              {filterTab === 'all' && requests.length > 0 && <div style={{ height: 1, background: t.border, marginBottom: 16 }} />}
+              <SectionLabel>Queries ({queries.filter(q => q.status === 'open' || q.status === 'in_progress').length} open)</SectionLabel>
+              {queries.map(q => renderQueryCard(q, false))}
+              {queries.length === 0 && filterTab === 'queries' && <EmptyState msg="No queries." />}
+            </div>
+          )}
+
+          {/* Support Tickets */}
+          {(filterTab === 'all' || filterTab === 'tickets') && tickets.length > 0 && (
+            <div style={{ marginTop: (filterTab === 'all' && (requests.length > 0 || queries.length > 0)) ? 16 : 0 }}>
+              {(requests.length > 0 || queries.length > 0) && filterTab === 'all' && <div style={{ height: 1, background: t.border, marginBottom: 16 }} />}
+              <SectionLabel>Support Tickets ({tickets.filter(t => t.status === 'open' || t.status === 'in_progress').length} open)</SectionLabel>
+              {tickets.map(t => renderQueryCard(t, true))}
+              {tickets.length === 0 && filterTab === 'tickets' && <EmptyState msg="No support tickets." />}
+            </div>
+          )}
+        </div>
+      )}
     </main>
   )
 }
@@ -2853,23 +3183,27 @@ function SupportTicketsPage({ onBack }) {
   const inputStyle = { width: '100%', padding: '11px 13px', borderRadius: 16, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif" }
   const statusColor = s => s === 'open' ? '#d4882a' : s === 'resolved' ? '#5eba82' : '#7aabb8'
 
-  useEffect(() => { loadTickets() }, [])
+  useEffect(() => {
+    loadTickets()
+    const channel = supabase
+      .channel('tickets-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'queries', filter: `user_id=eq.${user.id}` }, () => {
+        loadTickets()
+      })
+      .subscribe()
+    return () => supabase.removeChannel(channel)
+  }, [])
   const loadTickets = async () => {
     try {
       const { data } = await supabase.from('queries')
         .select('*')
         .eq('user_id', user.id)
+        .in('status', ['open', 'in_progress'])
         .order('created_at', { ascending: false })
         .limit(30)
 
-      const now = new Date()
       const filtered = (data || []).filter(item => {
-        const isTicket = (item.comment || '').startsWith('[Support Ticket]')
-        if (!isTicket) return false
-        if (item.status === 'open' || !item.status) return true
-        const updateTime = new Date(item.updated_at || item.created_at)
-        const diffHours = (now - updateTime) / (1000 * 60 * 60)
-        return diffHours < 24
+        return (item.comment || '').startsWith('[Support Ticket]')
       }).slice(0, 20)
 
       setTickets(filtered)
@@ -3018,6 +3352,7 @@ export default function App() {
     setPortalRole(null)
     localStorage.removeItem('al_mawaid_portal')
     localStorage.removeItem('al_mawaid_mock_user')
+        localStorage.removeItem('al-mawaid-auth-token')
     await supabase.auth.signOut()
   }, [])
 
@@ -3049,6 +3384,7 @@ export default function App() {
         setMockUser(null);
         localStorage.removeItem('al_mawaid_portal')
         localStorage.removeItem('al_mawaid_mock_user')
+        localStorage.removeItem('al-mawaid-auth-token')
       }
     })
     return () => subscription.unsubscribe()

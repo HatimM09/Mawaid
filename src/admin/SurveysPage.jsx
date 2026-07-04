@@ -410,7 +410,7 @@ export default function SurveysPage() {
             const a = document.createElement('a')
             a.href = url; a.download = `detailed_survey_${dayFilter}_${mealFilter}.csv`
             a.click()
-          }} style={{ height: 48, width: 48, padding: 0, borderRadius: 14 }}><Download size={20} /></Btn>
+          }} aria-label="Export CSV" style={{ height: 48, width: 48, padding: 0, borderRadius: 14 }}><Download size={20} /></Btn>
         </div>
       </div>
 
@@ -497,7 +497,7 @@ export default function SurveysPage() {
             ))}
           </div>
 
-          <select value={weekFilter} onChange={e => setWeekFilter(e.target.value)}
+          <select value={weekFilter} onChange={e => setWeekFilter(e.target.value)} name="weekFilter"
             style={{ padding: '6px 12px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.border}`, color: T.text, fontSize: 11, fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
             <option value="all">ALL WEEKS</option>
             {availableWeeks.map(w => (
@@ -543,7 +543,7 @@ export default function SurveysPage() {
       {isScanning && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.95)', backdropFilter: 'blur(10px)', padding: 20 }}>
           <div style={{ position: 'relative', width: '100%', maxWidth: 450 }}>
-            <button onClick={() => setIsScanning(false)} style={{ position: 'absolute', top: -60, right: 0, background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', width: 44, height: 44, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={24} /></button>
+            <button onClick={() => setIsScanning(false)} aria-label="Close scanner" style={{ position: 'absolute', top: -60, right: 0, background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', width: 44, height: 44, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={24} /></button>
             <div style={{ background: '#fff', borderRadius: 32, padding: 20, overflow: 'hidden', boxShadow: '0 50px 100px rgba(0,0,0,0.5)' }}>
               <div id="qr-reader" style={{ width: '100%' }}></div>
             </div>

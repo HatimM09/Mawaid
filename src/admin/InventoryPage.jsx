@@ -353,7 +353,7 @@ export default function InventoryPage({ role: roleProp }) {
               Reset
             </Btn>
           )}
-          {canManageItems && <Btn size="sm" onClick={() => setShowAdd(true)}><Plus size={14} /></Btn>}
+          {canManageItems && <Btn size="sm" aria-label="Add product" onClick={() => setShowAdd(true)}><Plus size={14} /></Btn>}
         </div>
       </div>
 
@@ -389,7 +389,7 @@ export default function InventoryPage({ role: roleProp }) {
           <option value="all">All Categories</option>
           {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
         </select>
-        <Btn variant="outline" onClick={fetchData} style={{ height: 48, width: 48, padding: 0 }}><RefreshCw size={18} /></Btn>
+        <Btn variant="outline" aria-label="Refresh data" onClick={fetchData} style={{ height: 48, width: 48, padding: 0 }}><RefreshCw size={18} /></Btn>
       </div>
 
       {activeTab === 'stock' ? (

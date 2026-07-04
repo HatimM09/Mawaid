@@ -64,6 +64,7 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('al_mawaid_mock_user')
         localStorage.removeItem('al_mawaid_portal')
         localStorage.removeItem('al_mawaid_restricted')
+        localStorage.removeItem('al-mawaid-auth-token')
       }
     })
     return () => subscription.unsubscribe()

@@ -82,6 +82,8 @@ export default function NotificationsAdminPage() {
 
   // Realtime
   const scheduleChannel = useRef(null)
+  const noticesChannel = useRef(null)
+  const pushSubsChannel = useRef(null)
 
   // Drag-and-drop state
   const [dragOver, setDragOver] = useState(false)
@@ -132,8 +134,9 @@ export default function NotificationsAdminPage() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
-  // ── Realtime subscription ────────────────────────────────────
+  // ── Realtime subscriptions ───────────────────────────────────
   useEffect(() => {
+    // Listen for broadcast_schedule changes (scheduled broadcast status updates)
     scheduleChannel.current = supabase
       .channel('broadcast-schedule-changes')
       .on('postgres_changes',
@@ -141,15 +144,36 @@ export default function NotificationsAdminPage() {
         () => fetchAll()
       )
       .subscribe()
+
+    // Listen for notices table changes (new broadcasts composed from any admin)
+    noticesChannel.current = supabase
+      .channel('notices-changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'notices' },
+        () => fetchAll()
+      )
+      .subscribe()
+
+    // Listen for push_subscriptions changes so subscriber count updates live
+    pushSubsChannel.current = supabase
+      .channel('push-subs-changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'push_subscriptions' },
+        () => fetchAll()
+      )
+      .subscribe()
+
     return () => {
       if (scheduleChannel.current) supabase.removeChannel(scheduleChannel.current)
+      if (noticesChannel.current) supabase.removeChannel(noticesChannel.current)
+      if (pushSubsChannel.current) supabase.removeChannel(pushSubsChannel.current)
     }
   }, [fetchAll])
 
   // ── Helpers ──────────────────────────────────────────────────
   const getTargetCount = (targetType, targetUserId) => {
     if (targetType === 'specific' && targetUserId) return 1
-    if (targetType === 'all') return pushSubs || users.length
+    if (targetType === 'all' || targetType === 'admins') return pushSubs || users.length
     return users.length
   }
 
@@ -637,7 +661,7 @@ export default function NotificationsAdminPage() {
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                     marginBottom: 8
                   }}>
-                    <label style={{
+                    <label htmlFor="notificationTitle" style={{
                       color: 'var(--text-tertiary)', fontSize: 10,
                       fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase',
                     }}>Title</label>
@@ -646,6 +670,7 @@ export default function NotificationsAdminPage() {
                     </span>
                   </div>
                   <input
+                    id="notificationTitle"
                     name="notificationTitle"
                     placeholder="Menu Update"
                     value={form.title}
@@ -666,7 +691,7 @@ export default function NotificationsAdminPage() {
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                     marginBottom: 8
                   }}>
-                    <label style={{
+                    <label htmlFor="senderName" style={{
                       color: 'var(--text-tertiary)', fontSize: 10,
                       fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase',
                     }}>Sender</label>
@@ -675,6 +700,7 @@ export default function NotificationsAdminPage() {
                     </span>
                   </div>
                   <input
+                    id="senderName"
                     name="senderName"
                     placeholder="Al-Mawaid Office"
                     value={form.sender_name}
@@ -691,11 +717,12 @@ export default function NotificationsAdminPage() {
 
                 {/* Row 3: Message */}
                 <div>
-                  <label style={{
+                  <label htmlFor="notificationBody" style={{
                     display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
                     fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
                   }}>Message</label>
                   <textarea
+                    id="notificationBody"
                     name="notificationBody"
                     placeholder="Add notification text..."
                     value={form.body}
@@ -714,10 +741,10 @@ export default function NotificationsAdminPage() {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                   {/* Accent Tone Picker */}
                   <div>
-                    <label style={{
+                    <div style={{
                       display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
                       fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10,
-                    }}>Accent Tone</label>
+                    }}>Accent Tone</div>
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                       {TONES.map(t => (
                         <div
@@ -748,11 +775,12 @@ export default function NotificationsAdminPage() {
 
                   {/* Channel Selector */}
                   <div>
-                    <label style={{
+                    <label htmlFor="channel" style={{
                       display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
                       fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10,
                     }}>Channel</label>
                     <select
+                      id="channel"
                       name="channel"
                       value={form.channel}
                       onChange={e => setForm({ ...form, channel: e.target.value })}
@@ -772,7 +800,7 @@ export default function NotificationsAdminPage() {
 
                 {/* Row 5: Image Upload (Drag & Drop) */}
                 <div>
-                  <label style={{
+                  <label htmlFor="imageUpload" style={{
                     display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
                     fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
                   }}>Attached Image</label>
@@ -781,6 +809,8 @@ export default function NotificationsAdminPage() {
                     type="file"
                     accept="image/png,image/jpeg,image/webp,image/gif"
                     onChange={handleFileSelect}
+                    id="imageUpload"
+                    name="imageUpload"
                     style={{ display: 'none' }}
                   />
                   <div
@@ -895,6 +925,7 @@ export default function NotificationsAdminPage() {
                     title="Target Audience"
                   >
                     <option value="all">Audience: All Users</option>
+                    <option value="admins">Audience: Admins Only</option>
                     <option value="opt_in">Audience: Opted In</option>
                     <option value="opt_out">Audience: Opted Out</option>
                     <option value="specific">Audience: Specific User</option>
@@ -1047,7 +1078,7 @@ export default function NotificationsAdminPage() {
                   <Target size={14} color={T.accent} />
                   Will reach <strong style={{ color: T.accent }}>
                     {form.target_type === 'specific' && form.target_user_id ? 1 :
-                     form.target_type === 'all' ? (pushSubs || users.length) :
+                     form.target_type === 'all' || form.target_type === 'admins' ? (pushSubs || users.length) :
                      users.length}
                   </strong> recipient{form.target_type === 'specific' && form.target_user_id ? '' : 's'}
                   {form.delivery === 'schedule' && form.scheduled_at

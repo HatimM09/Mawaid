@@ -253,7 +253,7 @@ export default function InventoryManagerPortal({ signOut, user }) {
           </div>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: 'var(--accent-primary)' }}>INVENTORY</h2>
           <div style={{ flex: 1 }} />
-          <button onClick={() => setIsSidebarOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={24} /></button>
+          <button onClick={() => setIsSidebarOpen(false)} aria-label="Close sidebar" style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}><X size={24} /></button>
         </div>
 
         <div style={{ flex: 1 }}>
@@ -319,7 +319,7 @@ export default function InventoryManagerPortal({ signOut, user }) {
             )
           })}
         </div>
-        <button onClick={signOut} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 12, color: '#e05555', opacity: 0.8, flexShrink: 0 }}>
+        <button onClick={signOut} aria-label="Log out" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 12, color: '#e05555', opacity: 0.8, flexShrink: 0 }}>
           <LogOut size={20} />
         </button>
       </nav>

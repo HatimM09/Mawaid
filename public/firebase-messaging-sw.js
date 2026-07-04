@@ -2,6 +2,21 @@
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compat.js');
 
+// Suppress Firebase "message channel closed" errors
+self.addEventListener('error', (e) => {
+  // preventDefault on error events does NOT suppress console output in Chrome;
+  // the unhandledrejection handler below is the one that works.
+  if (e?.error?.message?.includes('message channel closed')) {
+    e.preventDefault()
+    e.stopImmediatePropagation()
+  }
+})
+self.addEventListener('unhandledrejection', (e) => {
+  if (e?.reason?.message?.includes('message channel closed')) {
+    e.preventDefault()
+  }
+})
+
 // REPLACE THESE WITH YOUR ACTUAL FIREBASE PROJECT CONFIG
 const firebaseConfig = {
   apiKey: "AIzaSyCFQqTnz_CiVIKtDW4XH6CswPAm_KwN6jc",

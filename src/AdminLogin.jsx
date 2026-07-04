@@ -506,12 +506,13 @@ export default function AdminLogin({ onLogin }) {
               {/* Input */}
               <div>
                 <div className="adm-field">
-                  <label className="adm-field-label">Secret Key</label>
+                  <label className="adm-field-label" htmlFor="adminKey">Secret Key</label>
                   <div className="adm-input-wrap">
                     <Lock size={16} />
                     <input
                       className="adm-input"
                       type="password"
+                      id="adminKey"
                       name="adminKey"
                       value={password}
                       onChange={e => setPassword(e.target.value)}
