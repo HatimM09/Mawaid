@@ -9,7 +9,7 @@
 // ══════════════════════════════════════════════════════════════
 
 import React, { useState, useRef, useCallback, useEffect } from 'react'
-import { Mail, Lock, User, Medal, Package, ArrowRight } from 'lucide-react'
+import { Mail, Lock, User, Medal, Package, Shield, ArrowRight } from 'lucide-react'
 import { supabaseClient } from './lib/supabaseClient'
 
 const LOGIN_ROLES = [
