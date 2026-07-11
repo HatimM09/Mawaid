@@ -1,7 +1,7 @@
 # Appfile for fastlane supply
 # This file tells fastlane which app to deploy and how to authenticate.
 
-package_name "com.almawaid.app"
+package_name "com.almawaid.myapp"
 
 # Path to the Google Play Console service account JSON key
 # Generate this file in Google Cloud Console and download it here

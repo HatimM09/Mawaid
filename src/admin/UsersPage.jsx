@@ -1,7 +1,6 @@
 // src/admin/UsersPage.jsx
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { supabase, supabaseUrl, supabaseAnonKey } from './supabaseClient'
-import { createClient } from '@supabase/supabase-js'
+import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
 import { Search, RefreshCw, UserPlus, Edit2, Trash2, X, Shield, Phone, MapPin, UserCheck, QrCode, Download, Printer } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Input, Grid, SectionHeader, fmtDate, Alert } from './ui'
@@ -99,48 +98,94 @@ export default function UsersPage() {
   const handleSave = async (e) => {
     e.preventDefault()
     setError(''); setSuccess('')
-    const isNew = !editForm.id
+    const isNew = !editForm.id || isAdding
+    let generatedPassword = ''
     try {
       setLoading(true)
-      if (isNew) {
-        const tempClient = createClient(supabaseUrl, supabaseAnonKey, { 
-          auth: { persistSession: false, autoRefreshToken: false, storageKey: 'dummy-auth-token' } 
-        })
-        const authPassword = editForm.password || `Mawaid@${editForm.thali_number || '123'}`
-        const { data: authData, error: authError } = await tempClient.auth.signUp({
-          email: editForm.email,
-          password: authPassword,
-          options: {
-            data: {
-              name: editForm.name,
-              thali_number: editForm.thali_number,
-              avatar_url: editForm.avatar_url
-            }
-          }
-        })
+      let authUserId = editForm.user_id
 
-        if (authError) throw authError
+      if (isNew) {
+        generatedPassword = editForm.password || generateSecurePassword()
         
-        // Use the new user ID
-        editForm.id = authData.user.id
-        editForm.user_id = authData.user.id
+        const { data: existingUser } = await supabase
+          .from('user_stats')
+          .select('user_id')
+          .eq('email', editForm.email)
+          .maybeSingle()
+        
+        if (existingUser) {
+          authUserId = existingUser.user_id
+          const { error: updateErr } = await supabase.rpc('admin_update_user', {
+            p_user_id: authUserId, p_password: generatedPassword,
+            p_metadata: { name: editForm.name, thali_number: editForm.thali_number, avatar_url: editForm.avatar_url },
+            p_email: editForm.email
+          })
+          if (updateErr) throw updateErr
+        } else {
+          // admin_create_user tries sign-up, then sign-in to recover if EMAIL_EXISTS
+          const { data: newUid, error: createErr } = await supabase.rpc('admin_create_user', {
+            p_email: editForm.email, p_password: generatedPassword,
+            p_metadata: { name: editForm.name, thali_number: editForm.thali_number, avatar_url: editForm.avatar_url }
+          })
+          if (createErr?.message?.includes('different password')) {
+            // Send password reset email automatically
+            const resetResult = await supabase.rpc('admin_reset_password', { p_email: editForm.email })
+            if (resetResult.error) {
+              throw new Error(`User exists with a different password. Reset via Supabase Dashboard > Authentication, then try again.`)
+            }
+            throw new Error(`Password reset email sent to ${editForm.email}. Have them reset it, then create profile again.`)
+          }
+          if (createErr) throw createErr
+          authUserId = newUid
+        }
+      } else {
+        // Editing existing user: update auth user if password, email, or metadata changed
+        const { error: updateErr } = await supabase.rpc('admin_update_user', {
+          p_user_id: editForm.user_id,
+          p_password: editForm.password || null,
+          p_metadata: {
+            name: editForm.name,
+            thali_number: editForm.thali_number,
+            avatar_url: editForm.avatar_url
+          },
+          p_email: editForm.email
+        })
+        if (updateErr) throw updateErr
       }
 
       // Create a clean object for the database without the password
       const { password, ...dataToSave } = editForm
+      if (isNew) {
+        delete dataToSave.id
+      }
+      dataToSave.user_id = authUserId
+      dataToSave.email = editForm.email
       
       const { error } = await supabase
         .from('user_stats')
         .upsert([dataToSave])
       
       if (error) throw error
-      setSuccess(isNew ? 'Member created & Auth enabled' : 'Member updated successfully')
+      
+      const successMsg = isNew 
+        ? `Member created! Password: ${generatedPassword || editForm.password || 'unchanged'}. ${generatedPassword ? 'Ask them to sign in.' : ''}`
+        : 'Member updated successfully'
+      setSuccess(successMsg)
       setTimeout(() => { setEditForm(null); setIsAdding(false); load(true) }, 1500)
     } catch (err) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
+  }
+
+  const generateSecurePassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%'
+    let password = ''
+    for (let i = 0; i < 12; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    return `Mawaid@${password}`
   }
 
   // ── Download individual user QR as JPG ──
@@ -190,11 +235,7 @@ export default function UsersPage() {
   const handleDelete = async (user) => {
     if (!window.confirm(`Are you sure you want to delete ${user.name || 'this user'}?`)) return
     try {
-      const { error } = await supabase
-        .from('user_stats')
-        .delete()
-        .eq('id', user.id)
-      
+      const { error } = await supabase.rpc('admin_delete_user', { p_user_id: user.user_id })
       if (error) throw error
       setSuccess('Member deleted')
       load(true)
@@ -619,15 +660,28 @@ export default function UsersPage() {
                     <img src={editForm.avatar_url} alt="Preview" style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${T.border}` }} />
                   )}
                 </div>
-                {isAdding && <Input label="Assign Password" name="userPassword" type="password" value={editForm.password} onChange={e => setEditForm({...editForm, password: e.target.value})} placeholder="Min 6 chars" required />}
+                <Input label={isAdding ? "Assign Password" : "Reset Password (leave blank to keep current)"} name="userPassword" type="password" value={editForm.password} onChange={e => setEditForm({...editForm, password: e.target.value})} placeholder={isAdding ? "Min 6 chars" : "Leave blank to keep current"} required={isAdding} />
               </Grid>
               
               {error && <Alert msg={error} />}
               {success && <Alert msg={success} type="success" />}
 
-              <div style={{ marginTop: 12, display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-                <Btn variant="ghost" type="button" onClick={() => setEditForm(null)}>Cancel</Btn>
-                <Btn type="submit" disabled={loading}>{isAdding ? 'Create Thali User' : 'Save Changes'}</Btn>
+              <div style={{ marginTop: 12, display: 'flex', gap: 12, justifyContent: 'space-between' }}>
+                <div>
+                  {!isAdding && (
+                    <Btn variant="danger" type="button" onClick={() => {
+                      if (window.confirm(`Are you sure you want to delete ${editForm.name || 'this user'}?`)) {
+                        handleDelete(editForm)
+                      }
+                    }}>
+                      <Trash2 size={15} /> Delete Member
+                    </Btn>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <Btn variant="ghost" type="button" onClick={() => setEditForm(null)}>Cancel</Btn>
+                  <Btn type="submit" disabled={loading}>{isAdding ? 'Create Thali User' : 'Save Changes'}</Btn>
+                </div>
               </div>
             </form>
           </AdminCard>

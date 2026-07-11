@@ -1,6 +1,6 @@
 // src/admin/InventoryPage.jsx
 import React, { useState, useEffect } from 'react'
-import { supabase } from './supabaseClient'
+import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
 import { 
   Outlet, useLocation, useOutletContext 
 } from 'react-router-dom'

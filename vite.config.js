@@ -60,8 +60,8 @@ export default defineConfig({
           if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) {
             return 'vendor';
           }
-          if (id.includes('node_modules/@supabase/supabase-js/')) {
-            return 'supabase';
+          if (id.includes('node_modules/firebase/')) {
+            return 'firebase';
           }
         }
       }
@@ -69,6 +69,14 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    proxy: {
+      '/cloudfunctions': {
+        target: 'https://us-central1-al-mawaid-8ffef.cloudfunctions.net',
+        changeOrigin: true,
+        secure: true,
+        rewrite: (path) => path.replace(/^\/cloudfunctions/, ''),
+      },
+    },
   },
   test: {
     globals: true,

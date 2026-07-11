@@ -43,6 +43,7 @@ body,
   padding: 0;
   height: 100%;
   font-family: 'Outfit', sans-serif;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: var(--bg-deep);
@@ -142,6 +143,15 @@ body {
   0% { opacity: 0.5; }
   50% { opacity: 1; }
   100% { opacity: 0.5; }
+}
+
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+}
+
+.skeleton-animate {
+  animation: skeletonPulse 1.5s ease-in-out infinite;
 }
 
 .animate-pulse {

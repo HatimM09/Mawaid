@@ -7,7 +7,7 @@ import {
   ChevronLeft, Phone, MapPin, LifeBuoy, Lock, MessageCircle,
   AlertCircle, Wallet, ClipboardList, Menu
 } from 'lucide-react'
-import { supabase } from './supabaseClient'
+import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
 import { AuthCtx, ThemeCtx, useAuth, useTheme } from './context'
 import { T as SharedT, updateSystemTheme, Modal, SurveyResponseDisplay, Btn as SharedBtn, PackingTVView } from './ui'
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
@@ -518,7 +518,7 @@ function NoticesPortalView() {
               <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{new Date(n.created_at).toLocaleDateString()}</div>
             </div>
             <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 8, color: '#fff' }}>{n.title}</div>
-            <div style={{ fontSize: 13, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>{n.body}</div>
+            <div style={{ fontSize: 13, color: 'var(--text-tertiary)', lineHeight: 1.65 }}>{n.body}</div>
             {n.media && n.media[0] && (
               <img src={n.media[0]} style={{ width: '100%', borderRadius: 12, marginTop: 12, border: '1px solid rgba(255,255,255,0.1)' }} alt="notice" />
             )}

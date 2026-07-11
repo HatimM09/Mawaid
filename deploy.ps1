@@ -16,8 +16,8 @@ Write-Host "Deploying to Vercel..." -ForegroundColor Cyan
 vercel --prod --yes
 
 Write-Host "Adding Environment Variables..." -ForegroundColor Cyan
-vercel env add VITE_SUPABASE_URL production "https://spciaktztqnjsttrtosu.supabase.co" --yes
-vercel env add VITE_SUPABASE_ANON_KEY production "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwY2lha3R6dHFuanN0dHJ0b3N1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1NTkxMzQsImV4cCI6MjA5MTEzNTEzNH0.1RMezYllnPpgpEY7UKeD_6NlI6VliegWrQsNY4w6-0Y" --yes
+vercel env add VITE_SUPABASE_URL production "https://pquusffhuholbnlmuyen.supabase.co" --yes
+vercel env add VITE_SUPABASE_ANON_KEY production "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBxdXVzZmZodWhvbGJubG11eWVuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NzEzOTAsImV4cCI6MjA5OTM0NzM5MH0.lp8jDk4UalHg5dJHIxTinhqaCJ-OA1RVwcDjM3KxcTo" --yes
 
 # Firebase Variables - REMOVED
 

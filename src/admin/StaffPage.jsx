@@ -1,8 +1,9 @@
 // src/admin/StaffPage.jsx
 import React, { useState, useEffect } from 'react'
-import { supabase } from './supabaseClient'
+import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
 import { Plus, Trash2, RefreshCw, Shield } from 'lucide-react'
-import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Alert, Input, fmtDate } from './ui'
+import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Alert, Input, fmtDate } from './ui'
+import { AdminTableSkeleton } from '../common/Skeleton'
 
 export default function StaffPage() {
   const [loading, setLoading]   = useState(true)
@@ -39,17 +40,33 @@ export default function StaffPage() {
     e.preventDefault()
     if (!form.name || !form.email) return setMsg({ text: 'Name and email are required.', type: 'error' })
     setSaving(true)
-    
-    // Sanitize role for database constraint
+    setMsg({ text: '', type: 'success' })
+
     const sanitizedForm = {
       ...form,
       role: form.role.toLowerCase().trim().replace(/\s+/g, '_')
     }
 
+    let generatedPassword = ''
+    try {
+      // Try to create Firebase Auth user (requires Cloud Functions deployed)
+      generatedPassword = generatePassword()
+      const { error: authErr } = await supabase.rpc('admin_create_user', {
+        p_email: form.email,
+        p_password: generatedPassword,
+        p_metadata: { name: form.name }
+      })
+      if (authErr) throw authErr
+    } catch (authErr) {
+      // Cloud Functions not deployed — staff record only
+      console.warn('[StaffPage] Auth user not created (Cloud Functions not deployed?):', authErr.message)
+    }
+
     const { error } = await supabase.from('staff').insert(sanitizedForm)
     setSaving(false)
-    if (error) return setMsg({ text: `Database Error: ${error.message}. Please ensure the role is valid.`, type: 'error' })
-    setMsg({ text: 'Staff member added successfully.', type: 'success' })
+    if (error) return setMsg({ text: `Error: ${error.message}`, type: 'error' })
+    const pwdMsg = generatedPassword ? ` Temporary password: ${generatedPassword}` : ''
+    setMsg({ text: `${form.name} added as ${sanitizedForm.role.replace(/_/g, ' ')}.${pwdMsg}`, type: 'success' })
     setForm({ name: '', email: '', role: 'khidmat_guzar', phone: '' })
     setShowAdd(false)
     load()
@@ -59,6 +76,13 @@ export default function StaffPage() {
     if (!confirm('Remove this staff member?')) return
     await supabase.from('staff').delete().eq('id', id)
     setStaff(prev => prev.filter(s => s.id !== id))
+  }
+
+  const generatePassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%'
+    let pwd = ''
+    for (let i = 0; i < 10; i++) pwd += chars.charAt(Math.floor(Math.random() * chars.length))
+    return `Mawaid@${pwd}`
   }
 
   const ROLE_COLORS = {
@@ -129,7 +153,7 @@ export default function StaffPage() {
         </AdminCard>
       )}
 
-      {loading ? <Spinner /> : (
+      {loading ? <AdminTableSkeleton rows={5} /> : (
         <AdminCard style={{ padding: 0 }}>
           <Table
             headers={['Member', 'Role', 'Phone', 'Added', 'Actions']}

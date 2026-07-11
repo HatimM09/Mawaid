@@ -5,26 +5,15 @@ import { ExpirationPlugin } from 'workbox-expiration'
 
 precacheAndRoute(self.__WB_MANIFEST)
 
-// Handle SKIP_WAITING message from vite-plugin-pwa to enable silent SW updates
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
-    event.waitUntil(self.skipWaiting())
-    if (event.ports?.length) {
-      event.ports[0].postMessage({ type: 'SKIP_WAITING_ACK' })
-    }
+    self.skipWaiting()
+    return
+  }
+  if (event.ports?.length) {
+    try { event.ports[0].postMessage({ type: 'ACK' }) } catch {}
   }
 })
-
-registerRoute(
-  /^https:\/\/spciaktztqnjsttrtosu\.supabase\.co\/rest\/v1\/.*/i,
-  new NetworkFirst({
-    cacheName: 'supabase-api-cache',
-    plugins: [
-      new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 60 * 5 }),
-    ],
-    networkTimeoutSeconds: 10,
-  })
-)
 
 registerRoute(
   /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -56,7 +45,7 @@ registerRoute(
   })
 )
 
-// ── Native Web Push handler (replaces Firebase Cloud Messaging) ──────────────
+// ── Native Web Push handler ─────────────────────────────────────────────────
 self.addEventListener('push', (event) => {
   let data = { title: 'Al-Mawaid', body: '', url: '/' }
   if (event.data) {
@@ -67,28 +56,50 @@ self.addEventListener('push', (event) => {
     }
   }
 
-  const { title, body, url } = data
+  const {
+    title = 'Al-Mawaid',
+    body = '',
+    url = '/',
+    image,
+    badge = '/al-mawaid.png',
+    vibrate = [200, 100, 200],
+    requireInteraction = true,
+    tag = 'al-mawaid',
+    actions = [{ action: 'open', title: 'View' }],
+    timestamp,
+    silent,
+    renotify,
+    data: extraData = {},
+  } = data
+
+  const notificationOptions = {
+    body,
+    icon: '/al-mawaid.png',
+    badge,
+    vibrate,
+    requireInteraction,
+    tag,
+    actions,
+    data: { url, ...extraData },
+    renotify,
+    silent,
+  }
+  if (image) notificationOptions.image = image
+  if (timestamp) notificationOptions.timestamp = timestamp
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       const focusedClient = clients.find((c) => c.focused)
       if (focusedClient) {
-        // App is in foreground — send message to show toast
         focusedClient.postMessage({
           type: 'PUSH_RECEIVED',
-          title: title || 'Al-Mawaid',
-          body: body || '',
-          url: url || '/',
+          title,
+          body,
+          url,
+          image,
         })
       } else {
-        // App is in background — show system notification
-        return self.registration.showNotification(title || 'Al-Mawaid', {
-          body: body || '',
-          icon: '/al-mawaid.png',
-          badge: '/al-mawaid.png',
-          vibrate: [200, 100, 200],
-          data: { url: url || '/' },
-        })
+        return self.registration.showNotification(title, notificationOptions)
       }
     })
   )
@@ -96,7 +107,11 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
+  const action = event.action
   const urlToOpen = event.notification.data?.url || '/'
+
+  if (action === 'dismiss') return
+
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       for (const client of windowClients) {

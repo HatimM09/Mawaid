@@ -1,14 +1,14 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.almawaid.app"
+    namespace = "com.almawaid.myapp"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.almawaid.myapp"
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+  applicationId "com.almawaid.myapp"
+  minSdkVersion rootProject.ext.minSdkVersion
+  targetSdkVersion rootProject.ext.targetSdkVersion
+  versionCode 4
+  versionName "1.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -27,7 +27,7 @@ android {
 
     signingConfigs {
         release {
-            storeFile file('release.keystore.jks')
+            storeFile file('upload-keystore.jks')
             storePassword keystoreProps['KEYSTORE_PASSWORD'] ?: System.getenv('KEYSTORE_PASSWORD')
             keyAlias keystoreProps['KEY_ALIAS'] ?: System.getenv('KEY_ALIAS') ?: "almawaid"
             keyPassword keystoreProps['KEY_PASSWORD'] ?: System.getenv('KEY_PASSWORD')

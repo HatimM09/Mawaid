@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { supabase } from './admin/supabaseClient'
+import { supabase, db, C, getCol, getDocRef } from './lib/firebaseClient'
 import { useTheme, useAuth } from './admin/context'
 import { ChevronDown, MessageCircle, Clock, CheckCircle, XCircle, CalendarDays, Share2, AlertCircle, LifeBuoy } from 'lucide-react'
 

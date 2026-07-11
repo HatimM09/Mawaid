@@ -1,18 +1,17 @@
 // src/admin/AdminLayout.jsx
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, ClipboardList, Star, FileText,
-  MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight, Search, Bell, History, Package, Send, RefreshCw
+  MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight, Search, Bell, History, Package, Send, RefreshCw, Zap
 } from 'lucide-react'
 import { updateSystemTheme } from './ui'
-import { supabase } from './supabaseClient'
+import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
 import { playNotificationChime } from '../common/utils'
 
 const NAV = [
   { to: '/admin', label: 'Dashboard', Icon: LayoutDashboard, color: 'var(--accent-primary)', end: true },
   { to: '/admin/users', label: 'Thali Users', Icon: Users, color: 'var(--accent-primary)' },
-  { to: '/admin/surveys', label: 'Surveys', Icon: ClipboardList, color: 'var(--accent-primary)' },
   { to: '/admin/survey-tracking', label: 'Survey Tracking', Icon: History, color: 'var(--accent-primary)' },
   { to: '/admin/requests', label: 'Thali Requests', Icon: FileText, color: 'var(--accent-primary)' },
   { to: '/admin/inventory', label: 'Inventory', Icon: Package, color: 'var(--accent-primary)' },
@@ -20,6 +19,7 @@ const NAV = [
   { to: '/admin/staff', label: 'Staff', Icon: Shield, color: 'var(--accent-primary)' },
   { to: '/admin/notifications', label: 'Broadcast', Icon: Send, color: 'var(--accent-primary)' },
   { to: '/admin/feedback', label: 'Feedback', Icon: Star, color: 'var(--accent-primary)' },
+  { to: '/admin/automation', label: 'Automation', Icon: Zap, color: 'var(--accent-primary)' },
   { to: '/admin/settings', label: 'Settings', Icon: Settings, color: 'var(--accent-primary)' },
 ]
 
@@ -27,7 +27,7 @@ export default function AdminLayout() {
   const [adminName, setAdminName] = useState('Admin')
   const [role, setRole] = useState(localStorage.getItem('al_mawaid_portal') || 'khidmat')
   const [toastNotice, setToastNotice] = useState(null)
-  const lastNoticeIdRef = useRef(null)
+  const seenNoticeIds = useRef(new Set(JSON.parse(localStorage.getItem('almawaid_seen_notices') || '[]')))
   const dragStartY = useRef(null)
   const dragY = useRef(0)
   const [dragOffset, setDragOffset] = useState(0)
@@ -36,6 +36,7 @@ export default function AdminLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [navCounts, setNavCounts] = useState({})
   const navigate = useNavigate()
+  const location = useLocation()
 
   useEffect(() => {
     const check = async () => {
@@ -118,10 +119,28 @@ export default function AdminLayout() {
 
   // ── Native Notification System (Realtime) ──
   useEffect(() => {
+    // Mark existing notices as read so they don't appear on login/reconnect
+    const lastRead = localStorage.getItem('almawaid_last_notice_read') || '1970-01-01T00:00:00.000Z'
+    supabase.from('notices')
+      .select('id', { count: 'exact', head: true })
+      .gt('created_at', lastRead)
+      .then(({ count }) => {
+        if (count && count > 0) {
+          localStorage.setItem('almawaid_last_notice_read', new Date().toISOString())
+        }
+      })
+      .catch(() => {})
+
     const channel = supabase
       .channel('global-notices')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notices' }, (payload) => {
         const notice = payload.new
+        if (seenNoticeIds.current.has(notice.id)) return
+        seenNoticeIds.current.add(notice.id)
+        try { localStorage.setItem('almawaid_seen_notices', JSON.stringify([...seenNoticeIds.current])) } catch {}
+        // Skip if notice was created before the last read timestamp (already seen)
+        const lastRead = localStorage.getItem('almawaid_last_notice_read')
+        if (lastRead && new Date(notice.created_at).getTime() <= new Date(lastRead).getTime()) return
         setToastNotice(notice)
         if ('Notification' in window && Notification.permission === 'granted') {
           new Notification(notice.title || 'Broadcast Sent', { body: notice.body || '', icon: '/al-mawaid.png' })
@@ -463,7 +482,7 @@ export default function AdminLayout() {
             </div>
             <div style={{ flex: 1, overflowY: 'auto', paddingRight: 10 }}>
               {NAV.map(({ to, label, Icon, end }) => (
-                <NavLink key={to} to={to} end={end} className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`} onClick={() => window.innerWidth < 1025 && setIsSidebarOpen(false)}>
+                <NavLink key={to} to={to} end={end} className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`} onClick={() => window.innerWidth < 1025 && setIsSidebarOpen(false)} onKeyDown={e => { if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Space') { e.preventDefault(); navigate(to) } }}>
                   <Icon size={20} />
                   <span style={{ fontSize: 14, fontWeight: 600 }}>{label}</span>
                   {navCounts[label] > 0 && (
@@ -527,7 +546,7 @@ export default function AdminLayout() {
             }
           }}>
             {NAV.map(({ to, label, Icon, end }) => (
-              <NavLink key={to} to={to} end={end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+              <NavLink key={to} to={to} end={end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onKeyDown={e => { if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Space') { e.preventDefault(); navigate(to) } }}>
                 <div className="icon-box" style={{ position: 'relative' }}>
                   <Icon size={20} strokeWidth={2.5} />
                   {navCounts[label] > 0 && (
@@ -624,7 +643,7 @@ export default function AdminLayout() {
             </div>
             <div style={{ padding: 12, maxHeight: 400, overflowY: 'auto' }}>
               {filteredNav.map(n => (
-                <div key={n.to} onClick={() => { navigate(n.to); setShowPalette(false); }} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, cursor: 'pointer', transition: 'all 0.2s', background: location.pathname === n.to ? 'rgba(255,255,255,0.05)' : 'transparent' }}>
+                <div key={n.to} onClick={() => { navigate(n.to); setShowPalette(false); }} onKeyDown={e => { if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Space') { e.preventDefault(); navigate(n.to); setShowPalette(false) } }} role="button" tabIndex={0} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 12, cursor: 'pointer', transition: 'all 0.2s', background: location.pathname === n.to ? 'rgba(255,255,255,0.05)' : 'transparent' }}>
                   <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,0.03)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: location.pathname === n.to ? 'var(--accent-gold)' : 'var(--text-tertiary)' }}>
                     {typeof n.Icon === 'string' ? n.Icon : <n.Icon size={18} />}
                   </div>

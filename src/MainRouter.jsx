@@ -8,9 +8,9 @@ import AdminRoute from './admin/AdminRoute'
 // Code-split all admin pages - loaded on demand
 const Dashboard = lazy(() => import('./admin/Dashboard'))
 const UsersPage = lazy(() => import('./admin/UsersPage'))
-const SurveysPage = lazy(() => import('./admin/SurveysPage'))
 const DailySurveyTracking = lazy(() => import('./admin/DailySurveyTracking'))
-const FeedbackAdminPage = lazy(() => import('./admin/FeedbackAdminPage'))
+const SurveyDashboard = lazy(() => import('./admin/SurveyDashboard'))
+import FeedbackAdminPage from './admin/FeedbackAdminPage'
 const RequestsAdminPage = lazy(() => import('./admin/RequestsAdminPage'))
 const QueriesAdminPage = lazy(() => import('./admin/QueriesAdminPage'))
 const StaffPage = lazy(() => import('./admin/StaffPage'))
@@ -19,6 +19,7 @@ const InventoryPage = lazy(() => import('./admin/InventoryPage'))
 const NotificationsAdminPage = lazy(() => import('./admin/NotificationsAdminPage'))
 const KhidmatPortal = lazy(() => import('./admin/KhidmatPortal'))
 const InventoryManagerPortal = lazy(() => import('./admin/InventoryManagerPortal'))
+const AutomationPage = lazy(() => import('./admin/AutomationPage'))
 
 const LoadingFallback = () => (
   <div style={{
@@ -47,7 +48,7 @@ export default function MainRouter() {
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<Dashboard />} />
               <Route path="users" element={<UsersPage />} />
-              <Route path="surveys" element={<SurveysPage />} />
+              <Route path="survey-dashboard" element={<SurveyDashboard />} />
               <Route path="survey-tracking" element={<DailySurveyTracking />} />
               <Route path="inventory" element={<InventoryPage />} />
               <Route path="feedback" element={<FeedbackAdminPage />} />
@@ -56,6 +57,7 @@ export default function MainRouter() {
               <Route path="staff" element={<StaffPage />} />
               <Route path="notifications" element={<NotificationsAdminPage />} />
               <Route path="settings" element={<SettingsPage />} />
+              <Route path="automation" element={<AutomationPage />} />
             </Route>
           </Route>
 

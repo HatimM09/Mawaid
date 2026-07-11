@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { supabase } from './supabaseClient'
+import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
 import { RefreshCw, Search, Send, ChevronDown, ChevronUp, ShieldAlert, Lock } from 'lucide-react'
-import { T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner, fmtDateTime } from './ui'
+import { T, PageWrap, PageTitle, AdminCard, Badge, Btn, fmtDateTime } from './ui'
+import { AdminTableSkeleton } from '../common/Skeleton'
 
 const STATUS_COLORS = { open: '#e09855', resolved: '#5eba82', in_progress: '#9aabb8' }
 
@@ -149,7 +150,7 @@ export default function QueriesAdminPage() {
         <Btn variant="outline" onClick={load}><RefreshCw size={15} />Refresh</Btn>
       </div>
 
-      {loading ? <Spinner /> : (
+      {loading ? <AdminTableSkeleton rows={5} /> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {filtered.length === 0 && (
             <div style={{ textAlign: 'center', padding: '40px 0', color: T.textSub }}>No queries found.</div>

@@ -147,7 +147,7 @@ export default function LunchSurveyDemo() {
               <p style={{
                 fontSize: 14,
                 color: theme === 'dark' ? 'rgba(255,248,231,0.7)' : '#706454',
-                lineHeight: 1.5
+                lineHeight: 1.65
               }}>
                 No pop-ups or modals. Edit responses directly on the cards.
               </p>
@@ -170,7 +170,7 @@ export default function LunchSurveyDemo() {
               <p style={{
                 fontSize: 14,
                 color: theme === 'dark' ? 'rgba(255,248,231,0.7)' : '#706454',
-                lineHeight: 1.5
+                lineHeight: 1.65
               }}>
                 Must select Yes/No before entering counts for dishes 1-3.
               </p>
@@ -193,7 +193,7 @@ export default function LunchSurveyDemo() {
               <p style={{
                 fontSize: 14,
                 color: theme === 'dark' ? 'rgba(255,248,231,0.7)' : '#706454',
-                lineHeight: 1.5
+                lineHeight: 1.65
               }}>
                 Uses admin-configured default counts from user profile.
               </p>
@@ -216,7 +216,7 @@ export default function LunchSurveyDemo() {
               <p style={{
                 fontSize: 14,
                 color: theme === 'dark' ? 'rgba(255,248,231,0.7)' : '#706454',
-                lineHeight: 1.5
+                lineHeight: 1.65
               }}>
                 Changes are automatically saved to the database.
               </p>

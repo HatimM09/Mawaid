@@ -1,8 +1,9 @@
 // src/admin/FeedbackAdminPage.jsx
-import React, { useState, useEffect } from 'react'
-import { supabase } from './supabaseClient'
+import React, { useState, useEffect, useCallback } from 'react'
+import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
 import { RefreshCw, Search, Star } from 'lucide-react'
-import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, StatCard, fmtDateTime } from './ui'
+import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, StatCard, fmtDateTime } from './ui'
+import { AdminTableSkeleton } from '../common/Skeleton'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 import { getWeekDate } from '../common/utils'
 
@@ -36,7 +37,7 @@ export default function FeedbackAdminPage() {
   // ── Initial load on mount ──
   useEffect(() => { load() }, [])
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     const [{ data: fb }, { data: us }, { data: mn }] = await Promise.all([
       supabase.from('daily_feedback').select('*').order('created_at', { ascending: false }),
@@ -58,7 +59,7 @@ export default function FeedbackAdminPage() {
     setFeedbacks(data)
     buildStats(data)
     setLoading(false)
-  }
+  }, [])
 
   // ── REALTIME SUBSCRIPTION (replaces 60s polling) ──
   useEffect(() => {
@@ -188,7 +189,7 @@ export default function FeedbackAdminPage() {
         <Btn variant="outline" onClick={load}><RefreshCw size={15} />Refresh</Btn>
       </div>
 
-      {loading ? <Spinner /> : (
+      {loading ? <AdminTableSkeleton rows={5} /> : (
         <AdminCard style={{ padding: 0 }}>
           <Table
             headers={['Thali User', 'Day', 'Lunch (Menu)', 'Dinner (Menu)', 'Comments', 'Submitted']}

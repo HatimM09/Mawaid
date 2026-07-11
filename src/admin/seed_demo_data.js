@@ -1,12 +1,7 @@
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = 'https://spciaktztqnjsttrtosu.supabase.co'
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
-
-const supabase = createClient(supabaseUrl, supabaseAnonKey)
+import { supabase } from '../lib/firebaseClient'
 
 async function seed() {
-  console.log('🌱 Seeding demo data for QR and Surveys...')
+  console.log('Seeding demo data for QR and Surveys...')
 
   const demoUsers = [
     { name: 'Mustafa Bhai', email: 'mustafa@demo.com', thali_number: 101, phone: '9876543210', address: 'Bohra Colony, Lane 1' },
@@ -21,7 +16,6 @@ async function seed() {
       continue
     }
 
-    // Add a survey response for current week (matches getWeekDate() in the app)
     const now = new Date()
     const day = now.getDay()
     const hour = now.getHours()
@@ -31,12 +25,12 @@ async function seed() {
     const weekId = monday.toISOString().split('T')[0]
 
     const today = ['sun','mon','tue','wed','thu','fri','sat'][new Date().getDay()]
-    if (today === 'sun') continue // Skip sunday for surveys
+    if (today === 'sun') continue
 
     const dayKey = today.substring(0, 3).toLowerCase()
-    
+
     const submission = {
-      user_id: user.user_id,
+      user_id: user.id,
       week_id: weekId,
       [`${dayKey}_l_status`]: 'Applied',
       [`${dayKey}_l_dish_1`]: '100',
@@ -46,10 +40,10 @@ async function seed() {
 
     const { error: sErr } = await supabase.from('survey_submissions_flat').upsert([submission], { onConflict: 'user_id,week_id' })
     if (sErr) console.error('Error seeding survey:', sErr.message)
-    else console.log(`✓ Seeded ${u.name} (Thali #${u.thali_number})`)
+    else console.log(`Seeded ${u.name} (Thali #${u.thali_number})`)
   }
 
-  console.log('✨ Demo seeding complete!')
+  console.log('Demo seeding complete!')
 }
 
 seed()

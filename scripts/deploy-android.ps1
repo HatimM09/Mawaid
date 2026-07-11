@@ -60,7 +60,7 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Write-Host "╔══════════════════════════════════════════════════════╗" -ForegroundColor Cyan
 Write-Host "║      Al-Mawaid Android Deploy                      ║" -ForegroundColor Cyan
 Write-Host "╠══════════════════════════════════════════════════════╣" -ForegroundColor Cyan
-Write-Host "║  Package: com.almawaid.app                          ║" -ForegroundColor Cyan
+Write-Host "║  Package: com.almawaid.myapp                          ║" -ForegroundColor Cyan
 Write-Host "║  Track:   $Track                                          ║" -ForegroundColor Cyan
 Write-Host "╚══════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""

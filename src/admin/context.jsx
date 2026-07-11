@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { supabase } from './supabaseClient'
+import { supabaseClient } from '../lib/supabaseClient'
 
 export const AuthCtx = createContext()
 export const useAuth = () => useContext(AuthCtx)
@@ -9,40 +9,30 @@ export const useTheme = () => useContext(ThemeCtx)
 
 export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(undefined)
-  const [mockUser, setMockUser] = useState(() => {
-    const saved = localStorage.getItem('al_mawaid_mock_user')
-    return saved ? JSON.parse(saved) : null
-  })
   const [portalRole, setPortalRole] = useState(() => localStorage.getItem('al_mawaid_portal') || null)
 
   const signOut = useCallback(async () => {
     try {
-      await supabase.auth.signOut()
+      await supabaseClient.auth.signOut()
     } catch (err) {
       console.warn('SignOut server error, clearing local session anyway:', err.message)
     } finally {
       localStorage.removeItem('al_mawaid_portal')
-      localStorage.removeItem('al_mawaid_mock_user')
       localStorage.removeItem('al_mawaid_restricted')
-      localStorage.removeItem('al-mawaid-auth-token') // The custom storageKey
+      localStorage.removeItem('al-mawaid-auth-token')
       setSession(null)
-      setMockUser(null)
       setPortalRole(null)
     }
   }, [])
 
   const handleRoleLogin = useCallback((role, sess) => {
     localStorage.setItem('al_mawaid_portal', role)
-    if (role === 'inventory_manager' && sess?.user) {
-      localStorage.setItem('al_mawaid_mock_user', JSON.stringify(sess.user))
-      setMockUser(sess.user)
-    }
     setPortalRole(role)
     if (sess) setSession(sess)
   }, [])
 
   useEffect(() => {
-    supabase.auth.getSession()
+    supabaseClient.auth.getSession()
       .then(({ data: { session }, error }) => {
         if (error) {
           console.error("Auth Session Error:", error.message)
@@ -56,10 +46,9 @@ export const AuthProvider = ({ children }) => {
         signOut()
       })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, sess) => {
+    const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((event, sess) => {
       setSession(sess)
       if (event === 'SIGNED_OUT' || event === 'USER_DELETED' || !sess) {
-        setMockUser(null)
         setPortalRole(null)
         localStorage.removeItem('al_mawaid_mock_user')
         localStorage.removeItem('al_mawaid_portal')
@@ -71,10 +60,9 @@ export const AuthProvider = ({ children }) => {
   }, [signOut])
 
   const authValue = { 
-    user: session?.user || mockUser, 
+    user: session?.user, 
     session, 
     signOut,
-    mockUser,
     portalRole,
     handleRoleLogin
   }

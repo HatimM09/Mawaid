@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { supabase } from '../admin/supabaseClient';
+import { supabase } from '../lib/firebaseClient';
 import { getWeekDate } from './utils';
 
 let hookInstance = 0

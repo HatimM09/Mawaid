@@ -1,7 +1,7 @@
 // src/admin/Dashboard.jsx
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from './supabaseClient'
+import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
 import {
   Users, Star, Calendar, RefreshCw, ArrowUpRight, ChevronRight, AlertCircle, AlertTriangle, QrCode
 } from 'lucide-react'
@@ -382,6 +382,8 @@ export default function Dashboard() {
     }, 2500)
   }, [])
 
+  const initialSyncRef = useRef(true)
+
   // Cleanup toast timer on unmount
   useEffect(() => {
     return () => {
@@ -420,45 +422,53 @@ export default function Dashboard() {
     const channels = [
       supabase.channel('dashboard-survey-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_submissions_flat' }, () => {
+          if (initialSyncRef.current) return
           loadStats()
           setBadgeKey(k => k + 1)
           showToast('Survey updated', '🍱')
         }),
       supabase.channel('dashboard-inventory-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => {
+          if (initialSyncRef.current) return
           loadStats()
           setLowStockKey(k => k + 1)
           showToast('Stock changed', '📦')
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_log' }, () => {
+          if (initialSyncRef.current) return
           loadStats()
           setLowStockKey(k => k + 1)
           showToast('Inventory logged', '📋')
         }),
       supabase.channel('dashboard-requests-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'thali_requests' }, () => {
+          if (initialSyncRef.current) return
           loadStats()
           setRequestsKey(k => k + 1)
           showToast('Request received', '📬')
         }),
       supabase.channel('dashboard-queries-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'queries' }, () => {
+          if (initialSyncRef.current) return
           loadStats()
           showToast('Query submitted', '❓')
         }),
       supabase.channel('dashboard-feedback-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_feedback' }, () => {
+          if (initialSyncRef.current) return
           loadFeedbackByDay()
           showToast('Feedback received', '⭐')
         }),
       supabase.channel('dashboard-users-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'user_stats' }, () => {
+          if (initialSyncRef.current) return
           loadStats()
           showToast('New member', '👤')
         }),
     ]
 
     channels.forEach(ch => ch.subscribe())
+    setTimeout(() => { initialSyncRef.current = false }, 3000)
 
     return () => {
       channels.forEach(ch => supabase.removeChannel(ch))

@@ -9,8 +9,8 @@
 // ══════════════════════════════════════════════════════════════
 
 import React, { useState, useRef, useCallback, useEffect } from 'react'
-import { Mail, Lock, User, Medal, Package, Shield } from 'lucide-react'
-import { supabase } from './admin/supabaseClient'
+import { Mail, Lock, User, Medal, Package, ArrowRight } from 'lucide-react'
+import { supabaseClient } from './lib/supabaseClient'
 
 const LOGIN_ROLES = [
   { id: 'member',             label: 'Member',      icon: <User size={16} />,    short: 'Khidmat Guzar' },
@@ -19,6 +19,35 @@ const LOGIN_ROLES = [
   { id: 'admin',              label: 'Admin',        icon: <Shield size={16} />,  short: 'Admin' },
 ]
 
+// ── Friendly error message map (Supabase Auth codes) ──
+const ERROR_MESSAGES = {
+  'invalid_credentials':        'Incorrect email or password. Please try again.',
+  'Invalid login credentials':  'Incorrect email or password. Please try again.',
+  'Email not confirmed':        'Please confirm your email address before signing in.',
+  'email_not_confirmed':        'Please confirm your email address before signing in.',
+  'user_not_found':             'No account found with this email.',
+  'User already registered':    'An account with this email already exists.',
+  'Password should be at least 6 characters': 'Password must be at least 6 characters.',
+  'weak_password':              'Password is too weak. Use at least 6 characters.',
+  'over_email_send_rate_limit': 'Too many requests. Please wait and try again.',
+  'Too many requests':          'Too many attempts. Please wait a moment and try again.',
+  'NetworkError':               'Network error. Check your connection and try again.',
+}
+
+const getFriendlyError = (err) => {
+  const code = err?.code || err?.message || ''
+  if (ERROR_MESSAGES[code]) return ERROR_MESSAGES[code]
+  if (code.includes('Unauthorized')) return code
+  return code || 'Something went wrong. Please try again.'
+}
+
+const getErrorField = (err) => {
+  const msg = (err?.code || err?.message || '').toLowerCase()
+  if (msg.includes('email')) return 'email'
+  if (msg.includes('password')) return 'password'
+  return ''
+}
+
 export default function LoginPage({ onRoleLogin }) {
   const [role, setRole]         = useState('member')
   const [email, setEmail]       = useState('')
@@ -26,7 +55,8 @@ export default function LoginPage({ onRoleLogin }) {
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState('')
-  const [secretKey, setSecretKey] = useState('')
+  const [fieldErrors, setFieldErrors] = useState({})
+
   const [mousePos, setMousePos] = useState({ x: 0.5, y: 0.5 })
   const [rememberMe, setRememberMe] = useState(() => localStorage.getItem('almawaid_remember_me') !== 'false')
 
@@ -60,47 +90,80 @@ export default function LoginPage({ onRoleLogin }) {
     setTimeout(() => ripple.remove(), 700)
   }, [])
 
+  const validateFields = () => {
+    const errs = {}
+    if (role !== 'inventory_manager') {
+      if (!email.trim()) errs.email = 'Email is required.'
+      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = 'Enter a valid email address.'
+      if (!password) errs.password = 'Password is required.'
+      else if (password.length < 6) errs.password = 'Password must be at least 6 characters.'
+    }
+    return errs
+  }
+
+  const clearFieldError = (field) => {
+    setFieldErrors(prev => {
+      const next = { ...prev }
+      delete next[field]
+      return next
+    })
+    if (error) setError('')
+  }
+
   const handleAuth = async (e) => {
     e.preventDefault()
     setError('')
+    setFieldErrors({})
+
+    const validationErrors = validateFields()
+    if (Object.keys(validationErrors).length > 0) {
+      setFieldErrors(validationErrors)
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     try {
       if (role === 'inventory_manager') {
-        const { data: invStaff, error: invErr } = await supabase
+        if (!email.trim()) throw { message: 'Email is required.' }
+        const { data: invStaff, error: invErr } = await supabaseClient
           .from('staff').select('*').ilike('email', email).eq('role', 'inventory_manager').maybeSingle()
-        if (invErr || !invStaff) throw new Error('Unauthorized: Email not registered as Inventory Manager.')
+        if (invErr || !invStaff) throw { message: 'Unauthorized: Email not registered as Inventory Manager.' }
         onRoleLogin('inventory_manager', { user: { email, id: invStaff.user_id || `inv_${invStaff.id}`, ...invStaff } })
         setLoading(false); return
       }
 
-      const { data: { session }, error: signInErr } = await supabase.auth.signInWithPassword({ email, password, options: { shouldCreateSession: rememberMe !== false } })
+      const { data: { session }, error: signInErr } = await supabaseClient.auth.signInWithPassword({ email, password })
       if (signInErr) throw signInErr
 
       if (role === 'member') { onRoleLogin('member', session); setLoading(false); return }
 
-      let { data: staffRow, error: staffErr } = await supabase
+      let { data: staffRow, error: staffErr } = await supabaseClient
         .from('staff').select('*').eq('user_id', session.user.id).maybeSingle()
       if (!staffRow && !staffErr) {
-        const { data: emailMatch } = await supabase.from('staff').select('*').eq('email', session.user.email).maybeSingle()
+        const { data: emailMatch } = await supabaseClient.from('staff').select('*').eq('email', session.user.email).maybeSingle()
         if (emailMatch && !emailMatch.user_id) {
-          const { data: updated } = await supabase.from('staff').update({ user_id: session.user.id }).eq('id', emailMatch.id).select().single()
+          const { data: updated } = await supabaseClient.from('staff').update({ user_id: session.user.id }).eq('id', emailMatch.id).select().single()
           staffRow = updated
         } else if (emailMatch) { staffRow = emailMatch }
       }
-      if (staffErr && staffErr.code !== 'PGRST116') { await supabase.auth.signOut(); throw new Error(staffErr.message) }
+      if (staffErr && staffErr.code !== 'PGRST116') { await supabaseClient.auth.signOut(); throw new Error(staffErr.message) }
       const dbRole = staffRow?.role || ''
-      const isSecretAdmin = role === 'admin' && secretKey === 'almawaid'
 
-      if (role === 'admin' && dbRole !== 'admin' && !isSecretAdmin) {
-        await supabase.auth.signOut();
-        throw new Error('You do not have admin privileges. If you are the system administrator, please enter the Secret Key.')
+      if (role === 'admin' && dbRole !== 'admin') {
+        await supabaseClient.auth.signOut(); throw { message: 'Unauthorized: Email not registered as Admin.' }
       }
       if (role === 'khidmat' && !['khidmat_guzar','supervisor','khidmat','admin'].includes(dbRole)) {
-        await supabase.auth.signOut(); throw new Error('You are not registered as part of the Al Mawaid Team.')
+        await supabaseClient.auth.signOut(); throw { message: 'You are not registered as part of the Al Mawaid Team.' }
       }
-      onRoleLogin((dbRole === 'admin' || isSecretAdmin) ? 'admin' : dbRole, session)
+      onRoleLogin(dbRole === 'admin' ? 'admin' : dbRole, session)
       localStorage.setItem('almawaid_remember_me', rememberMe ? 'true' : 'false')
-    } catch (err) { setError(err.message) }
+    } catch (err) {
+      const friendly = getFriendlyError(err)
+      setError(friendly)
+      const ef = getErrorField(err)
+      if (ef) setFieldErrors({ [ef]: friendly })
+    }
     finally { setLoading(false) }
   }
 
@@ -340,7 +403,7 @@ export default function LoginPage({ onRoleLogin }) {
           font-size: 9px;
           font-weight: 700;
           letter-spacing: 0.2em;
-          color: rgba(212, 175, 55, 0.5);
+          color: rgba(212, 175, 55, 0.72);
           text-transform: uppercase;
           margin-bottom: 10px;
         }
@@ -364,7 +427,7 @@ export default function LoginPage({ onRoleLogin }) {
           font-family: 'Outfit', sans-serif;
         }
         .lp-role svg {
-          color: rgba(212, 175, 55, 0.35);
+          color: rgba(212, 175, 55, 0.6);
           filter: brightness(0.85);
           transition: all 0.35s cubic-bezier(0.34,1.56,0.64,1);
         }
@@ -372,7 +435,7 @@ export default function LoginPage({ onRoleLogin }) {
           font-size: 8px;
           font-weight: 700;
           letter-spacing: 0.06em;
-          color: rgba(212, 175, 55, 0.35);
+          color: rgba(212, 175, 55, 0.6);
           transition: color 0.35s ease;
         }
         .lp-role:hover {
@@ -380,9 +443,9 @@ export default function LoginPage({ onRoleLogin }) {
           background: rgba(212, 175, 55, 0.08);
         }
         .lp-role:hover svg { color: rgba(212, 175, 55, 0.6); filter: brightness(0.9); }
-        .lp-role:hover span { color: rgba(212, 175, 55, 0.5); }
+        .lp-role:hover span { color: rgba(212, 175, 55, 0.72); }
         .lp-role--active {
-          border-color: rgba(212, 175, 55, 0.35);
+          border-color: rgba(212, 175, 55, 0.6);
           background: rgba(212, 175, 55, 0.1);
           box-shadow: 0 0 24px rgba(212, 175, 55, 0.08), inset 0 0 20px rgba(212, 175, 55, 0.03);
         }
@@ -403,13 +466,24 @@ export default function LoginPage({ onRoleLogin }) {
           font-size: 9px;
           font-weight: 700;
           letter-spacing: 0.15em;
-          color: rgba(212, 175, 55, 0.5);
+          color: rgba(212, 175, 55, 0.72);
           text-transform: uppercase;
           margin-bottom: 6px;
           transition: color 0.3s ease;
         }
         .lp-field:focus-within .lp-field-label {
           color: #F5DEB3;
+        }
+        .lp-field--error .lp-field-label {
+          color: #e74c3c !important;
+        }
+        .lp-input--error {
+          border-color: rgba(231, 76, 60, 0.6) !important;
+          box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.08), inset 0 2px 6px rgba(0, 0, 0, 0.3) !important;
+          background: rgba(231, 76, 60, 0.06) !important;
+        }
+        .lp-field--error .lp-input-wrap svg {
+          color: rgba(231, 76, 60, 0.5) !important;
         }
 
         .lp-input-wrap {
@@ -446,12 +520,12 @@ export default function LoginPage({ onRoleLogin }) {
           box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.3);
         }
         .lp-input:focus {
-          border-color: rgba(212, 175, 55, 0.35);
+          border-color: rgba(212, 175, 55, 0.6);
           box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.08), inset 0 2px 6px rgba(0, 0, 0, 0.3);
           background: rgba(255, 248, 230, 0.1);
         }
         .lp-input::placeholder {
-          color: rgba(212, 175, 55, 0.2);
+          color: rgba(212, 175, 55, 0.4);
           transition: color 0.3s ease, opacity 0.3s ease;
         }
         .lp-input:focus::placeholder {
@@ -501,30 +575,55 @@ export default function LoginPage({ onRoleLogin }) {
         /* ── Submit Button ── */
         .lp-btn-wrap {
           position: relative;
-          margin-top: 4px;
-          border-radius: 14px;
-          overflow: hidden;
+          margin-top: 8px;
+          border-radius: 16px;
+          overflow: visible;
+        }
+        /* Focal glow that radiates behind the button to draw attention */
+        .lp-btn-glow {
+          position: absolute;
+          inset: -8px;
+          border-radius: 22px;
+          background: radial-gradient(ellipse at center, rgba(212, 175, 55, 0.3) 0%, transparent 70%);
+          opacity: 0;
+          animation: focal-breathe 3s ease-in-out infinite;
+          pointer-events: none;
+        }
+        @keyframes focal-breathe {
+          0%, 100% { opacity: 0.3; transform: scale(1); }
+          50%      { opacity: 0.8; transform: scale(1.06); }
+        }
+        .lp-btn-wrap:hover .lp-btn-glow {
+          opacity: 1 !important;
+          animation: none;
+          transform: scale(1.12);
+          background: radial-gradient(ellipse at center, rgba(212, 175, 55, 0.45) 0%, transparent 70%);
         }
         .lp-btn {
           width: 100%;
-          padding: 16px;
-          border-radius: 14px;
+          padding: 18px 20px;
+          border-radius: 16px;
           border: none;
-          background: linear-gradient(135deg, #D4AF37 0%, #C8902A 35%, #A0760A 65%, #8B6914 100%);
+          background: linear-gradient(135deg, #D4AF37 0%, #C8902A 30%, #A0760A 60%, #8B6914 100%);
           background-size: 200% 200%;
           color: #1a1208;
           font-family: 'Cinzel', serif;
-          font-size: 14px;
+          font-size: 15px;
           font-weight: 800;
-          letter-spacing: 0.16em;
+          letter-spacing: 0.18em;
           text-transform: uppercase;
           cursor: pointer;
           position: relative;
           overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
           box-shadow:
-            0 8px 28px rgba(212, 175, 55, 0.2),
-            0 2px 8px rgba(0, 0, 0, 0.3);
-          transition: filter 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+            0 4px 12px rgba(0, 0, 0, 0.4),
+            0 12px 40px rgba(212, 175, 55, 0.25),
+            0 0 60px rgba(212, 175, 55, 0.1);
+          transition: filter 0.3s ease, transform 0.25s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.3s ease;
           animation: btn-shift 4s ease-in-out infinite;
         }
         @keyframes btn-shift {
@@ -532,13 +631,23 @@ export default function LoginPage({ onRoleLogin }) {
           50%  { background-position: 100% 50%; }
           100% { background-position: 0% 50%; }
         }
+        .lp-btn .lp-btn-arrow {
+          display: inline-flex;
+          transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1);
+        }
+        .lp-btn:hover:not(:disabled) .lp-btn-arrow {
+          transform: translateX(4px);
+        }
         .lp-btn:hover:not(:disabled) {
-          filter: brightness(1.15);
-          transform: translateY(-2px);
-          box-shadow: 0 12px 35px rgba(212, 175, 55, 0.3), 0 2px 8px rgba(0, 0, 0, 0.3);
+          filter: brightness(1.2);
+          transform: translateY(-2px) scale(1.02);
+          box-shadow:
+            0 6px 18px rgba(0, 0, 0, 0.4),
+            0 16px 50px rgba(212, 175, 55, 0.35),
+            0 0 80px rgba(212, 175, 55, 0.15);
         }
         .lp-btn:active:not(:disabled) {
-          transform: translateY(0) scale(0.99);
+          transform: translateY(0) scale(0.98);
           filter: brightness(0.95);
         }
         .lp-btn:disabled {
@@ -557,7 +666,7 @@ export default function LoginPage({ onRoleLogin }) {
           font-size: 9px;
           font-weight: 500;
           letter-spacing: 0.1em;
-          color: rgba(212, 175, 55, 0.25);
+          color: rgba(212, 175, 55, 0.45);
         }
       `}</style>
 
@@ -602,6 +711,10 @@ export default function LoginPage({ onRoleLogin }) {
                   <img src="/al-mawaid.png" alt="Al-Mawaid" className="lp-logo" />
                 </div>
                 <div className="lp-title">AL-MAWAID</div>
+                <div style={{ fontSize: 11, color: 'rgba(245, 222, 179, 0.5)', letterSpacing: '0.12em', fontWeight: 400, marginTop: 6, fontFamily: "'Outfit',sans-serif" }}>
+                  Daily Tiffin Service —
+                  <span style={{ opacity: 0.7, fontFamily: "'Noto Nastaliq Urdu','Amiri',serif" }}> نعمتِ خداوندی</span>
+                </div>
               </div>
             </div>
 
@@ -629,35 +742,53 @@ export default function LoginPage({ onRoleLogin }) {
             {/* ── Form ── */}
             <div>
               <form className="lp-form" onSubmit={handleAuth}>
-                <div className="lp-field">
-                  <label className="lp-field-label">Email</label>
-                  <div className="lp-input-wrap">
-                    <Mail />
-                    <input
-                      type="email"
-                      name="email"
-                      className="lp-input"
-                      placeholder="your@email.com"
-                      value={email}
-                      onChange={e => setEmail(e.target.value)}
-                      required
-                      autoComplete="email"
-                    />
+                {role !== 'inventory_manager' && (
+                  <div className={`lp-field ${fieldErrors.email ? 'lp-field--error' : ''}`}>
+                    <label className="lp-field-label">
+                      {fieldErrors.email ? (
+                        <span style={{ color: '#e74c3c', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                          {fieldErrors.email}
+                        </span>
+                      ) : 'Email'}
+                    </label>
+                    <div className="lp-input-wrap">
+                      <Mail />
+                      <input
+                        type="email"
+                        name="email"
+                        className={`lp-input ${fieldErrors.email ? 'lp-input--error' : ''}`}
+                        placeholder="your@email.com"
+                        value={email}
+                        onChange={e => { setEmail(e.target.value); clearFieldError('email') }}
+                        onBlur={() => { if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) setFieldErrors(prev => ({ ...prev, email: 'Enter a valid email address.' })) }}
+                        required
+                        autoComplete="email"
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {role !== 'inventory_manager' && (
-                  <div className="lp-field">
-                    <label className="lp-field-label">Password</label>
+                  <div className={`lp-field ${fieldErrors.password ? 'lp-field--error' : ''}`}>
+                    <label className="lp-field-label">
+                      {fieldErrors.password ? (
+                        <span style={{ color: '#e74c3c', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                          {fieldErrors.password}
+                        </span>
+                      ) : 'Password'}
+                    </label>
                     <div className="lp-input-wrap">
                       <Lock />
                       <input
                         type={showPass ? 'text' : 'password'}
                         name="password"
-                        className="lp-input"
+                        className={`lp-input ${fieldErrors.password ? 'lp-input--error' : ''}`}
                         placeholder="••••••••"
                         value={password}
-                        onChange={e => setPassword(e.target.value)}
+                        onChange={e => { setPassword(e.target.value); clearFieldError('password') }}
+                        onBlur={() => { if (password && password.length < 6) setFieldErrors(prev => ({ ...prev, password: 'Password must be at least 6 characters.' })) }}
                         required
                         autoComplete="current-password"
                       />
@@ -673,24 +804,18 @@ export default function LoginPage({ onRoleLogin }) {
                   </div>
                 )}
 
-                {role === 'admin' && (
-                  <div className="lp-field">
-                    <label className="lp-field-label">Secret Key</label>
-                    <div className="lp-input-wrap">
-                      <Shield size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'rgba(139,105,20,0.3)', filter: 'brightness(0.85)', pointerEvents: 'none' }} />
-                      <input
-                        type="password"
-                        name="secretKey"
-                        className="lp-input"
-                        placeholder="Enter admin key..."
-                        value={secretKey}
-                        onChange={e => setSecretKey(e.target.value)}
-                      />
-                    </div>
+                {error && (
+                  <div className="lp-error" key={error}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="8" x2="12" y2="12"/>
+                        <line x1="12" y1="16" x2="12.01" y2="16"/>
+                      </svg>
+                      <span>{error}</span>
+                    </span>
                   </div>
                 )}
-
-                {error && <div className="lp-error" key={error}>{error}</div>}
 
                 {/* ── Remember Me ── */}
                 <label style={{
@@ -719,7 +844,11 @@ export default function LoginPage({ onRoleLogin }) {
                   <span>Remember Me</span>
                 </label>
 
+                <div style={{ fontSize: 10, color: 'rgba(245, 222, 179, 0.4)', textAlign: 'center', marginTop: 4, marginBottom: 2, fontWeight: 500, letterSpacing: '0.05em', fontFamily: "'Outfit',sans-serif" }}>
+                  Sign in to manage your thali service
+                </div>
                 <div className="lp-btn-wrap">
+                  {!loading && <div className="lp-btn-glow" />}
                   <button
                     ref={btnRef}
                     type="submit"
@@ -727,7 +856,12 @@ export default function LoginPage({ onRoleLogin }) {
                     disabled={loading}
                     onClick={createRipple}
                   >
-                    {loading ? 'Processing…' : 'Sign In'}
+                    {loading ? 'Processing…' : (
+                      <>
+                        Sign In
+                        <span className="lp-btn-arrow"><ArrowRight size={18} /></span>
+                      </>
+                    )}
                   </button>
                 </div>
               </form>

@@ -5,7 +5,7 @@
 
 import { useEffect, useRef } from 'react'
 import toast from 'react-hot-toast'
-import { supabase } from '../admin/supabaseClient'
+import { supabase } from '../lib/firebaseClient'
 
 // VAPID public key for Web Push subscription
 const VAPID_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BApS0pbqbnV2xZBrqVhxgkacMNC5dAoT6M9zGcmLOvePl7f_iKA7ReDdJ0Cu9_2Ex969EJa3cssF3awCB-zXIhk'
@@ -102,13 +102,8 @@ export default function PushManager() {
   const cancelledRef = useRef(false)
 
   useEffect(() => {
-    console.log('[PushManager] mounted ✅')
-    console.log('[PushManager] VAPID key:', VAPID_KEY ? '✅ loaded' : '❌ missing')
     cancelledRef.current = false
 
-    // ═══════════════════════════════════════════════════════════════════
-    // NATIVE SHELL DETECTION — used both at init() and via event listener
-    // ═══════════════════════════════════════════════════════════════════
     let nativeTokensHandled = false
 
     async function handleNativeTokens(user) {
@@ -118,19 +113,11 @@ export default function PushManager() {
 
       if (nativePlatform && nativeToken && !nativeTokensHandled) {
         nativeTokensHandled = true
-        console.log('[PushManager] Running inside React Native shell:', nativePlatform, 'token type:', tokenType)
-        console.log('[PushManager] Using native push token ✅')
-
         if (!cancelledRef.current) {
-          // Save native token as a push subscription entry
-          const { error } = await supabase
-            .from('push_subscriptions')
-            .upsert(
-              { user_id: user.id, fcm_token: nativeToken, token_type: tokenType, updated_at: new Date().toISOString() },
-              { onConflict: 'user_id, token_type' }
-            )
-          if (error) console.error('[PushManager] Failed to save native token:', error.message)
-          else console.log('[PushManager] Native push token saved ✅')
+          await supabase.from('push_subscriptions').upsert(
+            { user_id: user.id, fcm_token: nativeToken, token_type: tokenType, updated_at: new Date().toISOString() },
+            { onConflict: 'user_id, token_type' }
+          )
           subscribeRealtime(realtimeChannel, user, cancelledRef)
           return true
         }
@@ -138,97 +125,41 @@ export default function PushManager() {
       return false
     }
 
-    // Listen for tokens injected by React Native shell (race condition guard).
-    // Runs if PushBridge injects tokens AFTER PushManager has already mounted.
-    // Note: this event fires only once, so we fetch user ourselves if not cached yet.
     const onNativeReady = async () => {
       if (nativeTokensHandled || cancelledRef.current) return
-      const user = window.__pushManagerUser ||
-        (await supabase.auth.getUser()).data?.user
+      const user = window.__pushManagerUser || (await supabase.auth.getUser()).data?.user
       if (!user) return
-      const handled = await handleNativeTokens(user)
-      if (handled) window.removeEventListener('native-push-ready', onNativeReady)
+      if (await handleNativeTokens(user)) window.removeEventListener('native-push-ready', onNativeReady)
     }
     window.addEventListener('native-push-ready', onNativeReady)
 
     async function init() {
-      // 1. Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      console.log('[PushManager] user:', user?.id || 'none', userError?.message || '')
+      const { data: { user } } = await supabase.auth.getUser()
       if (!user || cancelledRef.current) return
-
-      // Cache user on window so the event listener can use it
       window.__pushManagerUser = user
 
-      // Try native tokens first (they may have been injected already)
       if (await handleNativeTokens(user)) return
 
-      // ═══════════════════════════════════════════════════════════════════
-      // WEB PUSH (PWA) — Native Web Push API via Service Worker
-      // ═══════════════════════════════════════════════════════════════════
+      // Web Push subscription
       try {
-        if (!('Notification' in window)) throw new Error('Notifications not supported in this browser')
-        if (!('PushManager' in window)) throw new Error('Push API not supported')
-
-        console.log('[PushManager] Notification.permission:', Notification.permission)
-
+        if (!('Notification' in window) || !('PushManager' in window)) return
         let permission = Notification.permission
-        if (permission === 'default') {
-          console.log('[PushManager] Requesting permission...')
-          permission = await Notification.requestPermission()
-          console.log('[PushManager] Permission result:', permission)
-        }
-
-        if (permission !== 'granted') {
-          console.warn('[PushManager] Permission not granted:', permission)
-          return
-        }
-
-        if (!VAPID_KEY) {
-          console.error('[PushManager] VAPID public key is missing!')
-          return
-        }
-
-        console.log('[PushManager] Subscribing to Web Push...')
+        if (permission === 'default') permission = await Notification.requestPermission()
+        if (permission !== 'granted' || !VAPID_KEY) return
         const swReg = await navigator.serviceWorker.ready
-        console.log('[PushManager] SW ready:', swReg.scope)
-
-        // Convert VAPID key from base64url to Uint8Array
-        const urlBase64ToUint8Array = (base64String) => {
-          const padding = '='.repeat((4 - base64String.length % 4) % 4)
-          const base64 = (base64String + padding)
-            .replace(/\-/g, '+')
-            .replace(/_/g, '/')
-          const rawData = atob(base64)
-          const outputArray = new Uint8Array(rawData.length)
-          for (let i = 0; i < rawData.length; ++i) {
-            outputArray[i] = rawData.charCodeAt(i)
-          }
-          return outputArray
+        const urlBase64ToUint8Array = (bs) => {
+          const p = '='.repeat((4 - bs.length % 4) % 4)
+          return new Uint8Array(atob((bs + p).replace(/\-/g, '+').replace(/_/g, '/')).split('').map(c => c.charCodeAt(0)))
         }
+        const sub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_KEY) })
+        if (!cancelledRef.current) await savePushSubscription(user.id, sub)
+      } catch {}
 
-        const subscription = await swReg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(VAPID_KEY),
-        })
-
-        console.log('[PushManager] Web Push subscribed ✅ endpoint:', subscription.endpoint)
-
-        if (!cancelledRef.current) {
-          await savePushSubscription(user.id, subscription)
-        }
-      } catch (err) {
-        console.debug('[PushManager] Web Push subscription failed (non-critical):', err.message)
-      }
-
-      // Listen for foreground push messages from service worker
       navigator.serviceWorker.addEventListener('message', (event) => {
-        if (event.data?.type === 'PUSH_RECEIVED') {
-          showToast(event.data.title, event.data.body, event.data.url)
-        }
+        if (event.data?.type === 'PUSH_RECEIVED') showToast(event.data.title, event.data.body, event.data.url)
       })
 
-      //      ── Supabase Realtime (in-app toasts) ─────────────────────────────
+      // User-specific notifications
       setTimeout(() => subscribeRealtime(realtimeChannel, user, cancelledRef), 2000)
     }
 
@@ -237,10 +168,7 @@ export default function PushManager() {
     return () => {
       cancelledRef.current = true
       window.removeEventListener('native-push-ready', onNativeReady)
-      if (realtimeChannel.current) {
-        supabase.removeChannel(realtimeChannel.current)
-        realtimeChannel.current = null
-      }
+      if (realtimeChannel.current) { supabase.removeChannel(realtimeChannel.current); realtimeChannel.current = null }
     }
   }, [])
 

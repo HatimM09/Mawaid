@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import LunchSurveyEditCard from './components/LunchSurveyEditCard'
-import { supabase } from './admin/supabaseClient'
-import { THEMES } from './admin/ui'
+import LunchSurveyEditCard from './LunchSurveyEditCard'
+import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import { THEMES } from '../admin/ui'
 
 /**
  * LunchSurveyEditor - Direct editing interface for lunch survey responses
@@ -14,6 +14,7 @@ export default function LunchSurveyEditor({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [appSettings, setAppSettings] = useState({})
   const [surveyData, setSurveyData] = useState({
     responses: {},
     userData: {},
@@ -44,6 +45,14 @@ export default function LunchSurveyEditor({
         .single()
 
       if (!userData) throw new Error('User data not found')
+
+      // Load app settings for dish input config
+      const { data: settingsData } = await supabase.from('app_settings').select('*')
+      if (settingsData) {
+        const settings = {}
+        settingsData.forEach(row => settings[row.key] = row.value)
+        setAppSettings(settings)
+      }
 
       // Load current week's survey
       const currentWeekId = new Date().toISOString().split('T')[0]
@@ -305,7 +314,7 @@ export default function LunchSurveyEditor({
         <p style={{
           fontSize: 16,
           color: t.textSub,
-          lineHeight: 1.5
+          lineHeight: 1.65
         }}>
           Edit your lunch selections for today. You can choose "Yes" or "No" for each dish.
         </p>
@@ -399,6 +408,10 @@ export default function LunchSurveyEditor({
               onResponseChange={handleResponseChange}
               snackDefaults={surveyData.snackDefaults}
               theme={theme}
+              appSettings={appSettings}
+              dayName={new Date().toLocaleDateString('en-US', { weekday: 'long' })}
+              meal="lunch"
+              dishIndex={index}
             />
           ))}
         </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import SurveyEditCard from './SurveyEditCard'
-import { supabase } from '../admin/supabaseClient'
+import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
 import { THEMES } from '../admin/ui'
 
 /**
@@ -279,6 +279,10 @@ export default function SurveyEditModal({
                 }))
               }}
               theme={theme}
+              appSettings={appSettings}
+              dayName={editingResponses.dayName || ''}
+              meal={editingResponses.meal || 'lunch'}
+              dishIndex={index}
             />
           ))}
         </div>

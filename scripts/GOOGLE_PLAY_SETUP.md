@@ -8,7 +8,7 @@ to Google Play Console using a service account.
 ## Prerequisites
 
 - A [Google Play Console](https://play.google.com/console/) developer account
-- Your app (`com.almawaid.app`) already created in Google Play Console
+- Your app (`com.almawaid.myapp`) already created in Google Play Console
 - Access to [Google Cloud Console](https://console.cloud.google.com/)
 
 ---
@@ -47,7 +47,7 @@ to Google Play Console using a service account.
 4. Enter the **service account email address** from Step 2
    (looks like `al-mawaid-play-publisher@<project-id>.iam.gserviceaccount.com`).
 5. Assign the following permissions (minimum for automated releases):
-   - ✅ **App access** — Select your app (`com.almawaid.app`)
+   - ✅ **App access** — Select your app (`com.almawaid.myapp`)
    - ✅ **Admin** (or at minimum: *Release > View app release info + Release production*)
      - For **internal testing**: *Release > Create/manage releases*
      - For **production**: *Release > Release to production*

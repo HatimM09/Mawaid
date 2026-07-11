@@ -1,5 +1,6 @@
 import React from 'react'
 import { Edit2, Save, RotateCcw, AlertTriangle } from 'lucide-react'
+import { isCountInput, isRotiItem } from '../hooks/useSurvey'
 
 /**
  * LunchSurveyEditCard - Direct card interface for editing lunch survey responses
@@ -10,14 +11,19 @@ export default function LunchSurveyEditCard({
   response, 
   onResponseChange,
   snackDefaults = {},
-  theme = 'dark'
+  theme = 'dark',
+  inputType = 'auto',
+  appSettings = {},
+  dayName = '',
+  meal = 'lunch',
+  dishIndex = 0
 }) {
   const themes = {
     dark: {
       card: 'rgba(74, 58, 44, 0.45)',
       accent: '#E0A03C',
       text: '#FFF8E7',
-      textSub: 'rgba(255, 248, 231, 0.55)',
+      textSub: 'rgba(255, 248, 231, 0.72)',
       border: 'rgba(224, 160, 60, 0.2)',
       inputBg: 'rgba(74, 58, 44, 0.5)',
       dangerBg: 'rgba(239, 68, 68, 0.1)',
@@ -27,7 +33,7 @@ export default function LunchSurveyEditCard({
       card: '#ffffff',
       accent: '#b8860b',
       text: '#2d2416',
-      textSub: '#706454',
+      textSub: '#5a4e38',
       border: '#e8ddc5',
       inputBg: '#ffffff',
       dangerBg: 'rgba(239, 68, 68, 0.1)',
@@ -40,6 +46,20 @@ export default function LunchSurveyEditCard({
   const [isEditing, setIsEditing] = React.useState(false)
   const [currentResponse, setCurrentResponse] = React.useState(response)
   const [error, setError] = React.useState('')
+
+  // Determine input type
+  const getInputType = () => {
+    if (inputType !== 'auto') return inputType
+    if (isRotiItem(dish)) return 'roti'
+    if (appSettings && dayName && meal) {
+      return isCountInput(appSettings, dayName, meal, dishIndex) ? 'count' : 'percentage'
+    }
+    return 'count'
+  }
+
+  const activeInputType = getInputType()
+  const isCount = activeInputType === 'count'
+  const isRoti = activeInputType === 'roti'
 
   // Get dish number for default values (dish_1, dish_2, etc.)
   const dishNumber = parseInt(dish.split('_')[1]) || 1
@@ -58,7 +78,11 @@ export default function LunchSurveyEditCard({
 
   const handleYesClick = () => {
     setCurrentResponse({ status: 'yes', value: defaultCount })
-    onResponseChange(dish, { status: 'yes', value: defaultCount })
+    if (isCount) {
+      onResponseChange(dish, { status: 'yes', value: defaultCount })
+    } else {
+      onResponseChange(dish, defaultCount)
+    }
   }
 
   const handleNoClick = () => {
@@ -75,8 +99,13 @@ export default function LunchSurveyEditCard({
     onResponseChange(dish, { status: 'yes', value: countValue })
   }
 
-  const isOverLimit = currentResponse.status === 'yes' && currentResponse.value > maxCount
-  const showCountInput = currentResponse.status === 'yes'
+  const handlePercentageClick = (pct) => {
+    setCurrentResponse(pct)
+    onResponseChange(dish, pct)
+  }
+
+  const isOverLimit = isCount && currentResponse.status === 'yes' && currentResponse.value > maxCount
+  const showCountInput = isCount && currentResponse.status === 'yes'
 
   return (
     <div style={{
@@ -235,58 +264,60 @@ export default function LunchSurveyEditCard({
       {/* Response section */}
       {isEditing ? (
         <div style={{ marginTop: 16 }}>
-          {/* Yes/No selection */}
-          <div style={{ marginBottom: 16 }}>
-            <p style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: t.text,
-              marginBottom: 8,
-              fontFamily: "'DM Sans',sans-serif"
-            }}>
-              Did you eat this dish?
-            </p>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={handleYesClick}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  borderRadius: 12,
-                  border: `2px solid ${currentResponse.status === 'yes' ? t.accent : t.border}`,
-                  background: currentResponse.status === 'yes' ? t.accentBg : t.inputBg,
-                  color: currentResponse.status === 'yes' ? t.accent : t.text,
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  fontFamily: "'DM Sans',sans-serif",
-                  transition: 'all 0.2s'
-                }}
-              >
-                ✅ Yes
-              </button>
-              <button
-                onClick={handleNoClick}
-                style={{
-                  flex: 1,
-                  padding: '12px',
-                  borderRadius: 12,
-                  border: `2px solid ${currentResponse === 'no' ? '#e05555' : t.border}`,
-                  background: currentResponse === 'no' ? 'rgba(224,85,85,0.1)' : t.inputBg,
-                  color: currentResponse === 'no' ? '#e05555' : t.text,
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  fontFamily: "'DM Sans',sans-serif",
-                  transition: 'all 0.2s'
-                }}
-              >
-                ❌ No
-              </button>
+          {/* Yes/No selection (for count and roti types) */}
+          {(isCount || isRoti) && (
+            <div style={{ marginBottom: 16 }}>
+              <p style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: t.text,
+                marginBottom: 8,
+                fontFamily: "'DM Sans',sans-serif"
+              }}>
+                Did you eat this dish?
+              </p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={handleYesClick}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    borderRadius: 12,
+                    border: `2px solid ${currentResponse?.status === 'yes' ? t.accent : t.border}`,
+                    background: currentResponse?.status === 'yes' ? t.accentBg : t.inputBg,
+                    color: currentResponse?.status === 'yes' ? t.accent : t.text,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    fontFamily: "'DM Sans',sans-serif",
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  ✅ Yes
+                </button>
+                <button
+                  onClick={handleNoClick}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    borderRadius: 12,
+                    border: `2px solid ${currentResponse === 'no' ? '#e05555' : t.border}`,
+                    background: currentResponse === 'no' ? 'rgba(224,85,85,0.1)' : t.inputBg,
+                    color: currentResponse === 'no' ? '#e05555' : t.text,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    fontFamily: "'DM Sans',sans-serif",
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  ❌ No
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Count input (only if Yes is selected) */}
+          {/* Count input (only if Yes is selected for count type) */}
           {showCountInput && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <span style={{
@@ -328,6 +359,43 @@ export default function LunchSurveyEditCard({
               }}>
                 Default: {defaultCount}
               </span>
+            </div>
+          )}
+
+          {/* Percentage buttons */}
+          {!isCount && !isRoti && (
+            <div>
+              <p style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: t.text,
+                marginBottom: 8,
+                fontFamily: "'DM Sans',sans-serif"
+              }}>
+                How much did you eat?
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                {[0, 25, 50, 100].map(pct => (
+                  <button
+                    key={pct}
+                    onClick={() => handlePercentageClick(pct)}
+                    style={{
+                      padding: '12px 8px',
+                      borderRadius: 12,
+                      border: `2px solid ${currentResponse === pct ? t.accent : t.border}`,
+                      background: currentResponse === pct ? t.accentBg : t.inputBg,
+                      color: currentResponse === pct ? t.accent : t.text,
+                      fontSize: 16,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      fontFamily: "'DM Sans',sans-serif",
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    {pct}%
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -375,9 +443,10 @@ export default function LunchSurveyEditCard({
               fontSize: 12,
               fontWeight: 700
             }}>
-              {typeof response === 'number' ? '🍽️' : 
-               response === 'yes' ? '✅' : 
-               response === 'no' ? '❌' : '📊'}
+              {response === 'yes' ? '✅' : 
+               response === 'no' ? '❌' : 
+               typeof response === 'number' && !isCount ? '📊' : 
+               typeof response === 'number' || response?.status === 'yes' ? '🍽️' : '📊'}
             </div>
             <div>
               <div style={{
@@ -395,12 +464,13 @@ export default function LunchSurveyEditCard({
               }}>
                 {response === 'yes' ? '✅ Yes' : 
                  response === 'no' ? '❌ No' : 
-                 typeof response === 'number' ? `${response} portions` : 
+                 typeof response === 'number' && isCount ? `${response} portions` : 
+                 typeof response === 'number' ? `📊 ${response}%` : 
                  response === undefined ? 'Not answered' : 
-                 response.status === 'yes' ? `${response.value} portions` : 
-                 `${response}%`}
+                 response?.status === 'yes' ? `${response.value} portions` : 
+                 `${response}`}
               </div>
-              {typeof response !== 'no' && (
+              {isCount && response !== 'no' && response !== undefined && (
                 <div style={{
                   fontSize: 11,
                   color: t.textSub,

@@ -1,7 +1,7 @@
 // src/admin/SurveysPage.jsx
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { supabase } from './supabaseClient'
+import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { RefreshCw, Search, Filter, Utensils, Download, User as UserIcon, Calendar as CalendarIcon, Scan, X } from 'lucide-react'
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
@@ -23,17 +23,14 @@ export default function SurveysPage() {
   const [loading, setLoading] = useState(true)
   const [responses, setResponses] = useState([])
   const [users, setUsers] = useState({})
-  const [viewMode, setViewMode] = useState('daily')
+  const [viewMode, setViewMode] = useState('aggregate')
   
   // URL Param handling
   const urlUserId = searchParams.get('userId')
   const [focusedUserId, setFocusedUserId] = useState(urlUserId)
   
-  const [dayFilter, setDayFilter] = useState(() => {
-    const d = new Date().getDay()
-    return d === 0 ? 'monday' : DAYS[d-1]
-  })
-  const [mealFilter, setMealFilter] = useState(() => (new Date().getHours() + new Date().getMinutes() / 60) < 15.5 ? 'lunch' : 'dinner')
+  const [dayFilter, setDayFilter] = useState('all')
+  const [mealFilter, setMealFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [chartData, setChartData] = useState([])
   const [selectedUser, setSelectedUser] = useState(null)
@@ -121,15 +118,41 @@ export default function SurveysPage() {
         dishes.forEach((d, i) => {
           const val = row[`${dayKey}_${mealKey}_dish_${i + 1}`]
           if (val !== undefined && val !== null) {
-            dishRes[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : val
+            const lowerVal = String(val).toLowerCase()
+            dishRes[d] = lowerVal === 'yes' ? 'yes' : lowerVal === 'no' ? 'no' : val
           }
         })
       }
+
+      const lunchDishes = weeklyMenu[dayFilter]?.lunch || []
+      const dinnerDishes = weeklyMenu[dayFilter]?.dinner || []
 
       setSelectedUser({
         ...u,
         status: row ? row[`${dayKey}_${mealKey}_status`] : 'Not Submitted',
         dishResponses: dishRes,
+        lunch: { status: row ? row[`${dayKey}_l_status`] : null, dishes: (() => {
+          const res = {}
+          lunchDishes.forEach((d, i) => {
+            const v = row ? row[`${dayKey}_l_dish_${i + 1}`] : undefined
+            if (v !== undefined && v !== null) {
+              const lv = String(v).toLowerCase()
+              res[d] = lv === 'yes' ? 'yes' : lv === 'no' ? 'no' : v
+            }
+          })
+          return res
+        })() },
+        dinner: { status: row ? row[`${dayKey}_d_status`] : null, dishes: (() => {
+          const res = {}
+          dinnerDishes.forEach((d, i) => {
+            const v = row ? row[`${dayKey}_d_dish_${i + 1}`] : undefined
+            if (v !== undefined && v !== null) {
+              const lv = String(v).toLowerCase()
+              res[d] = lv === 'yes' ? 'yes' : lv === 'no' ? 'no' : v
+            }
+          })
+          return res
+        })() },
         currentDay: dayFilter,
         currentMeal: mealFilter,
         dishInputConfig: dishInputConfig
@@ -172,6 +195,23 @@ export default function SurveysPage() {
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
+      // Auto-cleanup: delete submissions older than 1 week (keep current + 1 previous)
+      try {
+        const currentWeek = getWeekDate()
+        const prevWeek = new Date(currentWeek)
+        prevWeek.setDate(prevWeek.getDate() - 7)
+        const cutoff = prevWeek.toISOString().split('T')[0]
+        const { data: oldRows } = await supabase
+          .from('survey_submissions_flat')
+          .select('week_id').lt('week_id', cutoff)
+        if (oldRows && oldRows.length) {
+          const oldWeeks = [...new Set(oldRows.map(r => r.week_id))].filter(Boolean)
+          for (const ow of oldWeeks) {
+            await supabase.from('survey_submissions_flat').delete().eq('week_id', ow)
+          }
+        }
+      } catch (e) { console.warn('Cleanup error:', e) }
+
       // Load dish input config
       const { data: configData } = await supabase.from('app_settings').select('value').eq('key', 'dish_input_config').maybeSingle()
       if (configData) {
@@ -203,6 +243,12 @@ export default function SurveysPage() {
       })
       setUsers(uMap)
 
+      // Helper to check if dish is roti
+      const isRotiItem = (dish) => {
+        const rotiKeywords = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
+        return rotiKeywords.some(k => dish.toLowerCase().includes(k))
+      }
+      
       // Transform flat rows into normalized response objects
       const normalized = []
       ;(flat || []).forEach(row => {
@@ -217,7 +263,12 @@ export default function SurveysPage() {
               dishes.forEach((d, i) => {
                 const val = row[`${dayKey}_${mealKey}_dish_${i + 1}`]
                 if (val !== undefined && val !== null) {
-                  dishResponses[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : val
+                  const lowerVal = String(val).toLowerCase()
+                  if (isRotiItem(d)) {
+                    dishResponses[d] = lowerVal === 'yes' ? 'yes' : 'no'
+                  } else {
+                    dishResponses[d] = lowerVal === 'yes' ? 'yes' : lowerVal === 'no' ? 'no' : val
+                  }
                 }
               })
               normalized.push({
@@ -290,10 +341,11 @@ export default function SurveysPage() {
     }
   })
 
-  // AGGREGATE SUMMARY
+  // AGGREGATE SUMMARY - shows total piece counts
   const summary = useMemo(() => {
     const counts = {}
     const isCountDish = {}
+    const isPctDish = {}
     const activeData = filtered.filter(f => f.wants_food)
     activeData.forEach(r => {
       const q = r.dish_responses || {}
@@ -301,15 +353,23 @@ export default function SurveysPage() {
         if (!counts[dish]) {
           counts[dish] = 0
           isCountDish[dish] = typeof val === 'string' && !val.endsWith('%') && val !== 'yes' && val !== 'no'
+          isPctDish[dish] = typeof val === 'string' && val.endsWith('%')
         }
-        counts[dish] += (parseInt(val) || 0)
+        if (isCountDish[dish]) {
+          counts[dish] += (parseInt(val) || 0)
+        } else if (isPctDish[dish]) {
+          counts[dish] += (parseInt(val) || 0)
+        } else if (val === 'yes') {
+          counts[dish] = (counts[dish] || 0) + 1
+        }
       })
     })
     return Object.entries(counts).map(([name, total]) => ({
       name,
-      portions: isCountDish[name] ? String(total) : (total / 100).toFixed(1),
+      portions: isCountDish[name] ? String(total) : isPctDish[name] ? (total / 100).toFixed(1) : String(total),
       raw: total,
-      isCount: isCountDish[name]
+      isCount: isCountDish[name],
+      isPct: isPctDish[name]
     }))
   }, [filtered])
 
@@ -329,8 +389,16 @@ export default function SurveysPage() {
         {r.wants_food === false ? (
           <span style={{ color: T.danger, fontSize: 11, fontWeight: 700 }}>OPTED OUT (SKIP)</span>
         ) : Object.entries(qtys).map(([d, p]) => {
+          const isRoti = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri'].some(k => d.toLowerCase().includes(k))
           const isCount = typeof p === 'string' && !p.endsWith('%') && p !== 'yes' && p !== 'no'
           const numVal = parseInt(p) || 0
+          if (isRoti) {
+            return (
+              <span key={d} style={{ fontSize: 11, background: p === 'yes' ? 'rgba(197,160,89,0.1)' : 'rgba(239,68,68,0.05)', padding: '2px 8px', borderRadius: 6, border: `1px solid ${p === 'yes' ? T.accentBorder : 'rgba(239,68,68,0.15)'}`, fontWeight: 700, color: p === 'yes' ? T.accent : T.danger }}>
+                {d}: {p === 'yes' ? 'YES' : 'NO'}
+              </span>
+            )
+          }
           return (
             <span key={d} style={{ fontSize: 11, background: 'rgba(255,255,255,0.04)', padding: '2px 6px', borderRadius: 6, border: `1px solid ${T.border}` }}>
               {d}: <strong style={{ color: T.accent }}>{isCount ? numVal : `${numVal}%`}</strong>
@@ -362,14 +430,24 @@ export default function SurveysPage() {
       const isCount = typeof val === 'string' && !val.endsWith('%') && val !== 'yes' && val !== 'no'
       const numVal = parseInt(val) || 0
 
+      if (isCount) {
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}>
+              {numVal}
+            </span>
+          </div>
+        )
+      }
+
       return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {!isCount && (
-            <div style={{ width: 36, height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${numVal}%`, background: numVal > 50 ? T.accentGrad : T.accent, opacity: numVal > 0 ? 1 : 0.2 }} />
-            </div>
-          )}
-          <span style={{ fontSize: 11, fontWeight: 700, color: numVal > 0 ? T.text : T.textSub }}>{isCount ? numVal : `${numVal}%`}</span>
+          <div style={{ width: 36, height: 4, background: 'rgba(255,255,255,0.05)', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${numVal}%`, background: numVal > 50 ? T.accentGrad : T.accent, opacity: numVal > 0 ? 1 : 0.2 }} />
+          </div>
+          <span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}>
+            {numVal}%
+          </span>
         </div>
       )
     })
@@ -441,11 +519,11 @@ export default function SurveysPage() {
                   <div key={s.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 10, borderBottom: `1px solid ${T.border}` }}>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <span style={{ color: T.text, fontSize: 15, fontWeight: 700 }}>{s.name}</span>
-                      <span style={{ color: T.textSub, fontSize: 11 }}>Total: {s.raw}{s.isCount ? '' : '%'}</span>
+                      <span style={{ color: T.textSub, fontSize: 11 }}>{s.isCount ? 'Total pieces' : s.isPct ? 'Total portions' : 'Yes count'}: {s.raw}</span>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ color: T.accent, fontSize: 24, fontWeight: 900 }}>{s.portions}</div>
-                      <div style={{ fontSize: 10, color: T.textSub, textTransform: 'uppercase', fontWeight: 800 }}>{s.isCount ? 'Count' : 'Portions'}</div>
+                      <div style={{ color: T.accent, fontSize: 28, fontWeight: 900 }}>{s.portions}</div>
+                      <div style={{ fontSize: 10, color: T.textSub, textTransform: 'uppercase', fontWeight: 800 }}>{s.isCount ? 'Pieces' : s.isPct ? 'Portions' : 'Members'}</div>
                     </div>
                   </div>
                 ))}

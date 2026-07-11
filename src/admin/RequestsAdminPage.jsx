@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { supabase } from './supabaseClient'
+import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
 import { RefreshCw, Search, CheckCircle, Clock, XCircle, ShieldAlert, Lock } from 'lucide-react'
-import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, fmtDate, fmtDateTime } from './ui'
+import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, fmtDate, fmtDateTime } from './ui'
+import { AdminTableSkeleton } from '../common/Skeleton'
 
 const STATUS_COLORS = { pending: '#e09855', approved: '#5eba82', rejected: '#e05555' }
 const STATUS_ICONS  = { pending: <Clock size={13} />, approved: <CheckCircle size={13} />, rejected: <XCircle size={13} /> }
@@ -116,7 +117,7 @@ export default function RequestsAdminPage() {
           ? `Your ${typeLabel} request has been approved.`
           : `Your ${typeLabel} request was rejected.`;
 
-        await supabase.functions.invoke('send-push', {
+        await supabase.functions.invoke('sendPush', {
           body: {
             title,
             body,
@@ -157,7 +158,7 @@ export default function RequestsAdminPage() {
         <div style={{ color: T.textSub, fontSize: 11 }}>#{u.thali_number || '—'}</div>
       </div>,
       <Badge color="#9b8de0">{r.request_type || '—'}</Badge>,
-      <div style={{ fontSize: 13, color: T.textSub, maxWidth: 220, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 13, color: T.textSub, maxWidth: 220, lineHeight: 1.65 }}>
         {r.request_type === 'extra' && r.extra_items ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {r.extra_items.map((item, i) => (
@@ -287,7 +288,7 @@ export default function RequestsAdminPage() {
         <Btn variant="outline" onClick={load}><RefreshCw size={15} />Refresh</Btn>
       </div>
 
-      {loading ? <Spinner /> : (
+      {loading ? <AdminTableSkeleton rows={5} /> : (
         <AdminCard style={{ padding: 0 }}>
           <Table
             headers={['Thali User', 'Type', 'Request Details', 'Dates / Schedule', 'Status', 'Submitted At', 'Actions']}

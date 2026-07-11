@@ -1,38 +1,26 @@
-// src/admin/AdminRoute.jsx
-// Guards /admin/* — user must be signed in via Supabase AND have role='admin' in staff table.
-// No separate password needed — login happens on the main unified login page.
 import React, { useState, useEffect } from 'react'
 import { Navigate, Outlet } from 'react-router-dom'
-import { supabase } from './supabaseClient'
+import { supabaseClient } from '../lib/supabaseClient'
 
 export default function AdminRoute() {
-  const [status, setStatus] = useState('loading') // 'loading' | 'allowed' | 'denied'
+  const [status, setStatus] = useState('loading')
 
   useEffect(() => {
     const check = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession()
+      const { data: { session }, error } = await supabaseClient.auth.getSession()
       if (error || !session) return setStatus('denied')
 
-      // Check role in staff table
       let role = ''
-
-      // Check staff table if it exists
       try {
-        const { data: staffRow } = await supabase
-          .from('staff')
-          .select('role')
-          .eq('user_id', session.user.id)
-          .single()
+        const { data: staffRow } = await supabaseClient
+          .from('staff').select('role').eq('user_id', session.user.id).single()
         role = staffRow?.role || ''
       } catch (err) {
-        // If staff table doesn't exist, fall back to portal flag for demo
-        console.warn('[AdminRoute] staff table not found, using localStorage fallback')
+        console.warn('[AdminRoute] staff table check failed:', err.message)
+        return setStatus('denied')
       }
 
-      // Also accept the localStorage flag set by the login page
-      const portalRole = localStorage.getItem('al_mawaid_portal') || ''
-
-      if (role === 'admin' || portalRole === 'admin') {
+      if (role === 'admin') {
         setStatus('allowed')
       } else {
         setStatus('denied')

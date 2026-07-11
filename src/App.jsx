@@ -9,11 +9,11 @@ import {
   Mail, Lock, Eye, EyeOff, AlertCircle, ChevronDown, ChevronUp,
   ClipboardList, ChevronLeft, ChevronRight, Phone, MapPin,
   Users, Wallet, Bell, LifeBuoy, Info, MessageCircle, Upload, Utensils,
-  Sun, Moon, Medal, Package, Shield, Menu, QrCode
+  Sun, Moon, Medal, Package, Shield, Menu, QrCode, Edit2, Trash2
 } from 'lucide-react'
-import { Navigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { QRCodeCanvas } from 'qrcode.react'
-import { supabase } from './admin/supabaseClient'
+import { supabase, auth, db, C, getCol, getDocRef, invokeFunction } from './lib/firebaseClient'
 import { useWeeklyMenu } from './common/useWeeklyMenu'
 import { AuthCtx, ThemeCtx, useAuth, useTheme } from './admin/context'
 import { updateSystemTheme } from './admin/ui'
@@ -22,6 +22,13 @@ import InventoryManagerPortal from './admin/InventoryManagerPortal'
 import LoginPage from './LoginPage'
 import PushManager from './lib/PushManager'
 import { Toaster } from 'react-hot-toast'
+import DailyEditCard from './components/DailyEditCard'
+import SurveyModal from './components/SurveyModal'
+import DailySurveyModal from './components/DailySurveyModal'
+import {
+  HomePageSkeleton, WeeklyMenuSkeleton, ProfileSkeleton,
+  ListPageSkeleton, RequestsSkeleton, NotificationsSkeleton, KhidmatTeamSkeleton
+} from './common/Skeleton'
 const THEMES = {
   dark: {
     id: 'dark', name: 'Deep Topaz', icon: '🌾',
@@ -30,7 +37,7 @@ const THEMES = {
     border: 'rgba(224, 160, 60, 0.2)', borderActive: 'rgba(224, 160, 60, 0.55)',
     accent: '#E0A03C', accentGrad: 'linear-gradient(135deg, #E0A03C, #B8860B)',
     accentBg: 'rgba(224, 160, 60, 0.12)', accentBorder: 'rgba(224, 160, 60, 0.4)',
-    text: '#FFF8E7', textSub: 'rgba(255, 248, 231, 0.55)', textBody: '#E8DCC8',
+    text: '#FFF8E7', textSub: 'rgba(255, 248, 231, 0.72)', textBody: '#E8DCC8',
     navBg: 'rgba(74, 58, 44, 0.98)', navBorder: 'rgba(224, 160, 60, 0.25)',
     geo: 'rgba(224, 160, 60, 0.05)', spinnerBorder: 'rgba(224, 160, 60, 0.2)', spinnerTop: '#E0A03C',
     inputBg: 'rgba(74, 58, 44, 0.5)', inputBorder: 'rgba(224, 160, 60, 0.25)',
@@ -44,7 +51,7 @@ const THEMES = {
     border: '#e8ddc5', borderActive: '#c4a460',
     accent: '#b8860b', accentGrad: 'linear-gradient(135deg, #dfb44a, #b8860b)',
     accentBg: 'rgba(184, 134, 11, 0.08)', accentBorder: 'rgba(184, 134, 11, 0.3)',
-    text: '#2d2416', textSub: '#706454', textBody: '#4a3d2e',
+    text: '#2d2416', textSub: '#5a4e38', textBody: '#4a3d2e',
     navBg: 'rgba(253, 251, 247, 0.98)', navBorder: '#e8ddc5',
     geo: 'rgba(184, 134, 11, 0.04)', spinnerBorder: 'rgba(184, 134, 11, 0.2)', spinnerTop: '#b8860b',
     inputBg: '#ffffff', inputBorder: '#e0d4bc',
@@ -58,7 +65,7 @@ const THEMES = {
     border: 'rgba(212, 175, 55, 0.15)', borderActive: 'rgba(212, 175, 55, 0.5)',
     accent: '#F0C239', accentGrad: 'linear-gradient(135deg, #F0C239 0%, #D4A017 50%, #B8860B 100%)',
     accentBg: 'rgba(240, 194, 57, 0.08)', accentBorder: 'rgba(240, 194, 57, 0.35)',
-    text: '#FAF3E0', textSub: 'rgba(250, 243, 224, 0.55)', textBody: '#E8DCC8',
+    text: '#FAF3E0', textSub: 'rgba(250, 243, 224, 0.72)', textBody: '#E8DCC8',
     navBg: 'rgba(5, 5, 5, 0.97)', navBorder: 'rgba(212, 175, 55, 0.25)',
     geo: 'rgba(240, 194, 57, 0.04)', spinnerBorder: 'rgba(240, 194, 57, 0.2)', spinnerTop: '#F0C239',
     inputBg: 'rgba(240, 194, 57, 0.04)', inputBorder: 'rgba(212, 175, 55, 0.2)',
@@ -452,7 +459,7 @@ const GlobalStyles = () => {
       }
       .mobile-bottom-nav button span {
         font-size: 10px; font-weight: 800; text-transform: uppercase;
-        margin-top: 4px; opacity: 0.6; letter-spacing: 0.05em;
+        margin-top: 4px; opacity: 0.7; letter-spacing: 0.05em;
         transition: all 0.3s;
       }
       .mobile-bottom-nav button.active span {
@@ -508,946 +515,7 @@ const GlobalStyles = () => {
   )
 }
 
-// ══════════════════════════════════════════════════════════════
-// SURVEY MODAL (REDESIGNED: DAY BAR + AUTO-SAVE + COUNT/PERCENT)
-// ══════════════════════════════════════════════════════════════
-function SurveyModal({ onClose, appSettings = {} }) {
-  const t = THEMES.bright
-  const { user } = useAuth()
-  const weeklyMenu = useWeeklyMenu() || {}
 
-  const currentWeekId = getWeekDate()
-
-  const [currentDayIndex, setCurrentDayIndex] = useState(0)
-  const [currentMeal, setCurrentMeal] = useState('lunch')
-  const [wantsFood, setWantsFood] = useState(null)
-  const wantsFoodRef = useRef(null)
-  const [responses, setResponses] = useState({})
-  const [loading, setLoading] = useState(false)
-  const [existingData, setExistingData] = useState(null)
-  const [dataLoaded, setDataLoaded] = useState(false)
-  const [hasFirstSave, setHasFirstSave] = useState(false)
-  const justLoadedRef = useRef(false)
-
-  const [userData, setUserData] = useState({ thali_no: '', email: user.email })
-  const [snackDefaults, setSnackDefaults] = useState({ dish_1: 0, dish_2: 0, dish_3: 0, dish_4: 0 })
-  const [autoSaveStatus, setAutoSaveStatus] = useState('idle')
-  const saveTimerRef = useRef(null)
-  const advancingRef = useRef(false)
-
-  const currentDay = DAYS[currentDayIndex]
-  const menu = weeklyMenu[currentDay] || { lunch: [], dinner: [] }
-  const dayKey = currentDay.substring(0, 3).toLowerCase()
-  const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
-
-  const isEditable = canEditMeal(currentDay, currentWeekId, currentMeal, appSettings, user.id)
-  const surveyOpen = isSurveyOpen(appSettings, user.id)
-  const editCount = existingData ? (existingData.edit_metadata?.[`${dayKey}_${mealKey}`] || 0) : 0
-  const editBlocked = !isEditable || (!surveyOpen && editCount >= 100)
-
-  const totalSlots = 12
-  const currentSlot = currentDayIndex * 2 + (currentMeal === 'lunch' ? 0 : 1)
-  const isFirst = currentDayIndex === 0 && currentMeal === 'lunch'
-  const isLast = currentDayIndex === 5 && currentMeal === 'dinner'
-
-  const dishes = menu[currentMeal] || []
-
-  // ── Day status summary for the day bar ──
-  const dayStatusSummary = DAYS.map((day, idx) => {
-    const dk = day.substring(0, 3).toLowerCase()
-    const lStatus = existingData?.[`${dk}_l_status`]
-    const dStatus = existingData?.[`${dk}_d_status`]
-    if (lStatus && dStatus) return 'complete'
-    if (lStatus || dStatus) return 'partial'
-    return 'pending'
-  })
-
-  const isCountInput = (idx) => {
-    try {
-      const config = appSettings?.dish_input_config
-      if (config) {
-        const parsed = typeof config === 'string' ? JSON.parse(config) : config
-        const dayName = currentDay.charAt(0).toUpperCase() + currentDay.slice(1)
-        const key = `${dayName}_${currentMeal}`
-        const types = parsed[key]
-        if (types && types[idx]) return types[idx] === 'count'
-      }
-    } catch {}
-    return currentMeal === 'lunch' && idx <= 3
-  }
-
-  // ── Load existing data on mount and find resume point ──
-  useEffect(() => {
-    loadExisting()
-  }, [])
-
-  useEffect(() => {
-    if (!dataLoaded) return
-    populateFromExisting()
-  }, [currentDayIndex, currentMeal, dataLoaded, weeklyMenu])
-
-  useEffect(() => {
-    if (loading) setAutoSaveStatus('idle')
-  }, [loading])
-
-  const loadExisting = async () => {
-    try {
-      if (!userData.thali_no) {
-        const { data: u } = await supabase.from('user_stats')
-          .select('thali_number, email, snack_defaults')
-          .eq('user_id', user.id).maybeSingle()
-        if (u) {
-          setUserData({ thali_no: u.thali_number || '', email: u.email || user.email })
-          if (u.snack_defaults) setSnackDefaults(u.snack_defaults)
-        }
-      }
-      const { data } = await supabase.from('survey_submissions_flat')
-        .select('*').eq('user_id', user.id)
-        .order('week_id', { ascending: false }).limit(1).maybeSingle()
-
-      let existing = null
-      if (data && data.week_id === currentWeekId) {
-        existing = data
-      }
-      setExistingData(existing)
-      setDataLoaded(true)
-
-      // Resume: find first incomplete slot (only in fill mode)
-      if (existing && surveyOpen) {
-        for (let d = 0; d < 6; d++) {
-          const day = DAYS[d]
-          const dk = day.substring(0, 3).toLowerCase()
-          for (const meal of ['lunch', 'dinner']) {
-            const mk = meal === 'lunch' ? 'l' : 'd'
-            if (!existing[`${dk}_${mk}_status`]) {
-              setCurrentDayIndex(d)
-              setCurrentMeal(meal)
-              return
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Error loading survey:', err)
-      setDataLoaded(true)
-    }
-  }
-
-  const populateFromExisting = () => {
-    justLoadedRef.current = true
-    if (!existingData) {
-      setWantsFood(null)
-      setResponses({})
-      return
-    }
-    const statusKey = `${dayKey}_${mealKey}_status`
-    const status = existingData[statusKey]
-    if (status) {
-      wantsFoodRef.current = status === 'Applied'
-      if (status === 'Applied') {
-        setWantsFood(true)
-        const dishRes = {}
-        dishes.forEach((dish, idx) => {
-          const val = existingData[`${dayKey}_${mealKey}_dish_${idx + 1}`]
-          if (val !== undefined && val !== null) {
-            if (isCountInput(idx)) {
-              if (val === 'No') dishRes[dish] = 'no'
-              else dishRes[dish] = { status: 'yes', value: parseInt(val) || 0 }
-            } else {
-              if (typeof val === 'string' && val.endsWith('%')) {
-                dishRes[dish] = parseInt(val) || 0
-              } else if (val === 'Yes') {
-                dishRes[dish] = 100
-              } else if (val === 'No') {
-                dishRes[dish] = 0
-              }
-            }
-          }
-        })
-        setResponses(dishRes)
-      } else {
-        setWantsFood(false)
-        setResponses({})
-      }
-    } else {
-      setWantsFood(null)
-      setResponses({})
-    }
-  }
-
-  // ── Auto-save (debounced) ──
-  useEffect(() => {
-    if (justLoadedRef.current) return
-    if (wantsFood === null && Object.keys(responses).length === 0) return
-    if (!dataLoaded) return
-    if (loading) return
-    if (advancingRef.current) return
-
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = setTimeout(async () => {
-      if (wantsFoodRef.current === null && wantsFood === null) return
-      setAutoSaveStatus('saving')
-      try {
-        await saveCurrentSlot()
-        setAutoSaveStatus('saved')
-        setTimeout(() => setAutoSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 2000)
-      } catch {
-        setAutoSaveStatus('idle')
-      }
-    }, 600)
-
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    }
-  }, [wantsFood, responses, currentDayIndex, currentMeal, dataLoaded])
-
-  // ── Auto-advance when all dishes selected (never for last slot) ──
-  useEffect(() => {
-    if (justLoadedRef.current) { justLoadedRef.current = false; return }
-    if (!surveyOpen && !isEditable) return
-    if (advancingRef.current) return
-    if (loading) return
-    if (editBlocked) return
-    if (isLast) return
-
-    if (wantsFood === true && dishes.length > 0 && Object.keys(responses).length === dishes.length) {
-      advanceToNext()
-    }
-  }, [responses, wantsFood])
-
-  const saveCurrentSlot = async () => {
-    if (wantsFoodRef.current === null) return true
-    let success = true
-    try {
-      const currentEdits = (existingData || {}).edit_metadata || {}
-      const isNew = !existingData
-      const newEditCount = (currentEdits[`${dayKey}_${mealKey}`] || 0) + (isNew ? 0 : 1)
-
-      const updateObj = {
-        user_id: user.id,
-        week_id: currentWeekId,
-        thali_number: userData.thali_no,
-        email: userData.email,
-        [`${dayKey}_${mealKey}_status`]: wantsFoodRef.current ? 'Applied' : 'Skipped',
-        edit_metadata: { ...currentEdits, [`${dayKey}_${mealKey}`]: newEditCount },
-        updated_at: new Date().toISOString()
-      }
-
-      if (wantsFoodRef.current) {
-        dishes.forEach((dish, idx) => {
-          const colName = `${dayKey}_${mealKey}_dish_${idx + 1}`
-          const val = responses[dish]
-          if (val !== undefined) {
-            if (typeof val === 'object' && val.status) {
-              updateObj[colName] = val.status === 'yes' ? String(val.value) : 'No'
-            } else if (val === 'no') {
-              updateObj[colName] = 'No'
-            } else if (typeof val === 'number') {
-              updateObj[colName] = isCountInput(idx) ? String(val) : `${val}%`
-            }
-          }
-        })
-      }
-
-      const { error } = await supabase.from('survey_submissions_flat')
-        .upsert([updateObj], { onConflict: 'user_id,week_id' })
-      if (error) throw error
-
-      setExistingData(prev => ({ ...prev, ...updateObj }))
-
-      if (isNew && !hasFirstSave) {
-        setHasFirstSave(true)
-        await supabase.rpc('increment_user_surveys', { p_user_id: user.id }).catch(() => {})
-      }
-    } catch (err) {
-      alert('Error saving: ' + err.message)
-      success = false
-    }
-    return success
-  }
-
-  const advanceToNext = async () => {
-    if (advancingRef.current) return
-    advancingRef.current = true
-    if (wantsFoodRef.current !== null) {
-      await saveCurrentSlot()
-    }
-    wantsFoodRef.current = null
-    setWantsFood(null)
-    setResponses({})
-    if (currentMeal === 'lunch') {
-      setCurrentMeal('dinner')
-    } else {
-      setCurrentDayIndex(prev => prev + 1)
-      setCurrentMeal('lunch')
-    }
-    setTimeout(() => { advancingRef.current = false }, 300)
-  }
-
-  // ── Handle meal Yes/No click ──
-  const handleMealChoice = (want) => {
-    justLoadedRef.current = false
-    wantsFoodRef.current = want
-    setWantsFood(want)
-    if (!want && !isLast) {
-      // If No for meal (not last slot), save and advance
-      setTimeout(async () => {
-        await saveCurrentSlot()
-        advanceToNext()
-      }, 300)
-    } else if (!want && isLast) {
-      // Last slot: save but don't advance; show Submit button
-      setTimeout(async () => {
-        await saveCurrentSlot()
-      }, 300)
-    }
-  }
-
-  // ── Handle dish count Yes/No click ──
-  const handleDishYesNo = (dish, idx, want) => {
-    if (want) {
-      const defVal = snackDefaults?.[`dish_${idx + 1}`] ?? 0
-      setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: defVal } }))
-    } else {
-      setResponses(prev => ({ ...prev, [dish]: 'no' }))
-    }
-  }
-
-  // ── Handle submit for last slot (Saturday dinner) ──
-  const handleSubmitAll = async () => {
-    advancingRef.current = true
-    if (wantsFoodRef.current !== null) {
-      await saveCurrentSlot()
-    }
-    supabase.functions.invoke('send-push', {
-      body: {
-        title: 'Weekly Survey Submitted',
-        body: 'Your full week survey (Mon–Sat) has been saved.',
-        target_type: 'specific',
-        target_user_id: user.id,
-        url: '/post'
-      }
-    }).catch(() => {})
-    alert('Full week survey complete! Shukran Jazeelan.')
-    onClose()
-  }
-
-  // ── Render dish controls ──
-  const renderDishControl = (dish, idx) => {
-    const isCount = isCountInput(idx)
-    if (isCount) {
-      // Count mode: show Yes/No per dish
-      const resp = responses[dish]
-      const isYes = typeof resp === 'object' && resp.status === 'yes'
-      const isNo = resp === 'no'
-      return (
-        <div key={dish} style={{
-          background: t.card, borderRadius: 16, padding: 16,
-          border: `1px solid ${t.border}`, marginBottom: 12,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h3 style={{ color: t.text, margin: 0, fontSize: 14, fontWeight: 600 }}>{dish}</h3>
-            <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 12, background: t.accentBg, color: t.accent, fontWeight: 600 }}>
-              Default: {snackDefaults?.[`dish_${idx + 1}`] ?? 0}
-            </span>
-          </div>
-          {!isYes && !isNo ? (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => handleDishYesNo(dish, idx, true)}
-                style={{ flex: 1, padding: 10, borderRadius: 8, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                ✅ Yes
-              </button>
-              <button onClick={() => handleDishYesNo(dish, idx, false)}
-                style={{ flex: 1, padding: 10, borderRadius: 8, border: `1px solid ${t.border}`, background: 'transparent', color: t.text, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                ❌ No
-              </button>
-            </div>
-          ) : isYes ? (
-            <div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-                <span style={{ fontSize: 12, color: t.textSub }}>Count:</span>
-                <input type="number" min="0"
-                  max={snackDefaults?.[`dish_${idx + 1}`] ?? 0}
-                  value={resp.value}
-                  onChange={(e) => {
-                    const raw = parseInt(e.target.value) || 0
-                    const maxVal = snackDefaults?.[`dish_${idx + 1}`] ?? 0
-                    const finalValue = Math.max(0, Math.min(raw, maxVal))
-                    setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: finalValue } }))
-                  }}
-                  style={{ width: 70, padding: '6px 8px', borderRadius: 6, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, fontSize: 13, fontWeight: 700, textAlign: 'center', outline: 'none' }} />
-                <span style={{ fontSize: 11, color: t.textSub }}>Max: {snackDefaults?.[`dish_${idx + 1}`] ?? 0}</span>
-              </div>
-              <button onClick={() => setResponses(prev => ({ ...prev, [dish]: 'no' }))}
-                style={{ padding: '6px 14px', borderRadius: 6, border: `1px solid #e05555`, background: 'rgba(224,85,85,0.1)', color: '#e05555', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                Change to No
-              </button>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <span style={{ flex: 1, padding: 10, borderRadius: 8, background: 'rgba(224,85,85,0.1)', color: '#e05555', fontSize: 13, fontWeight: 700, textAlign: 'center' }}>Skipped</span>
-              <button onClick={() => handleDishYesNo(dish, idx, true)}
-                style={{ padding: '10px 16px', borderRadius: 8, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                Change to Yes
-              </button>
-            </div>
-          )}
-        </div>
-      )
-    } else {
-      // Percentage mode: no Yes/No, just percentage buttons
-      const resp = responses[dish]
-      return (
-        <div key={dish} style={{ marginBottom: 10, padding: 12, background: t.inputBg, borderRadius: 11 }}>
-          <p style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: t.text }}>{dish}</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-            {[0, 25, 50, 100].map(pct => (
-              <button key={pct} onClick={() => setResponses(prev => ({ ...prev, [dish]: pct }))}
-                style={{ padding: '16px 4px', borderRadius: 14, border: `2px solid ${resp === pct ? t.accent : t.border}`, background: resp === pct ? t.accentBg : 'transparent', color: resp === pct ? t.accent : t.text, fontSize: 18, fontWeight: 800, cursor: 'pointer', transition: '0.2s' }}>
-                {pct}%
-              </button>
-            ))}
-          </div>
-        </div>
-      )
-    }
-  }
-
-  const allDishesSelected = dishes.length === 0 || Object.keys(responses).length === dishes.length
-  const allDishesFilled = wantsFood !== true || allDishesSelected
-
-  if (!dataLoaded) return null
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.82)', padding: 16, backdropFilter: 'blur(12px)', overflowY: 'auto' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: t.card, borderRadius: 32, padding: 22, maxWidth: 500, width: '100%', border: `1px solid ${t.borderActive}`, boxShadow: '0 28px 70px rgba(0,0,0,0.55)', maxHeight: '92vh', overflowY: 'auto', paddingBottom: 40 }}>
-
-        {/* ── Day Indicator Bar ── */}
-        <div style={{ display: 'flex', gap: 4, marginBottom: 16, justifyContent: 'center' }}>
-          {DAYS.map((day, idx) => {
-            const isActive = idx === currentDayIndex
-            const status = dayStatusSummary[idx]
-            let barColor = t.border
-            let label = day.slice(0, 3)
-            if (status === 'complete') { barColor = '#34d399'; label = day.slice(0, 3) }
-            else if (status === 'partial') { barColor = t.accent }
-            return (
-              <div key={day} style={{
-                flex: 1, textAlign: 'center', padding: '6px 2px',
-                borderRadius: 8, cursor: 'default',
-                background: isActive ? t.accentBg : 'transparent',
-                border: `1px solid ${isActive ? t.accent : 'transparent'}`,
-                transition: 'all 0.2s'
-              }}>
-                <div style={{ fontSize: 9, fontWeight: isActive ? 800 : 600, color: isActive ? t.accent : t.textSub, fontFamily: "'DM Sans',sans-serif", textTransform: 'uppercase' }}>
-                  {label}
-                </div>
-                <div style={{ margin: '3px auto 0', width: 6, height: 6, borderRadius: '50%', background: barColor }} />
-              </div>
-            )
-          })}
-        </div>
-
-        {/* ── Header ── */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <img src="/al-mawaid.png" alt="" style={{ width: 24, height: 24, objectFit: 'contain' }} />
-              <h2 style={{ margin: 0, fontSize: 19, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{menu.en || currentDay}</h2>
-            </div>
-            <div style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 3 }}>
-              {currentMeal === 'lunch' ? 'Sun Lunch' : 'Moon Dinner'}
-              <span style={{ margin: '0 6px', opacity: .3 }}>·</span>
-              <span style={{ fontFamily: "'Amiri',serif", fontSize: 14 }}>{menu.ar}</span>
-            </div>
-          </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}><X size={18} color={t.textSub} /></button>
-        </div>
-
-        {/* ── Navigation (Edit/View modes only) ── */}
-        {!surveyOpen && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-            <button
-              onClick={() => {
-                if (currentMeal === 'dinner') { setCurrentMeal('lunch'); wantsFoodRef.current = null; setWantsFood(null); setResponses({}) }
-                else if (currentDayIndex > 0) { setCurrentDayIndex(prev => prev - 1); setCurrentMeal('dinner'); wantsFoodRef.current = null; setWantsFood(null); setResponses({}) }
-              }}
-              disabled={isFirst}
-              style={{ flex: 1, padding: '8px 12px', borderRadius: 10, border: `1px solid ${t.border}`, background: 'transparent', color: isFirst ? t.border : t.textSub, fontSize: 13, fontWeight: 600, cursor: isFirst ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-              <ChevronLeft size={13} /> Prev
-            </button>
-            <button
-              onClick={async () => {
-                if (wantsFoodRef.current !== null) await saveCurrentSlot()
-                wantsFoodRef.current = null; setWantsFood(null); setResponses({})
-                if (currentMeal === 'lunch') setCurrentMeal('dinner')
-                else if (currentDayIndex < 5) { setCurrentDayIndex(prev => prev + 1); setCurrentMeal('lunch') }
-              }}
-              disabled={isLast}
-              style={{ flex: 1, padding: '8px 12px', borderRadius: 10, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-              {currentMeal === 'lunch' ? 'Dinner \u2192' : 'Next'} <ChevronRight size={13} />
-            </button>
-          </div>
-        )}
-
-        {/* ── Content ── */}
-        {editBlocked ? (
-          <div style={{ padding: 14, background: t.inputBg, borderRadius: 12, border: `1px solid ${t.border}` }}>
-            <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>
-              {wantsFood ? 'Responded: Yes' : 'Responded: No (skipped)'}
-            </p>
-            {wantsFood && Object.entries(responses).map(([dish, val]) => (
-              <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${t.border}` }}>
-                <span style={{ fontSize: 15, fontWeight: 500, color: t.text }}>{dish}</span>
-                <span style={{ fontSize: 16, fontWeight: 800, color: t.accent }}>
-                  {val === 'no' ? 'Skipped' :
-                   typeof val === 'object' && val.status === 'yes' ? `${val.value}` :
-                   typeof val === 'number' ? `${val}%` : ''}
-                </span>
-              </div>
-            ))}
-            {!wantsFood && (
-              <div style={{ textAlign: 'center', color: t.textSub, fontSize: 13 }}>Skipped this meal</div>
-            )}
-          </div>
-        ) : wantsFood === null ? (
-          <div>
-            <p style={{ fontSize: 15, fontWeight: 600, color: t.text, marginBottom: 14, fontFamily: "'DM Sans',sans-serif" }}>
-              Do you want {currentMeal === 'lunch' ? 'Lunch' : 'Dinner'} for {menu.en || currentDay}?
-            </p>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => handleMealChoice(true)}
-                style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>Yes</button>
-              <button onClick={() => handleMealChoice(false)}
-                style={{ flex: 1, padding: 14, borderRadius: 12, border: `1px solid ${t.border}`, background: 'transparent', color: t.text, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>No</button>
-            </div>
-          </div>
-        ) : wantsFood ? (
-          <div>
-            <p style={{ fontSize: 12, fontWeight: 600, color: t.textSub, marginBottom: 10 }}>Select portion for each dish:</p>
-            {dishes.map((dish, idx) => renderDishControl(dish, idx))}
-
-            {/* Last slot: Saturday dinner → Submit button */}
-            {isLast && allDishesFilled && (
-              <button onClick={handleSubmitAll}
-                disabled={loading || !allDishesFilled}
-                style={{ width: '100%', padding: 14, borderRadius: 11, border: 'none', marginTop: 8,
-                  background: 'linear-gradient(135deg, #F0C239, #D4A017)', color: '#000',
-                  fontSize: 16, fontWeight: 900, cursor: 'pointer',
-                  boxShadow: '0 8px 20px rgba(240,194,57,0.4)' }}>
-                {loading ? 'Saving...' : 'Submit for Whole Week'}
-              </button>
-            )}
-
-            {/* Auto-save indicator */}
-            {autoSaveStatus !== 'idle' && (
-              <div style={{ textAlign: 'center', marginTop: 8, fontSize: 10, fontWeight: 600, color: autoSaveStatus === 'saved' ? '#34d399' : t.textSub, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                {autoSaveStatus === 'saving' ? (
-                  <><div className="spin" style={{ width: 10, height: 10, border: '1.5px solid rgba(255,255,255,0.2)', borderTopColor: t.accent, borderRadius: '50%' }} /> Auto-saving...</>
-                ) : (
-                  <><Check size={12} /> Auto-saved</>
-                )}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div style={{ textAlign: 'center', padding: 20, color: t.textSub }}>
-            {isLast ? 'Dinner skipped for Saturday.' : 'Skipping this meal...'}
-            {/* Last slot even when No: show Submit button */}
-            {isLast && (
-              <button onClick={handleSubmitAll}
-                disabled={loading}
-                style={{ width: '100%', padding: 14, borderRadius: 11, border: 'none', marginTop: 16,
-                  background: 'linear-gradient(135deg, #F0C239, #D4A017)', color: '#000',
-                  fontSize: 16, fontWeight: 900, cursor: 'pointer',
-                  boxShadow: '0 8px 20px rgba(240,194,57,0.4)' }}>
-                {loading ? 'Saving...' : 'Submit for Whole Week'}
-              </button>
-            )}
-            {autoSaveStatus !== 'idle' && (
-              <div style={{ textAlign: 'center', marginTop: 8, fontSize: 10, fontWeight: 600, color: autoSaveStatus === 'saved' ? '#34d399' : t.textSub, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                {autoSaveStatus === 'saving' ? (
-                  <><div className="spin" style={{ width: 10, height: 10, border: '1.5px solid rgba(255,255,255,0.2)', borderTopColor: t.accent, borderRadius: '50%' }} /> Auto-saving...</>
-                ) : (
-                  <><Check size={12} /> Auto-saved</>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ══════════════════════════════════════════════════════════════
-// DAILY SURVEY MODAL (NEW)
-// ══════════════════════════════════════════════════════════════
-function DailySurveyModal({ onClose, appSettings = {} }) {
-  const t = THEMES.bright
-  const { user } = useAuth()
-  const weeklyMenu = useWeeklyMenu() || {}
-  const [step, setStep] = useState(1) // 1: Lunch Yes/No, 2: Lunch Dishes, 3: Dinner Yes/No, 4: Roti (if any), 5: Dinner Dishes
-  const [lunchStatus, setLunchStatus] = useState(null) // true/false
-  const [dinnerStatus, setDinnerStatus] = useState(null) // true/false
-  const [rotiStatus, setRotiStatus] = useState(null) // true/false
-  const [responses, setResponses] = useState({})
-  const [loading, setLoading] = useState(false)
-  const [autoSaveStatus, setAutoSaveStatus] = useState('idle') // 'idle', 'saving', 'saved'
-  const saveTimerRef = useRef(null)
-  const [userData, setUserData] = useState({ thali_no: '', email: user.email })
-
-  const today = getTodayKey()
-  const menu = weeklyMenu[today] || { lunch: [], dinner: [] }
-  const dayKey = today.substring(0, 3).toLowerCase()
-
-  const isCountInput = (meal, idx) => {
-    try {
-      const config = appSettings?.dish_input_config
-      if (config) {
-        const parsed = typeof config === 'string' ? JSON.parse(config) : config
-        const dayName = today.charAt(0).toUpperCase() + today.slice(1)
-        const key = `${dayName}_${meal}`
-        const types = parsed[key]
-        if (types && types[idx]) return types[idx] === 'count'
-      }
-    } catch {}
-    return meal === 'lunch' && idx <= 3
-  }
-
-  // ── Hide auto-save indicator when manual save happens ──
-  useEffect(() => {
-    if (loading) setAutoSaveStatus('idle')
-  }, [loading])
-
-  // ── Auto-save dish selections (debounced) ──
-  useEffect(() => {
-    if (Object.keys(responses).length === 0) return
-    if (loading) return
-
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-
-    saveTimerRef.current = setTimeout(async () => {
-      setAutoSaveStatus('saving')
-      try {
-        // Auto-save uses a mini-upsert with current responses
-        const { user } = await supabase.auth.getUser()
-        const currentWeekId = getWeekDate()
-        const updateObj = {
-          user_id: user.id,
-          week_id: currentWeekId,
-          thali_number: userData.thali_no,
-          email: userData.email,
-          updated_at: new Date().toISOString()
-        }
-        // Add lunch dishes if user has selected them
-        if (lunchStatus !== null) {
-          updateObj[`${dayKey}_l_status`] = lunchStatus ? 'Applied' : 'Skipped'
-          if (lunchStatus) {
-            menu.lunch.forEach((dish, idx) => {
-              const val = responses[dish]
-              if (val !== undefined) {
-                updateObj[`${dayKey}_l_dish_${idx + 1}`] = isCountInput('lunch', idx) ? String(val) : `${val}%`
-              }
-            })
-          }
-        }
-        // Add dinner dishes if user has selected them
-        if (dinnerStatus !== null) {
-          updateObj[`${dayKey}_d_status`] = dinnerStatus ? 'Applied' : 'Skipped'
-          if (dinnerStatus) {
-            otherDinnerDishes.forEach((dish) => {
-              const menuIdx = dinnerDishes.indexOf(dish)
-              const val = responses[dish]
-              if (val !== undefined) {
-                updateObj[`${dayKey}_d_dish_${menuIdx + 1}`] = isCountInput('dinner', menuIdx) ? String(val) : `${val}%`
-              }
-            })
-          }
-        }
-
-        await supabase.from('survey_submissions_flat')
-          .upsert([updateObj], { onConflict: 'user_id,week_id' })
-
-        setAutoSaveStatus('saved')
-        setTimeout(() => setAutoSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 2000)
-      } catch {
-        setAutoSaveStatus('idle')
-      }
-    }, 600)
-
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    }
-  }, [responses, lunchStatus, dinnerStatus, dayKey, loading])
-
-  useEffect(() => {
-    supabase.from('user_stats').select('thali_number, email').eq('user_id', user.id).single()
-      .then(({ data }) => { if (data) setUserData({ thali_no: data.thali_number || '', email: data.email || user.email }) })
-  }, [user.id])
-
-  const dinnerDishes = menu.dinner || []
-  const rotiItems = dinnerDishes.filter(d => isRotiItem(d))
-  const otherDinnerDishes = dinnerDishes.filter(d => !isRotiItem(d))
-
-  const handleNext = async () => {
-    if (step === 1) {
-      if (lunchStatus === null) return
-      setStep(lunchStatus ? 2 : 3)
-    } else if (step === 2) {
-      if (Object.keys(responses).filter(k => menu.lunch.includes(k)).length < menu.lunch.length) return
-      setStep(3)
-    } else if (step === 3) {
-      if (dinnerStatus === null) return
-      if (!dinnerStatus) {
-        await submitSurvey(false, false)
-      } else {
-        setStep(rotiItems.length > 0 ? 4 : 5)
-      }
-    } else if (step === 4) {
-      if (rotiStatus === null) return
-      setStep(5)
-    } else if (step === 5) {
-      const dinnerDishesToCheck = otherDinnerDishes
-      if (Object.keys(responses).filter(k => dinnerDishesToCheck.includes(k)).length < dinnerDishesToCheck.length) return
-      await submitSurvey(true, true)
-    }
-  }
-
-  const handleStatusSelect = (type, val) => {
-    if (type === 'lunch') {
-      setLunchStatus(val)
-      setTimeout(() => setStep(val ? 2 : 3), 400)
-    } else if (type === 'dinner') {
-      setDinnerStatus(val)
-      if (!val) {
-        setTimeout(() => submitSurvey(lunchStatus, false), 400)
-      } else {
-        setTimeout(() => setStep(rotiItems.length > 0 ? 4 : 5), 400)
-      }
-    } else if (type === 'roti') {
-      setRotiStatus(val)
-      setTimeout(() => setStep(5), 400)
-    }
-  }
-
-  const submitSurvey = async (isDinnerApplied, isDinnerActuallyYes) => {
-    setLoading(true)
-    try {
-      const currentWeekId = getWeekDate()
-      const updateObj = {
-        user_id: user.id,
-        week_id: currentWeekId,
-        thali_number: userData.thali_no,
-        email: userData.email,
-        [`${dayKey}_l_status`]: lunchStatus ? 'Applied' : 'Skipped',
-        [`${dayKey}_d_status`]: dinnerStatus ? 'Applied' : 'Skipped',
-        updated_at: new Date().toISOString()
-      }
-
-      // ... [dishes mapping skipped for brevity in Instruction, but keeping it in implementation]
-      // Add Lunch Dishes
-      if (lunchStatus) {
-        menu.lunch.forEach((dish, idx) => {
-          const colName = `${dayKey}_l_dish_${idx + 1}`
-          const val = responses[dish]
-          if (typeof val === 'object' && val.status === 'yes') {
-            updateObj[colName] = String(val.value) // Save as string for consistency
-          } else if (val === 'no') {
-            updateObj[colName] = 'No'
-          } else if (typeof val === 'number') {
-            updateObj[colName] = isCountInput('lunch', idx) ? String(val) : `${val}%`
-          } else {
-            updateObj[colName] = 'No' // Default to No if undefined
-          }
-        })
-      }
-
-      // Add Dinner Dishes
-      if (dinnerStatus) {
-        rotiItems.forEach((dish, idx) => {
-          const menuIdx = dinnerDishes.indexOf(dish)
-          const realColName = `${dayKey}_d_dish_${menuIdx + 1}`
-          updateObj[realColName] = rotiStatus === 'yes' ? 'Yes' : 'No'
-        })
-        otherDinnerDishes.forEach((dish) => {
-          const menuIdx = dinnerDishes.indexOf(dish)
-          const realColName = `${dayKey}_d_dish_${menuIdx + 1}`
-          const val = responses[dish]
-          if (typeof val === 'number') {
-            updateObj[realColName] = isCountInput('dinner', menuIdx) ? String(val) : `${val}%`
-          } else {
-            updateObj[realColName] = val === 'yes' ? 'Yes' : 'No'
-          }
-        })
-      }
-
-      const { error } = await supabase.from('survey_submissions_flat').upsert([updateObj], { onConflict: 'user_id,week_id' })
-      if (error) throw error
-
-      // Clean up old week if it exists
-      const { data: latest } = await supabase.from('survey_submissions_flat')
-        .select('week_id').eq('user_id', user.id).neq('week_id', currentWeekId).order('week_id', { ascending: false }).limit(1).maybeSingle()
-      if (latest) {
-        await supabase.from('survey_submissions_flat').delete().eq('user_id', user.id).eq('week_id', latest.week_id)
-      }
-
-      alert('🎉 Daily Survey submitted! Shukran.')
-      onClose()
-    } catch (err) {
-      alert('Error: ' + err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.85)', padding: 'clamp(12px, 3vw, 24px)', backdropFilter: 'blur(15px)' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: t.card, borderRadius: 32, padding: 'clamp(18px, 4vw, 32px)', maxWidth: 500, width: '100%', border: `1.5px solid ${t.borderActive}`, boxShadow: '0 30px 80px rgba(0,0,0,0.6)', maxHeight: '90vh', overflowY: 'auto', paddingBottom: 40 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <ClipboardList size={22} color="#fff" />
-            </div>
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif" }}>Daily Food Survey</div>
-              <div style={{ fontSize: 11, color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{today} • {userData.thali_no ? `Thali #${userData.thali_no}` : 'Loading...'}</div>
-            </div>
-          </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 5 }}><X size={20} color={t.textSub} /></button>
-        </div>
-
-        <div style={{ minHeight: 200 }}>
-          {step === 1 && (
-            <div className="stagger-item">
-              <SectionLabel>Part 1: Lunch</SectionLabel>
-              <p style={{ fontSize: 16, fontWeight: 600, color: t.text, marginBottom: 20 }}>Did you have lunch today?</p>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <button onClick={() => handleStatusSelect('lunch', true)} style={{ flex: 1, padding: '16px', borderRadius: 16, border: `2px solid ${lunchStatus === true ? t.accent : t.border}`, background: lunchStatus === true ? t.accentBg : 'transparent', color: lunchStatus === true ? t.accent : t.textSub, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>✅ Yes</button>
-                <button onClick={() => handleStatusSelect('lunch', false)} style={{ flex: 1, padding: '16px', borderRadius: 16, border: `2px solid ${lunchStatus === false ? '#e05555' : t.border}`, background: lunchStatus === false ? 'rgba(224,85,85,0.1)' : 'transparent', color: lunchStatus === false ? '#e05555' : t.textSub, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>❌ No</button>
-              </div>
-            </div>
-          )}
-
-          {step === 2 && (
-            <div className="stagger-item">
-              <SectionLabel>Lunch Portions</SectionLabel>
-              <div style={{ maxHeight: '40vh', overflowY: 'auto', paddingRight: 5 }}>
-                {menu.lunch.map((dish, idx) => (
-                  <div key={dish} style={{ marginBottom: 18, padding: 14, background: t.inputBg, borderRadius: 16, border: `1px solid ${t.border}` }}>
-                    <p style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700, color: t.text }}>{dish}</p>
-                    {isCountInput('lunch', idx) ? (
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <span style={{ fontSize: 12, color: t.textSub, fontWeight: 600, whiteSpace: 'nowrap' }}>Count:</span>
-                        <input type="number" name="lunchPortionCount" min="0" value={typeof responses[dish] === 'number' ? responses[dish] : 0}
-                          onChange={e => {
-                            const val = parseInt(e.target.value, 10) || 0
-                            setResponses(prev => ({ ...prev, [dish]: val }))
-                          }}
-                          style={{ width: 70, padding: '8px 10px', borderRadius: 9, border: `1.5px solid ${t.border}`, background: t.inputBg, color: t.text, fontSize: 15, fontWeight: 700, textAlign: 'center', outline: 'none', fontFamily: "'DM Sans',sans-serif" }}
-                          aria-label="Portion count" />
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        {[0, 25, 50, 100].map(pct => (
-                          <button key={pct} onClick={() => setResponses(prev => ({ ...prev, [dish]: pct }))}
-                            style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: `1.5px solid ${responses[dish] === pct ? t.accent : t.border}`, background: responses[dish] === pct ? t.accentBg : 'transparent', color: responses[dish] === pct ? t.accent : t.textSub, fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>{pct}%</button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {step === 3 && (
-            <div className="stagger-item">
-              <SectionLabel>Part 2: Dinner</SectionLabel>
-              <p style={{ fontSize: 16, fontWeight: 600, color: t.text, marginBottom: 20 }}>Will you have dinner tonight?</p>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <button onClick={() => handleStatusSelect('dinner', true)} style={{ flex: 1, padding: '16px', borderRadius: 16, border: `2px solid ${dinnerStatus === true ? t.accent : t.border}`, background: dinnerStatus === true ? t.accentBg : 'transparent', color: dinnerStatus === true ? t.accent : t.textSub, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>✅ Yes</button>
-                <button onClick={() => handleStatusSelect('dinner', false)} style={{ flex: 1, padding: '16px', borderRadius: 16, border: `2px solid ${dinnerStatus === false ? '#e05555' : t.border}`, background: dinnerStatus === false ? 'rgba(224,85,85,0.1)' : 'transparent', color: dinnerStatus === false ? '#e05555' : t.textSub, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>❌ No</button>
-              </div>
-            </div>
-          )}
-
-          {step === 4 && (
-            <div className="stagger-item">
-              <SectionLabel>Dinner: Roti</SectionLabel>
-              <p style={{ fontSize: 15, fontWeight: 600, color: t.text, marginBottom: 10 }}>We have {rotiItems.join(', ')} tonight.</p>
-              <p style={{ fontSize: 16, fontWeight: 700, color: t.accent, marginBottom: 20 }}>Did you eat Roti?</p>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <button onClick={() => handleStatusSelect('roti', true)} style={{ flex: 1, padding: '16px', borderRadius: 16, border: `2px solid ${rotiStatus === true ? t.accent : t.border}`, background: rotiStatus === true ? t.accentBg : 'transparent', color: rotiStatus === true ? t.accent : t.textSub, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>✅ Yes</button>
-                <button onClick={() => handleStatusSelect('roti', false)} style={{ flex: 1, padding: '16px', borderRadius: 16, border: `2px solid ${rotiStatus === false ? '#e05555' : t.border}`, background: rotiStatus === false ? 'rgba(224,85,85,0.1)' : 'transparent', color: rotiStatus === false ? '#e05555' : t.textSub, fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>❌ No</button>
-              </div>
-            </div>
-          )}
-
-          {step === 5 && (
-            <div className="stagger-item">
-              <SectionLabel>Dinner Portions</SectionLabel>
-              <div style={{ maxHeight: '40vh', overflowY: 'auto', paddingRight: 5 }}>
-                {otherDinnerDishes.map((dish, idx) => {
-                  const origIdx = dinnerDishes.indexOf(dish)
-                  return (
-                    <div key={dish} style={{ marginBottom: 18, padding: 14, background: t.inputBg, borderRadius: 16, border: `1px solid ${t.border}` }}>
-                      <p style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700, color: t.text }}>{dish}</p>
-                      {isCountInput('dinner', origIdx) ? (
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <span style={{ fontSize: 12, color: t.textSub, fontWeight: 600, whiteSpace: 'nowrap' }}>Count:</span>
-                          <input type="number" name="dinnerPortionCount" min="0" value={typeof responses[dish] === 'number' ? responses[dish] : 0}
-                            onChange={e => {
-                              const val = parseInt(e.target.value, 10) || 0
-                              setResponses(prev => ({ ...prev, [dish]: val }))
-                            }}
-                            style={{ width: 70, padding: '8px 10px', borderRadius: 9, border: `1.5px solid ${t.border}`, background: t.inputBg, color: t.text, fontSize: 15, fontWeight: 700, textAlign: 'center', outline: 'none', fontFamily: "'DM Sans',sans-serif" }}
-                            aria-label="Portion count" />
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          {[0, 25, 50, 100].map(pct => (
-                            <button key={pct} onClick={() => setResponses(prev => ({ ...prev, [dish]: pct }))}
-                              style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: `1.5px solid ${responses[dish] === pct ? t.accent : t.border}`, background: responses[dish] === pct ? t.accentBg : 'transparent', color: responses[dish] === pct ? t.accent : t.textSub, fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>{pct}%</button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div style={{ marginTop: 24, display: 'flex', gap: 10 }}>
-          {step > 1 && <button onClick={() => setStep(prev => prev === 5 && rotiItems.length === 0 ? 3 : prev - 1)} style={{ flex: 1, padding: 14, borderRadius: 14, border: `1px solid ${t.border}`, background: 'transparent', color: t.textSub, fontWeight: 700, cursor: 'pointer' }}>Back</button>}
-          <button onClick={handleNext} disabled={loading} style={{ 
-            flex: 2, padding: 14, borderRadius: 14, border: 'none', 
-            background: (step === 5 || (step === 3 && !dinnerStatus)) ? 'linear-gradient(135deg, #F0C239, #D4A017)' : t.accentGrad, 
-            color: '#000', fontWeight: 900, cursor: 'pointer', 
-            boxShadow: (step === 5 || (step === 3 && !dinnerStatus)) ? '0 8px 20px rgba(240,194,57,0.4)' : `0 8px 20px ${t.accentBg}`,
-            transition: 'all 0.3s',
-            fontSize: (step === 5 || (step === 3 && !dinnerStatus)) ? 15 : 14
-          }}>
-            {loading ? 'Submitting...' : (step === 3 && !dinnerStatus) || step === 5 ? '🎉 Submit All ✓' : 'Continue →'}
-          </button>
-        </div>
-        {/* Auto-save status indicator */}
-        {autoSaveStatus !== 'idle' && (
-          <div style={{ textAlign: 'center', marginTop: 10, fontSize: 10, fontWeight: 600, color: autoSaveStatus === 'saved' ? '#34d399' : t.textSub, fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-            {autoSaveStatus === 'saving' ? (
-              <><div className="spin" style={{ width: 10, height: 10, border: '1.5px solid rgba(255,255,255,0.2)', borderTopColor: t.accent, borderRadius: '50%' }} /> Auto-saving…</>
-            ) : (
-              <><Check size={12} style={{ display: 'inline' }} /> Auto-saved ✓</>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
 
 // ══════════════════════════════════════════════════════════════
 // THALI USER APP
@@ -1460,7 +528,7 @@ function ThaliUserApp() {
   const t = THEMES[theme] || THEMES.dark
   const [unreadCount, setUnreadCount] = useState(0)
   const [toastNotice, setToastNotice] = useState(null)
-  const lastNoticeIdRef = useRef(null)
+  const seenNoticeIds = useRef(new Set(JSON.parse(localStorage.getItem('almawaid_seen_notices') || '[]')))
   const dragStartY = useRef(null)
   const dragY = useRef(0)
   const [dragOffset, setDragOffset] = useState(0)
@@ -1473,6 +541,12 @@ function ThaliUserApp() {
       const settings = {}
       data.forEach(row => settings[row.key] = row.value)
       setAppSettings(settings)
+    } else {
+      // Default settings if none exist
+      setAppSettings({
+        survey_status: 'open',
+        survey_msg: 'Survey opens Saturday at 8:00 PM and closes Monday at 11:00 AM.'
+      })
     }
   }, [])
 
@@ -1546,8 +620,11 @@ function ThaliUserApp() {
             return true
           })
           setUnreadCount(filtered.length)
+          // Mark as seen so they don't reappear on next login
+          localStorage.setItem('almawaid_last_notice_read', new Date().toISOString())
         } catch {
           setUnreadCount(data.length)
+          localStorage.setItem('almawaid_last_notice_read', new Date().toISOString())
         }
       }
     }
@@ -1557,6 +634,12 @@ function ThaliUserApp() {
       .channel('global-notices')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notices' }, async (payload) => {
         const notice = payload.new
+        if (seenNoticeIds.current.has(notice.id)) return
+        seenNoticeIds.current.add(notice.id)
+        try { localStorage.setItem('almawaid_seen_notices', JSON.stringify([...seenNoticeIds.current])) } catch {}
+        // Skip if notice was created before the last read timestamp (already seen)
+        const lastRead = localStorage.getItem('almawaid_last_notice_read')
+        if (lastRead && new Date(notice.created_at).getTime() <= new Date(lastRead).getTime()) return
         let isForMe = !notice.target_user_id || notice.target_user_id === user?.id
 
         if (isForMe && notice.tone) {
@@ -1621,10 +704,10 @@ function ThaliUserApp() {
     <img src="/al-mawaid.png" alt="" style={{ width: size, height: size, objectFit: 'contain', ...style }} />
   )
   const tabs = [
-    { id: 'home', label: 'Home', Icon: Home },
-    { id: 'menu', label: 'Menu', Icon: Utensils },
-    { id: 'post', label: 'Requests', Icon: FileText },
-    { id: 'profile', label: 'Profile', Icon: User },
+    { id: 'home', label: 'Home', Icon: Home, aria: 'Home Dashboard' },
+    { id: 'menu', label: 'Menu', Icon: Utensils, aria: 'Weekly Menu' },
+    { id: 'post', label: 'Requests', Icon: FileText, aria: 'My Requests & Queries' },
+    { id: 'profile', label: 'Profile', Icon: User, aria: 'My Profile & Settings' },
   ]
   const tabLabels = { home: 'AL-MAWAID', menu: 'WEEKLY MENU', survey: 'DAILY SURVEY', post: 'REQUESTS', profile: 'PROFILE' }
 
@@ -1665,8 +748,12 @@ function ThaliUserApp() {
           {/* Header cleared by removing wave and reducing heights for mobile */}
         </header>
 
-        {/* ── Toast Notification Popup ── */}
-        {toastNotice && (
+        {/* ── Premium Toast Notification ── */}
+        {toastNotice && (() => {
+          const toneColor = (toastNotice.tone || '').split(':')[0] || t.accent
+          const senderInitial = (toastNotice.sender_name || 'A').charAt(0).toUpperCase()
+          const hasMedia = toastNotice.media && toastNotice.media[0]
+          return (
           <div
             onClick={() => { setActiveTab('profile'); setToastNotice(null) }}
             onTouchStart={(e) => {
@@ -1695,9 +782,11 @@ function ThaliUserApp() {
             style={{
               position: 'fixed', top: 20, left: '50%',
               width: 'calc(100% - 32px)', maxWidth: 400, zIndex: 10000,
-              background: 'rgba(20, 18, 12, 0.95)', border: `1.5px solid ${t.accentBorder}`,
-              borderRadius: 20, padding: 16, display: 'flex', gap: 14,
-              boxShadow: '0 20px 50px rgba(0,0,0,0.5)', cursor: 'pointer',
+              background: `linear-gradient(135deg, ${toneColor}08, rgba(20,18,12,0.98))`,
+              border: `1.5px solid ${toneColor}40`,
+              borderRadius: 20, overflow: 'hidden',
+              boxShadow: `0 20px 50px rgba(0,0,0,0.5), 0 0 30px ${toneColor}15`,
+              cursor: 'pointer',
               transform: dragOffset > 0
                 ? `translateX(-50%) translateY(${dragOffset}px)`
                 : 'translateX(-50%)',
@@ -1710,19 +799,42 @@ function ThaliUserApp() {
               backdropFilter: 'blur(20px)'
             }}
           >
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Bell size={20} color="#000" />
+            {hasMedia && (
+              <div style={{
+                width: '100%', height: 100,
+                background: `url(${toastNotice.media[0]}) center/cover no-repeat`,
+                borderBottom: `1px solid ${toneColor}20`
+              }} />
+            )}
+            <div style={{ padding: 16, display: 'flex', gap: 14 }}>
+              <div style={{
+                width: 44, height: 44, borderRadius: 14,
+                background: `linear-gradient(135deg, ${toneColor}, ${toneColor}88)`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, boxShadow: `0 4px 12px ${toneColor}30`,
+                color: '#000', fontSize: 16, fontWeight: 900
+              }}>
+                {senderInitial}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: toneColor }}>
+                    {toastNotice.sender_name || 'Al-Mawaid'}
+                  </span>
+                  <span style={{ width: 4, height: 4, borderRadius: '50%', background: toneColor, opacity: 0.5 }} />
+                  <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.55)' }}>just now</span>
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', marginBottom: 2 }}>{toastNotice.title}</div>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word', lineHeight: 1.65 }}>{toastNotice.body}</div>
+              </div>
+              <button onClick={(e) => { e.stopPropagation(); setToastNotice(null) }} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: 'rgba(255,255,255,0.4)', width: 28, height: 28, borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
+                <X size={14} />
+              </button>
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 800, color: t.accent, marginBottom: 2 }}>{toastNotice.title}</div>
-              <div style={{ fontSize: 12, color: t.textSub, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word' }}>{toastNotice.body}</div>
-            </div>
-            <button onClick={(e) => { e.stopPropagation(); setToastNotice(null) }} style={{ background: 'none', border: 'none', color: t.textSub, padding: 4, cursor: 'pointer' }}>
-              <X size={16} />
-            </button>
-          <div style={{position:"absolute",bottom:0,left:0,height:3,right:0,background:t.accent,borderRadius:"0 0 20px 20px",animation:"toastCountdown 8s linear forwards"}} />
+            <div style={{ height: 3, background: `linear-gradient(90deg, ${toneColor}, ${toneColor}44)`, animation: 'toastCountdown 8s linear forwards' }} />
           </div>
-        )}
+          )
+        })()}
 
         {activeTab === 'home' && <HomePage setActiveTab={setActiveTab} setShowDailySurvey={setShowDailySurvey} appSettings={appSettings} />}
         {activeTab === 'menu' && <WeeklyMenuPage />}
@@ -1732,11 +844,11 @@ function ThaliUserApp() {
 
         {showDailySurvey && <DailySurveyModal onClose={() => { setShowDailySurvey(false); setActiveTab('home') }} appSettings={appSettings} />}
 
-        <nav className="mobile-bottom-nav">
-          {tabs.map(({ id, label, Icon }) => {
+        <nav className="mobile-bottom-nav" aria-label="Main navigation">
+          {tabs.map(({ id, label, Icon, aria }) => {
             const active = activeTab === id
             return (
-              <button key={id} onClick={() => setActiveTab(id)} className={active ? 'active' : ''}>
+              <button key={id} onClick={() => setActiveTab(id)} className={active ? 'active' : ''} aria-label={aria || label}>
                 <div>
                   <Icon size={22} />
                 </div>
@@ -1754,7 +866,7 @@ function ThaliUserApp() {
 // ══════════════════════════════════════════════════════════════
 // HOME PAGE (Thali User)
 // ══════════════════════════════════════════════════════════════
-function HomePage({ setActiveTab, setShowDailySurvey, appSettings = {} }) {
+function HomePage({ setActiveTab, appSettings = {} }) {
   const t = useTheme()
   const { user } = useAuth()
 
@@ -1765,6 +877,50 @@ function HomePage({ setActiveTab, setShowDailySurvey, appSettings = {} }) {
   const [statsLoading, setStatsLoading] = useState(true)
   const surveyOpen = isSurveyOpen(appSettings, user.id)
   const todayKey = getTodayKey()
+
+  // Auto-edit card state
+  const [showDailyEditCard, setShowDailyEditCard] = useState(false)
+  const [dailyEditMealInfo, setDailyEditMealInfo] = useState(null)
+
+  // Check if auto-edit is enabled and current time is within the timing window
+  const checkAutoEditWindow = useCallback(() => {
+    if (!user || !weeklyMenu) return
+    
+    const lunchAuto = appSettings.lunch_edit_status === 'auto'
+    const dinnerAuto = appSettings.dinner_edit_status === 'auto'
+    
+    if (!lunchAuto && !dinnerAuto) {
+      setShowDailyEditCard(false)
+      setDailyEditMealInfo(null)
+      return
+    }
+
+    const currentWeekId = getWeekDate()
+    const today = todayKey
+    
+    // Check if lunch is editable now (in auto mode)
+    const canEditLunch = lunchAuto && canEditMeal(today, currentWeekId, 'lunch', appSettings, user.id)
+    // Check if dinner is editable now (in auto mode)
+    const canEditDinner = dinnerAuto && canEditMeal(today, currentWeekId, 'dinner', appSettings, user.id)
+
+    if (canEditLunch) {
+      setDailyEditMealInfo({ day: today, meal: 'lunch' })
+      setShowDailyEditCard(true)
+    } else if (canEditDinner) {
+      setDailyEditMealInfo({ day: today, meal: 'dinner' })
+      setShowDailyEditCard(true)
+    } else {
+      setShowDailyEditCard(false)
+      setDailyEditMealInfo(null)
+    }
+  }, [appSettings, user, weeklyMenu, todayKey])
+
+  // Check auto-edit window every minute
+  useEffect(() => {
+    checkAutoEditWindow()
+    const interval = setInterval(checkAutoEditWindow, 60000)
+    return () => clearInterval(interval)
+  }, [checkAutoEditWindow])
 
   // Feedback State
   const [submittingFeedback, setSubmittingFeedback] = useState(false)
@@ -1816,7 +972,7 @@ function HomePage({ setActiveTab, setShowDailySurvey, appSettings = {} }) {
   // Any meal editable in the current week?
   const isAnyMealEditable = DAYS.some(d => canEditMeal(d, currentWeekId, 'lunch', appSettings, user.id) || canEditMeal(d, currentWeekId, 'dinner', appSettings, user.id))
 
-  if (!weeklyMenu || statsLoading) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
+  if (!weeklyMenu || statsLoading) return <HomePageSkeleton />
 
   return (
     <main style={{ flex: 1, padding: '16px 16px calc(110px + env(safe-area-inset-bottom, 20px))', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
@@ -1963,6 +1119,16 @@ function HomePage({ setActiveTab, setShowDailySurvey, appSettings = {} }) {
         )}
       </Card>
 
+      {/* Auto Daily Edit Card - shows when edit status is AUTO and current time is within window */}
+      {showDailyEditCard && dailyEditMealInfo && (
+        <DailyEditCard
+          weeklyMenu={weeklyMenu}
+          isOpen={showDailyEditCard}
+          onClose={() => setShowDailyEditCard(false)}
+          appSettings={appSettings}
+        />
+      )}
+
       {showSurvey && <SurveyModal onClose={() => { setShowSurvey(false); loadData() }} appSettings={appSettings} />}
     </main>
   )
@@ -2004,7 +1170,7 @@ function WeeklyMenuPage() {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }
 
-  if (!weeklyMenu) return <div style={{ minHeight: '100vh', background: t.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spin" style={{ width: 40, height: 40, border: '3px solid rgba(212,175,55,0.2)', borderTop: '3px solid #D4AF37', borderRadius: '50%' }} /></div>
+  if (!weeklyMenu) return <WeeklyMenuSkeleton />
 
   return (
     <main style={{ flex: 1, padding: '16px 16px calc(110px + env(safe-area-inset-bottom, 20px))', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
@@ -2261,7 +1427,7 @@ function ThaliRequestsSection() {
       try {
         const typeLabels = { resume: 'Resume Thali', stop: 'Stop Thali', extra: 'Extra Food', miqaat: 'Miqaat Pirsu' }
         const typeLabel = typeLabels[type] || type
-        await supabase.functions.invoke('send-push', {
+        await supabase.functions.invoke('sendPush', {
           body: {
             title: '📋 Request Submitted',
             body: `Your ${typeLabel} request has been submitted for review.`,
@@ -2554,7 +1720,7 @@ function QueriesSection() {
         <button onClick={handleSubmit} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting…' : '📨 Submit Query'}</button>
       </Card>
       <SectionLabel>My Queries</SectionLabel>
-      {loading ? <Spinner /> : queries.length === 0 ? <div style={{ textAlign: 'center', padding: 40, color: t.textSub, fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>No queries yet.</div> : queries.map(q => (
+      {loading ? <ListPageSkeleton count={3} /> : queries.length === 0 ? <div style={{ textAlign: 'center', padding: 40, color: t.textSub, fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>No queries yet.</div> : queries.map(q => (
         <Card key={q.id} style={{ marginBottom: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
             <div>
@@ -2587,7 +1753,6 @@ function ProfilePage({ theme, setTheme, markRead, appSettings }) {
   if (activeSubPage === 'notifications') return <NotificationsPage onBack={() => setActiveSubPage('main')} markRead={markRead} appSettings={appSettings} />
   if (activeSubPage === 'support') return <SupportTicketsPage onBack={() => setActiveSubPage('main')} />
   if (activeSubPage === 'about') return <AboutPage onBack={() => setActiveSubPage('main')} />
-  if (activeSubPage === 'reset_password') return <ResetPasswordPage onBack={() => setActiveSubPage('main')} />
   return <ProfileMainPage theme={theme} setTheme={setTheme} onNav={setActiveSubPage} />
 }
 
@@ -2597,10 +1762,89 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
   const [loading, setLoading] = useState(true)
   const [showQR, setShowQR] = useState(false)
   const [helpline, setHelpline] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [editForm, setEditForm] = useState({ name: '', phone: '', address: '', avatar_url: '' })
+  const [editEmail, setEditEmail] = useState('')
+  const [editPassword, setEditPassword] = useState('')
+  const [editCurrentPassword, setEditCurrentPassword] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveSuccess, setSaveSuccess] = useState('')
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [editAuthError, setEditAuthError] = useState('')
+  const [authChangeSuccess, setAuthChangeSuccess] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false)
   useEffect(() => {
-    supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle().then(({ data }) => { if (data) setProfileData(data) }).finally(() => setLoading(false))
+    supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle().then(({ data }) => { 
+      if (data) {
+        setProfileData(data)
+        setEditForm({ name: data.name || '', phone: data.phone || '', address: data.address || '', avatar_url: data.avatar_url || '' })
+        setEditEmail(data.email || user.email || '')
+      }
+    }).finally(() => setLoading(false))
     supabase.from("app_settings").select("*").eq("key", "helpline_number").maybeSingle().then(({ data }) => { if (data) setHelpline(data.value) })
   }, [user.id])
+
+  const handleSaveProfile = async () => {
+    setSaving(true); setSaveSuccess(''); setEditAuthError(''); setAuthChangeSuccess('')
+    try {
+      const { data: { user: currentUser } } = await auth.getUser()
+      if (!currentUser) throw new Error('Not authenticated')
+
+      // Update Supabase Auth email if changed
+      if (editEmail && editEmail !== currentUser.email) {
+        const { error: emailErr } = await auth.updateUser({ email: editEmail })
+        if (emailErr) throw emailErr
+        setAuthChangeSuccess('✅ Confirmation email sent to new address!')
+      }
+
+      // Update Supabase Auth password if provided
+      if (editPassword && editPassword.length >= 6) {
+        const { error: passErr } = await auth.updateUser({ password: editPassword })
+        if (passErr) throw passErr
+        setAuthChangeSuccess(prev => prev + ' ✅ Password updated!')
+      }
+
+      // Update Firestore profile data
+      const { error } = await supabase.from('user_stats').upsert([{
+        user_id: user.id,
+        name: editForm.name.trim(),
+        phone: editForm.phone.trim(),
+        address: editForm.address.trim(),
+        avatar_url: editForm.avatar_url.trim(),
+        email: editEmail || currentUser.email
+      }], { onConflict: 'user_id' })
+      if (error) throw error
+
+      setProfileData(prev => ({ ...prev, ...editForm }))
+      setSaveSuccess('✅ Profile saved!')
+      setTimeout(() => { setSaveSuccess(''); setEditing(false) }, 2000)
+    } catch (err) {
+      const msg = err.message || ''
+      if (msg.includes('requires-recent-login') || msg.includes('reauthentication')) {
+        setEditAuthError('Please sign out and sign in again, then retry')
+      } else if (msg.includes('wrong-password')) {
+        setEditAuthError('Current password is incorrect')
+      } else if (msg.includes('email-already-exists') || msg.includes('already registered')) {
+        setEditAuthError('This email is already in use by another account')
+      } else {
+        setEditAuthError(msg)
+      }
+    } finally { setSaving(false) }
+  }
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true)
+    try {
+      await supabase.from('user_stats').delete().eq('user_id', user.id)
+      await signOut()
+    } catch (err) {
+      alert('Error deleting account: ' + (err.message || err))
+      setDeleting(false)
+      setDeleteConfirm(false)
+    }
+  }
 
   const NavCard = ({ label, icon, desc, onClick }) => (
     <button onClick={onClick} style={{ width: '100%', padding: '13px 16px', borderRadius: 14, border: `1px solid ${t.border}`, background: t.card, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10, textAlign: 'left', transition: 'all 0.2s' }}>
@@ -2613,7 +1857,19 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
     </button>
   )
 
-  if (loading) return <Spinner />
+  const InputField = ({ label, value, onChange, type = 'text', placeholder, icon, rightAction }) => (
+    <div>
+      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: t.textSub, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 5 }}>{label}</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: t.inputBg, borderRadius: 10, border: `1px solid ${t.border}`, padding: '0 12px' }}>
+        {icon && <span style={{ color: t.textSub, display: 'flex' }}>{icon}</span>}
+        <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+          style={{ flex: 1, padding: '11px 0', border: 'none', background: 'transparent', color: t.text, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif", width: '100%' }} />
+        {rightAction && <span>{rightAction}</span>}
+      </div>
+    </div>
+  )
+
+  if (loading) return <ProfileSkeleton />
   return (
     <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       <Card active style={{ textAlign: 'center', marginBottom: 20 }}>
@@ -2624,7 +1880,11 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
         {profileData?.phone && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 6 }}><Phone size={12} color={t.textSub} /><span style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{profileData.phone}</span></div>}
         {profileData?.address && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 4 }}><MapPin size={12} color={t.textSub} /><span style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{profileData.address}</span></div>}
         <div style={{ fontSize: 11, color: t.textSub, marginTop: 10, opacity: .5, fontFamily: "'DM Sans',sans-serif" }}>Thali User since {new Date(user.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
-        <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 10, background: t.accentBg, border: `1px solid ${t.accentBorder}`, fontSize: 12, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>ℹ️ To update your profile details, contact an admin.</div>
+<div style={{ marginTop: 14, display: "flex", gap: 10, justifyContent: "center" }}>
+          <Btn onClick={() => { setEditing(true); setEditAuthError(''); setAuthChangeSuccess(''); setSaveSuccess(''); setEditPassword(''); setEditCurrentPassword(''); setDeleteConfirm(false) }} style={{ borderRadius: 12, fontSize: 13, padding: "12px 20px" }}>
+            <Edit2 size={14} /> Edit Profile
+          </Btn>
+        </div>
       </Card>
       <SectionLabel>My Activity</SectionLabel>
       <NavCard label="My Identity QR" icon={<QrCode size={19} color="#fff" />} desc="Show your QR code for thali collection" onClick={() => setShowQR(true)} />
@@ -2649,7 +1909,6 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
       )}
 
       <NavCard label="About" icon={<Info size={19} color="#fff" />} desc="Learn more about the app and services" onClick={() => onNav('about')} />
-      <NavCard label="Reset Password" icon={<Lock size={19} color="#fff" />} desc="Update your account password" onClick={() => onNav('reset_password')} />
       <div style={{ marginTop: 20, marginBottom: 20 }}>
         <SectionLabel>App Theme</SectionLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2696,8 +1955,113 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
             </div>
             <div style={{ fontSize: 24, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif" }}>{profileData?.name}</div>
             <div style={{ fontSize: 14, color: t.accent, fontWeight: 700, marginTop: 4 }}>Thali #{profileData?.thali_number}</div>
-            <p style={{ fontSize: 12, color: t.textSub, marginTop: 16, lineHeight: 1.5 }}>Present this code at the distribution counter to verify your thali collection status.</p>
+            <p style={{ fontSize: 12, color: t.textSub, marginTop: 16, lineHeight: 1.65 }}>Present this code at the distribution counter to verify your thali collection status.</p>
             <Btn style={{ width: '100%', marginTop: 24, borderRadius: 14 }} onClick={() => setShowQR(false)}>Close</Btn>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Edit Profile Modal ── */}
+      {editing && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)',
+          backdropFilter: 'blur(12px)', zIndex: 6000,
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+          padding: '20px 16px', overflowY: 'auto'
+        }}>
+          <Card style={{ width: '100%', maxWidth: 440, padding: 28, position: 'relative', marginTop: 30 }}>
+            <button onClick={() => setEditing(false)} style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', color: t.textSub, cursor: 'pointer' }}>
+              <X size={20} />
+            </button>
+            <h3 style={{ margin: '0 0 6px', fontSize: 20, fontWeight: 700, color: t.text, fontFamily: "'Playfair Display',serif" }}>Edit Profile</h3>
+            <p style={{ fontSize: 12, color: t.textSub, marginBottom: 20 }}>Update your profile info and account credentials</p>
+
+            {saveSuccess && (
+              <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', fontSize: 13, fontWeight: 600, marginBottom: 14 }}>{saveSuccess}</div>
+            )}
+            {authChangeSuccess && (
+              <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.3)', color: '#3b82f6', fontSize: 13, fontWeight: 600, marginBottom: 14 }}>{authChangeSuccess}</div>
+            )}
+            {editAuthError && (
+              <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', fontSize: 13, fontWeight: 600, marginBottom: 14 }}>{editAuthError}</div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <InputField label="Full Name" value={editForm.name} onChange={v => setEditForm(f => ({ ...f, name: v }))} icon={<User size={15} />} />
+              <InputField label="Email Address" value={editEmail} onChange={setEditEmail} type="email" icon={<Mail size={15} />} placeholder={user.email} />
+              <InputField label="Phone Number" value={editForm.phone} onChange={v => setEditForm(f => ({ ...f, phone: v }))} type="tel" icon={<Phone size={15} />} />
+              <InputField label="Address" value={editForm.address} onChange={v => setEditForm(f => ({ ...f, address: v }))} icon={<MapPin size={15} />} />
+              <InputField label="Avatar URL" value={editForm.avatar_url} onChange={v => setEditForm(f => ({ ...f, avatar_url: v }))} placeholder="https://..." icon={<Camera size={15} />} />
+
+              <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 14, marginTop: 4 }}>
+                <p style={{ fontSize: 11, color: t.textSub, marginBottom: 12, fontWeight: 600 }}>CHANGE PASSWORD (optional)</p>
+                <InputField label="New Password" value={editPassword} onChange={setEditPassword} type={showPassword ? 'text' : 'password'} icon={<Lock size={15} />} placeholder="Leave blank to keep current" rightAction={
+                  <button onClick={() => setShowPassword(!showPassword)} style={{ background: 'none', border: 'none', color: t.textSub, cursor: 'pointer', padding: 4 }}>
+                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                } />
+              </div>
+
+              <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 14, marginTop: 4 }}>
+                <p style={{ fontSize: 11, color: t.textSub, marginBottom: 12, fontWeight: 600 }}>VERIFY IDENTITY (required to change email/password)</p>
+                <InputField label="Current Password" value={editCurrentPassword} onChange={setEditCurrentPassword} type={showCurrentPassword ? 'text' : 'password'} icon={<Lock size={15} />} placeholder="Enter current password" rightAction={
+                  <button onClick={() => setShowCurrentPassword(!showCurrentPassword)} style={{ background: 'none', border: 'none', color: t.textSub, cursor: 'pointer', padding: 4 }}>
+                    {showCurrentPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                } />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
+              <button onClick={() => setEditing(false)} style={{
+                flex: 1, padding: '12px', borderRadius: 12,
+                border: `1px solid ${t.border}`, background: 'transparent',
+                color: t.textSub, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                fontFamily: "'DM Sans',sans-serif"
+              }}>Cancel</button>
+              <button onClick={handleSaveProfile} disabled={saving} style={{
+                flex: 1, padding: '12px', borderRadius: 12, border: 'none',
+                background: t.accentGrad || t.accent, color: '#000',
+                fontSize: 13, fontWeight: 900, cursor: saving ? 'not-allowed' : 'pointer',
+                opacity: saving ? 0.6 : 1, fontFamily: "'DM Sans',sans-serif",
+                boxShadow: `0 4px 12px ${t.accentBg}`
+              }}>{saving ? 'Saving…' : 'Save Changes'}</button>
+            </div>
+
+            {/* ── Delete Account ── */}
+            <div style={{ marginTop: 24, paddingTop: 16, borderTop: `1px solid ${t.border}` }}>
+              <p style={{ fontSize: 11, color: t.textSub, fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Danger Zone</p>
+              {!deleteConfirm ? (
+                <button onClick={() => setDeleteConfirm(true)} style={{
+                  width: '100%', padding: '12px', borderRadius: 12,
+                  border: '1.5px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)',
+                  color: '#ef4444', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  fontFamily: "'DM Sans',sans-serif"
+                }}>
+                  <Trash2 size={15} /> Delete My Account
+                </button>
+              ) : (
+                <div style={{ padding: 14, borderRadius: 12, background: 'rgba(239,68,68,0.08)', border: '1.5px solid rgba(239,68,68,0.3)' }}>
+                  <p style={{ fontSize: 13, color: '#ef4444', fontWeight: 700, margin: '0 0 8px' }}>Are you sure?</p>
+                  <p style={{ fontSize: 12, color: t.textSub, marginBottom: 12 }}>This permanently deletes your account, profile, and all data. This cannot be undone.</p>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={() => setDeleteConfirm(false)} style={{
+                      flex: 1, padding: '10px', borderRadius: 10,
+                      border: `1px solid ${t.border}`, background: 'transparent',
+                      color: t.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                      fontFamily: "'DM Sans',sans-serif"
+                    }}>Cancel</button>
+                    <button onClick={handleDeleteAccount} disabled={deleting} style={{
+                      flex: 1, padding: '10px', borderRadius: 10, border: 'none',
+                      background: '#ef4444', color: '#fff',
+                      fontSize: 12, fontWeight: 900, cursor: deleting ? 'not-allowed' : 'pointer',
+                      opacity: deleting ? 0.6 : 1, fontFamily: "'DM Sans',sans-serif"
+                    }}>{deleting ? 'Deleting…' : 'Yes, Delete'}</button>
+                  </div>
+                </div>
+              )}
+            </div>
           </Card>
         </div>
       )}
@@ -2711,7 +2075,7 @@ function MySurveysPage({ onBack }) {
   const [surveys, setSurveys] = useState({})
   const [loading, setLoading] = useState(true)
   useEffect(() => {
-    supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id).maybeSingle()
+    supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id).order('week_id', { ascending: false }).limit(1).maybeSingle()
       .then(({ data }) => {
         if (!data) return setSurveys({})
         const grouped = {}
@@ -2726,7 +2090,7 @@ function MySurveysPage({ onBack }) {
                 dishes.forEach((d, i) => {
                   const val = data[`${dayKey}_${mealKey}_dish_${i + 1}`]
                   if (val !== undefined && val !== null) {
-                    dishResponses[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : parseInt(val)
+                    dishResponses[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : (() => { const n = parseInt(val); return isNaN(n) ? val : n })()
                   }
                 })
                 if (!grouped[day]) grouped[day] = {}
@@ -2747,7 +2111,7 @@ function MySurveysPage({ onBack }) {
     const subscription = supabase.channel('survey_changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_submissions_flat' }, payload => {
         const fetchData = async () => {
-          const { data: rows } = await supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id).maybeSingle();
+          const { data: rows } = await supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id).order('week_id', { ascending: false }).limit(1).maybeSingle();
           if (!rows) return setSurveys({});
           const grouped = {};
           DAYS.forEach(day => {
@@ -2761,7 +2125,7 @@ function MySurveysPage({ onBack }) {
                 dishes.forEach((d, i) => {
                   const val = rows[`${dayKey}_${mealKey}_dish_${i + 1}`];
                   if (val !== undefined && val !== null) {
-                    dishResponses[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : parseInt(val);
+                    dishResponses[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : (() => { const n = parseInt(val); return isNaN(n) ? val : n })();
                   }
                 });
                 if (!grouped[day]) grouped[day] = {};
@@ -2784,8 +2148,8 @@ function MySurveysPage({ onBack }) {
   return (
     <main style={{ flex: 1, padding: '16px 16px 160px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       <BackHeader title="My Surveys" onBack={onBack} />
-      {loading ? <Spinner /> : DAYS.map(day => {
-        const dayData = surveys[day]; if (!dayData) return null
+      {loading ? <ListPageSkeleton title="My Surveys" count={6} /> : DAYS.map(day => {
+        const dayData = surveys[day]
         return (
           <Card key={day} active style={{ marginBottom: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
@@ -2793,20 +2157,26 @@ function MySurveysPage({ onBack }) {
               <div style={{ fontSize: 16, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{weeklyMenu[day]?.en || day}</div>
             </div>
             {['lunch', 'dinner'].map(meal => {
-              const r = dayData[meal] || {};
+              const r = dayData?.[meal] || {};
               return (
                 <div key={meal} style={{ marginBottom: 8, padding: 11, background: t.inputBg, borderRadius: 10, border: `1px solid ${t.border}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{meal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}</span>
-                    <span style={{ fontSize: 10, color: (r.edit_count || 0) < 1 ? t.accent : t.textSub, fontFamily: "'DM Sans',sans-serif", fontWeight: 600 }}>{(r.edit_count || 0) === 0 ? 'Not edited yet' : `Edited ${r.edit_count} time(s)`}</span>
+                    <span style={{ fontSize: 10, color: (r.edit_count || 0) < 1 ? t.accent : t.textSub, fontFamily: "'DM Sans',sans-serif", fontWeight: 600 }}>{r.edit_count === undefined ? '' : (r.edit_count || 0) === 0 ? 'Not edited yet' : `Edited ${r.edit_count} time(s)`}</span>
                   </div>
-                  <div style={{ fontSize: 13, color: r.wants_food ? t.successText : '#e05555', fontWeight: 700, fontFamily: "'DM Sans',sans-serif", marginBottom: r.wants_food ? 6 : 0 }}>{r.wants_food ? '✅ Requested Food' : '❌ Skipped'}</div>
-                  {r.wants_food && r.dish_responses && Object.entries(r.dish_responses).map(([dish, val]) => (
-                    <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid ${t.border}` }}>
-                      <span style={{ fontSize: 12, color: t.textBody, fontFamily: "'DM Sans',sans-serif" }}>{dish}</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{val === 'yes' ? '✅' : val === 'no' ? '❌' : `${val}%`}</span>
-                    </div>
-                  ))}
+                  {r.wants_food !== undefined ? (
+                    <>
+                      <div style={{ fontSize: 13, color: r.wants_food ? t.successText : '#e05555', fontWeight: 700, fontFamily: "'DM Sans',sans-serif", marginBottom: r.wants_food ? 6 : 0 }}>{r.wants_food ? '✅ Requested Food' : '❌ Skipped'}</div>
+                      {r.wants_food && r.dish_responses && Object.entries(r.dish_responses).map(([dish, val]) => (
+                        <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid ${t.border}` }}>
+                          <span style={{ fontSize: 12, color: t.textBody, fontFamily: "'DM Sans',sans-serif" }}>{dish}</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{val === 'yes' ? '✅' : val === 'no' ? '❌' : `${val}%`}</span>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 13, color: t.textSub, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>No response</div>
+                  )}
                 </div>
               )
             })}
@@ -2908,12 +2278,7 @@ function MyRequestsPage({ onBack }) {
     </Card>
   )
 
-  if (loading) return (
-    <main style={{ flex: 1, padding: '16px 16px 160px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
-      <BackHeader title="My Requests" onBack={onBack} />
-      <Spinner />
-    </main>
-  )
+  if (loading) return <RequestsSkeleton title="My Requests" />
 
   const hasAny = requests.length > 0 || queries.length > 0 || tickets.length > 0
 
@@ -3025,7 +2390,7 @@ function KhidmatTeamPage({ onBack }) {
       )}
 
       <div style={{ marginBottom: 16, padding: '11px 14px', borderRadius: 12, background: t.accentBg, border: `1px solid ${t.accentBorder}`, fontSize: 13, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>meet our Al-Mawaid Team</div>
-      {loading ? <Spinner /> : staff.length === 0 ? <EmptyState msg="No staff profiles available." /> : staff.map(member => {
+      {loading ? <KhidmatTeamSkeleton /> : staff.length === 0 ? <EmptyState msg="No staff profiles available." /> : staff.map(member => {
         const rawPhone = member.phone || '', actionPhone = rawPhone.replace(/[^\d+]/g, '')
         return (
           <Card key={member.id} active style={{ marginBottom: 12 }}>
@@ -3058,14 +2423,13 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
 
   useEffect(() => {
     const fetchNotices = async () => {
-      // Fetch notices targeted at everyone or specifically at this user
       const { data } = await supabase
         .from('notices')
         .select('*')
         .or(`target_user_id.is.null,target_user_id.eq.${user.id}`)
         .lte('scheduled_at', new Date().toISOString())
         .order('created_at', { ascending: false })
-        .limit(20)
+        .limit(30)
 
       if (data) {
         try {
@@ -3087,7 +2451,7 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
               .eq('user_id', user.id)
               .eq('week_id', weekId)
               .maybeSingle()
-              
+               
             const status = subData ? subData[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
             isEating = status === 'Applied'
           }
@@ -3096,10 +2460,8 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
           const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000)
           
           const filtered = data.filter(notice => {
-            // Hide notices older than 48 hours
             const noticeDate = new Date(notice.created_at || notice.scheduled_at)
             if (noticeDate < fortyEightHoursAgo) return false
-            
             const toneStr = notice.tone || ''
             if (toneStr.includes(':opt_in')) return isEating
             if (toneStr.includes(':opt_out')) return !isEating
@@ -3113,58 +2475,142 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
         setNotices([])
       }
       setLoading(false)
-
-      // Mark as read when page is viewed
       if (markRead) markRead()
     }
     fetchNotices()
   }, [user.id, markRead])
 
-  const staticNotices = [
-    { id: 'survey-window', title: 'Weekly Survey Window', body: isSurveyOpen(appSettings, user.id) ? 'Your weekly meal survey is open now. Please submit lunch and dinner choices on time.' : getSurveyWindowMessage(appSettings, user.id), tone: t.accent },
-  ]
+  const timeAgo = (dateStr) => {
+    if (!dateStr) return ''
+    const diff = Date.now() - new Date(dateStr).getTime()
+    const mins = Math.floor(diff / 60000)
+    if (mins < 1) return 'Just now'
+    if (mins < 60) return `${mins}m ago`
+    const hrs = Math.floor(mins / 60)
+    if (hrs < 24) return `${hrs}h ago`
+    const days = Math.floor(hrs / 24)
+    if (days < 7) return `${days}d ago`
+    return new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  }
+
+  const groupByDate = (items) => {
+    const today = new Date().toDateString()
+    const yesterday = new Date(Date.now() - 86400000).toDateString()
+    const groups = { today: [], yesterday: [], earlier: [] }
+    items.forEach(n => {
+      const d = new Date(n.created_at).toDateString()
+      if (d === today) groups.today.push(n)
+      else if (d === yesterday) groups.yesterday.push(n)
+      else groups.earlier.push(n)
+    })
+    return groups
+  }
+
+  const surveyMsg = isSurveyOpen(appSettings, user.id)
+    ? 'Your weekly meal survey is open now. Submit your lunch and dinner choices on time.'
+    : getSurveyWindowMessage(appSettings, user.id)
+
   return (
     <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       {onBack && <BackHeader title="Alerts" onBack={onBack} />}
-      <SectionLabel>System Alerts</SectionLabel>
-      {staticNotices.map(item => (
-        <Card key={item.id} style={{ marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 12, background: `${item.tone}20`, border: `1px solid ${item.tone}45`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Bell size={18} color={item.tone} /></div>
-            <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{item.title}</div>
-              <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.6, marginTop: 4, fontFamily: "'DM Sans',sans-serif" }}>{item.body}</div>
-            </div>
-          </div>
-        </Card>
-      ))}
 
-      <SectionLabel>Recent Broadcasts</SectionLabel>
-      {loading ? <Spinner /> : notices.length === 0 ? <EmptyState msg="No recent broadcasts found." /> : notices.map(item => {
-        const displayColor = (item.tone || '').split(':')[0] || t.accent
+      {/* Premium Survey Card */}
+      <div style={{
+        marginBottom: 20, padding: 18, borderRadius: 18,
+        background: `linear-gradient(135deg, ${t.accent}10, ${t.accent}02)`,
+        border: `1px solid ${t.accent}25`,
+        display: 'flex', gap: 14, alignItems: 'flex-start',
+        boxShadow: `0 4px 20px rgba(0,0,0,0.2)`
+      }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: 14,
+          background: `${t.accent}20`, border: `1px solid ${t.accent}40`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+        }}>
+          <Bell size={20} color={t.accent} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: t.text, marginBottom: 4, fontFamily: "'DM Sans',sans-serif" }}>Weekly Survey Window</div>
+          <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>{surveyMsg}</div>
+        </div>
+      </div>
+
+      {/* Broadcasts */}
+      {loading ? <NotificationsSkeleton /> : notices.length === 0 ? (
+        <EmptyState msg="No broadcasts yet. Stay tuned for updates from Al-Mawaid." />
+      ) : (() => {
+        const groups = groupByDate(notices)
         return (
-          <Card key={item.id} style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-              <div style={{ width: 42, height: 42, borderRadius: 12, background: `${displayColor}20`, border: `1px solid ${displayColor}45`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Bell size={18} color={displayColor} /></div>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>{item.title}</div>
-                  <div style={{ fontSize: 10, color: t.textSub }}>{item.sender_name}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {['today', 'yesterday', 'earlier'].map(section => {
+              const items = groups[section]
+              if (items.length === 0) return null
+              const label = section === 'today' ? 'Today' : section === 'yesterday' ? 'Yesterday' : 'Earlier'
+              return (
+                <div key={section} style={{ marginBottom: 4 }}>
+                  <div style={{
+                    fontSize: 11, fontWeight: 800, color: t.textSub,
+                    textTransform: 'uppercase', letterSpacing: '0.1em',
+                    padding: '12px 4px 8px'
+                  }}>{label}</div>
+                  {items.map(item => {
+                    const toneColor = (item.tone || '').split(':')[0] || t.accent
+                    const initial = (item.sender_name || 'A').charAt(0).toUpperCase()
+                    const hasMedia = item.media && item.media[0]
+                    return (
+                      <div key={item.id} style={{
+                        marginBottom: 10, borderRadius: 18, overflow: 'hidden',
+                        background: `linear-gradient(135deg, ${toneColor}06, ${t.card})`,
+                        border: `1px solid ${toneColor}18`,
+                        boxShadow: `0 2px 12px rgba(0,0,0,0.12)`,
+                        transition: 'all 0.25s'
+                      }}>
+                        {hasMedia && (
+                          <div style={{
+                            width: '100%', height: 140,
+                            background: `url(${item.media[0]}) center/cover no-repeat`,
+                            borderBottom: `1px solid ${toneColor}15`
+                          }} />
+                        )}
+                        <div style={{ padding: 16 }}>
+                          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                            <div style={{
+                              width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+                              background: `linear-gradient(135deg, ${toneColor}, ${toneColor}77)`,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              color: '#000', fontSize: 14, fontWeight: 900,
+                              boxShadow: `0 4px 10px ${toneColor}25`
+                            }}>
+                              {initial}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: toneColor }}>
+                                  {item.sender_name || 'Al-Mawaid'}
+                                </span>
+                                <span style={{ fontSize: 10, color: t.textSub, opacity: 0.5 }}>
+                                  {timeAgo(item.created_at)}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: t.text, marginBottom: 4, fontFamily: "'DM Sans',sans-serif" }}>
+                                {item.title}
+                              </div>
+                              <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>
+                                {item.body}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ height: 2, background: `linear-gradient(90deg, ${toneColor}, transparent)` }} />
+                      </div>
+                    )
+                  })}
                 </div>
-                <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.6, marginTop: 4, fontFamily: "'DM Sans',sans-serif" }}>{item.body}</div>
-                {item.media && item.media[0] && (
-                  <img
-                    src={item.media[0]}
-                    alt=""
-                    style={{ width: '100%', borderRadius: 12, marginTop: 12, border: `1px solid ${t.border}` }}
-                  />
-                )}
-                <div style={{ fontSize: 10, color: t.accent, marginTop: 10, fontWeight: 600 }}>{new Date(item.created_at).toLocaleString()}</div>
-              </div>
-            </div>
-          </Card>
+              )
+            })}
+          </div>
         )
-      })}
+      })()}
     </main>
   )
 }
@@ -3248,7 +2694,7 @@ function SupportTicketsPage({ onBack }) {
         <button onClick={handleSubmit} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting...' : 'Submit Support Ticket'}</button>
       </Card>
       <SectionLabel>Recent Tickets</SectionLabel>
-      {loading ? <Spinner /> : tickets.length === 0 ? <EmptyState msg="No support tickets raised yet." /> : tickets.map(ticket => (
+      {loading ? <ListPageSkeleton title="Support Tickets" count={4} /> : tickets.length === 0 ? <EmptyState msg="No support tickets raised yet." /> : tickets.map(ticket => (
         <Card key={ticket.id} style={{ marginBottom: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 10 }}>
             <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{new Date(ticket.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
@@ -3287,41 +2733,6 @@ function AboutPage({ onBack }) {
   )
 }
 
-function ResetPasswordPage({ onBack }) {
-  const t = useTheme()
-  const [newPass, setNewPass] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-  const handleReset = async (e) => {
-    e.preventDefault(); setError(''); setSuccess('')
-    if (newPass.length < 6) { setError('Password must be at least 6 characters.'); return }
-    setLoading(true)
-    try { const { error: updateError } = await supabase.auth.updateUser({ password: newPass }); if (updateError) throw updateError; setSuccess('Password updated successfully!'); setNewPass('') }
-    catch (err) { setError(err.message) } finally { setLoading(false) }
-  }
-  return (
-    <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
-      {onBack && <BackHeader title="Reset Password" onBack={onBack} />}
-      <Card>
-        <form onSubmit={handleReset}>
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 7, letterSpacing: '0.14em', fontFamily: "'DM Sans',sans-serif" }}>NEW PASSWORD</label>
-            <div style={{ position: 'relative' }}>
-              <Lock size={14} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: t.accent, opacity: .6 }} />
-              <input type="password" name="newPassword" value={newPass} onChange={e => setNewPass(e.target.value)} required placeholder="Enter new password" style={{ width: '100%', padding: '13px 13px 13px 44px', borderRadius: 12, boxSizing: 'border-box', background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text, fontSize: 15, outline: 'none', fontFamily: "'DM Sans',sans-serif" }} />
-            </div>
-          </div>
-          {error && <ErrorBanner msg={error} />}
-          {success && <div style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 12, background: t.successBg, border: `1px solid ${t.successBorder}`, fontSize: 13, color: t.successText, fontFamily: "'DM Sans',sans-serif" }}>✅ {success}</div>}
-          <button type="submit" disabled={loading} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: loading ? t.border : t.accentGrad, color: '#fff', fontSize: 15, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? .7 : 1, fontFamily: "'DM Sans',sans-serif" }}>{loading ? 'Updating...' : 'Update Password'}</button>
-        </form>
-      </Card>
-    </main>
-  )
-}
-
-
 
 // ══════════════════════════════════════════════════════════════
 // ADMIN DASHBOARD — Dynamic UI with navigated home screen buttons
@@ -3347,6 +2758,8 @@ export default function App() {
     return localStorage.getItem('al_mawaid_portal') || null
   })
 
+  const navigate = useNavigate()
+
   const signOut = useCallback(async () => {
     setMockUser(null)
     setPortalRole(null)
@@ -3360,11 +2773,11 @@ export default function App() {
     const remember = localStorage.getItem('almawaid_remember_me') !== 'false'
     if (remember) {
       localStorage.setItem('al_mawaid_portal', role)
-      if (role === 'inventory_manager' && sess?.user) {
+      if (sess?.user) {
         localStorage.setItem('al_mawaid_mock_user', JSON.stringify(sess.user))
       }
     }
-    setMockUser(role === 'inventory_manager' && sess?.user ? sess.user : null)
+    setMockUser(sess?.user || null)
     setPortalRole(role)
   }, [])
 
@@ -3390,6 +2803,12 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [signOut])
 
+  useEffect(() => {
+    if (portalRole === 'admin' && !window.location.pathname.startsWith('/admin')) {
+      navigate('/admin', { replace: true })
+    }
+  }, [portalRole, navigate])
+
   // Push notifications removed
 
   if (session === undefined && !mockUser) {
@@ -3405,9 +2824,7 @@ export default function App() {
 
   const authValue = { user: session?.user || mockUser, signOut }
 
-  if (portalRole === 'admin') {
-    return <Navigate to="/admin" replace />;
-  }
+  if (portalRole === 'admin') return null
 
   if (['khidmat_guzar', 'supervisor', 'khidmat'].includes(portalRole)) {
     return (

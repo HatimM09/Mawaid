@@ -38,7 +38,7 @@ export const updateSystemTheme = (themeId) => {
     root.style.setProperty('--bg-card-hover', 'rgba(139, 92, 246, 0.06)');
     root.style.setProperty('--bg-grad', 'radial-gradient(ellipse at 50% 0%, #1a1a2e 0%, #0c0c14 70%)');
     root.style.setProperty('--text-primary', '#f0f0f5');
-    root.style.setProperty('--text-tertiary', 'rgba(240, 240, 245, 0.5)');
+    root.style.setProperty('--text-tertiary', 'rgba(240, 240, 245, 0.72)');
     root.style.setProperty('--accent-primary', '#a78bfa');
     root.style.setProperty('--accent-cyan', '#a78bfa');
     root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #a78bfa, #7c3aed)');
@@ -62,7 +62,7 @@ export const updateSystemTheme = (themeId) => {
     root.style.setProperty('--bg-card-hover', '#faf5ff');
     root.style.setProperty('--bg-grad', 'linear-gradient(135deg, #f5f0ff 0%, #ede4ff 50%, #e8dff5 100%)');
     root.style.setProperty('--text-primary', '#1e1b4b');
-    root.style.setProperty('--text-tertiary', '#6b6394');
+    root.style.setProperty('--text-tertiary', '#4a4468');
     root.style.setProperty('--accent-primary', '#7c3aed');
     root.style.setProperty('--accent-cyan', '#7c3aed');
     root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #8b5cf6, #6d28d9)');
@@ -86,7 +86,7 @@ export const updateSystemTheme = (themeId) => {
     root.style.setProperty('--bg-card-hover', 'rgba(197, 160, 89, 0.06)');
     root.style.setProperty('--bg-grad', 'radial-gradient(circle at 0% 0%, #161b22 0%, #0a0d14 100%)');
     root.style.setProperty('--text-primary', '#f0f4f8');
-    root.style.setProperty('--text-tertiary', 'rgba(240, 244, 248, 0.55)');
+    root.style.setProperty('--text-tertiary', 'rgba(240, 244, 248, 0.72)');
     root.style.setProperty('--accent-primary', '#c5a059');
     root.style.setProperty('--accent-cyan', '#c5a059');
     root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #d4b47a 0%, #c5a059 50%, #a68446 100%)');
@@ -508,9 +508,9 @@ const pctColor = (val, isRoti, rotiVal) => {
 export const PackingTVView = ({ user, onClose }) => {
   const [imgError, setImgError] = React.useState(false)
 
-  // Support both new format (lunch/dinner objects) and legacy (flat dishResponses)
+  // Meal toggle: show one meal at a time when both exist
   const hasBothMeals = user.lunch && user.dinner
-  const meals = hasBothMeals
+  const allMeals = hasBothMeals
     ? [
         { name: 'Lunch', key: 'lunch', data: user.lunch, icon: '☀️' },
         { name: 'Dinner', key: 'dinner', data: user.dinner, icon: '🌙' }
@@ -518,6 +518,10 @@ export const PackingTVView = ({ user, onClose }) => {
     : [
         { name: (user.currentMeal || 'Meal').charAt(0).toUpperCase() + (user.currentMeal || 'Meal').slice(1), key: 'meal', data: { status: user.status || 'Not Submitted', dishes: user.dishResponses || {} }, icon: '🍽️' }
       ]
+  const [selectedMealKey, setSelectedMealKey] = React.useState(allMeals[0]?.key || 'meal')
+  const meals = hasBothMeals
+    ? [allMeals.find(m => m.key === selectedMealKey) || allMeals[0]]
+    : allMeals
 
   const MealSection = ({ meal }) => {
     const { status, dishes } = meal.data
@@ -528,13 +532,13 @@ export const PackingTVView = ({ user, onClose }) => {
       return (
         <div style={{
           flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(244, 63, 94, 0.08)', border: 'clamp(3px, 0.6vh, 8px) solid rgba(244, 63, 94, 0.3)', borderRadius: '2.5vh',
-          padding: '2vh 2vw', minHeight: 0
+          background: 'rgba(244, 63, 94, 0.08)', border: 'clamp(4px, 0.8vh, 12px) solid rgba(244, 63, 94, 0.3)', borderRadius: '3vh',
+          padding: '3vh 3vw', minHeight: 0
         }}>
-          <div style={{ fontSize: 'clamp(28px, 8vh, 90px)', fontWeight: 1000, color: '#f43f5e', textAlign: 'center', lineHeight: 1.1 }}>
+          <div style={{ fontSize: 'clamp(36px, 12vh, 140px)', fontWeight: 1000, color: '#f43f5e', textAlign: 'center', lineHeight: 1.1 }}>
             {meal.icon} NO {meal.name.toUpperCase()}
           </div>
-          <div style={{ fontSize: 'clamp(14px, 3vh, 36px)', color: 'rgba(244, 63, 94, 0.5)', marginTop: '1vh', fontWeight: 600 }}>
+          <div style={{ fontSize: 'clamp(18px, 4vh, 48px)', color: 'rgba(244, 63, 94, 0.5)', marginTop: '1.5vh', fontWeight: 600 }}>
             {status === 'Not Submitted' ? 'Not yet submitted' : 'Skipped'}
           </div>
         </div>
@@ -542,7 +546,7 @@ export const PackingTVView = ({ user, onClose }) => {
     }
 
     const total = dishEntries.length
-    const gridCols = total === 1 ? '1fr' : total === 2 ? 'repeat(2, 1fr)' : total <= 4 ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)'
+    const gridCols = total === 1 ? '1fr' : total === 2 ? 'repeat(2, 1fr)' : total <= 4 ? 'repeat(2, 1fr)' : total <= 6 ? 'repeat(3, 1fr)' : 'repeat(4, 1fr)'
 
     return (
       <div style={{
@@ -554,7 +558,7 @@ export const PackingTVView = ({ user, onClose }) => {
       }}>
         {dishEntries.map(([dish, pct], idx) => {
           const isCount = typeof pct === 'string' && !pct.endsWith('%') && pct !== 'yes' && pct !== 'no'
-          const isRoti = dish.toLowerCase().includes('roti') || dish.toLowerCase().includes('naan')
+          const isRoti = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri'].some(k => dish.toLowerCase().includes(k))
           const val = parseInt(pct) || 0
           const fillHeight = isRoti ? (pct === 'yes' ? '100%' : '0%') : (isCount ? (val > 0 ? '100%' : '0%') : `${val}%`)
           const clr = pctColor(isCount || isRoti ? (val > 0 ? 100 : 0) : val, isRoti, pct)
@@ -581,45 +585,46 @@ export const PackingTVView = ({ user, onClose }) => {
                 zIndex: 1
               }} />
               <div style={{
-                width: 'clamp(40px, 6vh, 70px)', height: 'clamp(40px, 6vh, 70px)', borderRadius: '50%',
+                width: 'clamp(48px, 8vh, 90px)', height: 'clamp(48px, 8vh, 90px)', borderRadius: '50%',
                 background: clr.badge,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 'clamp(16px, 3vh, 36px)', fontWeight: 1000, color: '#fff', zIndex: 2,
-                boxShadow: `0 0 15px ${clr.shadow}`
+                fontSize: 'clamp(20px, 4vh, 48px)', fontWeight: 1000, color: '#fff', zIndex: 2,
+                boxShadow: `0 0 20px ${clr.shadow}`
               }}>
                 {idx + 1}
               </div>
               <div style={{
-                fontSize: 'clamp(14px, 2.8vh, 32px)',
+                fontSize: 'clamp(18px, 3.5vh, 42px)',
                 fontWeight: 1000, color: '#fff',
-                textTransform: 'uppercase', letterSpacing: '0.01em',
-                margin: '0.8vh 0', zIndex: 2,
-                lineHeight: 1.1,
+                textTransform: 'uppercase', letterSpacing: '0.02em',
+                margin: '1vh 0', zIndex: 2,
+                lineHeight: 1.2,
                 wordBreak: 'break-word',
                 maxWidth: '100%'
               }}>{dish}</div>
               <div style={{ zIndex: 2 }}>
                 {val > 0 && !isRoti && (
                   <div style={{
-                    display: 'inline-block', padding: '0.4vh 1.5vw', borderRadius: '0.8vh',
+                    display: 'inline-block', padding: '0.6vh 2vw', borderRadius: '1vh',
                     background: clr.tagBg, color: clr.tagColor,
-                    fontSize: 'clamp(10px, 1.8vh, 22px)', fontWeight: 900,
-                    border: `1px solid ${clr.tagBorder}`
+                    fontSize: 'clamp(14px, 2.5vh, 30px)', fontWeight: 900,
+                    border: `2px solid ${clr.tagBorder}`
                   }}>
                     {isCount ? `${val} pcs` : (val === 100 ? 'FULL' : (val === 50 ? 'HALF' : (val === 25 ? 'QUARTER' : `${val}%`)))}
                   </div>
                 )}
                 <div style={{
-                  fontSize: 'clamp(20px, 4.5vh, 55px)',
+                  fontSize: 'clamp(32px, 7vh, 85px)',
                   fontWeight: 1000, color: clr.text,
-                  textShadow: `0 3px 10px ${clr.shadow}`, lineHeight: 1
+                  textShadow: `0 4px 15px ${clr.shadow}`, lineHeight: 1,
+                  marginTop: '0.5vh'
                 }}>
                   {isRoti ? (pct === 'yes' ? 'YES' : 'NO') : (isCount ? `${val}` : `${val}%`)}
                 </div>
                 <div style={{
-                  fontSize: 'clamp(9px, 1.5vh, 18px)', fontWeight: 800,
+                  fontSize: 'clamp(12px, 2vh, 24px)', fontWeight: 800,
                   color: 'var(--text-tertiary)', textTransform: 'uppercase',
-                  marginTop: '0.3vh', letterSpacing: '0.1em'
+                  marginTop: '0.5vh', letterSpacing: '0.12em'
                 }}>
                   {isRoti ? 'Response' : (isCount ? 'Pieces' : 'Portion')}
                 </div>
@@ -660,32 +665,49 @@ export const PackingTVView = ({ user, onClose }) => {
       }}>✕</button>
 
       {/* Header */}
-      <div className="tv-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2vh', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5vw' }}>
+      <div className="tv-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5vh', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '2vw' }}>
           {user.avatar_url && !imgError ? (
             <img src={user.avatar_url} alt={user.name} onError={() => setImgError(true)}
-              style={{ width: 'clamp(50px, 8vh, 90px)', height: 'clamp(50px, 8vh, 90px)', borderRadius: '2vh', objectFit: 'cover',
-                border: '3px solid var(--accent-gold)', boxShadow: '0 8px 24px rgba(0,0,0,0.3)', flexShrink: 0 }} />
+              style={{ width: 'clamp(60px, 10vh, 120px)', height: 'clamp(60px, 10vh, 120px)', borderRadius: '2.5vh', objectFit: 'cover',
+                border: '4px solid var(--accent-gold)', boxShadow: '0 12px 32px rgba(0,0,0,0.4)', flexShrink: 0 }} />
           ) : (
-            <div style={{ width: 'clamp(50px, 8vh, 90px)', height: 'clamp(50px, 8vh, 90px)', borderRadius: '2vh',
+            <div style={{ width: 'clamp(60px, 10vh, 120px)', height: 'clamp(60px, 10vh, 120px)', borderRadius: '2.5vh',
               background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 'clamp(20px, 3.5vh, 40px)', fontWeight: 900, color: '#000', flexShrink: 0,
-              border: '3px solid var(--accent-gold)', boxShadow: '0 8px 24px rgba(0,0,0,0.3)' }}>
+              fontSize: 'clamp(28px, 5vh, 60px)', fontWeight: 900, color: '#000', flexShrink: 0,
+              border: '4px solid var(--accent-gold)', boxShadow: '0 12px 32px rgba(0,0,0,0.4)' }}>
               {(user.name || 'U').charAt(0).toUpperCase()}
             </div>
           )}
           <div>
-            <div style={{ fontSize: 'clamp(14px, 2.5vh, 28px)', fontWeight: 800, color: 'var(--accent-gold)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+            <div style={{ fontSize: 'clamp(18px, 3vh, 36px)', fontWeight: 800, color: 'var(--accent-gold)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
               Thali Dispatch • {user.currentDay ? user.currentDay.toUpperCase() : ''}
             </div>
-            <div style={{ fontSize: 'clamp(24px, 5vh, 55px)', fontWeight: 1000, lineHeight: 1.1, marginTop: '0.3vh' }}>{user.name}</div>
+            <div style={{ fontSize: 'clamp(32px, 6.5vh, 80px)', fontWeight: 1000, lineHeight: 1.1, marginTop: '0.5vh' }}>{user.name}</div>
           </div>
         </div>
-        <div className="tv-header-right" style={{ textAlign: 'right', marginRight: 'clamp(50px, 5vw, 80px)' }}>
-          <div style={{ fontSize: 'clamp(12px, 2.5vh, 24px)', color: 'var(--text-tertiary)', fontWeight: 700 }}>Thali</div>
-          <div style={{ fontSize: 'clamp(36px, 8vh, 90px)', fontWeight: 1000, lineHeight: 1, color: '#fff' }}>#{user.thali_number}</div>
+        <div className="tv-header-right" style={{ textAlign: 'right', marginRight: 'clamp(60px, 6vw, 100px)' }}>
+          <div style={{ fontSize: 'clamp(16px, 3vh, 32px)', color: 'var(--text-tertiary)', fontWeight: 700 }}>Thali</div>
+          <div style={{ fontSize: 'clamp(48px, 12vh, 140px)', fontWeight: 1000, lineHeight: 1, color: '#fff' }}>#{user.thali_number}</div>
         </div>
       </div>
+
+      {/* Meal Toggle Buttons */}
+      {hasBothMeals && (
+        <div style={{ display: 'flex', gap: '1.5vw', marginBottom: '2vh', flexShrink: 0, justifyContent: 'center' }}>
+          {allMeals.map(m => (
+            <button key={m.key} onClick={() => setSelectedMealKey(m.key)} style={{
+              padding: '1.5vh 4vw', borderRadius: '2vh', border: `3px solid ${selectedMealKey === m.key ? 'var(--accent-gold)' : 'rgba(255,255,255,0.2)'}`,
+              background: selectedMealKey === m.key ? 'var(--accent-grad)' : 'rgba(255,255,255,0.05)',
+              color: selectedMealKey === m.key ? '#000' : '#fff',
+              fontSize: 'clamp(18px, 3.5vh, 40px)', fontWeight: 900, cursor: 'pointer',
+              boxShadow: selectedMealKey === m.key ? '0 0 30px rgba(212,175,55,0.3)' : 'none'
+            }}>
+              {m.icon} {m.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Meals Content */}
       <div className="meal-split" style={{ flex: 1, display: 'flex', gap: '2vh 2vw', minHeight: 0 }}>
@@ -739,15 +761,16 @@ export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => 
         }}>
           {dishEntries.map(([dish, pct]) => {
             const isCount = typeof pct === 'string' && !pct.endsWith('%') && pct !== 'yes' && pct !== 'no'
-            const isRoti = dish.toLowerCase().includes('roti') || dish.toLowerCase().includes('naan')
+            const isRoti = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri'].some(k => dish.toLowerCase().includes(k))
             const val = parseInt(pct) || 0
+            const isActive = pct === 'yes' || (isCount && val > 0) || (!isRoti && !isCount && val > 0)
             const fillHeight = isRoti ? (pct === 'yes' ? '100%' : '0%') : (isCount ? (val > 0 ? '100%' : '0%') : `${val}%`)
             
             return (
               <div key={dish} style={{ 
                 aspectRatio: '1 / 1', 
-                background: 'rgba(255,255,255,0.03)', 
-                border: `2px solid ${val > 0 || pct === 'yes' ? 'var(--accent-gold)' : 'var(--border-glass)'}`,
+                background: isActive ? 'rgba(212, 175, 55, 0.06)' : 'rgba(255,255,255,0.02)', 
+                border: `2px solid ${isActive ? 'var(--accent-gold)' : 'rgba(239, 68, 68, 0.15)'}`,
                 borderRadius: 32,
                 display: 'flex',
                 flexDirection: 'column',
@@ -756,7 +779,7 @@ export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => 
                 padding: 24,
                 position: 'relative',
                 overflow: 'hidden',
-                boxShadow: val > 0 || pct === 'yes' ? '0 10px 30px rgba(212, 175, 55, 0.1)' : 'none'
+                boxShadow: isActive ? '0 10px 30px rgba(212, 175, 55, 0.1)' : 'none'
               }}>
                 <div style={{ 
                   position: 'absolute', 
@@ -772,8 +795,8 @@ export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => 
                 <div style={{ 
                   fontSize: isRoti ? 48 : 72, 
                   fontWeight: 950, 
-                  color: val > 0 || pct === 'yes' ? '#fff' : 'var(--text-tertiary)',
-                  textShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                  color: isActive ? '#fff' : 'rgba(239, 68, 68, 0.3)',
+                  textShadow: isActive ? '0 4px 12px rgba(0,0,0,0.5)' : 'none',
                   zIndex: 2,
                   lineHeight: 1
                 }}>

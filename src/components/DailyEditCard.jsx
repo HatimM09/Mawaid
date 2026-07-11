@@ -4,8 +4,9 @@
 import React, { useState, useEffect } from 'react'
 import { Sun, Moon, X } from 'lucide-react'
 import { useTheme, useAuth } from '../admin/context'
-import { supabase } from '../admin/supabaseClient'
+import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
 import { getWeekDate, DAYS } from '../common/utils'
+import { isRotiItem, isCountInput } from '../hooks/useSurvey'
 
 // ── Skeleton Placeholder ──
 const SkeletonDish = ({ t }) => (
@@ -112,61 +113,6 @@ export const getEditCloseTime = (appSettings, mealType) => {
   return mealType === 'lunch' ? { h: 11, m: 0 } : { h: 15, m: 30 };
 }
 
-export const useAggregateStats = (weeklyMenu) => {
-  const [aggregateStats, setAggregateStats] = useState({})
-  useEffect(() => {
-    if (!weeklyMenu) return
-    const loadStats = async () => {
-      const weekId = getWeekDate()
-      const cols = ['user_id']
-      DAYS.forEach(day => {
-        ['lunch', 'dinner'].forEach(meal => {
-          const dk = day.substring(0, 3).toLowerCase()
-          const mk = meal === 'lunch' ? 'l' : 'd'
-          cols.push(`${dk}_${mk}_status`)
-          const menu = weeklyMenu[day]?.[meal] || []
-          menu.forEach((_, idx) => {
-            cols.push(`${dk}_${mk}_dish_${idx + 1}`)
-          })
-        })
-      })
-      const { data: allSubmissions } = await supabase.from('survey_submissions_flat').select(cols.join(',')).eq('week_id', weekId)
-      if (!allSubmissions) return
-      const stats = {}
-      DAYS.forEach(day => {
-        ['lunch', 'dinner'].forEach(meal => {
-          const dk = day.substring(0, 3).toLowerCase()
-          const mk = meal === 'lunch' ? 'l' : 'd'
-          const menu = weeklyMenu[day]?.[meal] || []
-          menu.forEach((dish, idx) => {
-            const col = `${dk}_${mk}_dish_${idx + 1}`
-            let yesNoCount = 0, yesCount = 0, pctSum = 0, pctCount = 0
-            allSubmissions.forEach(sub => {
-              if (sub[`${dk}_${mk}_status`] === 'Applied') {
-                const val = sub[col]
-                if (val === 'Yes') { yesCount++; yesNoCount++ }
-                else if (val === 'No') { yesNoCount++ }
-                else if (typeof val === 'string' && val.endsWith('%')) { pctSum += parseInt(val) || 0; pctCount++ }
-              }
-            })
-            const key = `${day}_${meal}_${idx}`
-            if (yesNoCount > 0) stats[key] = Math.round((yesCount / yesNoCount) * 100)
-            else if (pctCount > 0) stats[key] = Math.round(pctSum / pctCount)
-          })
-        })
-      })
-      setAggregateStats(stats)
-    }
-    loadStats()
-  }, [weeklyMenu])
-  return aggregateStats
-}
-
-const isRotiItem = (dish) => {
-  const rotiKeywords = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
-  return rotiKeywords.some(k => dish.toLowerCase().includes(k))
-}
-
 export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () => {}, appSettings }) {
   const t = useTheme()
   const { user } = useAuth()
@@ -196,7 +142,16 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
         if (val !== undefined && val !== null) {
           if (val === 'Yes') respMap[dish] = 'yes'
           else if (val === 'No') respMap[dish] = 'no'
-          else if (typeof val === 'string' && val.endsWith('%')) respMap[dish] = parseInt(val)
+          else {
+            const isCount = isCountInput(appSettings, mi.day, mi.meal, idx)
+            if (isCount) {
+              respMap[dish] = parseInt(val) || 0
+            } else if (typeof val === 'string' && val.endsWith('%')) {
+              respMap[dish] = parseInt(val)
+            } else if (typeof val === 'number') {
+              respMap[dish] = val
+            }
+          }
         }
       })
       setUserResponses(respMap)
@@ -218,7 +173,9 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
       const newResponses = { ...userResponses, [dish]: value }
       setUserResponses(newResponses)
       const statusKey = dayKey + '_' + mealKey + '_status'
-      // Build the upsert payload with ALL existing dish values to avoid data loss
+      // Load existing submission to merge with current state (avoid data loss)
+      const { data: existing } = await supabase.from('survey_submissions_flat')
+        .select('*').eq('user_id', user.id).eq('week_id', weekId).maybeSingle()
       const upsertObj = {
         user_id: user.id,
         week_id: weekId,
@@ -229,7 +186,16 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
         const colName = dayKey + '_' + mealKey + '_dish_' + (idx + 1)
         const val = newResponses[d]
         if (val !== undefined) {
-          upsertObj[colName] = typeof val === 'number' ? val + '%' : (val === 'yes' ? 'Yes' : 'No')
+          const isCount = isCountInput(appSettings, mi.day, mi.meal, idx)
+          if (isRotiItem(d)) {
+            upsertObj[colName] = val === 'yes' ? 'Yes' : 'No'
+          } else if (isCount) {
+            upsertObj[colName] = typeof val === 'number' ? val : parseInt(val) || 0
+          } else {
+            upsertObj[colName] = typeof val === 'number' ? val + '%' : (val === 'yes' ? 'Yes' : 'No')
+          }
+        } else if (existing && existing[colName] !== undefined && existing[colName] !== null) {
+          upsertObj[colName] = existing[colName]
         }
       })
       const { error } = await supabase
@@ -281,7 +247,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>
                 {mealInfo.day.charAt(0).toUpperCase() + mealInfo.day.slice(1)} &bull; {mealInfo.meal.toUpperCase()}
               </div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>
+              <div style={{ fontSize: 20, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif", lineHeight: 1.3 }}>
                 Quick Edit &bull; {mealInfo.meal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}
               </div>
             </div>
@@ -305,6 +271,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
             {mealInfo.dishes.length > 0 ? mealInfo.dishes.map((dish, idx) => {
               const resp = userResponses[dish]
+              const isCount = !isRotiItem(dish) && isCountInput(appSettings, mealInfo.day, mealInfo.meal, idx)
               return (
                 <div key={idx} style={{
                   padding: '10px 14px', borderRadius: 12,
@@ -316,11 +283,33 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
                     <span>{dish}</span>
                     {resp !== undefined && (
                       <span style={{ fontSize: 13, fontWeight: 800, color: resp === 'yes' ? '#4CAF50' : resp === 'no' ? '#F44336' : t.accent }}>
-                        {typeof resp === 'number' ? resp + '%' : (resp === 'yes' ? '✅' : '❌')}
+                        {isRotiItem(dish) ? (resp === 'yes' ? '✅' : '❌') : isCount ? resp : (typeof resp === 'number' ? resp + '%' : resp)}
                       </span>
                     )}
                   </div>
-                  {!isRotiItem(dish) && (
+                  {isRotiItem(dish) ? (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => saveResponse(dish, 'yes')} disabled={saving}
+                        style={{ flex: 1, padding: '8px', borderRadius: 8, border: `1.5px solid ${resp === 'yes' ? '#4CAF50' : t.border}`, background: resp === 'yes' ? 'rgba(76,175,80,0.12)' : 'transparent', color: resp === 'yes' ? '#4CAF50' : t.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>✅ Yes</button>
+                      <button onClick={() => saveResponse(dish, 'no')} disabled={saving}
+                        style={{ flex: 1, padding: '8px', borderRadius: 8, border: `1.5px solid ${resp === 'no' ? '#F44336' : t.border}`, background: resp === 'no' ? 'rgba(244,67,54,0.12)' : 'transparent', color: resp === 'no' ? '#F44336' : t.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>❌ No</button>
+                    </div>
+                  ) : isCount ? (
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <button onClick={() => saveResponse(dish, Math.max(0, (typeof resp === 'number' ? resp : 0) - 1))} disabled={saving} style={{
+                        width: 36, height: 36, borderRadius: 8, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}>−</button>
+                      <span style={{ fontSize: 20, fontWeight: 800, color: t.accent, minWidth: 40, textAlign: 'center' }}>{typeof resp === 'number' ? resp : 0}</span>
+                      <button onClick={() => saveResponse(dish, (typeof resp === 'number' ? resp : 0) + 1)} disabled={saving} style={{
+                        width: 36, height: 36, borderRadius: 8, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}>+</button>
+                      <button onClick={() => saveResponse(dish, 'no')} disabled={saving} style={{
+                        marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, border: `1.5px solid ${resp === 'no' ? '#F44336' : t.border}`,
+                        background: resp === 'no' ? 'rgba(244,67,54,0.12)' : 'transparent', color: resp === 'no' ? '#F44336' : t.textSub,
+                        fontSize: 12, fontWeight: 700, cursor: 'pointer'
+                      }}>Skip</button>
+                    </div>
+                  ) : (
                     <div style={{ display: 'flex', gap: 6 }}>
                       {[0, 25, 50, 75, 100].map(pct => (
                         <button key={pct} onClick={() => saveResponse(dish, pct)} disabled={saving}
@@ -333,14 +322,6 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
                             transition: '0.2s', opacity: saving ? 0.6 : 1
                           }}>{pct === 0 ? '0%' : pct + '%'}</button>
                       ))}
-                    </div>
-                  )}
-                  {isRotiItem(dish) && (
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button onClick={() => saveResponse(dish, 'yes')} disabled={saving}
-                        style={{ flex: 1, padding: '8px', borderRadius: 8, border: `1.5px solid ${resp === 'yes' ? '#4CAF50' : t.border}`, background: resp === 'yes' ? 'rgba(76,175,80,0.12)' : 'transparent', color: resp === 'yes' ? '#4CAF50' : t.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>✅ Yes</button>
-                      <button onClick={() => saveResponse(dish, 'no')} disabled={saving}
-                        style={{ flex: 1, padding: '8px', borderRadius: 8, border: `1.5px solid ${resp === 'no' ? '#F44336' : t.border}`, background: resp === 'no' ? 'rgba(244,67,54,0.12)' : 'transparent', color: resp === 'no' ? '#F44336' : t.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>❌ No</button>
                     </div>
                   )}
                 </div>

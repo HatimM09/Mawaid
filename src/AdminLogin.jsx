@@ -5,11 +5,12 @@
 // ══════════════════════════════════════════════════════════════
 
 import React, { useState, useRef, useCallback, useEffect } from 'react'
-import { Shield, Lock, ArrowRight } from 'lucide-react'
+import { Shield, Lock, ArrowRight, AlertCircle } from 'lucide-react'
 
 export default function AdminLogin({ onLogin }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [fieldError, setFieldError] = useState('')
   const [loading, setLoading] = useState(false)
   const [mousePos, setMousePos] = useState({ x: 0.5, y: 0.5 })
   const btnRef = useRef(null)
@@ -44,11 +45,17 @@ export default function AdminLogin({ onLogin }) {
 
   const handleSubmit = () => {
     setError('')
+    setFieldError('')
+    if (!password.trim()) {
+      setFieldError('Secret key is required.')
+      return
+    }
     if (password === 'almawaid') {
       setLoading(true)
       setTimeout(() => onLogin(), 400)
     } else {
-      setError('🚫 Invalid Key')
+      setError('The admin secret key is incorrect.')
+      setFieldError('Check your key and try again.')
     }
   }
 
@@ -302,13 +309,21 @@ export default function AdminLogin({ onLogin }) {
           font-size: 9px;
           font-weight: 700;
           letter-spacing: 0.15em;
-          color: rgba(212, 175, 55, 0.5);
+          color: rgba(212, 175, 55, 0.72);
           text-transform: uppercase;
           margin-bottom: 6px;
           transition: color 0.3s ease;
         }
         .adm-field:focus-within .adm-field-label {
           color: #F5DEB3;
+        }
+        .adm-field--error .adm-field-label {
+          color: #e74c3c !important;
+        }
+        .adm-input--error {
+          border-color: rgba(231, 76, 60, 0.6) !important;
+          box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.08), inset 0 2px 6px rgba(0, 0, 0, 0.3) !important;
+          background: rgba(231, 76, 60, 0.06) !important;
         }
         .adm-input-wrap {
           position: relative;
@@ -348,7 +363,7 @@ export default function AdminLogin({ onLogin }) {
           background: rgba(255, 248, 230, 0.1);
         }
         .adm-input::placeholder {
-          color: rgba(212, 175, 55, 0.2);
+          color: rgba(212, 175, 55, 0.4);
           transition: color 0.3s ease, opacity 0.3s ease;
         }
         .adm-input:focus::placeholder {
@@ -449,7 +464,7 @@ export default function AdminLogin({ onLogin }) {
           font-size: 9px;
           font-weight: 500;
           letter-spacing: 0.1em;
-          color: rgba(212, 175, 55, 0.25);
+          color: rgba(212, 175, 55, 0.45);
         }
       `}</style>
 
@@ -505,17 +520,24 @@ export default function AdminLogin({ onLogin }) {
 
               {/* Input */}
               <div>
-                <div className="adm-field">
-                  <label className="adm-field-label" htmlFor="adminKey">Secret Key</label>
+                <div className={`adm-field ${fieldError ? 'adm-field--error' : ''}`}>
+                  <label className="adm-field-label" htmlFor="adminKey">
+                    {fieldError ? (
+                      <span style={{ color: '#e74c3c', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <AlertCircle size={12} />
+                        {fieldError}
+                      </span>
+                    ) : 'Secret Key'}
+                  </label>
                   <div className="adm-input-wrap">
                     <Lock size={16} />
                     <input
-                      className="adm-input"
+                      className={`adm-input ${fieldError ? 'adm-input--error' : ''}`}
                       type="password"
                       id="adminKey"
                       name="adminKey"
                       value={password}
-                      onChange={e => setPassword(e.target.value)}
+                      onChange={e => { setPassword(e.target.value); setFieldError(''); setError('') }}
                       onKeyDown={e => e.key === 'Enter' && handleSubmit()}
                       placeholder="Enter admin key..."
                       autoFocus
@@ -527,7 +549,10 @@ export default function AdminLogin({ onLogin }) {
               {/* Error */}
               {error && (
                 <div key={error}>
-                  <div className="adm-error">{error}</div>
+                  <div className="adm-error" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                    <span>{error}</span>
+                  </div>
                 </div>
               )}
 

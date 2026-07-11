@@ -5,7 +5,7 @@ import {
   ArrowUpRight, ArrowDownRight, History, Search, RefreshCw, 
   Plus, X, Clock, ShieldCheck, ChevronRight, Menu
 } from 'lucide-react'
-import { supabase } from './supabaseClient'
+import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
 import { T as SharedT, updateSystemTheme } from './ui'
 import InventoryPage from './InventoryPage'
 

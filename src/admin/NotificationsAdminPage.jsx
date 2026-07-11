@@ -10,7 +10,7 @@ import {
   Target,
   X, Upload, Rocket
 } from 'lucide-react'
-import { supabase } from './supabaseClient'
+import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
 import {
   T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner,
   Modal, SlideDrawer, fmtDateTime
@@ -66,6 +66,7 @@ export default function NotificationsAdminPage() {
   const [templates, setTemplates] = useState([])
   const [schedule, setSchedule] = useState([])
   const [pushSubs, setPushSubs] = useState(0)
+  const [realPushSubs, setRealPushSubs] = useState(0)
 
   // Form
   const [form, setForm] = useState(DEFAULT_FORM)
@@ -103,12 +104,13 @@ export default function NotificationsAdminPage() {
   const fetchAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [nRes, uRes, tRes, sRes, pRes] = await Promise.all([
+      const [nRes, uRes, tRes, sRes, pRes, psRes] = await Promise.all([
         supabase.from('notices').select('*').order('created_at', { ascending: false }).limit(50),
         supabase.from('user_stats').select('user_id, name, thali_number').order('name'),
         supabase.from('broadcast_templates').select('*').order('created_at', { ascending: false }),
         supabase.from('broadcast_schedule').select('*').order('created_at', { ascending: false }).limit(50),
         supabase.from('push_subscriptions').select('id', { count: 'exact', head: true }),
+        supabase.from('push_subscriptions').select('user_id, token_type, subscription_json, fcm_token'),
       ])
 
       if (nRes.data) setNotices(nRes.data)
@@ -116,6 +118,14 @@ export default function NotificationsAdminPage() {
       if (tRes.data) setTemplates(tRes.data)
       if (sRes.data) setSchedule(sRes.data)
       if (pRes.count !== null) setPushSubs(pRes.count)
+
+      // Calculate real subscribers (users with valid push tokens)
+      const validSubs = psRes.data?.filter(s => 
+        (s.token_type === 'expo' && s.fcm_token) ||
+        (s.token_type === 'webpush' && s.subscription_json)
+      ) || []
+      const uniqueUsersWithValidSubs = new Set(validSubs.map(s => s.user_id)).size
+      setRealPushSubs(uniqueUsersWithValidSubs)
 
       const scheduleData = sRes.data || []
       setStats({
@@ -173,7 +183,7 @@ export default function NotificationsAdminPage() {
   // ── Helpers ──────────────────────────────────────────────────
   const getTargetCount = (targetType, targetUserId) => {
     if (targetType === 'specific' && targetUserId) return 1
-    if (targetType === 'all' || targetType === 'admins') return pushSubs || users.length
+    if (targetType === 'all' || targetType === 'admins') return realPushSubs || users.length
     return users.length
   }
 
@@ -238,12 +248,14 @@ export default function NotificationsAdminPage() {
       let failedCount = 0
       if (form.channel === 'push') {
         try {
-          const { data: pushResult, error: pushError } = await supabase.functions.invoke('send-push', {
+          const { data: pushResult, error: pushError } = await supabase.functions.invoke('sendPush', {
             body: {
               title: form.title,
               body: form.body,
               user_id: form.target_type === 'specific' ? form.target_user_id : null,
               target_type: form.target_type === 'all' ? null : form.target_type,
+              image_url: form.media_url || undefined,
+              sender_name: form.sender_name,
             }
           })
           if (pushError) throw pushError
@@ -412,13 +424,15 @@ export default function NotificationsAdminPage() {
     let failedCount = 0
     if (entry.channel === 'push') {
       try {
-        const { data: pushResult, error: pushError } = await supabase.functions.invoke('send-push', {
+        const { data: pushResult, error: pushError } = await supabase.functions.invoke('sendPush', {
           body: {
             title: entry.title,
             body: entry.body,
             user_id: entry.target_type === 'specific' ? entry.target_user_id : null,
             target_type: entry.target_type === 'all' ? null : entry.target_type,
             url: entry.media_url || '/',
+            image_url: entry.media_url || undefined,
+            sender_name: entry.sender_name || 'Admin',
           }
         })
         if (pushError) throw pushError
@@ -595,7 +609,7 @@ export default function NotificationsAdminPage() {
           </PageTitle>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Badge color={T.accent}><Megaphone size={12} /> {pushSubs} Subscribers</Badge>
+          <Badge color={T.accent}><Megaphone size={12} /> {realPushSubs} Enabled / {pushSubs} Total</Badge>
           <RefreshCw
             size={16} color={T.textSub}
             style={{ cursor: 'pointer', flexShrink: 0 }}
@@ -732,7 +746,7 @@ export default function NotificationsAdminPage() {
                       minHeight: 100, padding: 12, borderRadius: 12, resize: 'vertical',
                       background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
                       color: T.text, outline: 'none', fontFamily: 'inherit', fontSize: 14,
-                      lineHeight: 1.5
+                      lineHeight: 1.65
                     }}
                   />
                 </div>
@@ -1077,9 +1091,10 @@ export default function NotificationsAdminPage() {
                 }}>
                   <Target size={14} color={T.accent} />
                   Will reach <strong style={{ color: T.accent }}>
-                    {form.target_type === 'specific' && form.target_user_id ? 1 :
-                     form.target_type === 'all' || form.target_type === 'admins' ? (pushSubs || users.length) :
-                     users.length}
+{form.target_type === 'specific' && form.target_user_id ? 1 :
+                      form.target_type === 'all' ? realPushSubs :
+                      form.target_type === 'admins' ? realPushSubs :
+                      users.length}
                   </strong> recipient{form.target_type === 'specific' && form.target_user_id ? '' : 's'}
                   {form.delivery === 'schedule' && form.scheduled_at
                     ? ` at ${new Date(form.scheduled_at).toLocaleString()}`
@@ -1283,7 +1298,7 @@ export default function NotificationsAdminPage() {
                           <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 2 }}>
                             {notice.title}
                           </div>
-                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.4 }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
                             {timeAgo(notice.created_at)}
                             {entry?.total_targets ? ` • ${entry.total_targets} recipients` : ''}
                           </div>
