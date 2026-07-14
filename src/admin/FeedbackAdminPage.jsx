@@ -1,6 +1,6 @@
 // src/admin/FeedbackAdminPage.jsx
 import React, { useState, useEffect, useCallback } from 'react'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import { supabase } from '../lib/firebaseClient'
 import { RefreshCw, Search, Star } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, StatCard, fmtDateTime } from './ui'
 import { AdminTableSkeleton } from '../common/Skeleton'

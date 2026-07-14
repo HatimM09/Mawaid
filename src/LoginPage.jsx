@@ -711,10 +711,6 @@ export default function LoginPage({ onRoleLogin }) {
                   <img src="/al-mawaid.png" alt="Al-Mawaid" className="lp-logo" />
                 </div>
                 <div className="lp-title">AL-MAWAID</div>
-                <div style={{ fontSize: 11, color: 'rgba(245, 222, 179, 0.5)', letterSpacing: '0.12em', fontWeight: 400, marginTop: 6, fontFamily: "'Outfit',sans-serif" }}>
-                  Daily Tiffin Service —
-                  <span style={{ opacity: 0.7, fontFamily: "'Noto Nastaliq Urdu','Amiri',serif" }}> نعمتِ خداوندی</span>
-                </div>
               </div>
             </div>
 
@@ -744,7 +740,7 @@ export default function LoginPage({ onRoleLogin }) {
               <form className="lp-form" onSubmit={handleAuth}>
                 {role !== 'inventory_manager' && (
                   <div className={`lp-field ${fieldErrors.email ? 'lp-field--error' : ''}`}>
-                    <label className="lp-field-label">
+                    <label htmlFor="loginEmail" className="lp-field-label">
                       {fieldErrors.email ? (
                         <span style={{ color: '#e74c3c', display: 'flex', alignItems: 'center', gap: 4 }}>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -755,6 +751,7 @@ export default function LoginPage({ onRoleLogin }) {
                     <div className="lp-input-wrap">
                       <Mail />
                       <input
+                        id="loginEmail"
                         type="email"
                         name="email"
                         className={`lp-input ${fieldErrors.email ? 'lp-input--error' : ''}`}
@@ -771,7 +768,7 @@ export default function LoginPage({ onRoleLogin }) {
 
                 {role !== 'inventory_manager' && (
                   <div className={`lp-field ${fieldErrors.password ? 'lp-field--error' : ''}`}>
-                    <label className="lp-field-label">
+                    <label htmlFor="loginPassword" className="lp-field-label">
                       {fieldErrors.password ? (
                         <span style={{ color: '#e74c3c', display: 'flex', alignItems: 'center', gap: 4 }}>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -782,6 +779,7 @@ export default function LoginPage({ onRoleLogin }) {
                     <div className="lp-input-wrap">
                       <Lock />
                       <input
+                        id="loginPassword"
                         type={showPass ? 'text' : 'password'}
                         name="password"
                         className={`lp-input ${fieldErrors.password ? 'lp-input--error' : ''}`}
@@ -818,14 +816,25 @@ export default function LoginPage({ onRoleLogin }) {
                 )}
 
                 {/* ── Remember Me ── */}
-                <label style={{
+                <label htmlFor="rememberMe" style={{
                   display: 'flex', alignItems: 'center', gap: 10, marginTop: 2, marginBottom: 0,
                   cursor: 'pointer', userSelect: 'none',
                   fontFamily: "'Outfit',sans-serif", fontSize: 12,
                   color: 'rgba(245, 222, 179, 0.6)', fontWeight: 600, letterSpacing: '0.04em'
                 }}>
+                  <input
+                    id="rememberMe"
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={() => setRememberMe(s => !s)}
+                    style={{ display: 'none' }}
+                  />
                   <div
-                    onClick={() => setRememberMe(s => !s)}
+                    role="checkbox"
+                    aria-checked={rememberMe}
+                    aria-label="Remember Me"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setRememberMe(s => !s) } }}
                     style={{
                       width: 18, height: 18, borderRadius: 5,
                       border: `1.5px solid ${rememberMe ? '#D4AF37' : 'rgba(212, 175, 55, 0.3)'}`,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import { supabase } from '../lib/firebaseClient'
 import { RefreshCw, Search, Send, ChevronDown, ChevronUp, ShieldAlert, Lock } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Badge, Btn, fmtDateTime } from './ui'
 import { AdminTableSkeleton } from '../common/Skeleton'
@@ -54,8 +54,9 @@ export default function QueriesAdminPage() {
   }, [load])
 
   const updateStatus = async (id, status) => {
+    const { data: existing } = await supabase.from('queries').select('admin_reply, user_id, subject').eq('id', id).single()
     const updateObj = { status, updated_at: new Date().toISOString() }
-    if (status === 'resolved') {
+    if (status === 'resolved' && !existing?.admin_reply) {
       updateObj.admin_reply = 'Resolved by Al-Mawaid Administration.'
     }
     const { error } = await supabase.from('queries').update(updateObj).eq('id', id)
@@ -64,13 +65,41 @@ export default function QueriesAdminPage() {
       return
     }
     setQueries(prev => prev.map(q => q.id === id ? { ...q, ...updateObj } : q))
+
+    // 🔔 Notify the specific user when their query is resolved
+    if (status === 'resolved' && existing?.user_id) {
+      try {
+        const subjectLabel = existing.subject || 'Query'
+        // Insert in-app notification for real-time toast
+        await supabase.from('notifications').insert({
+          user_id: existing.user_id,
+          title: '✅ Query Resolved',
+          message: `Your "${subjectLabel}" has been resolved by the administration.`,
+          url: '/post',
+          type: 'query_resolved'
+        })
+        // Send push notification for when app is closed
+        await supabase.functions.invoke('sendPush', {
+          body: {
+            title: '✅ Query Resolved',
+            body: `Your "${subjectLabel}" has been resolved by the administration.`,
+            target_type: 'specific',
+            user_id: existing.user_id,
+            url: '/post'
+          }
+        })
+      } catch (notifyErr) {
+        console.warn('[Queries] Resolution notification failed:', notifyErr)
+      }
+    }
   }
 
   const sendReply = async (q) => {
-    if (!reply.trim()) return
+    const trimmedReply = reply.trim()
+    if (!trimmedReply) return
     setSending(true)
     const updateObj = {
-      admin_reply: reply.trim(),
+      admin_reply: trimmedReply,
       status: 'resolved',
       updated_at: new Date().toISOString()
     }
@@ -78,6 +107,37 @@ export default function QueriesAdminPage() {
     setSending(false)
     if (!error) {
       setQueries(prev => prev.map(item => item.id === q.id ? { ...item, ...updateObj } : item))
+      
+      // 🔔 Notify the specific user when admin sends a reply
+      const userId = q.user_id
+      if (userId) {
+        try {
+          const subjectLabel = q.subject || 'Query'
+          const shortMessage = trimmedReply.length > 80 ? trimmedReply.slice(0, 80) + '…' : trimmedReply
+          const shortBody = trimmedReply.length > 100 ? trimmedReply.slice(0, 100) + '…' : trimmedReply
+          // Insert in-app notification for real-time toast
+          await supabase.from('notifications').insert({
+            user_id: userId,
+            title: '💬 Admin Replied to Your Query',
+            message: shortMessage,
+            url: '/post',
+            type: 'query_reply'
+          })
+          // Send push notification
+          await supabase.functions.invoke('sendPush', {
+            body: {
+              title: '💬 Admin Replied to Your Query',
+              body: `"${subjectLabel}" — ${shortBody}`,
+              target_type: 'specific',
+              user_id: userId,
+              url: '/post'
+            }
+          })
+        } catch (notifyErr) {
+          console.warn('[Queries] Reply notification failed:', notifyErr)
+        }
+      }
+      
       setReply('')
       setExpanded(null)
     }

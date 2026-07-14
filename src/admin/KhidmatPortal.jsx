@@ -7,7 +7,7 @@ import {
   ChevronLeft, Phone, MapPin, LifeBuoy, Lock, MessageCircle,
   AlertCircle, Wallet, ClipboardList, Menu
 } from 'lucide-react'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import { supabase } from '../lib/firebaseClient'
 import { AuthCtx, ThemeCtx, useAuth, useTheme } from './context'
 import { T as SharedT, updateSystemTheme, Modal, SurveyResponseDisplay, Btn as SharedBtn, PackingTVView } from './ui'
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
@@ -136,7 +136,7 @@ export default function KhidmatPortal({ signOut, user }) {
       const { data: menuRow } = await supabase
         .from('weekly_menu')
         .select('*')
-        .eq('day_name', today.charAt(0).toUpperCase() + today.slice(1))
+        .eq('day_name', today)
         .eq('week_start', getWeekDate())
         .maybeSingle()
 
@@ -145,12 +145,14 @@ export default function KhidmatPortal({ signOut, user }) {
         const statusKey = `${dayKey}_${mealKey}_status`
         const status = row ? row[statusKey] : null
         const dishes = {}
-        if (row && status === 'Applied' && menuRow) {
+        if (menuRow) {
           const dishList = (menuRow[meal] || '').split(',').map(s => s.trim()).filter(Boolean)
           dishList.forEach((dish, idx) => {
-            const val = row[`${dayKey}_${mealKey}_dish_${idx + 1}`]
-            if (val !== undefined && val !== null) {
+            const val = row ? row[`${dayKey}_${mealKey}_dish_${idx + 1}`] : null
+            if (val !== undefined && val !== null && val !== '') {
               dishes[dish] = val === 'Yes' ? 'yes' : (val === 'No' ? 'no' : val)
+            } else {
+              dishes[dish] = null
             }
           })
         }
@@ -225,10 +227,10 @@ export default function KhidmatPortal({ signOut, user }) {
     setRequestsList(req || []);
     setQueriesList(queries || []);
     if (menu && menu.length > 0) {
-      const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
       setWeeklyMenu(days.map(d => {
         const row = menu.find(r => r.day_name === d)
-        return { name: d, lunch: row?.lunch || '', dinner: row?.dinner || '' }
+        return { name: d.charAt(0).toUpperCase() + d.slice(1), lunch: row?.lunch || '', dinner: row?.dinner || '' }
       }))
     }
     setLoadingItems(false)

@@ -10,7 +10,7 @@ import {
   Target,
   X, Upload, Rocket
 } from 'lucide-react'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import { supabase } from '../lib/firebaseClient'
 import {
   T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner,
   Modal, SlideDrawer, fmtDateTime
@@ -201,6 +201,7 @@ export default function NotificationsAdminPage() {
 
     const payload = {
       title: form.title,
+      message: form.body,
       body: form.body,
       sender_name: form.sender_name,
       media: form.media_url ? [form.media_url] : [],

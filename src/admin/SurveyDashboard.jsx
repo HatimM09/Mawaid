@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import { supabase } from '../lib/firebaseClient'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import {
   Search, RefreshCw, Filter, Utensils, User as UserIcon, Calendar, Clock,

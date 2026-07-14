@@ -1,6 +1,6 @@
 // src/admin/DailySurveyTracking.jsx
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import { supabase } from '../lib/firebaseClient'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { 
   Search, RefreshCw, ChevronRight, Check, X, Filter, 
@@ -63,10 +63,11 @@ export default function DailySurveyTracking() {
       
       const buildDishMap = (dishList, mk) => {
         const result = {}
-        if (!row || row[`${dayKey}_${mk}_status`] !== 'Applied') return result
+        const status = row ? row[`${dayKey}_${mk}_status`] : null
+        result._status = status || (row ? 'Not Submitted' : 'Not Submitted')
         dishList.forEach((d, i) => {
-          const val = row[`${dayKey}_${mk}_dish_${i + 1}`]
-          if (val !== undefined && val !== null) {
+          const val = row ? row[`${dayKey}_${mk}_dish_${i + 1}`] : null
+          if (val !== undefined && val !== null && val !== '') {
             const rotiKw = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
             if (rotiKw.some(k => d.toLowerCase().includes(k))) {
               result[d] = String(val).toLowerCase() === 'yes' ? 'yes' : 'no'
@@ -74,6 +75,8 @@ export default function DailySurveyTracking() {
               const lowerVal = String(val).toLowerCase()
               result[d] = lowerVal === 'yes' ? 'yes' : lowerVal === 'no' ? 'no' : val
             }
+          } else {
+            result[d] = null
           }
         })
         return result
@@ -81,15 +84,15 @@ export default function DailySurveyTracking() {
 
       const lunchDishes = weeklyMenu[day]?.lunch || []
       const dinnerDishes = weeklyMenu[day]?.dinner || []
-      const lunchStatus = row ? row[`${dayKey}_l_status`] : null
-      const dinnerStatus = row ? row[`${dayKey}_d_status`] : null
+      const lunchMap = buildDishMap(lunchDishes, 'l')
+      const dinnerMap = buildDishMap(dinnerDishes, 'd')
 
       setSelectedUser({
         ...u,
-        status: row ? row[`${dayKey}_${mealKey}_status`] : 'Not Submitted',
+        status: lunchMap._status,
         dishResponses: buildDishMap(weeklyMenu[day]?.[meal] || [], mealKey),
-        lunch: { status: lunchStatus, dishes: buildDishMap(lunchDishes, 'l') },
-        dinner: { status: dinnerStatus, dishes: buildDishMap(dinnerDishes, 'd') },
+        lunch: { status: lunchMap._status, dishes: lunchMap },
+        dinner: { status: dinnerMap._status, dishes: dinnerMap },
         currentDay: day,
         currentMeal: meal
       })
@@ -181,21 +184,31 @@ export default function DailySurveyTracking() {
         try { setDishInputConfig(JSON.parse(settingsData.value)) } catch {}
       }
 
-      const { data: resultsRaw, error } = await supabase
+      const { data: users, error: usersError } = await supabase
         .from('user_stats')
-        .select(`
-          user_id, name, thali_number, email, avatar_url,
-          survey_submissions_flat (*)
-        `)
-      
-      if (error) throw error
+        .select('user_id, name, thali_number, email, avatar_url')
+      if (usersError) throw usersError
+
+      const { data: submissions, error: subsError } = await supabase
+        .from('survey_submissions_flat')
+        .select('*')
+      if (subsError) throw subsError
+
       setLoadError(null)
-      
+
+      // Merge submissions into user records
+      const subMap = {}
+      for (const s of submissions || []) {
+        if (!subMap[s.user_id]) subMap[s.user_id] = []
+        subMap[s.user_id].push(s)
+      }
+      const resultsRaw = (users || []).map(u => ({
+        ...u,
+        survey_submissions_flat: subMap[u.user_id] || []
+      }))
+
       // Collect distinct week_ids for filter
-      const allWeeks = [...new Set((resultsRaw || []).flatMap(u => {
-        const subs = Array.isArray(u.survey_submissions_flat) ? u.survey_submissions_flat : (u.survey_submissions_flat ? [u.survey_submissions_flat] : [])
-        return subs.map(s => s.week_id).filter(Boolean)
-      }))].sort().reverse()
+      const allWeeks = [...new Set((submissions || []).map(s => s.week_id).filter(Boolean))].sort().reverse()
       setAvailableWeeks(allWeeks)
       
       const dayKey = day.substring(0, 3).toLowerCase()
@@ -204,10 +217,10 @@ export default function DailySurveyTracking() {
       
       const buildDishMap = (dishList, mk, r) => {
         const result = {}
-        if (!r || r[`${dayKey}_${mk}_status`] !== 'Applied') return result
+        result._status = r ? r[`${dayKey}_${mk}_status`] : 'Not Submitted'
         dishList.forEach((d, i) => {
-          const val = r[`${dayKey}_${mk}_dish_${i + 1}`]
-          if (val !== undefined && val !== null) {
+          const val = r ? r[`${dayKey}_${mk}_dish_${i + 1}`] : null
+          if (val !== undefined && val !== null && val !== '') {
             const rotiKw = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
             if (rotiKw.some(k => d.toLowerCase().includes(k))) {
               result[d] = String(val).toLowerCase() === 'yes' ? 'yes' : 'no'
@@ -215,6 +228,8 @@ export default function DailySurveyTracking() {
               const lowerVal = String(val).toLowerCase()
               result[d] = lowerVal === 'yes' ? 'yes' : lowerVal === 'no' ? 'no' : val
             }
+          } else {
+            result[d] = null
           }
         })
         return result
@@ -230,13 +245,15 @@ export default function DailySurveyTracking() {
         }
         const lunchDishes = weeklyMenu[day]?.lunch || []
         const dinnerDishes = weeklyMenu[day]?.dinner || []
-        const currentStatus = resp ? resp[statusKey] : null
+        const buildCurMeal = buildDishMap(weeklyMenu[day]?.[meal] || [], mealKey, resp)
+        const buildLunch = buildDishMap(lunchDishes, 'l', resp)
+        const buildDinner = buildDishMap(dinnerDishes, 'd', resp)
         return { 
           ...u, 
-          status: currentStatus,
-          dishResponses: buildDishMap(weeklyMenu[day]?.[meal] || [], mealKey, resp),
-          lunch: { status: resp ? resp[`${dayKey}_l_status`] : null, dishes: buildDishMap(lunchDishes, 'l', resp) },
-          dinner: { status: resp ? resp[`${dayKey}_d_status`] : null, dishes: buildDishMap(dinnerDishes, 'd', resp) },
+          status: buildCurMeal._status,
+          dishResponses: buildCurMeal,
+          lunch: { status: buildLunch._status, dishes: buildLunch },
+          dinner: { status: buildDinner._status, dishes: buildDinner },
           currentDay: day,
           currentMeal: meal,
           week_id: resp ? resp.week_id : null,
@@ -610,6 +627,7 @@ export default function DailySurveyTracking() {
 }
 
 function SurveyResponseDisplay({ user, meal, day, onClose }) {
+  const dishEntries = Object.entries(user.dishResponses || {}).filter(([k]) => k !== '_status')
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Header Info */}
@@ -639,20 +657,8 @@ function SurveyResponseDisplay({ user, meal, day, onClose }) {
         </div>
         <div style={{ textAlign: 'right' }}>
           <Badge color={user.status === 'Applied' ? T.success : T.danger}>
-            {user.status === 'Applied' ? 'CONFIRMED' : 'SKIPPED'}
+            {user.status === 'Applied' ? 'CONFIRMED' : (user.status === 'Skipped' ? 'SKIPPED' : 'PENDING')}
           </Badge>
-          {user.status === 'Applied' && (
-            <div style={{ marginTop: 8 }}>
-              <div style={{ fontSize: 20, fontWeight: 900, color: T.accent, lineHeight: 1 }}>
-                {(Object.values(user.dishResponses || {}).reduce((acc, v) => {
-                  if (v === 'yes' || v === 'no') return acc
-                  const n = parseInt(v) || 0
-                  return acc + (typeof v === 'string' && v.endsWith('%') ? n / 100 : n)
-                }, 0)).toFixed(1)}
-              </div>
-              <div style={{ fontSize: 9, fontWeight: 800, color: T.textSub, textTransform: 'uppercase' }}>Portions</div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -662,48 +668,41 @@ function SurveyResponseDisplay({ user, meal, day, onClose }) {
         padding: 20, borderRadius: 20, background: T.card, border: `1px solid ${T.border}`,
         boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)'
       }}>
-        {user.status === 'Applied' ? (
-          Object.entries(user.dishResponses || {}).map(([dish, val]) => {
-            const isRoti = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri'].some(k => dish.toLowerCase().includes(k))
-            const isCount = typeof val === 'string' && !val.endsWith('%') && val !== 'yes' && val !== 'no'
-            const numVal = parseInt(val) || 0
-            const displayVal = isRoti ? (val === 'yes' ? 'YES' : 'NO') : (
-              isCount ? `${numVal}` : (typeof val === 'string' && val.endsWith('%') ? val : `${numVal}%`)
-            )
-            const isActive = val === 'yes' || numVal > 0
+        {dishEntries.map(([dish, val]) => {
+          const isRoti = val !== null && ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri'].some(k => dish.toLowerCase().includes(k))
+          const isCount = val !== null && typeof val === 'string' && !val.endsWith('%') && val !== 'yes' && val !== 'no'
+          const numVal = val !== null ? (parseInt(val) || 0) : null
+          const isActive = val !== null && (val === 'yes' || (isCount && numVal > 0) || (!isRoti && !isCount && numVal > 0))
+          const displayVal = val === null ? '—' : isRoti ? (val === 'yes' ? 'YES' : 'NO') : (
+            isCount ? `${numVal}` : (typeof val === 'string' && val.endsWith('%') ? val : `${numVal}%`)
+          )
 
-            return (
-              <div key={dish} style={{ 
-                aspectRatio: '1/1', borderRadius: 18,
-                background: isActive ? 'rgba(197, 160, 89, 0.1)' : 'rgba(239, 68, 68, 0.05)',
-                border: `2px solid ${isActive ? T.accentBorder : 'rgba(239, 68, 68, 0.15)'}`,
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                textAlign: 'center', padding: 10, transition: 'all 0.3s',
-                boxShadow: isActive ? '0 0 20px rgba(197, 160, 89, 0.15)' : 'none'
+          return (
+            <div key={dish} style={{ 
+              aspectRatio: '1/1', borderRadius: 18,
+              background: isActive ? 'rgba(197, 160, 89, 0.1)' : 'rgba(255,255,255,0.02)',
+              border: `2px solid ${isActive ? T.accentBorder : 'rgba(239, 68, 68, 0.15)'}`,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              textAlign: 'center', padding: 10, transition: 'all 0.3s',
+              boxShadow: isActive ? '0 0 20px rgba(197, 160, 89, 0.15)' : 'none'
+            }}>
+              <div style={{ 
+                fontSize: 18, fontWeight: 900,
+                color: isActive ? T.accent : 'rgba(239, 68, 68, 0.3)', marginBottom: 4,
+                textShadow: isActive ? '0 0 10px rgba(197, 160, 89, 0.2)' : 'none'
               }}>
-                <div style={{ 
-                  fontSize: 18, fontWeight: 900,
-                  color: isActive ? T.accent : T.danger, marginBottom: 4,
-                  textShadow: isActive ? '0 0 10px rgba(197, 160, 89, 0.2)' : 'none'
-                }}>
-                  {displayVal}
-                </div>
-                <div style={{ 
-                  fontSize: 9, fontWeight: 800, color: T.textSub, 
-                  textTransform: 'uppercase', letterSpacing: '0.02em',
-                  lineHeight: 1.3, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis'
-                }}>
-                  {dish}
-                </div>
+                {displayVal}
               </div>
-            )
-          })
-        ) : (
-          <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '40px 0', color: T.textSub }}>
-            <X size={40} style={{ opacity: 0.1, marginBottom: 12 }} />
-            <div style={{ fontWeight: 700 }}>No response for this meal</div>
-          </div>
-        )}
+              <div style={{ 
+                fontSize: 9, fontWeight: 800, color: T.textSub, 
+                textTransform: 'uppercase', letterSpacing: '0.02em',
+                lineHeight: 1.3, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis'
+              }}>
+                {dish}
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>

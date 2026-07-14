@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import { supabase } from '../lib/firebaseClient'
 import { Modal, Btn, Input, Select, Badge, Spinner, T } from './ui'
 import { Search, Shield, Save, X, Trash2 } from 'lucide-react'
 

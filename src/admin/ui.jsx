@@ -277,20 +277,24 @@ export const Badge = ({ children, color = 'var(--accent-cyan)', style = {} }) =>
   )
 }
 
-export const Input = ({ label, ...props }) => {
+export const Input = ({ label, rightAction, ...props }) => {
   const autoId = label ? label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') : undefined
   return (
-    <div style={{ width: '100%' }}>
+    <div style={{ width: '100%', position: 'relative' }}>
       {label && <label htmlFor={props.id || autoId} style={{
         display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
         fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
       }}>{label}</label>}
-      <input id={props.id || autoId} name={props.name || autoId} style={{
-        width: '100%', boxSizing: 'border-box',
-        padding: '12px 16px', borderRadius: 12,
-        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
-        color: 'var(--text-primary)', fontSize: 14, outline: 'none', fontFamily: 'inherit',
-      }} {...props} />
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <input id={props.id || autoId} name={props.name || autoId} style={{
+          width: '100%', boxSizing: 'border-box',
+          padding: '12px 16px', borderRadius: 12,
+          background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
+          color: 'var(--text-primary)', fontSize: 14, outline: 'none', fontFamily: 'inherit',
+          paddingRight: rightAction ? 40 : 16,
+        }} {...props} />
+        {rightAction && <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', display: 'flex', zIndex: 2 }}>{rightAction}</span>}
+      </div>
     </div>
   )
 }
@@ -525,28 +529,17 @@ export const PackingTVView = ({ user, onClose }) => {
 
   const MealSection = ({ meal }) => {
     const { status, dishes } = meal.data
-    const dishEntries = Object.entries(dishes)
+    const dishEntries = Object.entries(dishes).filter(([k]) => k !== '_status')
     const isApplied = status === 'Applied'
-
-    if (!isApplied) {
-      return (
-        <div style={{
-          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(244, 63, 94, 0.08)', border: 'clamp(4px, 0.8vh, 12px) solid rgba(244, 63, 94, 0.3)', borderRadius: '3vh',
-          padding: '3vh 3vw', minHeight: 0
-        }}>
-          <div style={{ fontSize: 'clamp(36px, 12vh, 140px)', fontWeight: 1000, color: '#f43f5e', textAlign: 'center', lineHeight: 1.1 }}>
-            {meal.icon} NO {meal.name.toUpperCase()}
-          </div>
-          <div style={{ fontSize: 'clamp(18px, 4vh, 48px)', color: 'rgba(244, 63, 94, 0.5)', marginTop: '1.5vh', fontWeight: 600 }}>
-            {status === 'Not Submitted' ? 'Not yet submitted' : 'Skipped'}
-          </div>
-        </div>
-      )
-    }
 
     const total = dishEntries.length
     const gridCols = total === 1 ? '1fr' : total === 2 ? 'repeat(2, 1fr)' : total <= 4 ? 'repeat(2, 1fr)' : total <= 6 ? 'repeat(3, 1fr)' : 'repeat(4, 1fr)'
+
+    const pctColorNull = (val, isRoti, raw) => {
+      const inactive = { bg: 'rgba(255,255,255,0.02)', border: 'rgba(255,255,255,0.08)', fill: 'rgba(255,255,255,0.03)', shadow: 'rgba(255,255,255,0)', badge: 'rgba(255,255,255,0.1)', text: 'rgba(255,255,255,0.2)', tagBg: 'rgba(255,255,255,0.05)', tagColor: 'rgba(255,255,255,0.2)', tagBorder: 'rgba(255,255,255,0.08)' }
+      if (val === null) return inactive
+      return pctColor(val, isRoti, raw)
+    }
 
     return (
       <div style={{
@@ -556,12 +549,19 @@ export const PackingTVView = ({ user, onClose }) => {
         minHeight: 0,
         alignContent: 'center'
       }}>
+        {!isApplied && total > 0 && (
+          <div style={{ gridColumn: '1 / -1', textAlign: 'center', marginBottom: '1vh' }}>
+            <div style={{ fontSize: 'clamp(20px, 5vh, 60px)', fontWeight: 1000, color: status === 'Not Submitted' ? '#fbbf24' : '#f43f5e', opacity: 0.7 }}>
+              {status === 'Not Submitted' ? '⏳ NO RESPONSE YET' : '❌ SKIPPED'}
+            </div>
+          </div>
+        )}
         {dishEntries.map(([dish, pct], idx) => {
-          const isCount = typeof pct === 'string' && !pct.endsWith('%') && pct !== 'yes' && pct !== 'no'
-          const isRoti = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri'].some(k => dish.toLowerCase().includes(k))
-          const val = parseInt(pct) || 0
-          const fillHeight = isRoti ? (pct === 'yes' ? '100%' : '0%') : (isCount ? (val > 0 ? '100%' : '0%') : `${val}%`)
-          const clr = pctColor(isCount || isRoti ? (val > 0 ? 100 : 0) : val, isRoti, pct)
+          const isCount = pct !== null && typeof pct === 'string' && !pct.endsWith('%') && pct !== 'yes' && pct !== 'no'
+          const isRoti = pct !== null && ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri'].some(k => dish.toLowerCase().includes(k))
+          const val = pct !== null ? (parseInt(pct) || 0) : null
+          const fillHeight = pct === null ? '0%' : isRoti ? (pct === 'yes' ? '100%' : '0%') : (isCount ? (val > 0 ? '100%' : '0%') : `${val}%`)
+          const clr = pctColorNull(isCount || isRoti ? (val !== null && val > 0 ? 100 : 0) : val, isRoti, pct)
           
           return (
             <div key={dish} style={{
@@ -603,7 +603,7 @@ export const PackingTVView = ({ user, onClose }) => {
                 maxWidth: '100%'
               }}>{dish}</div>
               <div style={{ zIndex: 2 }}>
-                {val > 0 && !isRoti && (
+                {val !== null && val > 0 && !isRoti && (
                   <div style={{
                     display: 'inline-block', padding: '0.6vh 2vw', borderRadius: '1vh',
                     background: clr.tagBg, color: clr.tagColor,
@@ -619,14 +619,14 @@ export const PackingTVView = ({ user, onClose }) => {
                   textShadow: `0 4px 15px ${clr.shadow}`, lineHeight: 1,
                   marginTop: '0.5vh'
                 }}>
-                  {isRoti ? (pct === 'yes' ? 'YES' : 'NO') : (isCount ? `${val}` : `${val}%`)}
+                  {pct === null ? '—' : isRoti ? (pct === 'yes' ? 'YES' : 'NO') : (isCount ? `${val}` : `${val}%`)}
                 </div>
                 <div style={{
                   fontSize: 'clamp(12px, 2vh, 24px)', fontWeight: 800,
                   color: 'var(--text-tertiary)', textTransform: 'uppercase',
                   marginTop: '0.5vh', letterSpacing: '0.12em'
                 }}>
-                  {isRoti ? 'Response' : (isCount ? 'Pieces' : 'Portion')}
+                  {pct === null ? 'No response' : isRoti ? 'Response' : (isCount ? 'Pieces' : 'Portion')}
                 </div>
               </div>
             </div>
@@ -736,7 +736,7 @@ export const PackingTVView = ({ user, onClose }) => {
 
 export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => {
   const responses = user.dishResponses || {}
-  const dishEntries = Object.entries(responses)
+  const dishEntries = Object.entries(responses).filter(([k]) => k !== '_status')
   
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, padding: 8 }}>
@@ -745,81 +745,74 @@ export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => 
         padding: '24px', borderRadius: 24, textAlign: 'center',
         background: user.status === 'Applied' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(244, 63, 94, 0.1)',
         border: `2px solid ${user.status === 'Applied' ? '#10b981' : '#f43f5e'}`,
-        animation: 'pulse 2s infinite'
       }}>
         <div style={{ fontSize: 14, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.2em', opacity: 0.7, marginBottom: 8 }}>Dispatch Decision</div>
         <div style={{ fontSize: 42, fontWeight: 900, color: user.status === 'Applied' ? '#10b981' : '#f43f5e' }}>
-          {user.status === 'Applied' ? '✅ PROCEED' : '❌ NO MEAL'}
+          {user.status === 'Applied' ? '✅ PROCEED' : user.status === 'Skipped' ? '❌ SKIPPED' : '⏳ NO RESPONSE'}
         </div>
       </div>
 
-      {user.status === 'Applied' ? (
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
-          gap: 20 
-        }}>
-          {dishEntries.map(([dish, pct]) => {
-            const isCount = typeof pct === 'string' && !pct.endsWith('%') && pct !== 'yes' && pct !== 'no'
-            const isRoti = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri'].some(k => dish.toLowerCase().includes(k))
-            const val = parseInt(pct) || 0
-            const isActive = pct === 'yes' || (isCount && val > 0) || (!isRoti && !isCount && val > 0)
-            const fillHeight = isRoti ? (pct === 'yes' ? '100%' : '0%') : (isCount ? (val > 0 ? '100%' : '0%') : `${val}%`)
-            
-            return (
-              <div key={dish} style={{ 
-                aspectRatio: '1 / 1', 
-                background: isActive ? 'rgba(212, 175, 55, 0.06)' : 'rgba(255,255,255,0.02)', 
-                border: `2px solid ${isActive ? 'var(--accent-gold)' : 'rgba(239, 68, 68, 0.15)'}`,
-                borderRadius: 32,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 24,
-                position: 'relative',
-                overflow: 'hidden',
-                boxShadow: isActive ? '0 10px 30px rgba(212, 175, 55, 0.1)' : 'none'
-              }}>
-                <div style={{ 
-                  position: 'absolute', 
-                  bottom: 0, left: 0, right: 0, 
-                  height: fillHeight,
-                  background: val > 50 || pct === 'yes' ? 'var(--accent-grad)' : 'rgba(212, 175, 55, 0.2)',
-                  opacity: 0.3,
-                  transition: 'height 1s ease-out'
-                }} />
+      <div style={{ 
+        display: 'grid', 
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+        gap: 20 
+      }}>
+        {dishEntries.map(([dish, pct]) => {
+          const isCount = pct !== null && typeof pct === 'string' && !pct.endsWith('%') && pct !== 'yes' && pct !== 'no'
+          const isRoti = pct !== null && ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri'].some(k => dish.toLowerCase().includes(k))
+          const val = pct !== null ? (parseInt(pct) || 0) : null
+          const isActive = pct !== null && (pct === 'yes' || (isCount && val > 0) || (!isRoti && !isCount && val > 0))
+          const fillHeight = pct === null ? '0%' : isRoti ? (pct === 'yes' ? '100%' : '0%') : (isCount ? (val > 0 ? '100%' : '0%') : `${val}%`)
+          
+          return (
+            <div key={dish} style={{ 
+              aspectRatio: '1 / 1', 
+              background: isActive ? 'rgba(212, 175, 55, 0.06)' : 'rgba(255,255,255,0.02)', 
+              border: `2px solid ${isActive ? 'var(--accent-gold)' : 'rgba(239, 68, 68, 0.15)'}`,
+              borderRadius: 32,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 24,
+              position: 'relative',
+              overflow: 'hidden',
+              boxShadow: isActive ? '0 10px 30px rgba(212, 175, 55, 0.1)' : 'none'
+            }}>
+              <div style={{ 
+                position: 'absolute', 
+                bottom: 0, left: 0, right: 0, 
+                height: fillHeight,
+                background: val !== null && (val > 50 || pct === 'yes') ? 'var(--accent-grad)' : 'rgba(212, 175, 55, 0.2)',
+                opacity: 0.3,
+                transition: 'height 1s ease-out'
+              }} />
 
-                <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 12, textAlign: 'center', zIndex: 2 }}>{dish}</div>
-                
-                <div style={{ 
-                  fontSize: isRoti ? 48 : 72, 
-                  fontWeight: 950, 
-                  color: isActive ? '#fff' : 'rgba(239, 68, 68, 0.3)',
-                  textShadow: isActive ? '0 4px 12px rgba(0,0,0,0.5)' : 'none',
-                  zIndex: 2,
-                  lineHeight: 1
-                }}>
-                  {isRoti ? (pct === 'yes' ? 'YES' : 'NO') : (isCount ? `${val}` : `${val}%`)}
-                </div>
-                
-                {val > 0 && !isRoti && (
-                   <div style={{ 
-                     marginTop: 12, padding: '4px 12px', borderRadius: 10, background: 'var(--accent-gold)', 
-                     color: '#000', fontSize: 12, fontWeight: 900, zIndex: 2 
-                   }}>
-                     {isCount ? `${val} pcs` : (val === 100 ? 'FULL PORTION' : 'HALF PORTION')}
-                   </div>
-                )}
+              <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 12, textAlign: 'center', zIndex: 2 }}>{dish}</div>
+              
+              <div style={{ 
+                fontSize: isRoti ? 48 : 72, 
+                fontWeight: 950, 
+                color: isActive ? '#fff' : 'rgba(239, 68, 68, 0.3)',
+                textShadow: isActive ? '0 4px 12px rgba(0,0,0,0.5)' : 'none',
+                zIndex: 2,
+                lineHeight: 1
+              }}>
+                {pct === null ? '—' : isRoti ? (pct === 'yes' ? 'YES' : 'NO') : (isCount ? `${val}` : `${val}%`)}
               </div>
-            )
-          })}
-        </div>
-      ) : (
-        <div style={{ textAlign: 'center', padding: '40px 0', opacity: 0.5 }}>
-           No meal data for this session.
-        </div>
-      )}
+              
+              {val !== null && val > 0 && !isRoti && (
+                 <div style={{ 
+                   marginTop: 12, padding: '4px 12px', borderRadius: 10, background: 'var(--accent-gold)', 
+                   color: '#000', fontSize: 12, fontWeight: 900, zIndex: 2 
+                 }}>
+                   {isCount ? `${val} pcs` : (val === 100 ? 'FULL PORTION' : 'HALF PORTION')}
+                 </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
 
       <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
         <Btn variant="outline" style={{ flex: 1 }} onClick={onClose}>Dismiss</Btn>

@@ -1,7 +1,7 @@
 // src/admin/Dashboard.jsx
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import { supabase } from '../lib/firebaseClient'
 import {
   Users, Star, Calendar, RefreshCw, ArrowUpRight, ChevronRight, AlertCircle, AlertTriangle, QrCode
 } from 'lucide-react'
@@ -327,7 +327,7 @@ export default function Dashboard() {
   const loadStats = useCallback(async () => {
     const currentWeekId = getWeekDate()
     const [u, s, f, r, q, allUsers, allSubmissions, allInventory] = await Promise.all([
-      supabase.from('user_stats').select('id', { count: 'exact', head: true }),
+      supabase.from('user_stats').select('user_id', { count: 'exact', head: true }),
       supabase.from('survey_submissions_flat').select('user_id', { count: 'exact', head: true }).eq('week_id', currentWeekId),
       supabase.from('daily_feedback').select('id', { count: 'exact', head: true }),
       supabase.from('thali_requests').select('id', { count: 'exact', head: true }).or('status.eq.pending,status.is.null'),

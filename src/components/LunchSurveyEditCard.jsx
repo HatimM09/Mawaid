@@ -329,6 +329,15 @@ export default function LunchSurveyEditCard({
               }}>
                 Count:
               </span>
+              <button
+                onClick={() => handleCountChange(Math.max(0, (currentResponse.value || 0) - 1))}
+                style={{
+                  width: 36, height: 36, borderRadius: 8,
+                  border: `1px solid ${t.border}`, background: t.inputBg,
+                  color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 700,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}
+              >−</button>
               <input
                 type="number"
                 min="0"
@@ -337,8 +346,8 @@ export default function LunchSurveyEditCard({
                 value={currentResponse.value}
                 onChange={(e) => handleCountChange(e.target.value)}
                 style={{
-                  width: 70,
-                  padding: '10px 12px',
+                  width: 60,
+                  padding: '10px 8px',
                   borderRadius: 9,
                   border: `1.5px solid ${isOverLimit ? t.dangerBorder : t.border}`,
                   background: t.inputBg,
@@ -351,6 +360,15 @@ export default function LunchSurveyEditCard({
                 }}
                 aria-label="Portion count"
               />
+              <button
+                onClick={() => handleCountChange(Math.min(maxCount || 99, (currentResponse.value || 0) + 1))}
+                style={{
+                  width: 36, height: 36, borderRadius: 8,
+                  border: `1px solid ${t.border}`, background: t.inputBg,
+                  color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 700,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}
+              >+</button>
               <span style={{
                 fontSize: 11,
                 color: isOverLimit ? '#ef4444' : t.textSub,

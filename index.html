@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#060d1a" />
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f4f8" />
-  <script>addEventListener('error',function(e){try{if(e.message&&e.message.match(/channel closed|asynchronous response|message channel/)){e.preventDefault()}}catch{}});addEventListener('unhandledrejection',function(e){try{if(e.reason&&(typeof e.reason==='string'?e.reason:e.reason.message).match(/channel closed|asynchronous response|message channel/))e.preventDefault()}catch{}})</script>
+  <script>(()=>{function filter(e){let m=e&&(typeof e==='string'?e:e.message);if(m&&/asynchronous response|message channel|channel closed|listener indicated/i.test(m))return true}addEventListener('error',function(e){try{if(filter(e.message)){e.preventDefault();e.stopImmediatePropagation()}}catch(e){}});addEventListener('unhandledrejection',function(e){try{if(filter(e.reason))e.preventDefault()}catch(e){}});let orig=console.error;console.error=function(){let m=[].slice.call(arguments).map(a=>String(a)).join(' ');if(/asynchronous response|message channel|channel closed|listener indicated/i.test(m))return;return orig.apply(this,arguments)}})()</script>
   <title>Al-Mawaid | المَوَائِد</title>
   <link rel="manifest" href="/manifest.json" />
   <link rel="apple-touch-icon" href="/al-mawaid.png" />

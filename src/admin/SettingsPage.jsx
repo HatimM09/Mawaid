@@ -1,20 +1,19 @@
 // src/admin/SettingsPage.jsx
 import React, { useState, useEffect, useRef } from 'react'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
-import { Save, RefreshCw, Info, Calendar, Send, Clock, Shield, Trash2 } from 'lucide-react'
+import { supabase } from '../lib/firebaseClient'
+import { Save, RefreshCw, Info, Calendar, Send, Clock, Trash2 } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Btn, Alert, Input, Select, SectionHeader } from './ui'
-import SurveyAccessManager from './SurveyAccessManager'
 import { getWeekDate } from '../common/utils'
 
-const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday']
 
 const DEFAULT_MENU = {
-  Monday:    { lunch: 'Chola, Kulcha, Shreekhand, Dal, Chawal', dinner: 'FMB Menu' },
-  Tuesday:   { lunch: 'American Choupsey, Wafers, Butter Khichdi', dinner: 'Roti, Veg Jaipuri, Chicken Pulao, Soup' },
-  Wednesday: { lunch: 'Vegetable Sandwich, Bhel Salad, Corn Pulao', dinner: 'Roti, White Chicken, Manchurian Rice, Gravy' },
-  Thursday:  { lunch: 'Chicken 65, Corn Munch Salad, Dal Makhni, Chawal', dinner: 'Roti, Mango Custard, Matar Paneer, Tuwar Pulao, Palidu' },
-  Friday:    { lunch: 'FMB Menu', dinner: 'Roti, Gobi Matar, Chicken Kashmiri Pulao, Soup' },
-  Saturday:  { lunch: 'Chana Bateta, Dal Makhni, Chawal', dinner: 'Roti, Chicken Tarkari, Veg Coconut Rice, Kung Pao Gravy' },
+  monday:    { lunch: 'Chola, Kulcha, Shreekhand, Dal, Chawal', dinner: 'FMB Menu' },
+  tuesday:   { lunch: 'American Choupsey, Wafers, Butter Khichdi', dinner: 'Roti, Veg Jaipuri, Chicken Pulao, Soup' },
+  wednesday: { lunch: 'Vegetable Sandwich, Bhel Salad, Corn Pulao', dinner: 'Roti, White Chicken, Manchurian Rice, Gravy' },
+  thursday:  { lunch: 'Chicken 65, Corn Munch Salad, Dal Makhni, Chawal', dinner: 'Roti, Mango Custard, Matar Paneer, Tuwar Pulao, Palidu' },
+  friday:    { lunch: 'FMB Menu', dinner: 'Roti, Gobi Matar, Chicken Kashmiri Pulao, Soup' },
+  saturday:  { lunch: 'Chana Bateta, Dal Makhni, Chawal', dinner: 'Roti, Chicken Tarkari, Veg Coconut Rice, Kung Pao Gravy' },
 }
 
 const StatusToggle = ({ label, value, onChange, liveStatus }) => {
@@ -102,15 +101,6 @@ const isTimingOpen = (type, appSettings) => {
   const day = now.getDay()
   const minute = now.getHours() * 60 + now.getMinutes()
 
-  if (type === 'survey') {
-    const openH = parseInt(appSettings.survey_open_hour) || 20
-    const closeH = parseInt(appSettings.survey_close_hour) || 10
-    if (day === 6 && now.getHours() >= openH) return true
-    if (day === 0) return true
-    if (day === 1 && now.getHours() < closeH) return true
-    return false
-  }
-
   if (type === 'lunch') {
     const openParts = (appSettings.lunch_edit_open || '20:00').split(':').map(Number)
     const closeParts = (appSettings.lunch_edit_close || '11:00').split(':').map(Number)
@@ -140,20 +130,15 @@ const isTimingOpen = (type, appSettings) => {
 
 export default function SettingsPage() {
   const [menu, setMenu]         = useState(DEFAULT_MENU)
-  const [surveyStatus, setSurveyStatus] = useState('auto')
   const [lunchEditStatus, setLunchEditStatus] = useState('auto')
   const [dinnerEditStatus, setDinnerEditStatus] = useState('auto')
-  const [surveyMsg, setSurveyMsg] = useState('')
   const [helpline, setHelpline] = useState('')
-  const [surveyOpenHour, setSurveyOpenHour] = useState(20)
-  const [surveyCloseHour, setSurveyCloseHour] = useState(10)
   const [lunchEditOpen, setLunchEditOpen] = useState('20:00')
   const [lunchEditClose, setLunchEditClose] = useState('11:00')
   const [dinnerEditOpen, setDinnerEditOpen] = useState('12:00')
   const [dinnerEditClose, setDinnerEditClose] = useState('15:30')
   const [loading, setLoading]   = useState(true)
   const [saving, setSaving]     = useState(false)
-  const [quickSaving, setQuickSaving] = useState(false)
   const [msg, setMsg]           = useState({ text: '', type: 'success' })
 
   // Weekly menu publish state
@@ -161,7 +146,6 @@ export default function SettingsPage() {
   const [publishAt, setPublishAt] = useState('')
   const [publishing, setPublishing] = useState(false)
   const [dishInputConfig, setDishInputConfig] = useState({})
-  const [isAccessManagerOpen, setIsAccessManagerOpen] = useState(false)
   const [clearing, setClearing] = useState(false)
 
   useEffect(() => { load() }, [])
@@ -172,13 +156,9 @@ export default function SettingsPage() {
       const { data: settings } = await supabase.from('app_settings').select('*')
       if (settings) {
         settings.forEach(row => {
-          if (row.key === 'survey_status') setSurveyStatus(row.value)
           if (row.key === 'lunch_edit_status') setLunchEditStatus(row.value)
           if (row.key === 'dinner_edit_status') setDinnerEditStatus(row.value)
-          if (row.key === 'survey_msg')    setSurveyMsg(row.value)
           if (row.key === 'helpline_number') setHelpline(row.value)
-          if (row.key === 'survey_open_hour') setSurveyOpenHour(row.value)
-          if (row.key === 'survey_close_hour') setSurveyCloseHour(row.value)
           if (row.key === 'lunch_edit_open') setLunchEditOpen(row.value)
           if (row.key === 'lunch_edit_close') setLunchEditClose(row.value)
           if (row.key === 'dinner_edit_open') setDinnerEditOpen(row.value)
@@ -194,7 +174,7 @@ export default function SettingsPage() {
         const formatted = {}
         let hasPublishAt = null
         menuData.forEach(row => {
-          formatted[row.day_name] = { lunch: row.lunch ? row.lunch.split(',').map(s => s.trim()).join(', ') : '', dinner: row.dinner ? row.dinner.split(',').map(s => s.trim()).join(', ') : '', ar: row.day_ar }
+          formatted[row.day_name] = { lunch: row.lunch ? row.lunch.split(',').map(s => s.trim()).filter(Boolean).join(', ') : '', dinner: row.dinner ? row.dinner.split(',').map(s => s.trim()).filter(Boolean).join(', ') : '', ar: row.day_ar }
           if (row.publish_at) hasPublishAt = row.publish_at
         })
         setMenu(formatted)
@@ -233,13 +213,9 @@ export default function SettingsPage() {
 
     const weekId = thisWeek
     const defaults = [
-      { key: 'survey_status', value: surveyStatus },
       { key: 'lunch_edit_status', value: lunchEditStatus },
       { key: 'dinner_edit_status', value: dinnerEditStatus },
-      { key: 'survey_msg', value: surveyMsg || 'Survey opens Saturday at 8:00 PM and closes Monday at 11:00 AM.' },
       { key: 'helpline_number', value: helpline || '+91 98765 43210' },
-      { key: 'survey_open_hour', value: surveyOpenHour },
-      { key: 'survey_close_hour', value: surveyCloseHour },
       { key: 'lunch_edit_open', value: lunchEditOpen },
       { key: 'lunch_edit_close', value: lunchEditClose },
       { key: 'dinner_edit_open', value: dinnerEditOpen },
@@ -252,7 +228,7 @@ export default function SettingsPage() {
       supabase.from('weekly_menu').upsert(
         Object.entries(menu).map(([day, val]) => ({
           day_name: day, week_start: weekId,
-          day_ar: val.ar || '', lunch: (val.lunch || '').split(',').map(s => s.trim()).join(', '), dinner: (val.dinner || '').split(',').map(s => s.trim()).join(', '),
+          day_ar: val.ar || '', lunch: (val.lunch || '').split(',').map(s => s.trim()).filter(Boolean).join(', '), dinner: (val.dinner || '').split(',').map(s => s.trim()).filter(Boolean).join(', '),
           publish_at: publishAt ? new Date(publishAt).toISOString() : null,
         })),
         { onConflict: 'week_start,day_name' }
@@ -264,10 +240,12 @@ export default function SettingsPage() {
         .from('notices').select('id').eq('type', 'menu')
         .ilike('message', `%${weekId}%`).maybeSingle()
       if (!existingNotice) {
-        supabase.from('notices').insert({
-          title: '🍽️ This Week\'s Menu Updated', message: 'The menu has been updated. Check out what\'s cooking!',
-          url: '/', type: 'menu', created_at: new Date().toISOString()
-        }).catch(() => {})
+        try {
+          await supabase.from('notices').insert({
+            title: '🍽️ This Week\'s Menu Updated', message: 'The menu has been updated. Check out what\'s cooking!',
+            url: '/', type: 'menu', created_at: new Date().toISOString()
+          })
+        } catch (_) { /* notice insert is best-effort */ }
       }
     }
 
@@ -285,7 +263,7 @@ export default function SettingsPage() {
   // Dish-level helpers — keeps individual fields synced with comma-separated text
   const getDishes = (day, meal) => {
     const text = menu[day]?.[meal] || ''
-    return text ? text.split(', ') : ['']
+    return text ? text.split(', ') : []
   }
 
   const setDish = (day, meal, idx, val) => {
@@ -296,10 +274,7 @@ export default function SettingsPage() {
 
   const addDish = (day, meal) => {
     const dishes = getDishes(day, meal)
-    const last = dishes[dishes.length - 1]
-    if (last !== '' || dishes.length === 0) {
-      updateMenu(day, meal, [...dishes, ''].join(', '))
-    }
+    updateMenu(day, meal, [...dishes, ''].join(', '))
   }
 
   const removeDish = (day, meal, idx) => {
@@ -328,30 +303,6 @@ export default function SettingsPage() {
     })
   }
 
-  // Quick-save just the survey toggles (no page scroll needed)
-  const quickSaveSurveySettings = async () => {
-    setQuickSaving(true)
-    const toSave = [
-      { key: 'survey_status',     value: surveyStatus },
-      { key: 'lunch_edit_status', value: lunchEditStatus },
-      { key: 'dinner_edit_status', value: dinnerEditStatus },
-    ]
-    let err = null
-    for (const row of toSave) {
-      const { error } = await supabase.from('app_settings')
-        .update({ value: row.value, updated_at: new Date().toISOString() })
-        .eq('key', row.key)
-      if (error) { err = error; break }
-    }
-    setQuickSaving(false)
-    if (err) {
-      setMsg({ text: `Quick save failed: ${err.message}`, type: 'error' })
-    } else {
-      const now = new Date().toLocaleTimeString()
-      setMsg({ text: `✅ Survey settings applied at ${now}`, type: 'success' })
-    }
-  }
-
   if (loading) return (
     <PageWrap>
       <PageTitle>Settings</PageTitle>
@@ -365,50 +316,34 @@ export default function SettingsPage() {
 
       <form onSubmit={save} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-        {/* Survey Controls */}
+        {/* Helpline Settings */}
+        <AdminCard>
+          <SectionHeader>📞 Helpline Settings</SectionHeader>
+          <div>
+            <Input 
+              label="Al Mawaid Helpline Number (WhatsApp)" 
+              name="helpline"
+              value={helpline} 
+              onChange={e => setHelpline(e.target.value)} 
+              placeholder="+91 98765 43210" 
+            />
+            <p style={{ fontSize: 11, color: T.textSub, marginTop: 8 }}>
+              This number will be shown on the Khidmat team page for users to contact.
+            </p>
+          </div>
+        </AdminCard>
+
+        {/* Meal Edit Controls */}
         <AdminCard>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap', gap: 10 }}>
-            <SectionHeader style={{ marginBottom: 0 }}>🛠️ Survey Access Controls</SectionHeader>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Btn type="button" variant="outline" onClick={() => setIsAccessManagerOpen(true)}>
-                <Shield size={16} /> User Overrides
-              </Btn>
-              {/* Live status pill */}
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 800,
-                background: surveyStatus === 'open' ? 'rgba(16,185,129,0.12)' : surveyStatus === 'closed' ? 'rgba(239,68,68,0.12)' : 'rgba(99,102,241,0.12)',
-                color: surveyStatus === 'open' ? '#10b981' : surveyStatus === 'closed' ? '#ef4444' : '#6366f1',
-                border: `1px solid ${surveyStatus === 'open' ? 'rgba(16,185,129,0.3)' : surveyStatus === 'closed' ? 'rgba(239,68,68,0.3)' : 'rgba(99,102,241,0.3)'}`,
-              }}>
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', animation: surveyStatus === 'open' ? 'pulse 2s infinite' : 'none' }} />
-                Survey: {surveyStatus.toUpperCase()}
-              </div>
-              <button
-                type="button"
-                onClick={quickSaveSurveySettings}
-                disabled={quickSaving}
-                style={{
-                  padding: '8px 18px', borderRadius: 10, border: 'none',
-                  background: 'var(--accent-grad)', color: '#000',
-                  fontSize: 12, fontWeight: 900, cursor: quickSaving ? 'not-allowed' : 'pointer',
-                  opacity: quickSaving ? 0.6 : 1, transition: 'all 0.2s',
-                  display: 'flex', alignItems: 'center', gap: 6,
-                }}
-              >
-                {quickSaving ? '⏳ Saving…' : '⚡ Apply Now'}
-              </button>
-            </div>
+            <SectionHeader style={{ marginBottom: 0 }}>✏️ Meal Edit Controls</SectionHeader>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginTop: 16 }}>
-            <StatusToggle label="Global Survey Status" value={surveyStatus} onChange={setSurveyStatus}
-              liveStatus={surveyStatus === 'auto' ? (isTimingOpen('survey', { survey_open_hour: surveyOpenHour, survey_close_hour: surveyCloseHour }) ? 'open' : 'closed') : undefined} />
             <StatusToggle label="Lunch Edits" value={lunchEditStatus} onChange={setLunchEditStatus}
               liveStatus={lunchEditStatus === 'auto' ? (isTimingOpen('lunch', { lunch_edit_open: lunchEditOpen, lunch_edit_close: lunchEditClose }) ? 'open' : 'closed') : undefined} />
             <StatusToggle label="Dinner Edits" value={dinnerEditStatus} onChange={setDinnerEditStatus}
               liveStatus={dinnerEditStatus === 'auto' ? (isTimingOpen('dinner', { dinner_edit_open: dinnerEditOpen, dinner_edit_close: dinnerEditClose }) ? 'open' : 'closed') : undefined} />
           </div>
-          {/* ⏰ Auto Timing Configuration — grouped by meal with visual flow */}
           <div style={{
             marginTop: 16, padding: 16, borderRadius: 12,
             background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.15)',
@@ -420,40 +355,6 @@ export default function SettingsPage() {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {/* ── Survey Window ── */}
-              <div style={{
-                padding: '14px 16px', borderRadius: 10,
-                background: T.inputBg, border: `1px solid ${T.inputBorder}`,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                  <span style={{ fontSize: 16 }}>📋</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Survey Window</span>
-                  <span style={{ fontSize: 10, color: T.textSub, opacity: 0.6 }}>Sat → Mon</span>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 8, alignItems: 'center' }}>
-                  <div>
-                    <label htmlFor="surveyOpenHour" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Opens Saturday</label>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      <input type="number" id="surveyOpenHour" name="surveyOpenHour" min={0} max={23} value={surveyOpenHour} onChange={e => setSurveyOpenHour(e.target.value)}
-                        style={{ width: 60, padding: '8px 8px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, textAlign: 'center', outline: 'none', fontFamily: 'inherit' }}
-                      />
-                      <span style={{ fontSize: 12, color: T.textSub, display: 'flex', alignItems: 'center' }}>:00</span>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 16, color: T.accent, padding: '0 4px' }}>→</div>
-                  <div>
-                    <label htmlFor="surveyCloseHour" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Closes Monday</label>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      <input type="number" id="surveyCloseHour" name="surveyCloseHour" min={0} max={23} value={surveyCloseHour} onChange={e => setSurveyCloseHour(e.target.value)}
-                        style={{ width: 60, padding: '8px 8px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, textAlign: 'center', outline: 'none', fontFamily: 'inherit' }}
-                      />
-                      <span style={{ fontSize: 12, color: T.textSub, display: 'flex', alignItems: 'center' }}>:00</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* ── Lunch Edit Window ── */}
               <div style={{
                 padding: '14px 16px', borderRadius: 10,
                 background: T.inputBg, border: `1px solid ${T.inputBorder}`,
@@ -480,7 +381,6 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* ── Dinner Edit Window ── */}
               <div style={{
                 padding: '14px 16px', borderRadius: 10,
                 background: T.inputBg, border: `1px solid ${T.inputBorder}`,
@@ -510,50 +410,6 @@ export default function SettingsPage() {
 
             <p style={{ fontSize: 10, color: T.textSub, marginTop: 12, opacity: 0.7, lineHeight: 1.65 }}>
               💡 When a meal's edit window closes <strong>the UI automatically shifts to the next meal</strong>. These timings are used when the corresponding toggle above is set to <strong>📅 AUTO</strong>. Changes take effect immediately via Realtime.
-            </p>
-          </div>
-          <p style={{ fontSize: 11, color: T.textSub, margin: '12px 0 0', opacity: 0.7 }}>
-            💡 Click <strong>⚡ Apply Now</strong> to instantly push survey toggle changes to all users — no page reload needed.
-          </p>
-        </AdminCard>
-
-        {/* Survey Banner */}
-        <AdminCard>
-          <SectionHeader>📢 Survey Notice</SectionHeader>
-          <div>
-            <label htmlFor="surveyMsg" style={{ display: 'block', color: T.textSub, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 }}>
-              Custom Message (shown when survey is closed)
-            </label>
-            <textarea
-              id="surveyMsg"
-              name="surveyMsg"
-              value={surveyMsg}
-              onChange={e => setSurveyMsg(e.target.value)}
-              rows={3}
-              placeholder="Survey opens Saturday at 8:00 PM."
-              style={{
-                width: '100%', boxSizing: 'border-box', resize: 'vertical',
-                padding: '12px 14px', borderRadius: 10,
-                background: T.inputBg, border: `1px solid ${T.inputBorder}`,
-                color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit',
-              }}
-            />
-          </div>
-        </AdminCard>
-
-        {/* Helpline Settings */}
-        <AdminCard>
-          <SectionHeader>📞 Helpline Settings</SectionHeader>
-          <div>
-            <Input 
-              label="Al Mawaid Helpline Number (WhatsApp)" 
-              name="helpline"
-              value={helpline} 
-              onChange={e => setHelpline(e.target.value)} 
-              placeholder="+91 98765 43210" 
-            />
-            <p style={{ fontSize: 11, color: T.textSub, marginTop: 8 }}>
-              This number will be shown on the Khidmat team page for users to contact.
             </p>
           </div>
         </AdminCard>
@@ -725,7 +581,8 @@ export default function SettingsPage() {
                   onClick={async () => {
                     setPublishing(true)
                     setMsg({ text: '', type: 'success' })
-                    const publishTimestamp = new Date().toISOString()
+                    const isFuture = publishAt && new Date(publishAt).getTime() > Date.now()
+                    const publishTimestamp = isFuture ? new Date(publishAt).toISOString() : new Date().toISOString()
                     const menuRows = Object.entries(menu).map(([day, val]) => ({
                       day_name: day,
                       week_start: thisWeek,
@@ -740,18 +597,38 @@ export default function SettingsPage() {
                     if (saveErr) {
                       setMsg({ text: `Save failed: ${saveErr.message}`, type: 'error' })
                     } else {
-                      const { data: existingNotice } = await supabase
-                        .from('notices').select('id').eq('type', 'menu')
-                        .ilike('message', `%${thisWeek}%`).maybeSingle()
-                      if (!existingNotice) {
-                        await supabase.from('notices').insert({
-                          title: '🍽️ New Weekly Menu Available',
-                          message: `The menu for week of ${thisWeek} is now live! Check it out in the app.`,
-                          url: '/', type: 'menu', created_at: new Date().toISOString()
-                        }).catch(() => {})
+                      if (!isFuture) {
+                        const { data: existingNotice } = await supabase
+                          .from('notices').select('id').eq('type', 'menu')
+                          .ilike('message', `%${thisWeek}%`).maybeSingle()
+                        if (!existingNotice) {
+                          try {
+                            await supabase.from('notices').insert({
+                              title: '🍽️ New Weekly Menu Available',
+                              message: `The menu for week of ${thisWeek} is now live! Check it out in the app.`,
+                              url: '/', type: 'menu',
+                            })
+                          } catch (_) { /* notice insert is best-effort */ }
+                        }
+                        // 🔔 Send push notification to all users about the published menu
+                        try {
+                          await supabase.functions.invoke('sendPush', {
+                            body: {
+                              title: '🍽️ New Weekly Menu Available',
+                              body: `The menu for week of ${thisWeek} is now live! Check it out in the app.`,
+                              target_type: 'all',
+                              user_id: null,
+                              url: '/',
+                            }
+                          })
+                        } catch (pushErr) {
+                          console.warn('[Settings] Menu publish push notification failed:', pushErr)
+                        }
+                        setMsg({ text: `✅ Menu published and push notification sent!`, type: 'success' })
+                      } else {
+                        setMsg({ text: `✅ Menu scheduled for ${new Date(publishAt).toLocaleString()}`, type: 'success' })
                       }
                       setPublishAt(publishTimestamp.slice(0, 16))
-                      setMsg({ text: `✅ Menu published and push notification sent!`, type: 'success' })
                     }
                     setPublishing(false)
                   }}
@@ -813,8 +690,6 @@ export default function SettingsPage() {
             </Btn>
           </div>
         </AdminCard>
-
-        <SurveyAccessManager isOpen={isAccessManagerOpen} onClose={() => setIsAccessManagerOpen(false)} />
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
           <Btn type="button" variant="ghost" onClick={load}><RefreshCw size={15} />Reset</Btn>

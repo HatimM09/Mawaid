@@ -20,7 +20,7 @@ export default function AdminRoute() {
         return setStatus('denied')
       }
 
-      if (role === 'admin') {
+      if (['admin', 'inventory_manager', 'khidmat_guzar', 'supervisor'].includes(role)) {
         setStatus('allowed')
       } else {
         setStatus('denied')

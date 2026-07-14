@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "333277268731",
+    "project_id": "al-mawaid-8ffef",
+    "storage_bucket": "al-mawaid-8ffef.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:333277268731:android:cbc54a9ffdcc52ec94be5e",
+        "android_client_info": {
+          "package_name": "com.almawaid.myapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDP6OugI5hi4xi-y_3Jj9cq5C2JQKeWizU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

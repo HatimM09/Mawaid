@@ -4,9 +4,9 @@ async function seed() {
   console.log('Seeding demo data for QR and Surveys...')
 
   const demoUsers = [
-    { name: 'Mustafa Bhai', email: 'mustafa@demo.com', thali_number: 101, phone: '9876543210', address: 'Bohra Colony, Lane 1' },
-    { name: 'Hussain Bhai', email: 'hussain@demo.com', thali_number: 102, phone: '9876543211', address: 'Saifee Nagar, Block A' },
-    { name: 'Fatema Ben', email: 'fatema@demo.com', thali_number: 103, phone: '9876543212', address: 'Mawaid Street, Flat 4' }
+    { name: 'Mustafa Bhai', email: 'mustafa@demo.com', thali_number: 'A101', phone: '9876543210', address: 'Bohra Colony, Lane 1' },
+    { name: 'Hussain Bhai', email: 'hussain@demo.com', thali_number: 'B-202', phone: '9876543211', address: 'Saifee Nagar, Block A' },
+    { name: 'Fatema Ben', email: 'fatema@demo.com', thali_number: 'C303', phone: '9876543212', address: 'Mawaid Street, Flat 4' }
   ]
 
   for (const u of demoUsers) {

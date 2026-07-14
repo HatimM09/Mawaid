@@ -13,7 +13,7 @@ const config: CapacitorConfig = {
     SplashScreen: {
       launchShowDuration: 2000,
       backgroundColor: "#060d1a",
-      showSpinner: true,
+      showSpinner: false,
       androidSpinnerStyle: "large",
       iosSpinnerStyle: "small",
       spinnerColor: "#c5a059",
@@ -22,6 +22,12 @@ const config: CapacitorConfig = {
       style: "dark",
       backgroundColor: "#060d1a",
       overlaysWebView: true
+    },
+    PushNotifications: {
+      presentationOptions: ["badge", "sound", "alert"],
+      firebase: {
+        senderID: "333277268731"
+      }
     }
   }
 };

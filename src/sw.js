@@ -46,6 +46,8 @@ registerRoute(
 )
 
 // ── Native Web Push handler ─────────────────────────────────────────────────
+// IMPORTANT: Each notification gets a unique tag so Android shows every
+// notification individually rather than replacing the previous one.
 self.addEventListener('push', (event) => {
   let data = { title: 'Al-Mawaid', body: '', url: '/' }
   if (event.data) {
@@ -64,13 +66,17 @@ self.addEventListener('push', (event) => {
     badge = '/al-mawaid.png',
     vibrate = [200, 100, 200],
     requireInteraction = true,
-    tag = 'al-mawaid',
-    actions = [{ action: 'open', title: 'View' }],
+    tag,
+    actions = [{ action: 'open', title: 'View' }, { action: 'dismiss', title: 'Dismiss' }],
     timestamp,
     silent,
-    renotify,
+    renotify = true,
     data: extraData = {},
   } = data
+
+  // Generate unique tag so each notification shows individually on Android
+  // Format: al-mawaid_timestamp_random — still grouped under 'al-mawaid' prefix for identification
+  const uniqueTag = tag || `al-mawaid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
   const notificationOptions = {
     body,
@@ -78,7 +84,7 @@ self.addEventListener('push', (event) => {
     badge,
     vibrate,
     requireInteraction,
-    tag,
+    tag: uniqueTag,
     actions,
     data: { url, ...extraData },
     renotify,
@@ -91,6 +97,7 @@ self.addEventListener('push', (event) => {
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       const focusedClient = clients.find((c) => c.focused)
       if (focusedClient) {
+        // App is in focus — send to in-app toast via PushManager
         focusedClient.postMessage({
           type: 'PUSH_RECEIVED',
           title,
@@ -114,12 +121,18 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // Check if any client window is already open
       for (const client of windowClients) {
         if (client.url.includes(self.location.origin)) {
-          if ('navigate' in client) client.navigate(urlToOpen)
+          // Send deep-link message to the client so React Router can handle it
+          client.postMessage({
+            type: 'NOTIFICATION_DEEP_LINK',
+            url: urlToOpen,
+          })
           if ('focus' in client) return client.focus()
         }
       }
+      // No open window — open a new one
       if (clients.openWindow) return clients.openWindow(urlToOpen)
     })
   )

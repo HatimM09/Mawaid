@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { X, ChevronLeft } from 'lucide-react'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import { X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { supabase } from '../lib/firebaseClient'
 import { useAuth } from '../admin/context'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { DAYS, getWeekDate } from '../common/utils'
@@ -140,7 +140,19 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
     populateFromExisting()
   }, [currentDayIndex, currentMeal, dataLoaded])
 
+  useEffec
+  // ── Restore draft from localStorage on mount ──
   useEffect(() => {
+    if (!dataLoaded) return
+    const draft = loadDraft()
+    if (draft && !existingData) {
+      console.log('[SurveyModal] Draft restored from localStorage')
+      if (draft.responses && Object.keys(draft.responses).length > 0) {
+        setResponses(draft.responses)
+      }
+    }
+  }, [dataLoaded])
+t(() => {
     setEditResponseMode(false)
   }, [currentDayIndex, currentMeal])
 
@@ -175,6 +187,16 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
     }
   }, [responses, currentDayIndex, currentMeal, dishes])
 
+
+  // ── Auto-save responses to localStorage as draft ──
+  useEffect(() => {
+    if (Object.keys(responses).length === 0) return
+    if (initialLoadRef?.current) return
+    const timer = setTimeout(() => {
+      saveDraft({ responses, updatedAt: new Date().toISOString() })
+    }, 800)
+    return () => clearTimeout(timer)
+  }, [responses])
   const goToPrev = () => {
     if (currentSlot === 0) return
     if (currentMeal === 'lunch') { setCurrentMeal('dinner'); setCurrentDayIndex(currentDayIndex - 1) }
@@ -267,8 +289,20 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
         message: 'Your full week survey (Mon–Sat) has been saved.',
         url: '/post', type: 'survey'
       })
+      // Notify admins that a user submitted their survey
+      try {
+        await supabase.functions.invoke('sendPush', {
+          body: {
+            title: '📋 Survey Response Received',
+            body: `${userData.thali_no || user?.email || 'A user'} submitted their full week survey.`,
+            url: '/admin/survey-tracking',
+            target_type: 'admins',
+          }
+        })
+      } catch (e) { console.warn('[SurveyModal] Admin push skipped:', e) }
       // Block further edits for this week by setting a local flag
       localStorage.setItem(`survey_submitted_${currentWeekId}_${user?.id}`, '1')
+      clearDraft()
       onClose()
     }
   }
@@ -319,24 +353,36 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
     }
 
     if (isCount) {
-      const val = resp?.value || 0
+      const isSkipped = resp === 'no'
+      const value = resp?.value || 0
       return (
-        <div style={{ marginBottom: 8, padding: '10px 14px', borderRadius: 12, background: THEME.card, border: `1px solid ${resp && resp.status === 'yes' ? THEME.accent : THEME.border}` }}>
+        <div style={{ marginBottom: 8, padding: '10px 14px', borderRadius: 12, background: THEME.card, border: `1px solid ${resp && resp.status === 'yes' ? THEME.accent : isSkipped ? '#F4433660' : THEME.border}` }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: THEME.text, marginBottom: 8, fontFamily: "'DM Sans',sans-serif" }}>{dish}</div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button onClick={() => setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: Math.max(0, val - 1) } }))} style={{
-              width: 36, height: 36, borderRadius: 8, border: `1px solid ${THEME.border}`, background: THEME.inputBg, color: THEME.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>−</button>
-            <span style={{ fontSize: 20, fontWeight: 800, color: THEME.accent, minWidth: 40, textAlign: 'center', fontFamily: "'DM Sans',sans-serif" }}>{val}</span>
-            <button onClick={() => setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: Math.min(99, val + 1) } }))} style={{
-              width: 36, height: 36, borderRadius: 8, border: `1px solid ${THEME.border}`, background: THEME.inputBg, color: THEME.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
-            }}>+</button>
-            <button onClick={() => setResponses(prev => ({ ...prev, [dish]: 'no' }))} style={{
-              marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, border: `1.5px solid ${resp === 'no' ? '#F44336' : THEME.border}`,
-              background: resp === 'no' ? 'rgba(244,67,54,0.12)' : 'transparent', color: resp === 'no' ? '#F44336' : THEME.textSub,
-              fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif"
-            }}>Skip</button>
-          </div>
+          {isSkipped ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: '#F44336', fontWeight: 700 }}>❌ Skipped</span>
+              <button onClick={() => setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: 1 } }))} style={{
+                marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, border: `1.5px solid ${THEME.accent}`,
+                background: THEME.accentBg, color: THEME.accent,
+                fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif"
+              }}>✅ Add back</button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button onClick={() => setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: Math.max(0, value - 1) } }))} style={{
+                width: 36, height: 36, borderRadius: 8, border: `1px solid ${THEME.border}`, background: THEME.inputBg, color: THEME.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>−</button>
+              <span style={{ fontSize: 20, fontWeight: 800, color: THEME.accent, minWidth: 40, textAlign: 'center', fontFamily: "'DM Sans',sans-serif" }}>{value}</span>
+              <button onClick={() => setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: Math.min(99, value + 1) } }))} style={{
+                width: 36, height: 36, borderRadius: 8, border: `1px solid ${THEME.border}`, background: THEME.inputBg, color: THEME.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>+</button>
+              <button onClick={() => setResponses(prev => ({ ...prev, [dish]: 'no' }))} style={{
+                marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, border: `1.5px solid ${THEME.border}`,
+                background: 'transparent', color: THEME.textSub,
+                fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif"
+              }}>Skip</button>
+            </div>
+          )}
         </div>
       )
     }
@@ -479,6 +525,23 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
                 padding: '12px 20px', borderRadius: 12, border: `1px solid ${THEME.border}`, background: 'transparent',
                 color: THEME.textSub, cursor: 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif"
               }}><ChevronLeft size={16} /> Previous</button>
+            )}
+
+            {!isLast && wantsFood && (
+              <button onClick={async () => { await saveCurrentSlot(); goToNext() }} style={{
+                marginLeft: currentSlot > 0 ? 'auto' : 0, padding: '12px 24px', borderRadius: 12, border: 'none',
+                background: THEME.accentGrad, color: '#000', cursor: 'pointer', fontSize: 13,
+                fontWeight: 900, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif",
+                boxShadow: `0 8px 20px ${THEME.accentBg}`
+              }}>Save & Continue <ChevronRight size={16} /></button>
+            )}
+
+            {!isLast && wantsFood === false && (
+              <button onClick={async () => { await saveCurrentSlot(); goToNext() }} style={{
+                marginLeft: currentSlot > 0 ? 'auto' : 0, padding: '12px 20px', borderRadius: 12, border: `1px solid ${THEME.border}`,
+                background: 'transparent', color: THEME.textSub, cursor: 'pointer', fontSize: 13, fontWeight: 700,
+                display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif"
+              }}>Continue <ChevronRight size={16} /></button>
             )}
 
             {isLast && (

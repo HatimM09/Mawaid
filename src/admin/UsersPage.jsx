@@ -1,7 +1,7 @@
 // src/admin/UsersPage.jsx
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
-import { Search, RefreshCw, UserPlus, Edit2, Trash2, X, Shield, Phone, MapPin, UserCheck, QrCode, Download, Printer } from 'lucide-react'
+import { supabase } from '../lib/firebaseClient'
+import { Search, RefreshCw, UserPlus, Edit2, Trash2, X, Shield, Phone, MapPin, UserCheck, QrCode, Download, Printer, Eye, EyeOff } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Input, Grid, SectionHeader, fmtDate, Alert } from './ui'
 import { useOutletContext } from 'react-router-dom'
@@ -25,6 +25,7 @@ export default function UsersPage() {
   const [qrPrintMode, setQrPrintMode] = useState(false)
   const [qrDetailUser, setQrDetailUser] = useState(null)
   const [showAllQr, setShowAllQr] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
   const sentinelRef = useRef(null)
 
   // ── Infinite Scroll: auto-load when sentinel is visible (stable ref avoids stale closures) ──
@@ -163,7 +164,7 @@ export default function UsersPage() {
       
       const { error } = await supabase
         .from('user_stats')
-        .upsert([dataToSave])
+        .upsert([dataToSave], { onConflict: 'user_id' })
       
       if (error) throw error
       
@@ -660,7 +661,7 @@ export default function UsersPage() {
                     <img src={editForm.avatar_url} alt="Preview" style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover', border: `1px solid ${T.border}` }} />
                   )}
                 </div>
-                <Input label={isAdding ? "Assign Password" : "Reset Password (leave blank to keep current)"} name="userPassword" type="password" value={editForm.password} onChange={e => setEditForm({...editForm, password: e.target.value})} placeholder={isAdding ? "Min 6 chars" : "Leave blank to keep current"} required={isAdding} />
+                <Input label={isAdding ? "Assign Password" : "Reset Password (leave blank to keep current)"} name="userPassword" type={showPassword ? 'text' : 'password'} value={editForm.password} onChange={e => setEditForm({...editForm, password: e.target.value})} placeholder={isAdding ? "Min 6 chars" : "Leave blank to keep current"} required={isAdding} rightAction={<button type="button" onClick={() => setShowPassword(s => !s)} tabIndex={-1} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 0, display: 'flex' }}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button>} />
               </Grid>
               
               {error && <Alert msg={error} />}

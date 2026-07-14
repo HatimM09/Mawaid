@@ -5,15 +5,15 @@ import React, {
   useState, useEffect, useRef, createContext, useContext, useCallback
 } from 'react'
 import {
-  Home, FileText, User, X, Star, Camera, Check, LogOut,
-  Mail, Lock, Eye, EyeOff, AlertCircle, ChevronDown, ChevronUp,
+  Home, FileText, User, X, Star, Check, LogOut,
+  Lock, Eye, EyeOff, AlertCircle, ChevronDown, ChevronUp,
   ClipboardList, ChevronLeft, ChevronRight, Phone, MapPin,
   Users, Wallet, Bell, LifeBuoy, Info, MessageCircle, Upload, Utensils,
-  Sun, Moon, Medal, Package, Shield, Menu, QrCode, Edit2, Trash2
+  Sun, Moon, Medal, Package, Shield, Menu, QrCode
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { QRCodeCanvas } from 'qrcode.react'
-import { supabase, auth, db, C, getCol, getDocRef, invokeFunction } from './lib/firebaseClient'
+import { supabase, auth } from './lib/firebaseClient'
 import { useWeeklyMenu } from './common/useWeeklyMenu'
 import { AuthCtx, ThemeCtx, useAuth, useTheme } from './admin/context'
 import { updateSystemTheme } from './admin/ui'
@@ -21,7 +21,10 @@ import KhidmatPortal from './admin/KhidmatPortal'
 import InventoryManagerPortal from './admin/InventoryManagerPortal'
 import LoginPage from './LoginPage'
 import PushManager from './lib/PushManager'
+import UpdatePrompt from './components/UpdatePrompt'
+import AppLock, { useAppLock } from './components/AppLock'
 import { Toaster } from 'react-hot-toast'
+import OfflineBanner from './components/OfflineBanner'
 import DailyEditCard from './components/DailyEditCard'
 import SurveyModal from './components/SurveyModal'
 import DailySurveyModal from './components/DailySurveyModal'
@@ -510,6 +513,7 @@ const GlobalStyles = () => {
       }
       @media (min-width: 1400px) {
         main { max-width: 900px !important; }
+      }
 
     `}</style>
   )
@@ -713,6 +717,7 @@ function ThaliUserApp() {
 
   return (
     <ThemeCtx.Provider value={t}>
+      <AppLock>
       <div style={{ fontFamily: "'DM Sans','Segoe UI',-apple-system,sans-serif", minHeight: '100dvh', background: t.bgGrad, color: t.text, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', position: 'relative' }}>
         <header style={{ position: 'relative', overflow: 'hidden', background: t.bgGrad, padding: 'calc(env(safe-area-inset-top, 8px) + 4px) 0 0', flexShrink: 0 }}>
           <GeoBg t={t} />
@@ -842,6 +847,7 @@ function ThaliUserApp() {
         {activeTab === 'post' && <PostPage />}
         {activeTab === 'profile' && <ProfilePage theme={theme} setTheme={handleSetTheme} markRead={markNotificationsRead} appSettings={appSettings} />}
 
+        <OfflineBanner />
         {showDailySurvey && <DailySurveyModal onClose={() => { setShowDailySurvey(false); setActiveTab('home') }} appSettings={appSettings} />}
 
         <nav className="mobile-bottom-nav" aria-label="Main navigation">
@@ -859,6 +865,7 @@ function ThaliUserApp() {
         </nav>
         <GlobalStyles />
       </div>
+      </AppLock>
     </ThemeCtx.Provider>
   )
 }
@@ -910,8 +917,17 @@ function HomePage({ setActiveTab, appSettings = {} }) {
       setDailyEditMealInfo({ day: today, meal: 'dinner' })
       setShowDailyEditCard(true)
     } else {
-      setShowDailyEditCard(false)
-      setDailyEditMealInfo(null)
+      // After dinner closes, check if next day's lunch is editable
+      const todayIdx = DAYS.indexOf(today)
+      const nextDay = todayIdx >= 0 ? DAYS[(todayIdx + 1) % DAYS.length] : null
+      const canEditNextLunch = nextDay && lunchAuto && canEditMeal(nextDay, currentWeekId, 'lunch', appSettings, user.id)
+      if (canEditNextLunch) {
+        setDailyEditMealInfo({ day: nextDay, meal: 'lunch' })
+        setShowDailyEditCard(true)
+      } else {
+        setShowDailyEditCard(false)
+        setDailyEditMealInfo(null)
+      }
     }
   }, [appSettings, user, weeklyMenu, todayKey])
 
@@ -1762,89 +1778,13 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
   const [loading, setLoading] = useState(true)
   const [showQR, setShowQR] = useState(false)
   const [helpline, setHelpline] = useState('')
-  const [editing, setEditing] = useState(false)
-  const [editForm, setEditForm] = useState({ name: '', phone: '', address: '', avatar_url: '' })
-  const [editEmail, setEditEmail] = useState('')
-  const [editPassword, setEditPassword] = useState('')
-  const [editCurrentPassword, setEditCurrentPassword] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [saveSuccess, setSaveSuccess] = useState('')
-  const [deleteConfirm, setDeleteConfirm] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [editAuthError, setEditAuthError] = useState('')
-  const [authChangeSuccess, setAuthChangeSuccess] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false)
+  const lockCtrl = useAppLock()
   useEffect(() => {
     supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle().then(({ data }) => { 
-      if (data) {
-        setProfileData(data)
-        setEditForm({ name: data.name || '', phone: data.phone || '', address: data.address || '', avatar_url: data.avatar_url || '' })
-        setEditEmail(data.email || user.email || '')
-      }
+      if (data) setProfileData(data)
     }).finally(() => setLoading(false))
     supabase.from("app_settings").select("*").eq("key", "helpline_number").maybeSingle().then(({ data }) => { if (data) setHelpline(data.value) })
   }, [user.id])
-
-  const handleSaveProfile = async () => {
-    setSaving(true); setSaveSuccess(''); setEditAuthError(''); setAuthChangeSuccess('')
-    try {
-      const { data: { user: currentUser } } = await auth.getUser()
-      if (!currentUser) throw new Error('Not authenticated')
-
-      // Update Supabase Auth email if changed
-      if (editEmail && editEmail !== currentUser.email) {
-        const { error: emailErr } = await auth.updateUser({ email: editEmail })
-        if (emailErr) throw emailErr
-        setAuthChangeSuccess('✅ Confirmation email sent to new address!')
-      }
-
-      // Update Supabase Auth password if provided
-      if (editPassword && editPassword.length >= 6) {
-        const { error: passErr } = await auth.updateUser({ password: editPassword })
-        if (passErr) throw passErr
-        setAuthChangeSuccess(prev => prev + ' ✅ Password updated!')
-      }
-
-      // Update Firestore profile data
-      const { error } = await supabase.from('user_stats').upsert([{
-        user_id: user.id,
-        name: editForm.name.trim(),
-        phone: editForm.phone.trim(),
-        address: editForm.address.trim(),
-        avatar_url: editForm.avatar_url.trim(),
-        email: editEmail || currentUser.email
-      }], { onConflict: 'user_id' })
-      if (error) throw error
-
-      setProfileData(prev => ({ ...prev, ...editForm }))
-      setSaveSuccess('✅ Profile saved!')
-      setTimeout(() => { setSaveSuccess(''); setEditing(false) }, 2000)
-    } catch (err) {
-      const msg = err.message || ''
-      if (msg.includes('requires-recent-login') || msg.includes('reauthentication')) {
-        setEditAuthError('Please sign out and sign in again, then retry')
-      } else if (msg.includes('wrong-password')) {
-        setEditAuthError('Current password is incorrect')
-      } else if (msg.includes('email-already-exists') || msg.includes('already registered')) {
-        setEditAuthError('This email is already in use by another account')
-      } else {
-        setEditAuthError(msg)
-      }
-    } finally { setSaving(false) }
-  }
-
-  const handleDeleteAccount = async () => {
-    setDeleting(true)
-    try {
-      await supabase.from('user_stats').delete().eq('user_id', user.id)
-      await signOut()
-    } catch (err) {
-      alert('Error deleting account: ' + (err.message || err))
-      setDeleting(false)
-      setDeleteConfirm(false)
-    }
-  }
 
   const NavCard = ({ label, icon, desc, onClick }) => (
     <button onClick={onClick} style={{ width: '100%', padding: '13px 16px', borderRadius: 14, border: `1px solid ${t.border}`, background: t.card, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10, textAlign: 'left', transition: 'all 0.2s' }}>
@@ -1855,18 +1795,6 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
       </div>
       <ChevronRight size={15} color={t.textSub} />
     </button>
-  )
-
-  const InputField = ({ label, value, onChange, type = 'text', placeholder, icon, rightAction }) => (
-    <div>
-      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: t.textSub, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 5 }}>{label}</label>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: t.inputBg, borderRadius: 10, border: `1px solid ${t.border}`, padding: '0 12px' }}>
-        {icon && <span style={{ color: t.textSub, display: 'flex' }}>{icon}</span>}
-        <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-          style={{ flex: 1, padding: '11px 0', border: 'none', background: 'transparent', color: t.text, fontSize: 14, outline: 'none', fontFamily: "'DM Sans',sans-serif", width: '100%' }} />
-        {rightAction && <span>{rightAction}</span>}
-      </div>
-    </div>
   )
 
   if (loading) return <ProfileSkeleton />
@@ -1880,11 +1808,7 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
         {profileData?.phone && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 6 }}><Phone size={12} color={t.textSub} /><span style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{profileData.phone}</span></div>}
         {profileData?.address && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 4 }}><MapPin size={12} color={t.textSub} /><span style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{profileData.address}</span></div>}
         <div style={{ fontSize: 11, color: t.textSub, marginTop: 10, opacity: .5, fontFamily: "'DM Sans',sans-serif" }}>Thali User since {new Date(user.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
-<div style={{ marginTop: 14, display: "flex", gap: 10, justifyContent: "center" }}>
-          <Btn onClick={() => { setEditing(true); setEditAuthError(''); setAuthChangeSuccess(''); setSaveSuccess(''); setEditPassword(''); setEditCurrentPassword(''); setDeleteConfirm(false) }} style={{ borderRadius: 12, fontSize: 13, padding: "12px 20px" }}>
-            <Edit2 size={14} /> Edit Profile
-          </Btn>
-        </div>
+
       </Card>
       <SectionLabel>My Activity</SectionLabel>
       <NavCard label="My Identity QR" icon={<QrCode size={19} color="#fff" />} desc="Show your QR code for thali collection" onClick={() => setShowQR(true)} />
@@ -1893,6 +1817,19 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
       <NavCard label="Khidmat Guzaar" icon={<Users size={19} color="#fff" />} desc="Meet our Al-Mawaid team" onClick={() => onNav('khidmat')} />
       <NavCard label="Alerts" icon={<Bell size={19} color="#fff" />} desc="See notices and important updates" onClick={() => onNav('notifications')} />
       <NavCard label="Support Ticket" icon={<LifeBuoy size={19} color="#fff" />} desc="Raise general, thali, and delivery issues" onClick={() => onNav('support')} />
+      <div style={{ padding: '13px 16px', borderRadius: 14, border: `1px solid ${t.border}`, background: t.card, display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10 }}>
+        <div style={{ width: 42, height: 42, borderRadius: 12, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Lock size={19} color="#fff" />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>App Lock</div>
+          <div style={{ fontSize: 12, color: t.textSub, marginTop: 1, fontFamily: "'DM Sans',sans-serif" }}>{lockCtrl.isEnabled ? 'Locked — Fingerprint / PIN' : 'Disabled — Tap to enable'}</div>
+        </div>
+        <button onClick={() => lockCtrl.isEnabled ? lockCtrl.disable() : lockCtrl.enable()} style={{ width: 44, height: 24, borderRadius: 12, border: 'none', background: lockCtrl.isEnabled ? t.accent : t.border, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, padding: 0 }}>
+          <div style={{ width: 20, height: 20, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: lockCtrl.isEnabled ? 22 : 2, transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+        </button>
+      </div>
+
       {helpline && (
         <a href={`https://wa.me/${helpline.replace(/[^\d]/g, '')}`} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', display: 'block', marginBottom: 10 }}>
           <button style={{ width: '100%', padding: '13px 16px', borderRadius: 14, border: '1px solid rgba(37,211,102,0.3)', background: 'rgba(37,211,102,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, transition: 'all 0.2s', textAlign: 'left' }}>
@@ -1961,110 +1898,7 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
         </div>
       )}
 
-      {/* ── Edit Profile Modal ── */}
-      {editing && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)',
-          backdropFilter: 'blur(12px)', zIndex: 6000,
-          display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-          padding: '20px 16px', overflowY: 'auto'
-        }}>
-          <Card style={{ width: '100%', maxWidth: 440, padding: 28, position: 'relative', marginTop: 30 }}>
-            <button onClick={() => setEditing(false)} style={{ position: 'absolute', top: 16, right: 16, background: 'none', border: 'none', color: t.textSub, cursor: 'pointer' }}>
-              <X size={20} />
-            </button>
-            <h3 style={{ margin: '0 0 6px', fontSize: 20, fontWeight: 700, color: t.text, fontFamily: "'Playfair Display',serif" }}>Edit Profile</h3>
-            <p style={{ fontSize: 12, color: t.textSub, marginBottom: 20 }}>Update your profile info and account credentials</p>
 
-            {saveSuccess && (
-              <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', fontSize: 13, fontWeight: 600, marginBottom: 14 }}>{saveSuccess}</div>
-            )}
-            {authChangeSuccess && (
-              <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.3)', color: '#3b82f6', fontSize: 13, fontWeight: 600, marginBottom: 14 }}>{authChangeSuccess}</div>
-            )}
-            {editAuthError && (
-              <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', fontSize: 13, fontWeight: 600, marginBottom: 14 }}>{editAuthError}</div>
-            )}
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <InputField label="Full Name" value={editForm.name} onChange={v => setEditForm(f => ({ ...f, name: v }))} icon={<User size={15} />} />
-              <InputField label="Email Address" value={editEmail} onChange={setEditEmail} type="email" icon={<Mail size={15} />} placeholder={user.email} />
-              <InputField label="Phone Number" value={editForm.phone} onChange={v => setEditForm(f => ({ ...f, phone: v }))} type="tel" icon={<Phone size={15} />} />
-              <InputField label="Address" value={editForm.address} onChange={v => setEditForm(f => ({ ...f, address: v }))} icon={<MapPin size={15} />} />
-              <InputField label="Avatar URL" value={editForm.avatar_url} onChange={v => setEditForm(f => ({ ...f, avatar_url: v }))} placeholder="https://..." icon={<Camera size={15} />} />
-
-              <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 14, marginTop: 4 }}>
-                <p style={{ fontSize: 11, color: t.textSub, marginBottom: 12, fontWeight: 600 }}>CHANGE PASSWORD (optional)</p>
-                <InputField label="New Password" value={editPassword} onChange={setEditPassword} type={showPassword ? 'text' : 'password'} icon={<Lock size={15} />} placeholder="Leave blank to keep current" rightAction={
-                  <button onClick={() => setShowPassword(!showPassword)} style={{ background: 'none', border: 'none', color: t.textSub, cursor: 'pointer', padding: 4 }}>
-                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                } />
-              </div>
-
-              <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 14, marginTop: 4 }}>
-                <p style={{ fontSize: 11, color: t.textSub, marginBottom: 12, fontWeight: 600 }}>VERIFY IDENTITY (required to change email/password)</p>
-                <InputField label="Current Password" value={editCurrentPassword} onChange={setEditCurrentPassword} type={showCurrentPassword ? 'text' : 'password'} icon={<Lock size={15} />} placeholder="Enter current password" rightAction={
-                  <button onClick={() => setShowCurrentPassword(!showCurrentPassword)} style={{ background: 'none', border: 'none', color: t.textSub, cursor: 'pointer', padding: 4 }}>
-                    {showCurrentPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                } />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
-              <button onClick={() => setEditing(false)} style={{
-                flex: 1, padding: '12px', borderRadius: 12,
-                border: `1px solid ${t.border}`, background: 'transparent',
-                color: t.textSub, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                fontFamily: "'DM Sans',sans-serif"
-              }}>Cancel</button>
-              <button onClick={handleSaveProfile} disabled={saving} style={{
-                flex: 1, padding: '12px', borderRadius: 12, border: 'none',
-                background: t.accentGrad || t.accent, color: '#000',
-                fontSize: 13, fontWeight: 900, cursor: saving ? 'not-allowed' : 'pointer',
-                opacity: saving ? 0.6 : 1, fontFamily: "'DM Sans',sans-serif",
-                boxShadow: `0 4px 12px ${t.accentBg}`
-              }}>{saving ? 'Saving…' : 'Save Changes'}</button>
-            </div>
-
-            {/* ── Delete Account ── */}
-            <div style={{ marginTop: 24, paddingTop: 16, borderTop: `1px solid ${t.border}` }}>
-              <p style={{ fontSize: 11, color: t.textSub, fontWeight: 600, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Danger Zone</p>
-              {!deleteConfirm ? (
-                <button onClick={() => setDeleteConfirm(true)} style={{
-                  width: '100%', padding: '12px', borderRadius: 12,
-                  border: '1.5px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)',
-                  color: '#ef4444', fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  fontFamily: "'DM Sans',sans-serif"
-                }}>
-                  <Trash2 size={15} /> Delete My Account
-                </button>
-              ) : (
-                <div style={{ padding: 14, borderRadius: 12, background: 'rgba(239,68,68,0.08)', border: '1.5px solid rgba(239,68,68,0.3)' }}>
-                  <p style={{ fontSize: 13, color: '#ef4444', fontWeight: 700, margin: '0 0 8px' }}>Are you sure?</p>
-                  <p style={{ fontSize: 12, color: t.textSub, marginBottom: 12 }}>This permanently deletes your account, profile, and all data. This cannot be undone.</p>
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    <button onClick={() => setDeleteConfirm(false)} style={{
-                      flex: 1, padding: '10px', borderRadius: 10,
-                      border: `1px solid ${t.border}`, background: 'transparent',
-                      color: t.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                      fontFamily: "'DM Sans',sans-serif"
-                    }}>Cancel</button>
-                    <button onClick={handleDeleteAccount} disabled={deleting} style={{
-                      flex: 1, padding: '10px', borderRadius: 10, border: 'none',
-                      background: '#ef4444', color: '#fff',
-                      fontSize: 12, fontWeight: 900, cursor: deleting ? 'not-allowed' : 'pointer',
-                      opacity: deleting ? 0.6 : 1, fontFamily: "'DM Sans',sans-serif"
-                    }}>{deleting ? 'Deleting…' : 'Yes, Delete'}</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </Card>
-        </div>
-      )}
     </main>
   )
 }
@@ -2831,6 +2665,7 @@ export default function App() {
       <AuthCtx.Provider value={authValue}>
         <ThemeCtx.Provider value={THEMES.royal}>
           <PushManager />
+          <UpdatePrompt />
           <Toaster position="top-center" />
           <KhidmatPortal signOut={signOut} user={authValue.user} />
         </ThemeCtx.Provider>
@@ -2843,6 +2678,7 @@ export default function App() {
       <AuthCtx.Provider value={authValue}>
         <ThemeCtx.Provider value={THEMES.royal}>
           <PushManager />
+          <UpdatePrompt />
           <Toaster position="top-center" />
           <InventoryManagerPortal signOut={signOut} user={authValue.user} />
         </ThemeCtx.Provider>
@@ -2853,6 +2689,7 @@ export default function App() {
   return (
     <AuthCtx.Provider value={authValue}>
       <PushManager />
+      <UpdatePrompt />
       <Toaster position="top-center" />
       <ThaliUserApp />
     </AuthCtx.Provider>

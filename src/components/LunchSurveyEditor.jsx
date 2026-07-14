@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import LunchSurveyEditCard from './LunchSurveyEditCard'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import { supabase } from '../lib/firebaseClient'
 import { THEMES } from '../admin/ui'
 
 /**

@@ -1,6 +1,6 @@
 // src/admin/StaffPage.jsx
 import React, { useState, useEffect } from 'react'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import { supabase } from '../lib/firebaseClient'
 import { Plus, Trash2, RefreshCw, Shield } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Alert, Input, fmtDate } from './ui'
 import { AdminTableSkeleton } from '../common/Skeleton'

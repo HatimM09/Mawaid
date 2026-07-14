@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import App from './App'
 import AdminLayout from './admin/AdminLayout'
 import AdminRoute from './admin/AdminRoute'
+import RequireRole from './admin/RequireRole'
 
 // Code-split all admin pages - loaded on demand
 const Dashboard = lazy(() => import('./admin/Dashboard'))
@@ -47,17 +48,17 @@ export default function MainRouter() {
           <Route element={<AdminRoute />}>
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<Dashboard />} />
-              <Route path="users" element={<UsersPage />} />
-              <Route path="survey-dashboard" element={<SurveyDashboard />} />
-              <Route path="survey-tracking" element={<DailySurveyTracking />} />
-              <Route path="inventory" element={<InventoryPage />} />
-              <Route path="feedback" element={<FeedbackAdminPage />} />
-              <Route path="requests" element={<RequestsAdminPage />} />
-              <Route path="queries" element={<QueriesAdminPage />} />
-              <Route path="staff" element={<StaffPage />} />
-              <Route path="notifications" element={<NotificationsAdminPage />} />
-              <Route path="settings" element={<SettingsPage />} />
-              <Route path="automation" element={<AutomationPage />} />
+              <Route path="users" element={<RequireRole roles={['admin']}><UsersPage /></RequireRole>} />
+              <Route path="survey-dashboard" element={<RequireRole roles={['admin']}><SurveyDashboard /></RequireRole>} />
+              <Route path="survey-tracking" element={<RequireRole roles={['admin']}><DailySurveyTracking /></RequireRole>} />
+              <Route path="inventory" element={<RequireRole roles={['admin', 'inventory_manager']}><InventoryPage /></RequireRole>} />
+              <Route path="feedback" element={<RequireRole roles={['admin', 'khidmat_guzar', 'supervisor']}><FeedbackAdminPage /></RequireRole>} />
+              <Route path="requests" element={<RequireRole roles={['admin', 'khidmat_guzar', 'supervisor']}><RequestsAdminPage /></RequireRole>} />
+              <Route path="queries" element={<RequireRole roles={['admin', 'khidmat_guzar', 'supervisor']}><QueriesAdminPage /></RequireRole>} />
+              <Route path="staff" element={<RequireRole roles={['admin']}><StaffPage /></RequireRole>} />
+              <Route path="notifications" element={<RequireRole roles={['admin']}><NotificationsAdminPage /></RequireRole>} />
+              <Route path="settings" element={<RequireRole roles={['admin']}><SettingsPage /></RequireRole>} />
+              <Route path="automation" element={<RequireRole roles={['admin']}><AutomationPage /></RequireRole>} />
             </Route>
           </Route>
 

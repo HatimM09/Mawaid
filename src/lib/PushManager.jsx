@@ -1,14 +1,19 @@
 // src/lib/PushManager.jsx
 // Handles:
-//   1. Web Push API (browser push — works when tab is closed)
-//   2. Supabase Realtime (in-app toast — instant when tab is open)
+//   1. Capacitor Native Push (FCM — native Android push)
+//   2. Web Push API (browser push — works when tab is closed)
+//   3. Supabase Realtime (in-app toast — instant when tab is open)
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { supabase } from '../lib/firebaseClient'
 
+function isNative() {
+  return typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()
+}
+
 // VAPID public key for Web Push subscription
-const VAPID_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BApS0pbqbnV2xZBrqVhxgkacMNC5dAoT6M9zGcmLOvePl7f_iKA7ReDdJ0Cu9_2Ex969EJa3cssF3awCB-zXIhk'
+const VAPID_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BEjjek2qtdlh_xXfXqyfZhHQZt9zRQd_2M-WJxtxCkJkHgzUd6r-Szrj9dsgCTF7XAZjEMq3CPLkUvOjGwKCRm0'
 
 async function savePushSubscription(userId, subscription) {
   const endpoint = subscription.endpoint
@@ -138,9 +143,58 @@ export default function PushManager() {
       if (!user || cancelledRef.current) return
       window.__pushManagerUser = user
 
+      // Check if user has notifications enabled
+      const { data: prefs } = await supabase.from('user_stats').select('notifications_enabled').eq('user_id', user.id).maybeSingle()
+      if (prefs?.notifications_enabled === false) {
+        console.log('[PushManager] Notifications disabled by user')
+        return
+      }
+
       if (await handleNativeTokens(user)) return
 
-      // Web Push subscription
+      // ── Capacitor Native Push (FCM) ──
+      if (isNative()) {
+        try {
+          const { PushNotifications } = await import('@capacitor/push-notifications')
+          let perm = await PushNotifications.checkPermissions()
+          if (perm.receive === 'prompt') {
+            perm = await PushNotifications.requestPermissions()
+          }
+          if (perm.receive === 'granted') {
+            await PushNotifications.register()
+            PushNotifications.addListener('registration', async (token) => {
+              if (token?.value && !cancelledRef.current) {
+                await supabase.from('push_subscriptions').upsert(
+                  { user_id: user.id, fcm_token: token.value, token_type: 'fcm', updated_at: new Date().toISOString() },
+                  { onConflict: 'user_id, token_type' }
+                )
+              }
+            })
+            PushNotifications.addListener('pushNotificationReceived', (n) => {
+              showToast(n.title, n.body, n.data?.url)
+            })
+            // ── Deep link: user taps notification → navigate to correct in-app page ──
+            PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+              const data = action.notification.data
+              const url = data?.url || '/'
+              if (url && typeof window !== 'undefined') {
+                // Use React Router navigation if available, else fallback to location
+                try {
+                  window.__pendingNotificationUrl = url
+                  // Dispatch custom event for the app to pick up
+                  window.dispatchEvent(new CustomEvent('notification-deep-link', { detail: { url } }))
+                } catch (e) {
+                  console.warn('[PushManager] Deep link navigation failed:', e)
+                }
+              }
+            })
+          }
+        } catch (e) {
+          console.warn('[PushManager] Capacitor push init failed:', e)
+        }
+      }
+
+      // ── Web Push subscription (browser/PWA fallback) ──
       try {
         if (!('Notification' in window) || !('PushManager' in window)) return
         let permission = Notification.permission
@@ -153,11 +207,50 @@ export default function PushManager() {
         }
         const sub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_KEY) })
         if (!cancelledRef.current) await savePushSubscription(user.id, sub)
+
+        // Also try to get FCM token via Firebase SDK for better delivery
+        try {
+          const { requestForToken } = await import('../lib/firebase')
+          const fcmToken = await requestForToken()
+          if (fcmToken && !cancelledRef.current) {
+            await supabase.from('push_subscriptions').upsert(
+              { user_id: user.id, fcm_token: fcmToken, token_type: 'fcm', updated_at: new Date().toISOString() },
+              { onConflict: 'user_id, token_type' }
+            )
+          }
+        } catch (e) {
+          console.warn('[PushManager] Firebase FCM token fetch skipped:', e)
+        }
       } catch {}
 
-      navigator.serviceWorker.addEventListener('message', (event) => {
-        if (event.data?.type === 'PUSH_RECEIVED') showToast(event.data.title, event.data.body, event.data.url)
-      })
+      const swMessageHandler = (event) => {
+        if (event.data?.type === 'PUSH_RECEIVED') {
+          showToast(event.data.title, event.data.body, event.data.url)
+        }
+        // Handle deep link from service worker notification click
+        if (event.data?.type === 'NOTIFICATION_DEEP_LINK') {
+          const url = event.data.url
+          if (url && url !== '/') {
+            window.location.href = url
+          }
+        }
+      }
+      navigator.serviceWorker.addEventListener('message', swMessageHandler)
+
+      // ── Listen for notification deep-link events (from SW notification click) ──
+      const handleDeepLink = (e) => {
+        const url = e.detail?.url
+        if (url && url !== '/') {
+          window.location.href = url
+        }
+      }
+      window.addEventListener('notification-deep-link', handleDeepLink)
+
+      // Store refs for cleanup
+      window.__cleanupDeepLink = () => {
+        navigator.serviceWorker.removeEventListener('message', swMessageHandler)
+        window.removeEventListener('notification-deep-link', handleDeepLink)
+      }
 
       // User-specific notifications
       setTimeout(() => subscribeRealtime(realtimeChannel, user, cancelledRef), 2000)
@@ -169,6 +262,10 @@ export default function PushManager() {
       cancelledRef.current = true
       window.removeEventListener('native-push-ready', onNativeReady)
       if (realtimeChannel.current) { supabase.removeChannel(realtimeChannel.current); realtimeChannel.current = null }
+      if (window.__cleanupDeepLink) {
+        window.__cleanupDeepLink()
+        delete window.__cleanupDeepLink
+      }
     }
   }, [])
 

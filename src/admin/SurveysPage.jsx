@@ -1,7 +1,7 @@
 // src/admin/SurveysPage.jsx
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import { supabase } from '../lib/firebaseClient'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { RefreshCw, Search, Filter, Utensils, Download, User as UserIcon, Calendar as CalendarIcon, Scan, X } from 'lucide-react'
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
@@ -100,6 +100,21 @@ export default function SurveysPage() {
     }
   }
 
+  const buildAllDishes = (dishList, row, dk, mk) => {
+    const res = {}
+    res._status = row ? row[`${dk}_${mk}_status`] : 'Not Submitted'
+    dishList.forEach((d, i) => {
+      const v = row ? row[`${dk}_${mk}_dish_${i + 1}`] : null
+      if (v !== undefined && v !== null && v !== '') {
+        const lv = String(v).toLowerCase()
+        res[d] = lv === 'yes' ? 'yes' : lv === 'no' ? 'no' : v
+      } else {
+        res[d] = null
+      }
+    })
+    return res
+  }
+
   const processDirectScan = async (userId) => {
     try {
       const { data: u } = await supabase.from('user_stats').select('*').eq('user_id', userId).maybeSingle()
@@ -112,47 +127,19 @@ export default function SurveysPage() {
       const { data: row } = await supabase.from('survey_submissions_flat')
         .select('*').eq('user_id', userId).eq('week_id', weekId).maybeSingle()
       
-      const dishRes = {}
-      if (row && row[`${dayKey}_${mealKey}_status`] === 'Applied') {
-        const dishes = weeklyMenu[dayFilter]?.[mealFilter] || []
-        dishes.forEach((d, i) => {
-          const val = row[`${dayKey}_${mealKey}_dish_${i + 1}`]
-          if (val !== undefined && val !== null) {
-            const lowerVal = String(val).toLowerCase()
-            dishRes[d] = lowerVal === 'yes' ? 'yes' : lowerVal === 'no' ? 'no' : val
-          }
-        })
-      }
-
+      const curMealDishes = weeklyMenu[dayFilter]?.[mealFilter] || []
       const lunchDishes = weeklyMenu[dayFilter]?.lunch || []
       const dinnerDishes = weeklyMenu[dayFilter]?.dinner || []
+      const buildCur = buildAllDishes(curMealDishes, row, dayKey, mealKey)
+      const buildLunch = buildAllDishes(lunchDishes, row, dayKey, 'l')
+      const buildDinner = buildAllDishes(dinnerDishes, row, dayKey, 'd')
 
       setSelectedUser({
         ...u,
-        status: row ? row[`${dayKey}_${mealKey}_status`] : 'Not Submitted',
-        dishResponses: dishRes,
-        lunch: { status: row ? row[`${dayKey}_l_status`] : null, dishes: (() => {
-          const res = {}
-          lunchDishes.forEach((d, i) => {
-            const v = row ? row[`${dayKey}_l_dish_${i + 1}`] : undefined
-            if (v !== undefined && v !== null) {
-              const lv = String(v).toLowerCase()
-              res[d] = lv === 'yes' ? 'yes' : lv === 'no' ? 'no' : v
-            }
-          })
-          return res
-        })() },
-        dinner: { status: row ? row[`${dayKey}_d_status`] : null, dishes: (() => {
-          const res = {}
-          dinnerDishes.forEach((d, i) => {
-            const v = row ? row[`${dayKey}_d_dish_${i + 1}`] : undefined
-            if (v !== undefined && v !== null) {
-              const lv = String(v).toLowerCase()
-              res[d] = lv === 'yes' ? 'yes' : lv === 'no' ? 'no' : v
-            }
-          })
-          return res
-        })() },
+        status: buildCur._status,
+        dishResponses: buildCur,
+        lunch: { status: buildLunch._status, dishes: buildLunch },
+        dinner: { status: buildDinner._status, dishes: buildDinner },
         currentDay: dayFilter,
         currentMeal: mealFilter,
         dishInputConfig: dishInputConfig

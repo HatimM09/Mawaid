@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react'
 import { Sun, Moon, X } from 'lucide-react'
 import { useTheme, useAuth } from '../admin/context'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import { supabase } from '../lib/firebaseClient'
 import { getWeekDate, DAYS } from '../common/utils'
 import { isRotiItem, isCountInput } from '../hooks/useSurvey'
 
@@ -190,7 +190,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
           if (isRotiItem(d)) {
             upsertObj[colName] = val === 'yes' ? 'Yes' : 'No'
           } else if (isCount) {
-            upsertObj[colName] = typeof val === 'number' ? val : parseInt(val) || 0
+            upsertObj[colName] = val === 'no' ? 'No' : (typeof val === 'number' ? val : parseInt(val) || 0)
           } else {
             upsertObj[colName] = typeof val === 'number' ? val + '%' : (val === 'yes' ? 'Yes' : 'No')
           }
@@ -283,7 +283,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
                     <span>{dish}</span>
                     {resp !== undefined && (
                       <span style={{ fontSize: 13, fontWeight: 800, color: resp === 'yes' ? '#4CAF50' : resp === 'no' ? '#F44336' : t.accent }}>
-                        {isRotiItem(dish) ? (resp === 'yes' ? '✅' : '❌') : isCount ? resp : (typeof resp === 'number' ? resp + '%' : resp)}
+                        {isRotiItem(dish) ? (resp === 'yes' ? '✅' : '❌') : isCount ? (resp === 'no' ? '❌' : (typeof resp === 'number' ? resp : 0)) : (typeof resp === 'number' ? resp + '%' : resp)}
                       </span>
                     )}
                   </div>
@@ -295,20 +295,31 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
                         style={{ flex: 1, padding: '8px', borderRadius: 8, border: `1.5px solid ${resp === 'no' ? '#F44336' : t.border}`, background: resp === 'no' ? 'rgba(244,67,54,0.12)' : 'transparent', color: resp === 'no' ? '#F44336' : t.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>❌ No</button>
                     </div>
                   ) : isCount ? (
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <button onClick={() => saveResponse(dish, Math.max(0, (typeof resp === 'number' ? resp : 0) - 1))} disabled={saving} style={{
-                        width: 36, height: 36, borderRadius: 8, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
-                      }}>−</button>
-                      <span style={{ fontSize: 20, fontWeight: 800, color: t.accent, minWidth: 40, textAlign: 'center' }}>{typeof resp === 'number' ? resp : 0}</span>
-                      <button onClick={() => saveResponse(dish, (typeof resp === 'number' ? resp : 0) + 1)} disabled={saving} style={{
-                        width: 36, height: 36, borderRadius: 8, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
-                      }}>+</button>
-                      <button onClick={() => saveResponse(dish, 'no')} disabled={saving} style={{
-                        marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, border: `1.5px solid ${resp === 'no' ? '#F44336' : t.border}`,
-                        background: resp === 'no' ? 'rgba(244,67,54,0.12)' : 'transparent', color: resp === 'no' ? '#F44336' : t.textSub,
-                        fontSize: 12, fontWeight: 700, cursor: 'pointer'
-                      }}>Skip</button>
-                    </div>
+                    resp === 'no' ? (
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <span style={{ fontSize: 13, color: '#F44336', fontWeight: 700 }}>❌ Skipped</span>
+                        <button onClick={() => saveResponse(dish, 1)} disabled={saving} style={{
+                          marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, border: `1.5px solid ${t.accent}`,
+                          background: t.accentBg, color: t.accent,
+                          fontSize: 12, fontWeight: 700, cursor: 'pointer'
+                        }}>✅ Add back</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <button onClick={() => saveResponse(dish, Math.max(0, (typeof resp === 'number' ? resp : 0) - 1))} disabled={saving} style={{
+                          width: 36, height: 36, borderRadius: 8, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}>−</button>
+                        <span style={{ fontSize: 20, fontWeight: 800, color: t.accent, minWidth: 40, textAlign: 'center' }}>{typeof resp === 'number' ? resp : 0}</span>
+                        <button onClick={() => saveResponse(dish, (typeof resp === 'number' ? resp : 0) + 1)} disabled={saving} style={{
+                          width: 36, height: 36, borderRadius: 8, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                        }}>+</button>
+                        <button onClick={() => saveResponse(dish, 'no')} disabled={saving} style={{
+                          marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, border: `1.5px solid ${t.border}`,
+                          background: 'transparent', color: t.textSub,
+                          fontSize: 12, fontWeight: 700, cursor: 'pointer'
+                        }}>Skip</button>
+                      </div>
+                    )
                   ) : (
                     <div style={{ display: 'flex', gap: 6 }}>
                       {[0, 25, 50, 75, 100].map(pct => (

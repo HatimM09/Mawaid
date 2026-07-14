@@ -214,6 +214,15 @@ export default function SurveyEditCard({
                     }}>
                       Count:
                     </span>
+                    <button
+                      onClick={() => setCurrentResponse(prev => ({ ...prev, value: Math.max(0, (prev.value || 0) - 1) }))}
+                      style={{
+                        width: 36, height: 36, borderRadius: 8,
+                        border: `1px solid ${t.border}`, background: t.inputBg,
+                        color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 700,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}
+                    >−</button>
                     <input
                       type="number"
                       min="0"
@@ -224,8 +233,8 @@ export default function SurveyEditCard({
                         setCurrentResponse(prev => ({ ...prev, value: val }))
                       }}
                       style={{
-                        width: 80,
-                        padding: '10px 12px',
+                        width: 60,
+                        padding: '10px 8px',
                         borderRadius: 9,
                         border: `1.5px solid ${t.border}`,
                         background: t.inputBg,
@@ -238,6 +247,15 @@ export default function SurveyEditCard({
                       }}
                       aria-label="Portion count"
                     />
+                    <button
+                      onClick={() => setCurrentResponse(prev => ({ ...prev, value: Math.min(99, (prev.value || 0) + 1) }))}
+                      style={{
+                        width: 36, height: 36, borderRadius: 8,
+                        border: `1px solid ${t.border}`, background: t.inputBg,
+                        color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 700,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}
+                    >+</button>
                   </div>
                 )}
               </>

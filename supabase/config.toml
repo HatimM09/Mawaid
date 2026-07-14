@@ -1,0 +1,11 @@
+[auth]
+enabled = true
+
+[edge_runtime]
+policy = "per_worker"
+
+[functions]
+"admin-auth" = { verify_jwt = false }
+"process-scheduled" = { verify_jwt = false }
+"survey-digest" = { verify_jwt = false }
+"send-push" = { verify_jwt = false }

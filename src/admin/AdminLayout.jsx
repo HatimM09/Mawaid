@@ -6,21 +6,22 @@ import {
   MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight, Search, Bell, History, Package, Send, RefreshCw, Zap
 } from 'lucide-react'
 import { updateSystemTheme } from './ui'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import OfflineBanner from '../components/OfflineBanner'
+import { supabase } from '../lib/firebaseClient'
 import { playNotificationChime } from '../common/utils'
 
 const NAV = [
-  { to: '/admin', label: 'Dashboard', Icon: LayoutDashboard, color: 'var(--accent-primary)', end: true },
-  { to: '/admin/users', label: 'Thali Users', Icon: Users, color: 'var(--accent-primary)' },
-  { to: '/admin/survey-tracking', label: 'Survey Tracking', Icon: History, color: 'var(--accent-primary)' },
-  { to: '/admin/requests', label: 'Thali Requests', Icon: FileText, color: 'var(--accent-primary)' },
-  { to: '/admin/inventory', label: 'Inventory', Icon: Package, color: 'var(--accent-primary)' },
-  { to: '/admin/queries', label: 'Queries', Icon: MessageSquare, color: 'var(--accent-primary)' },
-  { to: '/admin/staff', label: 'Staff', Icon: Shield, color: 'var(--accent-primary)' },
-  { to: '/admin/notifications', label: 'Broadcast', Icon: Send, color: 'var(--accent-primary)' },
-  { to: '/admin/feedback', label: 'Feedback', Icon: Star, color: 'var(--accent-primary)' },
-  { to: '/admin/automation', label: 'Automation', Icon: Zap, color: 'var(--accent-primary)' },
-  { to: '/admin/settings', label: 'Settings', Icon: Settings, color: 'var(--accent-primary)' },
+  { to: '/admin', label: 'Dashboard', Icon: LayoutDashboard, color: 'var(--accent-primary)', end: true, roles: ['admin', 'inventory_manager', 'khidmat_guzar', 'supervisor'] },
+  { to: '/admin/users', label: 'Thali Users', Icon: Users, color: 'var(--accent-primary)', roles: ['admin'] },
+  { to: '/admin/survey-tracking', label: 'Survey Tracking', Icon: History, color: 'var(--accent-primary)', roles: ['admin'] },
+  { to: '/admin/requests', label: 'Thali Requests', Icon: FileText, color: 'var(--accent-primary)', roles: ['admin', 'khidmat_guzar', 'supervisor'] },
+  { to: '/admin/inventory', label: 'Inventory', Icon: Package, color: 'var(--accent-primary)', roles: ['admin', 'inventory_manager'] },
+  { to: '/admin/queries', label: 'Queries', Icon: MessageSquare, color: 'var(--accent-primary)', roles: ['admin', 'khidmat_guzar', 'supervisor'] },
+  { to: '/admin/staff', label: 'Staff', Icon: Shield, color: 'var(--accent-primary)', roles: ['admin'] },
+  { to: '/admin/notifications', label: 'Broadcast', Icon: Send, color: 'var(--accent-primary)', roles: ['admin'] },
+  { to: '/admin/feedback', label: 'Feedback', Icon: Star, color: 'var(--accent-primary)', roles: ['admin', 'khidmat_guzar', 'supervisor'] },
+  { to: '/admin/automation', label: 'Automation', Icon: Zap, color: 'var(--accent-primary)', roles: ['admin'] },
+  { to: '/admin/settings', label: 'Settings', Icon: Settings, color: 'var(--accent-primary)', roles: ['admin'] },
 ]
 
 export default function AdminLayout() {
@@ -94,7 +95,7 @@ export default function AdminLayout() {
       supabase.from('thali_requests').select('id', { count: 'exact', head: true }).or('status.eq.pending,status.is.null'),
       supabase.from('queries').select('id', { count: 'exact', head: true }).or('status.eq.open,status.is.null'),
       supabase.from('inventory').select('id, stock, low_stock_threshold'),
-      supabase.from('user_stats').select('id', { count: 'exact', head: true }),
+      supabase.from('user_stats').select('user_id', { count: 'exact', head: true }),
     ])
     const lowStockCount = (lowStock.data || []).filter(p => p.stock <= (p.low_stock_threshold || 5)).length
     setNavCounts({
@@ -165,7 +166,8 @@ export default function AdminLayout() {
     return active ? active.label : 'Dashboard'
   }
 
-  const filteredNav = NAV.filter(n => n.label.toLowerCase().includes(searchQuery.toLowerCase()))
+  const visibleNav = NAV.filter(n => n.roles.includes(role))
+  const filteredNav = visibleNav.filter(n => n.label.toLowerCase().includes(searchQuery.toLowerCase()))
 
 
 
@@ -175,6 +177,7 @@ export default function AdminLayout() {
       background: 'var(--bg-deep)',
       position: 'relative'
     }}>
+      <OfflineBanner />
       <div style={{
         position: 'absolute', inset: 0, zIndex: 0,
         background: 'var(--bg-grad)',
@@ -481,7 +484,7 @@ export default function AdminLayout() {
               </div>
             </div>
             <div style={{ flex: 1, overflowY: 'auto', paddingRight: 10 }}>
-              {NAV.map(({ to, label, Icon, end }) => (
+              {visibleNav.map(({ to, label, Icon, end }) => (
                 <NavLink key={to} to={to} end={end} className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`} onClick={() => window.innerWidth < 1025 && setIsSidebarOpen(false)} onKeyDown={e => { if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Space') { e.preventDefault(); navigate(to) } }}>
                   <Icon size={20} />
                   <span style={{ fontSize: 14, fontWeight: 600 }}>{label}</span>
@@ -545,7 +548,7 @@ export default function AdminLayout() {
               if (active) active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
             }
           }}>
-            {NAV.map(({ to, label, Icon, end }) => (
+            {visibleNav.map(({ to, label, Icon, end }) => (
               <NavLink key={to} to={to} end={end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onKeyDown={e => { if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Space') { e.preventDefault(); navigate(to) } }}>
                 <div className="icon-box" style={{ position: 'relative' }}>
                   <Icon size={20} strokeWidth={2.5} />

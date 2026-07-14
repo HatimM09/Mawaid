@@ -1,0 +1,1 @@
+ALTER TABLE user_stats ADD COLUMN IF NOT EXISTS notifications_enabled BOOLEAN DEFAULT TRUE;

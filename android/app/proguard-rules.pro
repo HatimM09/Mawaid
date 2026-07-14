@@ -5,6 +5,8 @@
 -keep class com.getcapacitor.** { *; }
 -keep class com.google.android.gms.** { *; }
 -keep class com.google.firebase.** { *; }
+-keep class com.google.firebase.ktx.** { *; }
+-dontwarn com.google.firebase.ktx.Firebase
 -keep class * extends com.getcapacitor.Plugin { *; }
 -keep class * extends com.getcapacitor.BridgeActivity { *; }
 

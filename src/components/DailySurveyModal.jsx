@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { X, ChevronRight, Sun, Moon } from 'lucide-react'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import { supabase } from '../lib/firebaseClient'
 import { useAuth } from '../admin/context'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { getWeekDate } from '../common/utils'
@@ -94,7 +94,17 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
   }, [responses, lunchStatus, dinnerStatus, dayKey, loading])
 
+ 
+  // ── Auto-save responses to localStorage as draft ──
   useEffect(() => {
+    if (Object.keys(responses).length === 0) return
+    if (initialLoadRef?.current) return
+    const timer = setTimeout(() => {
+      saveDraft({ responses, updatedAt: new Date().toISOString() })
+    }, 800)
+    return () => clearTimeout(timer)
+  }, [responses])
+ useEffect(() => {
     supabase.from('user_stats').select('thali_number, email').eq('user_id', user?.id).single()
       .then(({ data }) => { if (data) setUserData({ thali_no: data.thali_number || '', email: data.email || user?.email }) })
   }, [user?.id])
@@ -154,6 +164,18 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
     loadExisting()
   }, [user?.id, today])
 
+
+  // ── Restore draft from localStorage on mount ──
+  useEffect(() => {
+    if (!dataLoaded) return
+    const draft = loadDraft()
+    if (draft && !existingData) {
+      console.log('[DailySurveyModal] Draft restored from localStorage')
+      if (draft.responses && Object.keys(draft.responses).length > 0) {
+        setResponses(draft.responses)
+      }
+    }
+  }, [dataLoaded])
   const dinnerDishes = menu.dinner || []
   const rotiItems = dinnerDishes.filter(d => isRotiItem(d))
   const otherDinnerDishes = dinnerDishes.filter(d => !isRotiItem(d))
@@ -200,10 +222,18 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
         await supabase.functions.invoke('sendPush', {
           body: { title: 'Daily Survey Submitted', body: 'Your daily food survey has been saved successfully.', url: '/post', target_type: 'specific', target_user_id: user?.id }
         })
+        await supabase.functions.invoke('sendPush', {
+          body: {
+            title: '📋 Daily Survey Response',
+            body: `${userData.thali_no || user?.email || 'A user'} submitted today's survey.`,
+            url: '/admin/survey-tracking',
+            target_type: 'admins',
+          }
+        })
       } catch (pushErr) {
         console.warn('[DailySurvey] Push notification skipped:', pushErr)
       }
-      onClose()
+      clearDraft(); onClose()
     } catch (err) {
       console.error('Submit error:', err)
       alert('Error saving survey: ' + err.message)

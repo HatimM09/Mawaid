@@ -1,6 +1,28 @@
 -- Supabase Auth Migration: Staff table & RLS
 -- Run this in your Supabase project SQL editor
 
+-- 1. Drop ALL existing policies first (to allow re-run)
+DROP POLICY IF EXISTS "Users can read own staff record" ON staff;
+DROP POLICY IF EXISTS "Admins can read all staff" ON staff;
+DROP POLICY IF EXISTS "Admins can insert staff" ON staff;
+DROP POLICY IF EXISTS "Admins can update staff" ON staff;
+DROP POLICY IF EXISTS "Admins can delete staff" ON staff;
+DROP POLICY IF EXISTS "Allow first admin bootstrap" ON staff;
+
+-- 2. Security definer helper — avoids RLS infinite recursion
+--    when checking admin role inside a policy on the same table
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.staff
+    WHERE user_id = auth.uid() AND role = 'admin'
+  );
+$$;
+
 -- Staff table (roles & permissions)
 CREATE TABLE IF NOT EXISTS staff (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -29,30 +51,22 @@ CREATE POLICY "Users can read own staff record"
 -- Policy: Admins can read all staff records
 CREATE POLICY "Admins can read all staff"
   ON staff FOR SELECT
-  USING (
-    EXISTS (SELECT 1 FROM staff WHERE user_id = auth.uid() AND role = 'admin')
-  );
+  USING (public.is_admin());
 
 -- Policy: Admins can insert staff records
 CREATE POLICY "Admins can insert staff"
   ON staff FOR INSERT
-  WITH CHECK (
-    EXISTS (SELECT 1 FROM staff WHERE user_id = auth.uid() AND role = 'admin')
-  );
+  WITH CHECK (public.is_admin());
 
 -- Policy: Admins can update staff records
 CREATE POLICY "Admins can update staff"
   ON staff FOR UPDATE
-  USING (
-    EXISTS (SELECT 1 FROM staff WHERE user_id = auth.uid() AND role = 'admin')
-  );
+  USING (public.is_admin());
 
 -- Policy: Admins can delete staff records
 CREATE POLICY "Admins can delete staff"
   ON staff FOR DELETE
-  USING (
-    EXISTS (SELECT 1 FROM staff WHERE user_id = auth.uid() AND role = 'admin')
-  );
+  USING (public.is_admin());
 
 -- Bootstrap: Allow first admin creation via anon if staff table is empty
 -- Remove this after first admin is created
@@ -72,6 +86,7 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+DROP TRIGGER IF EXISTS update_staff_updated_at ON staff;
 CREATE TRIGGER update_staff_updated_at
   BEFORE UPDATE ON staff
   FOR EACH ROW

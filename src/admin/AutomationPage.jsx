@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { supabase, db, C, getCol, getDocRef } from '../lib/firebaseClient'
+import { supabase } from '../lib/firebaseClient'
 import {
   Clock, RefreshCw, Bell, BarChart3, Calendar, Send,
   Sun, Moon, Activity, CheckCircle, XCircle, AlertTriangle,
-  Zap, Timer, MessageSquare, Settings
+  Zap, Timer, MessageSquare, Settings, Shield
 } from 'lucide-react'
-import { T, PageWrap, PageTitle, AdminCard, Btn, StatCard, Badge, Grid, Alert } from './ui'
+import { T, PageWrap, PageTitle, AdminCard, Btn, StatCard, Badge, Grid, Alert, SectionHeader } from './ui'
 import { getWeekDate } from '../common/utils'
+import SurveyAccessManager from './SurveyAccessManager'
 
 const STATUS_COLORS = {
   auto: { color: '#6366f1', bg: 'rgba(99,102,241,0.12)', label: 'AUTO', border: 'rgba(99,102,241,0.3)' },
@@ -142,12 +143,17 @@ export default function AutomationPage() {
   const [surveyStatus, setSurveyStatus] = useState('auto')
   const [lunchEditStatus, setLunchEditStatus] = useState('auto')
   const [dinnerEditStatus, setDinnerEditStatus] = useState('auto')
+  const [surveyMsg, setSurveyMsg] = useState('')
+  const [surveyOpenHour, setSurveyOpenHour] = useState(20)
+  const [surveyCloseHour, setSurveyCloseHour] = useState(10)
   const [liveSurveyStatus, setLiveSurveyStatus] = useState(null)
   const [liveLunchStatus, setLiveLunchStatus] = useState(null)
   const [liveDinnerStatus, setLiveDinnerStatus] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [quickSaving, setQuickSaving] = useState(false)
   const [msg, setMsg] = useState('')
+  const [isAccessManagerOpen, setIsAccessManagerOpen] = useState(false)
 
   const [scheduledCount, setScheduledCount] = useState(0)
   const [pendingSurveyCount, setPendingSurveyCount] = useState(0)
@@ -167,6 +173,9 @@ export default function AutomationPage() {
         setSurveyStatus(s.survey_status || 'auto')
         setLunchEditStatus(s.lunch_edit_status || 'auto')
         setDinnerEditStatus(s.dinner_edit_status || 'auto')
+        setSurveyMsg(s.survey_msg || '')
+        setSurveyOpenHour(parseInt(s.survey_open_hour) || 20)
+        setSurveyCloseHour(parseInt(s.survey_close_hour) || 10)
       }
       setLiveSurveyStatus(isTimingOpen('survey', s) ? 'open' : 'closed')
       setLiveLunchStatus(isTimingOpen('lunch', s) ? 'open' : 'closed')
@@ -178,6 +187,7 @@ export default function AutomationPage() {
       const dayKey = dayNames[day]
       const mealKey = today.getHours() < 15 ? 'l' : 'd'
       const statusField = `${dayKey}_${mealKey}_status`
+      const isSunday = day === 0
 
       const weekId = getWeekDate()
 
@@ -189,10 +199,14 @@ export default function AutomationPage() {
         { count: tm },
       ] = await Promise.all([
         supabase.from('broadcast_schedule').select('id', { count: 'exact', head: true }).eq('status', 'scheduled'),
-        supabase.from('survey_submissions_flat').select('id', { count: 'exact', head: true }).eq('week_id', weekId).not(statusField, 'eq', 'Applied').not(statusField, 'eq', 'Skipped'),
-        supabase.from('survey_submissions_flat').select('id', { count: 'exact', head: true }).eq('week_id', weekId).eq(statusField, 'Applied'),
+        isSunday
+          ? { count: 0 }
+          : supabase.from('survey_submissions_flat').select('id', { count: 'exact', head: true }).eq('week_id', weekId).not(statusField, 'eq', 'Applied').not(statusField, 'eq', 'Skipped'),
+        isSunday
+          ? { count: 0 }
+          : supabase.from('survey_submissions_flat').select('id', { count: 'exact', head: true }).eq('week_id', weekId).eq(statusField, 'Applied'),
         supabase.from('daily_feedback').select('id', { count: 'exact', head: true }),
-        supabase.from('user_stats').select('id', { count: 'exact', head: true }),
+        supabase.from('user_stats').select('user_id', { count: 'exact', head: true }),
       ])
 
       setScheduledCount(sc)
@@ -248,6 +262,31 @@ export default function AutomationPage() {
       setMsg(`Error: ${e.message}`)
     }
     setSaving(false)
+  }
+
+  const quickSaveSurveySettings = async () => {
+    setQuickSaving(true)
+    setMsg('')
+    const toSave = [
+      { key: 'survey_status', value: surveyStatus },
+      { key: 'survey_msg', value: surveyMsg || 'Survey opens Saturday at 8:00 PM and closes Monday at 11:00 AM.' },
+      { key: 'survey_open_hour', value: surveyOpenHour.toString() },
+      { key: 'survey_close_hour', value: surveyCloseHour.toString() },
+    ]
+    let err = null
+    for (const row of toSave) {
+      const { error } = await supabase.from('app_settings')
+        .upsert(row, { onConflict: 'key' })
+      if (error) { err = error; break }
+    }
+    setQuickSaving(false)
+    if (err) {
+      setMsg(`Quick save failed: ${err.message}`)
+    } else {
+      const now = new Date().toLocaleTimeString()
+      setMsg(`✅ Survey settings applied at ${now}`)
+      setTimeout(() => setMsg(''), 3000)
+    }
   }
 
   const autoProcesses = [
@@ -428,6 +467,90 @@ export default function AutomationPage() {
           ))}
         </Grid>
       </div>
+
+      {/* Survey Configuration */}
+      <AdminCard style={{ marginTop: 32 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap', gap: 10 }}>
+          <SectionHeader style={{ marginBottom: 0 }}>🛠️ Survey Access Controls</SectionHeader>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Btn type="button" variant="outline" onClick={() => setIsAccessManagerOpen(true)}>
+              <Shield size={16} /> User Overrides
+            </Btn>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 800,
+              background: surveyStatus === 'open' ? 'rgba(16,185,129,0.12)' : surveyStatus === 'closed' ? 'rgba(239,68,68,0.12)' : 'rgba(99,102,241,0.12)',
+              color: surveyStatus === 'open' ? '#10b981' : surveyStatus === 'closed' ? '#ef4444' : '#6366f1',
+              border: `1px solid ${surveyStatus === 'open' ? 'rgba(16,185,129,0.3)' : surveyStatus === 'closed' ? 'rgba(239,68,68,0.3)' : 'rgba(99,102,241,0.3)'}`,
+            }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', animation: surveyStatus === 'open' ? 'pulse 2s infinite' : 'none' }} />
+              Survey: {surveyStatus.toUpperCase()}
+            </div>
+            <button
+              type="button"
+              onClick={quickSaveSurveySettings}
+              disabled={quickSaving}
+              style={{
+                padding: '8px 18px', borderRadius: 10, border: 'none',
+                background: 'var(--accent-grad)', color: '#000',
+                fontSize: 12, fontWeight: 900, cursor: quickSaving ? 'not-allowed' : 'pointer',
+                opacity: quickSaving ? 0.6 : 1, transition: 'all 0.2s',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              {quickSaving ? '⏳ Saving…' : '⚡ Apply Now'}
+            </button>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 16 }}>
+          <div>
+            <label style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
+              Survey Window Timing
+            </label>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <div>
+                <span style={{ fontSize: 10, color: T.textSub }}>Opens Saturday</span>
+                <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                  <input type="number" min={0} max={23} value={surveyOpenHour} onChange={e => setSurveyOpenHour(e.target.value)}
+                    style={{ width: 60, padding: '8px', borderRadius: 6, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, textAlign: 'center', outline: 'none', fontFamily: 'inherit' }}
+                  />
+                  <span style={{ fontSize: 12, color: T.textSub, display: 'flex', alignItems: 'center' }}>:00</span>
+                </div>
+              </div>
+              <span style={{ color: T.accent }}>→</span>
+              <div>
+                <span style={{ fontSize: 10, color: T.textSub }}>Closes Monday</span>
+                <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                  <input type="number" min={0} max={23} value={surveyCloseHour} onChange={e => setSurveyCloseHour(e.target.value)}
+                    style={{ width: 60, padding: '8px', borderRadius: 6, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, textAlign: 'center', outline: 'none', fontFamily: 'inherit' }}
+                  />
+                  <span style={{ fontSize: 12, color: T.textSub, display: 'flex', alignItems: 'center' }}>:00</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <label htmlFor="surveyMsg" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
+              Survey Notice (shown when closed)
+            </label>
+            <textarea
+              id="surveyMsg"
+              value={surveyMsg}
+              onChange={e => setSurveyMsg(e.target.value)}
+              rows={2}
+              placeholder="Survey opens Saturday at 8:00 PM."
+              style={{
+                width: '100%', boxSizing: 'border-box', resize: 'vertical',
+                padding: '10px 12px', borderRadius: 8,
+                background: T.inputBg, border: `1px solid ${T.inputBorder}`,
+                color: T.text, fontSize: 13, outline: 'none', fontFamily: 'inherit',
+              }}
+            />
+          </div>
+        </div>
+      </AdminCard>
+
+      <SurveyAccessManager isOpen={isAccessManagerOpen} onClose={() => setIsAccessManagerOpen(false)} />
     </PageWrap>
   )
 }

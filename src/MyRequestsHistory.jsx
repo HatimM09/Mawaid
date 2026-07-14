@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { supabase, db, C, getCol, getDocRef } from './lib/firebaseClient'
+import { supabase } from './lib/firebaseClient'
 import { useTheme, useAuth } from './admin/context'
 import { ChevronDown, MessageCircle, Clock, CheckCircle, XCircle, CalendarDays, Share2, AlertCircle, LifeBuoy } from 'lucide-react'
 
@@ -37,6 +37,40 @@ export default function MyRequestsHistory() {
     loadAll()
     supabase.from('app_settings').select('*').eq('key', 'helpline_number').maybeSingle()
       .then(({ data }) => { if (data) setHelpline(data.value) })
+
+    // ── Real-time subscription for queries ──
+    const queriesChannel = supabase
+      .channel(`user-queries-${user.id}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'queries', filter: `user_id=eq.${user.id}` },
+        () => {
+          // Reload queries when admin responds or status changes
+          supabase.from('queries').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(50)
+            .then(({ data }) => {
+              if (data) setAllQueries(data)
+            })
+        }
+      )
+      .subscribe()
+
+    // ── Real-time subscription for requests ──
+    const requestsChannel = supabase
+      .channel(`user-requests-${user.id}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'thali_requests', filter: `user_id=eq.${user.id}` },
+        () => {
+          supabase.from('thali_requests').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(100)
+            .then(({ data }) => {
+              if (data) setAllRequests(data)
+            })
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(queriesChannel)
+      supabase.removeChannel(requestsChannel)
+    }
   }, [user.id])
 
   const loadAll = async () => {
