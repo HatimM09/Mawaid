@@ -199,39 +199,100 @@ export function removeChannel(ch) {
   if (ch?.unsubscribe) ch.unsubscribe()
 }
 
-// ── Invoke Cloud Function helper (Supabase Edge Functions) ──
-const FN_NAME_MAP = { 'sendPush': 'send-push' }
+// ── Invoke Cloud Function helper ──
+// Matches supabase.functions.invoke(name, { body, headers }) API shape.
+// sendPush dual-dispatches so BOTH web (VAPID/edge) and Android AAB (FCM Admin) get covered.
 
-async function invokeFunction(name, body = {}) {
-  const supabaseFnUrl = `${SUPABASE_URL}/functions/v1`
-  const edgeFnName = FN_NAME_MAP[name]
-  const isEdgeFn = !!edgeFnName
-  const baseUrl = isEdgeFn
-    ? supabaseFnUrl
-    : import.meta.env.DEV
-      ? '/cloudfunctions'
-      : `https://us-central1-al-mawaid-8ffef.cloudfunctions.net`
-  const url = `${baseUrl}/${edgeFnName || name}`
+const FIREBASE_CF_BASE = import.meta.env.DEV
+  ? '/cloudfunctions'
+  : 'https://us-central1-al-mawaid-8ffef.cloudfunctions.net'
+
+async function postJson(url, headers, payload) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload ?? {}),
+  })
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
+  return json
+}
+
+async function invokeSendPush(payload, extraHeaders = {}) {
+  const { data: { session } } = await supabaseClient.auth.getSession()
+  const token = session?.access_token
+
+  const edgeHeaders = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${token || supabaseAnonKey}`,
+    apikey: supabaseAnonKey,
+    ...extraHeaders,
+  }
+  const firebaseHeaders = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...extraHeaders,
+  }
+
+  // Split channels to cover both platforms without duplicates:
+  //   Firebase CF → FCM (Android AAB) via Admin SDK
+  //   Supabase edge → Web Push + Expo (has VAPID + FCM_SERVICE_ACCOUNT)
+  const [edgeResult, firebaseResult] = await Promise.allSettled([
+    postJson(`${SUPABASE_URL}/functions/v1/send-push`, edgeHeaders, {
+      ...payload,
+      channels: ['webpush', 'expo'],
+    }),
+    postJson(`${FIREBASE_CF_BASE}/sendPush`, firebaseHeaders, {
+      ...payload,
+      channels: ['fcm'],
+    }),
+  ])
+
+  const parts = [edgeResult, firebaseResult].filter((r) => r.status === 'fulfilled').map((r) => r.value)
+  if (parts.length === 0) {
+    const err =
+      (edgeResult.status === 'rejected' && edgeResult.reason) ||
+      (firebaseResult.status === 'rejected' && firebaseResult.reason) ||
+      new Error('Push dispatch failed')
+    return { data: null, error: err instanceof Error ? err : new Error(String(err)) }
+  }
+
+  return {
+    data: {
+      ok: true,
+      sent: parts.reduce((n, p) => n + (p.sent || 0), 0),
+      failed: parts.reduce((n, p) => n + (p.failed || 0), 0),
+      webpush: parts.reduce((n, p) => n + (p.webpush || 0), 0),
+      expo: parts.reduce((n, p) => n + (p.expo || 0), 0),
+      fcm: parts.reduce((n, p) => n + (p.fcm || 0), 0),
+      via: {
+        edge: edgeResult.status === 'fulfilled',
+        firebase: firebaseResult.status === 'fulfilled',
+      },
+    },
+    error: null,
+  }
+}
+
+async function invokeFunction(name, options = {}) {
+  const payload = options?.body !== undefined ? options.body : options
+  if (name === 'sendPush' || name === 'send-push') {
+    return invokeSendPush(payload, options?.headers || {})
+  }
+
+  // Other functions → Supabase Edge
+  const url = `${SUPABASE_URL}/functions/v1/${name}`
   try {
     const { data: { session } } = await supabaseClient.auth.getSession()
     const token = session?.access_token
     const headers = {
       'Content-Type': 'application/json',
+      Authorization: `Bearer ${token || supabaseAnonKey}`,
+      apikey: supabaseAnonKey,
+      ...(options?.headers || {}),
     }
-    // Supabase Edge Functions need the anon key for auth unless verify_jwt=false
-    if (isEdgeFn) {
-      headers['Authorization'] = `Bearer ${supabaseAnonKey}`
-    } else if (token) {
-      headers['Authorization'] = `Bearer ${token}`
-    }
-    const res = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body)
-    })
-    return res.ok
-      ? { data: await res.json(), error: null }
-      : { data: null, error: new Error((await res.json()).error || 'Function error') }
+    const data = await postJson(url, headers, payload)
+    return { data, error: null }
   } catch (e) {
     return { data: null, error: e }
   }

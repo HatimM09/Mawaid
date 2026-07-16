@@ -1,9 +1,9 @@
-// ══════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════
 // AL-MAWAID — Firebase Cloud Functions
 // Push notification dispatch: FCM (native Android), Web Push, Expo Push
 // Subscriptions are read from Supabase (not Firestore) after migration.
 // FCM is sent via Firebase Admin SDK (admin.messaging) — no OAuth needed.
-// ══════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════
 
 const { onRequest } = require('firebase-functions/v2/https')
 const { setGlobalOptions } = require('firebase-functions/v2/options')
@@ -14,18 +14,24 @@ const { createClient } = require('@supabase/supabase-js')
 setGlobalOptions({ region: 'us-central1' })
 admin.initializeApp()
 
-// ── Supabase Admin Client (reads push subscriptions) ──
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://pquusffhuholbnlmuyen.supabase.co'
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
-  auth: { autoRefreshToken: false, persistSession: false }
-})
+// ── Supabase / VAPID (read at request time so deploy analysis doesn't crash) ──
+function getSupabaseAdmin() {
+  const url = process.env.SUPABASE_URL || 'https://pquusffhuholbnlmuyen.supabase.co'
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+  if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY is not configured on this function')
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  })
+}
 
-// ── VAPID keys (set via `firebase functions:secrets:set VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY`) ──
-const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || ''
-const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || ''
-if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
-  webpush.setVapidDetails('mailto:admin@al-mawaid.com', VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY)
+function ensureVapid() {
+  const pub = process.env.VAPID_PUBLIC_KEY || ''
+  const priv = process.env.VAPID_PRIVATE_KEY || ''
+  if (pub && priv) {
+    webpush.setVapidDetails('mailto:admin@al-mawaid.com', pub, priv)
+    return true
+  }
+  return false
 }
 
 const setCorsHeaders = (res) => {
@@ -34,15 +40,64 @@ const setCorsHeaders = (res) => {
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 }
 
-// ══════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════
 // sendPush — HTTP endpoint for sending push notifications
-// ══════════════════════════════════════════════════════════════
-exports.sendPush = onRequest({ secrets: ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'] }, async (req, res) => {
+// ════════════════════════════════════════════════════════════════
+exports.sendPush = onRequest({
+  secrets: ['SUPABASE_SERVICE_ROLE_KEY'],
+  cors: true,
+  invoker: 'public',
+}, async (req, res) => {
   setCorsHeaders(res)
   if (req.method === 'OPTIONS') return res.status(204).send('')
 
   try {
-    const { user_id, title, body, url, type, target_type, scheduled_for, sender_name, image_url } = req.body
+    // Parse JSON body if present
+    let data = {}
+    const contentType = req.headers['content-type'] || ''
+    if (contentType.includes('application/json')) {
+      let rawBody = ''
+      if (req.rawBody) {
+        rawBody = req.rawBody.toString()
+      } else if (req.body) {
+        // Fallback in case body was already parsed (shouldn't happen in CFv2 without middleware)
+        rawBody = JSON.stringify(req.body)
+      }
+      try {
+        data = JSON.parse(rawBody)
+      } catch (e) {
+        console.error('Failed to parse JSON body', e)
+        return res.status(400).send({ error: 'Invalid JSON' })
+      }
+    } else {
+      // Non-JSON content treated as empty payload
+      data = {}
+    }
+
+    // Handle nested body format: { body: { ... } } or flat { ... }
+    const payload = data?.body && typeof data.body === 'object' && !Array.isArray(data.body) && data.title === undefined
+      ? { ...data.body }
+      : data
+
+    const {
+      user_id: rawUserId,
+      target_user_id,
+      title,
+      body: notificationBody, // Renamed to avoid conflict with body param
+      url,
+      type,
+      target_type,
+      scheduled_for,
+      sender_name,
+      image_url,
+      channels,
+    } = payload
+    const user_id = rawUserId || target_user_id || null
+    // channels: optional filter — ['webpush','expo','fcm']. Default = all.
+    const allow = (ch) => !Array.isArray(channels) || channels.length === 0 || channels.includes(ch)
+    const vapidReady = ensureVapid()
+
+    const supabaseAdminLive = getSupabaseAdmin()
 
     // ── Resolve target user IDs from Supabase ──
     let targetUserIds = []
@@ -50,11 +105,11 @@ exports.sendPush = onRequest({ secrets: ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'
     if (user_id && target_type === 'specific') {
       targetUserIds = [user_id]
     } else if (target_type === 'admins') {
-      const { data: admins } = await supabaseAdmin.from('user_stats').select('user_id').eq('role', 'admin')
+      const { data: admins } = await supabaseAdminLive.from('user_stats').select('user_id').eq('role', 'admin')
       targetUserIds = (admins || []).map(a => a.user_id).filter(Boolean)
     } else {
       // 'all' or anything else — get all unique user_ids with subscriptions
-      const { data: subs } = await supabaseAdmin.from('push_subscriptions').select('user_id').limit(5000)
+      const { data: subs } = await supabaseAdminLive.from('push_subscriptions').select('user_id').limit(5000)
       targetUserIds = [...new Set((subs || []).map(s => s.user_id).filter(Boolean))]
     }
 
@@ -67,7 +122,7 @@ exports.sendPush = onRequest({ secrets: ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'
     let allPushSubs = []
     for (let i = 0; i < targetUserIds.length; i += CHUNK_SIZE) {
       const chunk = targetUserIds.slice(i, i + CHUNK_SIZE)
-      const { data: subs } = await supabaseAdmin
+      const { data: subs } = await supabaseAdminLive
         .from('push_subscriptions')
         .select('*')
         .in('user_id', chunk)
@@ -79,16 +134,18 @@ exports.sendPush = onRequest({ secrets: ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'
     }
 
     // ── Separate by token type ──
-    const webPushSubs = allPushSubs.filter(s => s.token_type === 'webpush' && s.subscription_json)
-    const expoTokens = allPushSubs.filter(s => s.token_type === 'expo').map(s => s.fcm_token).filter(Boolean)
-    const fcmTokens = allPushSubs.filter(s => s.token_type === 'fcm').map(s => s.fcm_token).filter(Boolean)
+    const webPushSubs = (allow('webpush') && vapidReady)
+      ? allPushSubs.filter(s => s.token_type === 'webpush' && s.subscription_json)
+      : []
+    const expoTokens = allow('expo') ? allPushSubs.filter(s => s.token_type === 'expo').map(s => s.fcm_token).filter(Boolean) : []
+    const fcmTokens = allow('fcm') ? allPushSubs.filter(s => s.token_type === 'fcm').map(s => s.fcm_token).filter(Boolean) : []
 
     let sent = 0, failed = 0
 
     // ── 1. Send Web Push (VAPID) ──
     if (webPushSubs.length > 0) {
       const webPushResults = await Promise.allSettled(
-        webPushSubs.map(s => sendWebPush(s.subscription_json, title, body, url || '/', image_url, sender_name))
+        webPushSubs.map(s => sendWebPush(s.subscription_json, title, notificationBody, url || '/', image_url, sender_name))
       )
       for (let i = 0; i < webPushResults.length; i++) {
         if (webPushResults[i].status === 'fulfilled') {
@@ -98,7 +155,7 @@ exports.sendPush = onRequest({ secrets: ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'
           const errMsg = webPushResults[i].reason?.message || String(webPushResults[i].reason)
           if (errMsg.includes('410') || errMsg.includes('404') || errMsg.includes('expired') || errMsg.includes('unsubscribed')) {
             try {
-              await supabaseAdmin.from('push_subscriptions')
+              await supabaseAdminLive.from('push_subscriptions')
                 .delete()
                 .eq('user_id', webPushSubs[i].user_id)
                 .eq('token_type', 'webpush')
@@ -111,7 +168,7 @@ exports.sendPush = onRequest({ secrets: ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'
     // ── 2. Send Expo Push ──
     if (expoTokens.length > 0) {
       const expoResults = await Promise.allSettled(
-        expoTokens.map(token => sendExpoPushMessage(token, title, body, url || '/'))
+        expoTokens.map(token => sendExpoPushMessage(token, title, notificationBody, url || '/'))
       )
       for (let i = 0; i < expoResults.length; i++) {
         if (expoResults[i].status === 'fulfilled') {
@@ -130,7 +187,7 @@ exports.sendPush = onRequest({ secrets: ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'
         try {
           const message = {
             tokens: batch,
-            notification: { title, body },
+            notification: { title, body: notificationBody },
             android: {
               priority: 'high',
               notification: {
@@ -146,7 +203,7 @@ exports.sendPush = onRequest({ secrets: ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'
               fcmOptions: { link: url || '/' },
               notification: {
                 title,
-                body,
+                body: notificationBody,
                 icon: '/al-mawaid.png',
                 badge: '/al-mawaid.png',
                 tag: 'al-mawaid',
@@ -167,7 +224,7 @@ exports.sendPush = onRequest({ secrets: ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'
                 resp.error?.code === 'messaging/mismatched-credential'
               )) {
                 try {
-                  await supabaseAdmin.from('push_subscriptions')
+                  await supabaseAdminLive.from('push_subscriptions')
                     .delete()
                     .eq('fcm_token', batch[j])
                     .eq('token_type', 'fcm')
@@ -185,7 +242,7 @@ exports.sendPush = onRequest({ secrets: ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'
     return res.json({ ok: true, sent, failed, webpush: webPushSubs.length, expo: expoTokens.length, fcm: fcmTokens.length })
   } catch (err) {
     console.error('[sendPush] Error:', err)
-    return res.status(500).json({ ok: false, error: err.message })
+    return res.status(500).send({ ok: false, error: err.message })
   }
 })
 

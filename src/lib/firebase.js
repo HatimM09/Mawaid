@@ -13,18 +13,16 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-J5D0YKG986"
 };
 
-// VAPID Key from environment variable
-const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+// VAPID Key from environment variable (empty string = not configured, don't attempt FCM)
+const VAPID_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY || '';
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const messaging = getMessaging(app);
 
 export const requestForToken = async () => {
-  if (!VAPID_KEY) {
-    console.error("[PushManager] VITE_FIREBASE_VAPID_KEY is missing from .env!");
-    return null;
-  }
+  // VAPID key not configured — FCM token is optional; Web Push already works without it
+  if (!VAPID_KEY) return null;
 
   try {
     // Wait for service worker to be ready
@@ -42,7 +40,11 @@ export const requestForToken = async () => {
       return null;
     }
   } catch (err) {
-    console.error("An error occurred while retrieving token: ", err);
+    // Non-critical — Web Push already active; FCM token is optional
+    // Handle 401 Unauthorized from fcmregistrations.googleapis.com (VAPID key not configured in Firebase Console)
+    if (err instanceof Error && (err.message.includes('401') || err.message.includes('Unauthorized') || err.message.includes('auth/invalid-vapid-key'))) {
+      console.warn('[Firebase] FCM token unavailable - VAPID key not configured in Firebase Console. Web Push will be used instead.');
+    }
     return null;
   }
 };

@@ -6,10 +6,10 @@ import React, {
 } from 'react'
 import {
   Home, FileText, User, X, Star, Check, LogOut,
-  Lock, Eye, EyeOff, AlertCircle, ChevronDown, ChevronUp,
+  Eye, EyeOff, AlertCircle, ChevronDown, ChevronUp,
   ClipboardList, ChevronLeft, ChevronRight, Phone, MapPin,
   Users, Wallet, Bell, LifeBuoy, Info, MessageCircle, Upload, Utensils,
-  Sun, Moon, Medal, Package, Shield, Menu, QrCode
+  Sun, Moon, Medal, Package, Shield, Menu, QrCode, Camera
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { QRCodeCanvas } from 'qrcode.react'
@@ -22,7 +22,6 @@ import InventoryManagerPortal from './admin/InventoryManagerPortal'
 import LoginPage from './LoginPage'
 import PushManager from './lib/PushManager'
 import UpdatePrompt from './components/UpdatePrompt'
-import AppLock, { useAppLock } from './components/AppLock'
 import { Toaster } from 'react-hot-toast'
 import OfflineBanner from './components/OfflineBanner'
 import DailyEditCard from './components/DailyEditCard'
@@ -717,7 +716,6 @@ function ThaliUserApp() {
 
   return (
     <ThemeCtx.Provider value={t}>
-      <AppLock>
       <div style={{ fontFamily: "'DM Sans','Segoe UI',-apple-system,sans-serif", minHeight: '100dvh', background: t.bgGrad, color: t.text, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', position: 'relative' }}>
         <header style={{ position: 'relative', overflow: 'hidden', background: t.bgGrad, padding: 'calc(env(safe-area-inset-top, 8px) + 4px) 0 0', flexShrink: 0 }}>
           <GeoBg t={t} />
@@ -865,7 +863,6 @@ function ThaliUserApp() {
         </nav>
         <GlobalStyles />
       </div>
-      </AppLock>
     </ThemeCtx.Provider>
   )
 }
@@ -885,9 +882,21 @@ function HomePage({ setActiveTab, appSettings = {} }) {
   const surveyOpen = isSurveyOpen(appSettings, user.id)
   const todayKey = getTodayKey()
 
-  // Auto-edit card state
+  // Auto-edit card state — show at most once per meal window
   const [showDailyEditCard, setShowDailyEditCard] = useState(false)
   const [dailyEditMealInfo, setDailyEditMealInfo] = useState(null)
+
+  const editPromptStorageKey = (day, meal) =>
+    `almawaid_edit_prompt_${user?.id || 'anon'}_${getWeekDate()}_${day}_${meal}`
+
+  const markEditPromptDone = useCallback((day, meal) => {
+    if (!day || !meal) return
+    try { localStorage.setItem(editPromptStorageKey(day, meal), '1') } catch { /* ignore */ }
+  }, [user?.id])
+
+  const wasEditPromptShown = useCallback((day, meal) => {
+    try { return localStorage.getItem(editPromptStorageKey(day, meal)) === '1' } catch { return false }
+  }, [user?.id])
 
   // Check if auto-edit is enabled and current time is within the timing window
   const checkAutoEditWindow = useCallback(() => {
@@ -905,31 +914,37 @@ function HomePage({ setActiveTab, appSettings = {} }) {
     const currentWeekId = getWeekDate()
     const today = todayKey
     
+    const pick = (day, meal) => {
+      if (wasEditPromptShown(day, meal)) return false
+      setDailyEditMealInfo({ day, meal })
+      setShowDailyEditCard(true)
+      return true
+    }
+
     // Check if lunch is editable now (in auto mode)
     const canEditLunch = lunchAuto && canEditMeal(today, currentWeekId, 'lunch', appSettings, user.id)
     // Check if dinner is editable now (in auto mode)
     const canEditDinner = dinnerAuto && canEditMeal(today, currentWeekId, 'dinner', appSettings, user.id)
 
-    if (canEditLunch) {
-      setDailyEditMealInfo({ day: today, meal: 'lunch' })
-      setShowDailyEditCard(true)
-    } else if (canEditDinner) {
-      setDailyEditMealInfo({ day: today, meal: 'dinner' })
-      setShowDailyEditCard(true)
-    } else {
-      // After dinner closes, check if next day's lunch is editable
-      const todayIdx = DAYS.indexOf(today)
-      const nextDay = todayIdx >= 0 ? DAYS[(todayIdx + 1) % DAYS.length] : null
-      const canEditNextLunch = nextDay && lunchAuto && canEditMeal(nextDay, currentWeekId, 'lunch', appSettings, user.id)
-      if (canEditNextLunch) {
-        setDailyEditMealInfo({ day: nextDay, meal: 'lunch' })
-        setShowDailyEditCard(true)
-      } else {
-        setShowDailyEditCard(false)
-        setDailyEditMealInfo(null)
-      }
+    if (canEditLunch && pick(today, 'lunch')) return
+    if (canEditDinner && pick(today, 'dinner')) return
+
+    // After dinner closes, check if next day's lunch is editable
+    const todayIdx = DAYS.indexOf(today)
+    const nextDay = todayIdx >= 0 ? DAYS[(todayIdx + 1) % DAYS.length] : null
+    const canEditNextLunch = nextDay && lunchAuto && canEditMeal(nextDay, currentWeekId, 'lunch', appSettings, user.id)
+    if (canEditNextLunch && pick(nextDay, 'lunch')) return
+
+    setShowDailyEditCard(false)
+    setDailyEditMealInfo(null)
+  }, [appSettings, user, weeklyMenu, todayKey, wasEditPromptShown])
+
+  const closeDailyEditCard = useCallback((markDone = true) => {
+    if (markDone && dailyEditMealInfo) {
+      markEditPromptDone(dailyEditMealInfo.day, dailyEditMealInfo.meal)
     }
-  }, [appSettings, user, weeklyMenu, todayKey])
+    setShowDailyEditCard(false)
+  }, [dailyEditMealInfo, markEditPromptDone])
 
   // Check auto-edit window every minute
   useEffect(() => {
@@ -967,22 +982,29 @@ function HomePage({ setActiveTab, appSettings = {} }) {
     setStatsLoading(false)
   }
 
-  const handleSubmitCombined = async () => {
-    if (!lunchStars && !dinnerStars) return alert('Please rate at least one meal')
-    setSubmittingFeedback(true)
-    try {
-      const { error: dbErr } = await supabase.from('daily_feedback').upsert([{
-        user_id: user.id, day: todayKey,
-        lunch_stars: lunchStars || null, lunch_emoji: lunchStars ? STAR_LABELS[lunchStars] : null,
-        dinner_stars: dinnerStars || null, dinner_emoji: dinnerStars ? STAR_LABELS[dinnerStars] : null,
-        lunch_comment: lunchComment.trim() || null,
-        dinner_comment: dinnerComment.trim() || null,
-        created_at: new Date().toISOString()
-      }], { onConflict: 'user_id,day' })
-      if (dbErr) throw dbErr
-      setFeedbackSubmitted({ lunch: !!lunchStars, dinner: !!dinnerStars })
-    } catch { } finally { setSubmittingFeedback(false) }
+const handleSubmitCombined = async () => {
+  if (!lunchStars && !dinnerStars) {
+    setFeedbackError('Please rate at least one meal')
+    return
   }
+  setSubmittingFeedback(true)
+  setFeedbackError('')
+  try {
+    const { error: dbErr } = await supabase.from('daily_feedback').upsert([{
+      user_id: user.id, day: todayKey,
+      lunch_stars: lunchStars || null, lunch_emoji: lunchStars ? STAR_LABELS[lunchStars] : null,
+      dinner_stars: dinnerStars || null, dinner_emoji: dinnerStars ? STAR_LABELS[dinnerStars] : null,
+      lunch_comment: lunchComment.trim() || null,
+      dinner_comment: dinnerComment.trim() || null,
+      created_at: new Date().toISOString()
+    }], { onConflict: 'user_id,day' })
+    if (dbErr) throw dbErr
+    setFeedbackSubmitted({ lunch: !!lunchStars, dinner: !!dinnerStars })
+  } catch (err) {
+    setFeedbackError('Failed to submit feedback. Please try again.')
+    console.error('Feedback submission error:', err)
+  } finally { setSubmittingFeedback(false) }
+}
 
   const currentWeekId = getWeekDate()
   // Any meal editable in the current week?
@@ -1140,7 +1162,8 @@ function HomePage({ setActiveTab, appSettings = {} }) {
         <DailyEditCard
           weeklyMenu={weeklyMenu}
           isOpen={showDailyEditCard}
-          onClose={() => setShowDailyEditCard(false)}
+          onClose={() => closeDailyEditCard(true)}
+          onComplete={() => closeDailyEditCard(true)}
           appSettings={appSettings}
         />
       )}
@@ -1445,10 +1468,10 @@ function ThaliRequestsSection() {
         const typeLabel = typeLabels[type] || type
         await supabase.functions.invoke('sendPush', {
           body: {
-            title: '📋 Request Submitted',
-            body: `Your ${typeLabel} request has been submitted for review.`,
+            title: 'Al-Mawaid · Request received',
+            body: `Your ${typeLabel} request is with the kitchen team. We’ll notify you when it’s reviewed.`,
             target_type: 'specific',
-            target_user_id: user.id,
+            user_id: user.id,
             url: '/post'
           }
         })
@@ -1778,7 +1801,6 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
   const [loading, setLoading] = useState(true)
   const [showQR, setShowQR] = useState(false)
   const [helpline, setHelpline] = useState('')
-  const lockCtrl = useAppLock()
   useEffect(() => {
     supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle().then(({ data }) => { 
       if (data) setProfileData(data)
@@ -1807,6 +1829,14 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
         {profileData?.thali_number && <div style={{ display: 'inline-block', padding: '4px 16px', borderRadius: 20, background: t.accentBg, border: `1px solid ${t.accentBorder}`, marginBottom: 6 }}><span style={{ fontSize: 13, color: t.accent, fontWeight: 700, fontFamily: "'DM Sans',sans-serif" }}>Thali #{profileData.thali_number}</span></div>}
         {profileData?.phone && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 6 }}><Phone size={12} color={t.textSub} /><span style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{profileData.phone}</span></div>}
         {profileData?.address && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 4 }}><MapPin size={12} color={t.textSub} /><span style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>{profileData.address}</span></div>}
+        {profileData?.snack_defaults && Object.values(profileData.snack_defaults).some(v => v > 0) && (
+          <div style={{ marginTop: 10, padding: '10px 14px', borderRadius: 12, background: t.accentBg, border: `1px solid ${t.accentBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Admin Allotted Count:</span>
+            {Object.entries(profileData.snack_defaults).map(([key, val]) => (
+              <span key={key} style={{ fontSize: 13, fontWeight: 700, color: t.accent }}>Dish {key.replace('dish_', '')}: <strong>{val}</strong></span>
+            ))}
+          </div>
+        )}
         <div style={{ fontSize: 11, color: t.textSub, marginTop: 10, opacity: .5, fontFamily: "'DM Sans',sans-serif" }}>Thali User since {new Date(user.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
 
       </Card>
@@ -1817,18 +1847,6 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
       <NavCard label="Khidmat Guzaar" icon={<Users size={19} color="#fff" />} desc="Meet our Al-Mawaid team" onClick={() => onNav('khidmat')} />
       <NavCard label="Alerts" icon={<Bell size={19} color="#fff" />} desc="See notices and important updates" onClick={() => onNav('notifications')} />
       <NavCard label="Support Ticket" icon={<LifeBuoy size={19} color="#fff" />} desc="Raise general, thali, and delivery issues" onClick={() => onNav('support')} />
-      <div style={{ padding: '13px 16px', borderRadius: 14, border: `1px solid ${t.border}`, background: t.card, display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10 }}>
-        <div style={{ width: 42, height: 42, borderRadius: 12, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Lock size={19} color="#fff" />
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>App Lock</div>
-          <div style={{ fontSize: 12, color: t.textSub, marginTop: 1, fontFamily: "'DM Sans',sans-serif" }}>{lockCtrl.isEnabled ? 'Locked — Fingerprint / PIN' : 'Disabled — Tap to enable'}</div>
-        </div>
-        <button onClick={() => lockCtrl.isEnabled ? lockCtrl.disable() : lockCtrl.enable()} style={{ width: 44, height: 24, borderRadius: 12, border: 'none', background: lockCtrl.isEnabled ? t.accent : t.border, cursor: 'pointer', position: 'relative', transition: 'background 0.2s', flexShrink: 0, padding: 0 }}>
-          <div style={{ width: 20, height: 20, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: lockCtrl.isEnabled ? 22 : 2, transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
-        </button>
-      </div>
 
       {helpline && (
         <a href={`https://wa.me/${helpline.replace(/[^\d]/g, '')}`} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', display: 'block', marginBottom: 10 }}>

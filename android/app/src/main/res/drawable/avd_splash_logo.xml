@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/splash_logo">
+
+    <!-- Whole logo: fade in on appear (600ms) -->
+    <target
+        android:name="root_logo_group"
+        android:animation="@animator/logo_fade_in" />
+
+    <!-- Star: gentle 360° rotation -->
+    <target
+        android:name="star_group"
+        android:animation="@animator/star_rotation" />
+
+    <!-- Wheat: gentle sway side to side -->
+    <target
+        android:name="wheat_group"
+        android:animation="@animator/wheat_sway" />
+
+    <!-- Circle: subtle breathing/pulse effect -->
+    <target
+        android:name="circle_group"
+        android:animation="@animator/circle_pulse" />
+
+    <target
+        android:name="circle_group"
+        android:animation="@animator/circle_pulse_y" />
+
+</animated-vector>

@@ -60,28 +60,46 @@ serve(async (req) => {
             if (notifErr) throw notifErr
           }
 
-          // Send native push notifications (FCM / Expo / Web Push) if channel is 'push'
+          // Send push: Firebase CF (AAB FCM + web) with edge fallback
           if (broadcast.channel === 'push' || !broadcast.channel) {
+            const pushBody = {
+              title: broadcast.title || 'Al-Mawaid',
+              body: broadcast.body || '',
+              url: '/',
+              target_type: broadcast.target_type === 'specific' ? 'specific' : null,
+              user_id: broadcast.target_user_id || null,
+              image_url: broadcast.media_url || undefined,
+              sender_name: broadcast.sender_name || 'Al-Mawaid',
+            }
             try {
-              const sendPushUrl = `${SUPABASE_URL}/functions/v1/send-push`
-              await fetch(sendPushUrl, {
+              const fbRes = await fetch('https://us-central1-al-mawaid-8ffef.cloudfunctions.net/sendPush', {
                 method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
-                },
-                body: JSON.stringify({
-                  title: broadcast.title || 'Al-Mawaid',
-                  body: broadcast.body || '',
-                  url: broadcast.media_url || '/',
-                  target_type: broadcast.target_type === 'specific' ? 'specific' : null,
-                  user_id: broadcast.target_user_id || null,
-                  image_url: broadcast.media_url || undefined,
-                  sender_name: broadcast.sender_name || 'Al-Mawaid',
-                }),
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(pushBody),
               })
+              const fbJson = await fbRes.json().catch(() => ({}))
+              if (!fbRes.ok || !(fbJson.sent > 0)) {
+                await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
+                  },
+                  body: JSON.stringify(pushBody),
+                })
+              }
             } catch (pushErr) {
               console.error(`[process-scheduled] Push send failed for broadcast ${broadcast.id}:`, pushErr.message)
+              try {
+                await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
+                  },
+                  body: JSON.stringify(pushBody),
+                })
+              } catch (_) { /* already logged */ }
             }
           }
 

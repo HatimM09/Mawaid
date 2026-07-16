@@ -614,8 +614,8 @@ export default function SettingsPage() {
                         try {
                           await supabase.functions.invoke('sendPush', {
                             body: {
-                              title: '🍽️ New Weekly Menu Available',
-                              body: `The menu for week of ${thisWeek} is now live! Check it out in the app.`,
+                              title: 'Al-Mawaid · New menu is live',
+                              body: `This week’s thali menu (${thisWeek}) is ready — open the app to see lunch & dinner.`,
                               target_type: 'all',
                               user_id: null,
                               url: '/',

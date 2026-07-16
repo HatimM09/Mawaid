@@ -37,6 +37,7 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
   const [existingData, setExistingData] = useState(null)
   const [dataLoaded, setDataLoaded] = useState(false)
   const [userData, setUserData] = useState({ thali_no: '', email: user?.email })
+  const [snackDefaults, setSnackDefaults] = useState(null)
   const [surveySubmitted, setSurveySubmitted] = useState(false)
   const { autoSaveStatus, scheduleSave } = useSurveyAutoSave()
   const saveTimerRef = useRef(null)
@@ -44,7 +45,22 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
   const justLoadedRef = useRef(false)
 
   const [editResponseMode, setEditResponseMode] = useState(false)
+  const initialLoadRef = useRef(true)
+
   const currentWeekId = getWeekDate(appSettings)
+  const draftKey = `survey_draft_${currentWeekId}_${user?.id}`
+  const loadDraft = () => {
+    try {
+      const raw = localStorage.getItem(draftKey)
+      return raw ? JSON.parse(raw) : null
+    } catch { return null }
+  }
+  const saveDraft = (data) => {
+    try { localStorage.setItem(draftKey, JSON.stringify(data)) } catch {}
+  }
+  const clearDraft = () => {
+    try { localStorage.removeItem(draftKey) } catch {}
+  }
   const currentDay = DAYS[currentDayIndex]
   const menu = weeklyMenu[currentDay] || { lunch: [], dinner: [] }
   const dayKey = currentDay.substring(0, 3).toLowerCase()
@@ -76,8 +92,11 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
   const loadExisting = useCallback(async () => {
     try {
       if (!userData.thali_no) {
-        const { data: u } = await supabase.from('user_stats').select('thali_number, email').eq('user_id', user?.id).maybeSingle()
-        if (u) setUserData({ thali_no: u.thali_number || '', email: u.email || user?.email })
+        const { data: u } = await supabase.from('user_stats').select('thali_number, email, snack_defaults').eq('user_id', user?.id).maybeSingle()
+        if (u) {
+          setUserData({ thali_no: u.thali_number || '', email: u.email || user?.email })
+          setSnackDefaults(u.snack_defaults || null)
+        }
       }
       const { data } = await supabase.from('survey_submissions_flat')
         .select('*').eq('user_id', user?.id)
@@ -140,7 +159,6 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
     populateFromExisting()
   }, [currentDayIndex, currentMeal, dataLoaded])
 
-  useEffec
   // ── Restore draft from localStorage on mount ──
   useEffect(() => {
     if (!dataLoaded) return
@@ -151,8 +169,10 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
         setResponses(draft.responses)
       }
     }
+    initialLoadRef.current = false
   }, [dataLoaded])
-t(() => {
+
+  useEffect(() => {
     setEditResponseMode(false)
   }, [currentDayIndex, currentMeal])
 
@@ -293,8 +313,8 @@ t(() => {
       try {
         await supabase.functions.invoke('sendPush', {
           body: {
-            title: '📋 Survey Response Received',
-            body: `${userData.thali_no || user?.email || 'A user'} submitted their full week survey.`,
+            title: 'Al-Mawaid · Weekly survey in',
+            body: `Thali ${userData.thali_no || '—'} submitted the full week meal plan.`,
             url: '/admin/survey-tracking',
             target_type: 'admins',
           }
@@ -328,7 +348,7 @@ t(() => {
     </div>
   )
 
-  const DishSelector = ({ dish, idx }) => {
+  const DishSelector = ({ dish, idx, maxCount }) => {
     const isRoti = isRotiItem(dish)
     const isCount = !isRoti && isCountInput(appSettings, currentDay, currentMeal, idx)
     const resp = responses[dish]
@@ -355,9 +375,14 @@ t(() => {
     if (isCount) {
       const isSkipped = resp === 'no'
       const value = resp?.value || 0
+      const maxVal = maxCount != null ? maxCount : 99
+      const atMax = value >= maxVal
       return (
         <div style={{ marginBottom: 8, padding: '10px 14px', borderRadius: 12, background: THEME.card, border: `1px solid ${resp && resp.status === 'yes' ? THEME.accent : isSkipped ? '#F4433660' : THEME.border}` }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: THEME.text, marginBottom: 8, fontFamily: "'DM Sans',sans-serif" }}>{dish}</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: THEME.text, marginBottom: 8, fontFamily: "'DM Sans',sans-serif", display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>{dish}</span>
+            {maxCount != null && <span style={{ fontSize: 11, color: THEME.textSub, fontWeight: 400 }}>Max: {maxCount}</span>}
+          </div>
           {isSkipped ? (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <span style={{ fontSize: 13, color: '#F44336', fontWeight: 700 }}>❌ Skipped</span>
@@ -373,8 +398,8 @@ t(() => {
                 width: 36, height: 36, borderRadius: 8, border: `1px solid ${THEME.border}`, background: THEME.inputBg, color: THEME.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
               }}>−</button>
               <span style={{ fontSize: 20, fontWeight: 800, color: THEME.accent, minWidth: 40, textAlign: 'center', fontFamily: "'DM Sans',sans-serif" }}>{value}</span>
-              <button onClick={() => setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: Math.min(99, value + 1) } }))} style={{
-                width: 36, height: 36, borderRadius: 8, border: `1px solid ${THEME.border}`, background: THEME.inputBg, color: THEME.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
+              <button onClick={() => { if (!atMax) setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: Math.min(maxVal, value + 1) } })) }} style={{
+                width: 36, height: 36, borderRadius: 8, border: `1px solid ${atMax ? '#F4433660' : THEME.border}`, background: THEME.inputBg, color: atMax ? THEME.textSub : THEME.text, cursor: atMax ? 'not-allowed' : 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: atMax ? 0.4 : 1
               }}>+</button>
               <button onClick={() => setResponses(prev => ({ ...prev, [dish]: 'no' }))} style={{
                 marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, border: `1.5px solid ${THEME.border}`,
@@ -498,8 +523,9 @@ t(() => {
               {editResponseMode ? `Edit your portions for ${currentMeal}` : `Select your portions for ${currentMeal}`}
             </div>
             <div style={{ marginBottom: 16 }}>
-              {dishes.length > 0 ? dishes.map((dish, idx) => <DishSelector key={idx} dish={dish} idx={idx} />)
-                : <div style={{ padding: 16, textAlign: 'center', color: THEME.textSub, fontSize: 13, fontStyle: 'italic' }}>Menu being prepared...</div>}
+              {dishes.length > 0 ? dishes.map((dish, idx) => (
+                <DishSelector key={idx} dish={dish} idx={idx} maxCount={snackDefaults?.[`dish_${idx + 1}`] ?? null} />
+              )) : <div style={{ padding: 16, textAlign: 'center', color: THEME.textSub, fontSize: 13, fontStyle: 'italic' }}>Menu being prepared...</div>}
             </div>
             {editResponseMode && (
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -517,6 +543,62 @@ t(() => {
             )}
           </div>
         ) : null}
+
+        {/* ── Previous Selections Summary ── */}
+        {existingData && currentSlot > 0 && !surveySubmitted && !editResponseMode && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: THEME.textSub, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif" }}>
+              📋 Previous Selections
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {Array.from({ length: currentSlot }, (_, slotIdx) => {
+                const dayIdx = Math.floor(slotIdx / 2)
+                const meal = slotIdx % 2 === 0 ? 'lunch' : 'dinner'
+                const day = DAYS[dayIdx]
+                const dk = day.substring(0, 3).toLowerCase()
+                const mk = meal === 'lunch' ? 'l' : 'd'
+                const status = existingData[`${dk}_${mk}_status`]
+                if (!status) return null
+                const isApplied = status === 'Applied'
+                const slotMenu = weeklyMenu[day] || {}
+                const slotDishes = slotMenu[meal] || []
+                return (
+                  <button
+                    key={slotIdx}
+                    onClick={() => { setCurrentDayIndex(dayIdx); setCurrentMeal(meal); setResponses({}) }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '8px 12px', borderRadius: 10,
+                      background: THEME.cardActive, border: `1px solid ${THEME.border}`,
+                      cursor: 'pointer', textAlign: 'left', color: THEME.text,
+                      fontSize: 12, fontFamily: "'DM Sans',sans-serif",
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = THEME.accent; e.currentTarget.style.background = THEME.accentBg }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = THEME.border; e.currentTarget.style.background = THEME.cardActive }}
+                  >
+                    <div style={{ fontSize: 11, fontWeight: 700, minWidth: 72, flexShrink: 0 }}>
+                      {day.charAt(0).toUpperCase() + day.slice(1, 3)} {meal === 'lunch' ? '☀️' : '🌙'}
+                    </div>
+                    {isApplied ? (
+                      <div style={{ flex: 1, fontSize: 10, color: THEME.textSub, lineHeight: 1.5 }}>
+                        {slotDishes.map((dish, idx) => {
+                          const val = existingData[`${dk}_${mk}_dish_${idx + 1}`]
+                          if (!val || val === 'No' || val === 'no') return null
+                          const isCount = isCountInput(appSettings, day, meal, idx)
+                          return <span key={idx} style={{ marginRight: 8, whiteSpace: 'nowrap' }}>{dish}: <strong style={{ color: THEME.accent }}>{isCount ? val : val}</strong></span>
+                        })}
+                      </div>
+                    ) : (
+                      <div style={{ flex: 1, fontSize: 11, color: '#F44336', fontWeight: 600 }}>❌ Skipped</div>
+                    )}
+                    <div style={{ fontSize: 10, color: THEME.accent, flexShrink: 0 }}>✏️ Edit</div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {!surveySubmitted && (
           <div style={{ display: 'flex', gap: 8, marginTop: 8, position: 'relative', zIndex: 1 }}>

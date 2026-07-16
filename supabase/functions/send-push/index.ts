@@ -71,6 +71,8 @@ async function getFCMAccessToken(): Promise<string> {
 serve(async (req) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Content-Type': 'application/json',
   }
 
@@ -83,7 +85,27 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false }
     })
 
-    const { user_id, title, body, url, type, target_type, scheduled_for, sender_name, image_url } = await req.json()
+    const payload = await req.json()
+    // Accept either flat body or accidentally nested { body: {...} } from older clients
+    const raw = payload?.body && typeof payload.body === 'object' && !Array.isArray(payload.body) && payload.title === undefined
+      ? { ...payload.body }
+      : payload
+    const {
+      user_id: rawUserId,
+      target_user_id,
+      title,
+      body,
+      url,
+      type,
+      target_type,
+      scheduled_for,
+      sender_name,
+      image_url,
+      channels,
+    } = raw
+    const user_id = rawUserId || target_user_id || null
+    // channels: optional filter — ['webpush','expo','fcm']. Default = all.
+    const allow = (ch: string) => !Array.isArray(channels) || channels.length === 0 || channels.includes(ch)
 
     // Handle scheduling
     if (scheduled_for) {
@@ -139,9 +161,9 @@ serve(async (req) => {
       return new Response(JSON.stringify({ ok: true, sent: 0, message: 'No push subscriptions found' }), { status: 200, headers })
     }
 
-    const webPushSubs = allPushSubs.filter((s: any) => s.token_type === 'webpush' && s.subscription_json)
-    const expoSubs = allPushSubs.filter((s: any) => s.token_type === 'expo' && s.fcm_token)
-    const fcmSubs = allPushSubs.filter((s: any) => s.token_type === 'fcm' && s.fcm_token)
+    const webPushSubs = allow('webpush') ? allPushSubs.filter((s: any) => s.token_type === 'webpush' && s.subscription_json) : []
+    const expoSubs = allow('expo') ? allPushSubs.filter((s: any) => s.token_type === 'expo' && s.fcm_token) : []
+    const fcmSubs = allow('fcm') ? allPushSubs.filter((s: any) => s.token_type === 'fcm' && s.fcm_token) : []
 
     let sent = 0, failed = 0
 

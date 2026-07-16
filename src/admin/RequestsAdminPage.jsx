@@ -112,10 +112,12 @@ export default function RequestsAdminPage() {
         }
         const typeLabel = typeLabels[reqObj?.request_type] || reqObj?.request_type || 'Request'
         
-        const title = status === 'approved' ? '✅ Request Approved' : '❌ Request Rejected'
-        const body = status === 'approved' 
-          ? `Your ${typeLabel} request has been approved.`
-          : `Your ${typeLabel} request was rejected.`;
+        const title = status === 'approved'
+          ? 'Al-Mawaid · Request approved'
+          : 'Al-Mawaid · Request update'
+        const body = status === 'approved'
+          ? `Your ${typeLabel} request was approved. You’re all set.`
+          : `Your ${typeLabel} request couldn’t be approved. Open the app for details.`
 
         await supabase.functions.invoke('sendPush', {
           body: {

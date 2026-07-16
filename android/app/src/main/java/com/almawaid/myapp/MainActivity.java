@@ -1,15 +1,60 @@
 package com.almawaid.myapp;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ObjectAnimator;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.animation.AccelerateDecelerateInterpolator;
+import androidx.core.splashscreen.SplashScreen;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // Install the Android 12+ SplashScreen API BEFORE super.onCreate
+        SplashScreen splash = SplashScreen.installSplashScreen(this);
+
         super.onCreate(savedInstanceState);
+
+        // Custom subtle & elegant splash exit animation
+        splash.setOnExitAnimationListener(splashView -> {
+            if (splashView.getIconView() == null) {
+                splashView.remove();
+                return;
+            }
+            // Scale the icon down gently while fading out
+            ObjectAnimator scaleX = ObjectAnimator.ofFloat(
+                splashView.getIconView(), "scaleX", 1f, 0.85f);
+            ObjectAnimator scaleY = ObjectAnimator.ofFloat(
+                splashView.getIconView(), "scaleY", 1f, 0.85f);
+            ObjectAnimator fadeOut = ObjectAnimator.ofFloat(
+                splashView.getIconView(), "alpha", 1f, 0f);
+
+            long duration = 380L;
+            scaleX.setDuration(duration);
+            scaleY.setDuration(duration);
+            fadeOut.setDuration(duration);
+
+            AccelerateDecelerateInterpolator interpolator = new AccelerateDecelerateInterpolator();
+            scaleX.setInterpolator(interpolator);
+            scaleY.setInterpolator(interpolator);
+            fadeOut.setInterpolator(interpolator);
+
+            fadeOut.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    splashView.remove();
+                }
+            });
+
+            scaleX.start();
+            scaleY.start();
+            fadeOut.start();
+        });
+
         createNotificationChannels();
     }
 

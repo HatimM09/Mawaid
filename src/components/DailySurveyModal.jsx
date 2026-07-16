@@ -219,13 +219,20 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
       await supabase.from('survey_submissions_flat')
         .upsert([updateObj], { onConflict: 'user_id,week_id' })
       try {
+        // Confirmation to the member (one short, calm message)
         await supabase.functions.invoke('sendPush', {
-          body: { title: 'Daily Survey Submitted', body: 'Your daily food survey has been saved successfully.', url: '/post', target_type: 'specific', target_user_id: user?.id }
+          body: {
+            title: 'Al-Mawaid · Preference saved',
+            body: 'Your meal choices for today are locked in. Shukran — see you at thali.',
+            url: '/post',
+            target_type: 'specific',
+            user_id: user?.id,
+          }
         })
         await supabase.functions.invoke('sendPush', {
           body: {
-            title: '📋 Daily Survey Response',
-            body: `${userData.thali_no || user?.email || 'A user'} submitted today's survey.`,
+            title: 'Al-Mawaid · Daily response',
+            body: `Thali ${userData.thali_no || '—'} updated today’s meal preferences.`,
             url: '/admin/survey-tracking',
             target_type: 'admins',
           }

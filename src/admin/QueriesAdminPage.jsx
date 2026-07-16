@@ -81,8 +81,8 @@ export default function QueriesAdminPage() {
         // Send push notification for when app is closed
         await supabase.functions.invoke('sendPush', {
           body: {
-            title: '✅ Query Resolved',
-            body: `Your "${subjectLabel}" has been resolved by the administration.`,
+            title: 'Al-Mawaid · Query closed',
+            body: `Your "${subjectLabel}" ticket is resolved. Open the app if you need anything else.`,
             target_type: 'specific',
             user_id: existing.user_id,
             url: '/post'
@@ -118,7 +118,7 @@ export default function QueriesAdminPage() {
           // Insert in-app notification for real-time toast
           await supabase.from('notifications').insert({
             user_id: userId,
-            title: '💬 Admin Replied to Your Query',
+            title: 'Al-Mawaid · Reply from admin',
             message: shortMessage,
             url: '/post',
             type: 'query_reply'
@@ -126,7 +126,7 @@ export default function QueriesAdminPage() {
           // Send push notification
           await supabase.functions.invoke('sendPush', {
             body: {
-              title: '💬 Admin Replied to Your Query',
+              title: 'Al-Mawaid · Reply from admin',
               body: `"${subjectLabel}" — ${shortBody}`,
               target_type: 'specific',
               user_id: userId,

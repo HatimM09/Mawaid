@@ -1,7 +1,7 @@
 // src/components/DailyEditCard.jsx
 // Time-based meal card + helpers
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Sun, Moon, X } from 'lucide-react'
 import { useTheme, useAuth } from '../admin/context'
 import { supabase } from '../lib/firebaseClient'
@@ -113,12 +113,14 @@ export const getEditCloseTime = (appSettings, mealType) => {
   return mealType === 'lunch' ? { h: 11, m: 0 } : { h: 15, m: 30 };
 }
 
-export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () => {}, appSettings }) {
+export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () => {}, onComplete = () => {}, appSettings }) {
   const t = useTheme()
   const { user } = useAuth()
   const [userResponses, setUserResponses] = useState({})
   const [saving, setSaving] = useState(false)
   const [dataLoading, setDataLoading] = useState(true)
+  const onCompleteRef = useRef(onComplete)
+  onCompleteRef.current = onComplete
 
   // Load user's saved survey responses
   useEffect(() => {
@@ -155,9 +157,12 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
         }
       })
       setUserResponses(respMap)
+      // Already filled this meal → don't keep re-prompting
+      const alreadyComplete = mi.dishes.length > 0 && mi.dishes.every((d) => respMap[d] !== undefined)
+      if (alreadyComplete) onCompleteRef.current()
     }
     loadData().finally(() => setDataLoading(false))
-  }, [user, weeklyMenu, isOpen])
+  }, [user, weeklyMenu, isOpen, appSettings])
 
   const saveResponse = async (dish, value) => {
     if (!user || saving) return
@@ -202,6 +207,12 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
         .from('survey_submissions_flat')
         .upsert([upsertObj], { onConflict: 'user_id,week_id' })
       if (error) throw error
+
+      // Once every dish for this meal has a response, close — show only once per window
+      const allFilled = mi.dishes.every((d) => newResponses[d] !== undefined && newResponses[d] !== null && newResponses[d] !== '')
+      if (allFilled) {
+        onCompleteRef.current()
+      }
     } catch (err) {
       console.error('Error saving quick edit:', err)
     } finally {

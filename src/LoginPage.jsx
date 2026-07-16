@@ -399,33 +399,35 @@ export default function LoginPage({ onRoleLogin }) {
         }
 
         /* ── Role Pills ── */
-        .lp-role-label {
-          font-size: 9px;
-          font-weight: 700;
-          letter-spacing: 0.2em;
-          color: rgba(212, 175, 55, 0.72);
-          text-transform: uppercase;
-          margin-bottom: 10px;
-        }
+.lp-role-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: rgba(212, 175, 55, 0.9);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
         .lp-roles {
           display: flex;
           gap: 6px;
           margin-bottom: 22px;
         }
-        .lp-role {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 4px;
-          padding: 10px 4px;
-          border-radius: 14px;
-          border: 1px solid rgba(212, 175, 55, 0.12);
-          background: rgba(255, 248, 230, 0.04);
-          cursor: pointer;
-          transition: all 0.35s cubic-bezier(0.34,1.56,0.64,1);
-          font-family: 'Outfit', sans-serif;
-        }
+.lp-role {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 6px;
+  border-radius: 16px;
+  border: 2px solid transparent;
+  background: rgba(255, 248, 230, 0.06);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-family: 'Outfit', sans-serif;
+  position: relative;
+  overflow: hidden;
+}
         .lp-role svg {
           color: rgba(212, 175, 55, 0.6);
           filter: brightness(0.85);
@@ -438,39 +440,41 @@ export default function LoginPage({ onRoleLogin }) {
           color: rgba(212, 175, 55, 0.6);
           transition: color 0.35s ease;
         }
-        .lp-role:hover {
-          border-color: rgba(212, 175, 55, 0.3);
-          background: rgba(212, 175, 55, 0.08);
-        }
-        .lp-role:hover svg { color: rgba(212, 175, 55, 0.6); filter: brightness(0.9); }
-        .lp-role:hover span { color: rgba(212, 175, 55, 0.72); }
-        .lp-role--active {
-          border-color: rgba(212, 175, 55, 0.6);
-          background: rgba(212, 175, 55, 0.1);
-          box-shadow: 0 0 24px rgba(212, 175, 55, 0.08), inset 0 0 20px rgba(212, 175, 55, 0.03);
-        }
-        .lp-role--active svg {
-          color: #F5DEB3;
-          transform: scale(1.15);
-        }
-        .lp-role--active span {
-          color: #F5DEB3;
-        }
+.lp-role:hover {
+  border-color: rgba(212, 175, 55, 0.5);
+  background: rgba(212, 175, 55, 0.12);
+  transform: translateY(-2px);
+}
+.lp-role:hover svg { color: #F5DEB3; filter: brightness(1.0); }
+.lp-role:hover span { color: #F5DEB3; }
+.lp-role--active {
+  border-color: #F5DEB3;
+  background: rgba(245, 222, 179, 0.15);
+  box-shadow: 0 0 24px rgba(212, 175, 55, 0.15), inset 0 0 20px rgba(212, 175, 55, 0.05);
+  transform: translateY(-2px);
+}
+.lp-role--active svg {
+  color: #F5DEB3;
+  transform: scale(1.1);
+}
+.lp-role--active span {
+  color: #F5DEB3;
+}
 
         /* ── Form ── */
         .lp-form { display: flex; flex-direction: column; gap: 16px; }
 
         .lp-field { position: relative; }
-        .lp-field-label {
-          display: block;
-          font-size: 9px;
-          font-weight: 700;
-          letter-spacing: 0.15em;
-          color: rgba(212, 175, 55, 0.72);
-          text-transform: uppercase;
-          margin-bottom: 6px;
-          transition: color 0.3s ease;
-        }
+.lp-field-label {
+  display: block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: rgba(212, 175, 55, 0.9);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  transition: color 0.3s ease;
+}
         .lp-field:focus-within .lp-field-label {
           color: #F5DEB3;
         }
@@ -511,7 +515,7 @@ export default function LoginPage({ onRoleLogin }) {
           border-radius: 14px;
           border: 1px solid rgba(212, 175, 55, 0.15);
           background: rgba(255, 248, 230, 0.06);
-          color: #F5DEB3;
+          color: #fff;
           font-size: 14px;
           font-family: 'Outfit', sans-serif;
           font-weight: 400;
@@ -599,33 +603,34 @@ export default function LoginPage({ onRoleLogin }) {
           transform: scale(1.12);
           background: radial-gradient(ellipse at center, rgba(212, 175, 55, 0.45) 0%, transparent 70%);
         }
-        .lp-btn {
-          width: 100%;
-          padding: 18px 20px;
-          border-radius: 16px;
-          border: none;
-          background: linear-gradient(135deg, #D4AF37 0%, #C8902A 30%, #A0760A 60%, #8B6914 100%);
-          background-size: 200% 200%;
-          color: #1a1208;
-          font-family: 'Cinzel', serif;
-          font-size: 15px;
-          font-weight: 800;
-          letter-spacing: 0.18em;
-          text-transform: uppercase;
-          cursor: pointer;
-          position: relative;
-          overflow: hidden;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-          box-shadow:
-            0 4px 12px rgba(0, 0, 0, 0.4),
-            0 12px 40px rgba(212, 175, 55, 0.25),
-            0 0 60px rgba(212, 175, 55, 0.1);
-          transition: filter 0.3s ease, transform 0.25s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.3s ease;
-          animation: btn-shift 4s ease-in-out infinite;
-        }
+.lp-btn {
+  width: 100%;
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: none;
+  background: linear-gradient(135deg, #F5DEB3 0%, #D4AF37 30%, #B8860B 60%, #DAA520 100%);
+  background-size: 200% 200%;
+  color: #1a1208;
+  font-family: 'Cinzel', serif;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.4),
+    0 12px 40px rgba(212, 175, 55, 0.25),
+    0 0 60px rgba(212, 175, 55, 0.1),
+    0 0 0 4px rgba(212, 175, 55, 0.2);
+  transition: filter 0.3s ease, transform 0.25s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.3s ease;
+  animation: btn-pulse 2s ease-in-out infinite;
+}
         @keyframes btn-shift {
           0%   { background-position: 0% 50%; }
           50%  { background-position: 100% 50%; }
@@ -670,70 +675,71 @@ export default function LoginPage({ onRoleLogin }) {
         }
       `}</style>
 
-      <div className="lp-root">
-        {/* Wheat Background Canvas — Ken Burns Motion */}
-        <div className="lp-wheat-canvas">
-          <div className="lp-wheat-bg" />
-          <div className="lp-wheat-overlay" />
-        </div>
+       <div className="lp-root">
+         {/* Wheat Background Canvas — Ken Burns Motion */}
+         <div className="lp-wheat-canvas">
+           <div className="lp-wheat-bg" />
+           <div className="lp-wheat-overlay" />
+         </div>
 
-        {/* Vignette + Warm Glow */}
-        <div className="lp-vignette" />
-        <div className="lp-warm-glow" />
+         {/* Vignette + Warm Glow */}
+         <div className="lp-vignette" />
+         <div className="lp-warm-glow" />
 
-        {/* Floating Wheat Grains */}
-        <div className="lp-grains">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="lp-grain" />
-          ))}
-        </div>
+         {/* Floating Wheat Grains */}
+         <div className="lp-grains">
+           {Array.from({ length: 8 }).map((_, i) => (
+             <div key={i} className="lp-grain" />
+           ))}
+         </div>
 
-        {/* Golden Dust Motes */}
-        <div className="lp-dust">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="lp-mote" />
-          ))}
-        </div>
+         {/* Golden Dust Motes */}
+         <div className="lp-dust">
+           {Array.from({ length: 5 }).map((_, i) => (
+             <div key={i} className="lp-mote" />
+           ))}
+         </div>
 
-        {/* Card Wrapper — handles mouse parallax separately from card animation */}
-        <div style={{
-          transform: `translate(${px}px, ${py}px)`,
-          transition: 'transform 0.15s ease-out',
-          position: 'relative', zIndex: 5
-        }}>
-          <div className="lp-card">
-          <div className="lp-stagger">
-            {/* ── Brand Section ── */}
-            <div>
-              <div className="lp-brand">
-                <div className="lp-logo-wrap">
-                  <div className="lp-logo-glow" />
-                  <img src="/al-mawaid.png" alt="Al-Mawaid" className="lp-logo" />
-                </div>
-                <div className="lp-title">AL-MAWAID</div>
-              </div>
-            </div>
+         {/* Card Wrapper — handles mouse parallax separately from card animation */}
+         <div style={{
+           transform: `translate(${px}px, ${py}px)`,
+           transition: 'transform 0.15s ease-out',
+           position: 'relative', zIndex: 5
+         }}>
+           <div className="lp-card">
+             <div className="lp-stagger">
+               {/* ── Header with Value Proposition ── */}
+               <div style={{ textAlign: 'center', marginBottom: 24 }}>
+                 <div className="lp-brand">
+                   <div className="lp-logo-wrap">
+                     <div className="lp-logo-glow" />
+                     <img src="/al-mawaid.png" alt="Al-Mawaid" className="lp-logo" />
+                   </div>
+                   <div className="lp-title">AL-MAWAID</div>
+                 </div>
 
-            {/* ── Divider ── */}
-            <div><div className="lp-divider" /></div>
+               </div>
 
-            {/* ── Role Selection ── */}
-            <div>
-              <div className="lp-role-label">I am a...</div>
-              <div className="lp-roles">
-                {LOGIN_ROLES.map(r => (
-                  <button
-                    key={r.id}
-                    className={`lp-role ${role === r.id ? 'lp-role--active' : ''}`}
-                    onClick={() => { setRole(r.id); setError('') }}
-                    type="button"
-                  >
-                    {r.icon}
-                    <span>{r.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+               {/* ── Divider ── */}
+               <div><div className="lp-divider" /></div>
+
+               {/* ── Role Selection (Simplified) ── */}
+               <div style={{ marginBottom: 20 }}>
+                 <div className="lp-role-label">I am a...</div>
+                 <div className="lp-roles">
+                   {LOGIN_ROLES.map(r => (
+                     <button
+                       key={r.id}
+                       className={`lp-role ${role === r.id ? 'lp-role--active' : ''}`}
+                       onClick={() => { setRole(r.id); setError('') }}
+                       type="button"
+                     >
+                       {r.icon}
+                       <span>{r.label}</span>
+                     </button>
+                   ))}
+                 </div>
+               </div>
 
             {/* ── Form ── */}
             <div>
@@ -853,9 +859,9 @@ export default function LoginPage({ onRoleLogin }) {
                   <span>Remember Me</span>
                 </label>
 
-                <div style={{ fontSize: 10, color: 'rgba(245, 222, 179, 0.4)', textAlign: 'center', marginTop: 4, marginBottom: 2, fontWeight: 500, letterSpacing: '0.05em', fontFamily: "'Outfit',sans-serif" }}>
-                  Sign in to manage your thali service
-                </div>
+                 <div style={{ fontSize: 10, color: 'rgba(245, 222, 179, 0.7)', textAlign: 'center', marginTop: 4, marginBottom: 2, fontWeight: 500, letterSpacing: '0.05em', fontFamily: "'Outfit',sans-serif" }}>
+                   Sign in to manage your thali service
+                 </div>
                 <div className="lp-btn-wrap">
                   {!loading && <div className="lp-btn-glow" />}
                   <button

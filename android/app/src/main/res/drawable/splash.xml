@@ -3,7 +3,7 @@
     <!-- Solid background color -->
     <item android:drawable="@color/splash_background" />
     
-    <!-- Centered brand logo (vector wheat/plate motif) -->
+    <!-- Centered brand logo (vector wheat/plate motif — matches animated AVG) -->
     <item
         android:gravity="center"
         android:width="120dp"

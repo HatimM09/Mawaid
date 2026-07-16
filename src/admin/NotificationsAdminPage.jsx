@@ -45,7 +45,7 @@ const DELIVERY_OPTIONS = [
 const DEFAULT_FORM = {
   title: '',
   body: '',
-  sender_name: 'Admin',
+  sender_name: 'Al-Mawaid',
   scheduled_at: '',
   target_type: 'all',
   target_user_id: '',
@@ -119,9 +119,10 @@ export default function NotificationsAdminPage() {
       if (sRes.data) setSchedule(sRes.data)
       if (pRes.count !== null) setPushSubs(pRes.count)
 
-      // Calculate real subscribers (users with valid push tokens)
-      const validSubs = psRes.data?.filter(s => 
+      // Calculate real subscribers (webpush + Expo + Android FCM/AAB)
+      const validSubs = psRes.data?.filter(s =>
         (s.token_type === 'expo' && s.fcm_token) ||
+        (s.token_type === 'fcm' && s.fcm_token) ||
         (s.token_type === 'webpush' && s.subscription_json)
       ) || []
       const uniqueUsersWithValidSubs = new Set(validSubs.map(s => s.user_id)).size
@@ -187,6 +188,40 @@ export default function NotificationsAdminPage() {
     return users.length
   }
 
+  /** Resolve user IDs for in-app notification rows (Realtime toast when app is open) */
+  const resolveTargetUserIds = async (targetType, targetUserId) => {
+    if (targetType === 'specific' && targetUserId) return [targetUserId]
+    if (targetType === 'admins') {
+      const { data } = await supabase.from('user_stats').select('user_id').eq('role', 'admin')
+      return (data || []).map((d) => d.user_id).filter(Boolean)
+    }
+    const { data: subs } = await supabase.from('push_subscriptions').select('user_id').limit(5000)
+    const fromSubs = [...new Set((subs || []).map((s) => s.user_id).filter(Boolean))]
+    if (fromSubs.length) return fromSubs
+    const { data: all } = await supabase.from('user_stats').select('user_id').limit(5000)
+    return (all || []).map((u) => u.user_id).filter(Boolean)
+  }
+
+  const insertInAppNotifications = async (targetType, targetUserId, title, body, url = '/') => {
+    try {
+      const targets = await resolveTargetUserIds(targetType, targetUserId)
+      if (!targets.length) return
+      const rows = targets.map((user_id) => ({
+        user_id,
+        title: title || 'Al-Mawaid',
+        message: body || '',
+        type: 'broadcast',
+        url: url || '/',
+      }))
+      // Chunk inserts to avoid payload limits
+      for (let i = 0; i < rows.length; i += 200) {
+        await supabase.from('notifications').insert(rows.slice(i, i + 200))
+      }
+    } catch (e) {
+      console.warn('[Notifications] In-app notification insert skipped:', e)
+    }
+  }
+
   // ── Send Broadcast ───────────────────────────────────────────
   const handleSend = async () => {
     if (!form.title || !form.body) {
@@ -247,6 +282,16 @@ export default function NotificationsAdminPage() {
     if (!isScheduled) {
       let sentCount = 0
       let failedCount = 0
+
+      // Always write in-app notifications so open web/AAB clients get Realtime toasts
+      await insertInAppNotifications(
+        form.target_type,
+        form.target_user_id,
+        form.title,
+        form.body,
+        form.media_url || '/'
+      )
+
       if (form.channel === 'push') {
         try {
           const { data: pushResult, error: pushError } = await supabase.functions.invoke('sendPush', {
@@ -255,6 +300,7 @@ export default function NotificationsAdminPage() {
               body: form.body,
               user_id: form.target_type === 'specific' ? form.target_user_id : null,
               target_type: form.target_type === 'all' ? null : form.target_type,
+              url: '/',
               image_url: form.media_url || undefined,
               sender_name: form.sender_name,
             }
@@ -423,6 +469,15 @@ export default function NotificationsAdminPage() {
 
     let sentCount = 0
     let failedCount = 0
+
+    await insertInAppNotifications(
+      entry.target_type,
+      entry.target_user_id,
+      entry.title,
+      entry.body,
+      entry.media_url || '/'
+    )
+
     if (entry.channel === 'push') {
       try {
         const { data: pushResult, error: pushError } = await supabase.functions.invoke('sendPush', {
@@ -431,7 +486,7 @@ export default function NotificationsAdminPage() {
             body: entry.body,
             user_id: entry.target_type === 'specific' ? entry.target_user_id : null,
             target_type: entry.target_type === 'all' ? null : entry.target_type,
-            url: entry.media_url || '/',
+            url: '/',
             image_url: entry.media_url || undefined,
             sender_name: entry.sender_name || 'Admin',
           }

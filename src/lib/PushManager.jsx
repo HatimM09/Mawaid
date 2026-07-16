@@ -39,23 +39,35 @@ function showToast(title, body, url) {
     (t) => (
       <div
         onClick={() => { if (url) window.location.href = url; toast.dismiss(t.id) }}
-        style={{ cursor: url ? 'pointer' : 'default' }}
+        style={{ cursor: url ? 'pointer' : 'default', display: 'flex', gap: 12, alignItems: 'flex-start' }}
       >
-        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{title}</div>
-        {body && <div style={{ fontSize: 13, opacity: 0.8 }}>{body}</div>}
-        {url && <div style={{ fontSize: 11, opacity: 0.5, marginTop: 4 }}>Tap to open →</div>}
+        <div style={{
+          width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+          background: 'linear-gradient(135deg, #c5a059, #8a6d2f)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 16, boxShadow: '0 4px 14px rgba(197,160,89,0.35)',
+        }}>✦</div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: '0.02em', marginBottom: 3, color: '#F5E6C8' }}>
+            {title || 'Al-Mawaid'}
+          </div>
+          {body && <div style={{ fontSize: 12.5, lineHeight: 1.45, color: 'rgba(250,243,224,0.78)' }}>{body}</div>}
+          {url && url !== '/' && (
+            <div style={{ fontSize: 11, marginTop: 6, color: '#c5a059', fontWeight: 600 }}>Open →</div>
+          )}
+        </div>
       </div>
     ),
     {
-      duration: 5000,
-      icon: '🔔',
+      duration: 5500,
       style: {
-        background: '#1a1308',
+        background: 'linear-gradient(160deg, #14100a 0%, #1a1308 100%)',
         color: '#FAF3E0',
-        border: '1px solid rgba(212,175,55,0.3)',
-        borderRadius: 12,
-        padding: '12px 16px',
-        maxWidth: 340,
+        border: '1px solid rgba(197,160,89,0.35)',
+        borderRadius: 16,
+        padding: '14px 16px',
+        maxWidth: 360,
+        boxShadow: '0 18px 40px rgba(0,0,0,0.45)',
       },
     }
   )
@@ -195,64 +207,87 @@ export default function PushManager() {
       }
 
       // ── Web Push subscription (browser/PWA fallback) ──
-      try {
-        if (!('Notification' in window) || !('PushManager' in window)) return
-        let permission = Notification.permission
-        if (permission === 'default') permission = await Notification.requestPermission()
-        if (permission !== 'granted' || !VAPID_KEY) return
-        const swReg = await navigator.serviceWorker.ready
-        const urlBase64ToUint8Array = (bs) => {
-          const p = '='.repeat((4 - bs.length % 4) % 4)
-          return new Uint8Array(atob((bs + p).replace(/\-/g, '+').replace(/_/g, '/')).split('').map(c => c.charCodeAt(0)))
-        }
-        const sub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_KEY) })
-        if (!cancelledRef.current) await savePushSubscription(user.id, sub)
-
-        // Also try to get FCM token via Firebase SDK for better delivery
+      // Skip early return on native — Capacitor may lack PushManager/Web Notification APIs
+      const webPushSupported = 'Notification' in window && 'PushManager' in window && 'serviceWorker' in navigator
+      if (webPushSupported) {
         try {
-          const { requestForToken } = await import('../lib/firebase')
-          const fcmToken = await requestForToken()
-          if (fcmToken && !cancelledRef.current) {
-            await supabase.from('push_subscriptions').upsert(
-              { user_id: user.id, fcm_token: fcmToken, token_type: 'fcm', updated_at: new Date().toISOString() },
-              { onConflict: 'user_id, token_type' }
-            )
+          let permission = Notification.permission
+          if (permission === 'default') permission = await Notification.requestPermission()
+          if (permission === 'granted' && VAPID_KEY) {
+            const swReg = await navigator.serviceWorker.ready
+            const urlBase64ToUint8Array = (bs) => {
+              const p = '='.repeat((4 - bs.length % 4) % 4)
+              return new Uint8Array(atob((bs + p).replace(/\-/g, '+').replace(/_/g, '/')).split('').map(c => c.charCodeAt(0)))
+            }
+            let sub
+            try {
+              sub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_KEY) })
+            } catch (subErr) {
+              // If the VAPID key changed since the last subscription, unsubscribe old and retry
+              if (subErr.name === 'InvalidStateError' || (subErr.message && subErr.message.includes('applicationServerKey'))) {
+                console.warn('[PushManager] VAPID key mismatch — unsubscribing old subscription and retrying')
+                const oldSub = await swReg.pushManager.getSubscription()
+                if (oldSub) await oldSub.unsubscribe()
+                if (cancelledRef.current) return
+                sub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_KEY) })
+              } else {
+                throw subErr
+              }
+            }
+            if (!cancelledRef.current) await savePushSubscription(user.id, sub)
+
+            // Also try to get FCM token via Firebase SDK for better delivery
+            // Only attempt if VITE_FIREBASE_VAPID_KEY is explicitly configured (avoids 401 from mismatched key)
+            if (import.meta.env.VITE_FIREBASE_VAPID_KEY) {
+              try {
+                const { requestForToken } = await import('../lib/firebase')
+                const fcmToken = await requestForToken()
+                if (fcmToken && !cancelledRef.current) {
+                  await supabase.from('push_subscriptions').upsert(
+                    { user_id: user.id, fcm_token: fcmToken, token_type: 'fcm', updated_at: new Date().toISOString() },
+                    { onConflict: 'user_id, token_type' }
+                  )
+                }
+              } catch (e) {
+                console.warn('[PushManager] Firebase FCM token fetch skipped:', e)
+              }
+            }
           }
         } catch (e) {
-          console.warn('[PushManager] Firebase FCM token fetch skipped:', e)
+          console.warn('[PushManager] Web Push subscribe failed:', e)
         }
-      } catch {}
 
-      const swMessageHandler = (event) => {
-        if (event.data?.type === 'PUSH_RECEIVED') {
-          showToast(event.data.title, event.data.body, event.data.url)
+        const swMessageHandler = (event) => {
+          if (event.data?.type === 'PUSH_RECEIVED') {
+            showToast(event.data.title, event.data.body, event.data.url)
+          }
+          // Handle deep link from service worker notification click
+          if (event.data?.type === 'NOTIFICATION_DEEP_LINK') {
+            const url = event.data.url
+            if (url && url !== '/') {
+              window.location.href = url
+            }
+          }
         }
-        // Handle deep link from service worker notification click
-        if (event.data?.type === 'NOTIFICATION_DEEP_LINK') {
-          const url = event.data.url
+        navigator.serviceWorker.addEventListener('message', swMessageHandler)
+
+        // ── Listen for notification deep-link events (from SW notification click) ──
+        const handleDeepLink = (e) => {
+          const url = e.detail?.url
           if (url && url !== '/') {
             window.location.href = url
           }
         }
-      }
-      navigator.serviceWorker.addEventListener('message', swMessageHandler)
+        window.addEventListener('notification-deep-link', handleDeepLink)
 
-      // ── Listen for notification deep-link events (from SW notification click) ──
-      const handleDeepLink = (e) => {
-        const url = e.detail?.url
-        if (url && url !== '/') {
-          window.location.href = url
+        // Store refs for cleanup
+        window.__cleanupDeepLink = () => {
+          navigator.serviceWorker.removeEventListener('message', swMessageHandler)
+          window.removeEventListener('notification-deep-link', handleDeepLink)
         }
       }
-      window.addEventListener('notification-deep-link', handleDeepLink)
 
-      // Store refs for cleanup
-      window.__cleanupDeepLink = () => {
-        navigator.serviceWorker.removeEventListener('message', swMessageHandler)
-        window.removeEventListener('notification-deep-link', handleDeepLink)
-      }
-
-      // User-specific notifications
+      // User-specific in-app toasts (native + web)
       setTimeout(() => subscribeRealtime(realtimeChannel, user, cancelledRef), 2000)
     }
 
