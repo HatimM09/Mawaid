@@ -533,7 +533,7 @@ export const PackingTVView = ({ user, onClose }) => {
     const isApplied = status === 'Applied'
 
     const total = dishEntries.length
-    const gridCols = total === 1 ? '1fr' : total === 2 ? 'repeat(2, 1fr)' : total <= 4 ? 'repeat(2, 1fr)' : total <= 6 ? 'repeat(3, 1fr)' : total <= 9 ? 'repeat(3, 1fr)' : 'repeat(4, 1fr)'
+    const gridCols = total === 1 ? '1fr' : total === 2 ? 'repeat(2, 1fr)' : total === 3 ? 'repeat(3, 1fr)' : total === 4 ? 'repeat(4, 1fr)' : total === 5 ? 'repeat(5, 1fr)' : total <= 6 ? 'repeat(3, 1fr)' : total <= 9 ? 'repeat(3, 1fr)' : 'repeat(4, 1fr)'
 
     const pctColorNull = (val, isRoti, raw) => {
       const inactive = { bg: 'rgba(255,255,255,0.02)', border: 'rgba(255,255,255,0.08)', fill: 'rgba(255,255,255,0.03)', shadow: 'rgba(255,255,255,0)', badge: 'rgba(255,255,255,0.1)', text: 'rgba(255,255,255,0.2)', tagBg: 'rgba(255,255,255,0.05)', tagColor: 'rgba(255,255,255,0.2)', tagBorder: 'rgba(255,255,255,0.08)' }
@@ -749,6 +749,7 @@ export const PackingTVView = ({ user, onClose }) => {
 export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => {
   const responses = user.dishResponses || {}
   const dishEntries = Object.entries(responses).filter(([k]) => k !== '_status')
+  const total = dishEntries.length
   
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, padding: 8 }}>
@@ -766,7 +767,7 @@ export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => 
 
       <div style={{ 
         display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', 
+        gridTemplateColumns: total === 1 ? '1fr' : total <= 3 ? `repeat(${total}, 1fr)` : total === 4 ? 'repeat(4, 1fr)' : total === 5 ? 'repeat(5, 1fr)' : 'repeat(auto-fit, minmax(200px, 1fr))',
         gap: 20 
       }}>
         {dishEntries.map(([dish, pct]) => {
