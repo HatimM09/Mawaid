@@ -533,7 +533,7 @@ export const PackingTVView = ({ user, onClose }) => {
     const isApplied = status === 'Applied'
 
     const total = dishEntries.length
-    const gridCols = total === 1 ? '1fr' : total === 2 ? 'repeat(2, 1fr)' : total <= 4 ? 'repeat(2, 1fr)' : total <= 6 ? 'repeat(3, 1fr)' : 'repeat(4, 1fr)'
+    const gridCols = total === 1 ? '1fr' : total === 2 ? 'repeat(2, 1fr)' : total <= 4 ? 'repeat(2, 1fr)' : total <= 6 ? 'repeat(3, 1fr)' : total <= 9 ? 'repeat(3, 1fr)' : 'repeat(4, 1fr)'
 
     const pctColorNull = (val, isRoti, raw) => {
       const inactive = { bg: 'rgba(255,255,255,0.02)', border: 'rgba(255,255,255,0.08)', fill: 'rgba(255,255,255,0.03)', shadow: 'rgba(255,255,255,0)', badge: 'rgba(255,255,255,0.1)', text: 'rgba(255,255,255,0.2)', tagBg: 'rgba(255,255,255,0.05)', tagColor: 'rgba(255,255,255,0.2)', tagBorder: 'rgba(255,255,255,0.08)' }
@@ -545,7 +545,7 @@ export const PackingTVView = ({ user, onClose }) => {
       <div style={{
         flex: 1, display: 'grid',
         gridTemplateColumns: gridCols,
-        gap: '1.5vh 1.5vw',
+        gap: '1vh 1vw',
         minHeight: 0,
         alignContent: 'center'
       }}>
@@ -557,11 +557,12 @@ export const PackingTVView = ({ user, onClose }) => {
           </div>
         )}
         {dishEntries.map(([dish, pct], idx) => {
+          const isYesNo = pct === 'yes' || pct === 'no'
           const isCount = pct !== null && typeof pct === 'string' && !pct.endsWith('%') && pct !== 'yes' && pct !== 'no'
           const isRoti = pct !== null && ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri'].some(k => dish.toLowerCase().includes(k))
           const val = pct !== null ? (parseInt(pct) || 0) : null
-          const fillHeight = pct === null ? '0%' : isRoti ? (pct === 'yes' ? '100%' : '0%') : (isCount ? (val > 0 ? '100%' : '0%') : `${val}%`)
-          const clr = pctColorNull(isCount || isRoti ? (val !== null && val > 0 ? 100 : 0) : val, isRoti, pct)
+          const fillHeight = pct === null ? '0%' : (isYesNo || isRoti) ? (pct === 'yes' ? '100%' : '0%') : (isCount ? (val > 0 ? '100%' : '0%') : `${val}%`)
+          const clr = pctColorNull(isYesNo || isCount || isRoti ? (val !== null && val > 0 ? 100 : 0) : val, isRoti, pct)
           
           return (
             <div key={dish} style={{
@@ -603,14 +604,34 @@ export const PackingTVView = ({ user, onClose }) => {
                 maxWidth: '100%'
               }}>{dish}</div>
               <div style={{ zIndex: 2 }}>
-                {val !== null && val > 0 && !isRoti && (
+                {isYesNo && pct === 'yes' && (
                   <div style={{
                     display: 'inline-block', padding: '0.6vh 2vw', borderRadius: '1vh',
                     background: clr.tagBg, color: clr.tagColor,
                     fontSize: 'clamp(14px, 2.5vh, 30px)', fontWeight: 900,
                     border: `2px solid ${clr.tagBorder}`
                   }}>
-                    {isCount ? `${val} pcs` : (val === 100 ? 'FULL' : (val === 50 ? 'HALF' : (val === 25 ? 'QUARTER' : `${val}%`)))}
+                    YES
+                  </div>
+                )}
+                {isCount && val > 0 && (
+                  <div style={{
+                    display: 'inline-block', padding: '0.6vh 2vw', borderRadius: '1vh',
+                    background: clr.tagBg, color: clr.tagColor,
+                    fontSize: 'clamp(14px, 2.5vh, 30px)', fontWeight: 900,
+                    border: `2px solid ${clr.tagBorder}`
+                  }}>
+                    {val} pcs
+                  </div>
+                )}
+                {!isYesNo && !isCount && !isRoti && val !== null && val > 0 && (
+                  <div style={{
+                    display: 'inline-block', padding: '0.6vh 2vw', borderRadius: '1vh',
+                    background: clr.tagBg, color: clr.tagColor,
+                    fontSize: 'clamp(14px, 2.5vh, 30px)', fontWeight: 900,
+                    border: `2px solid ${clr.tagBorder}`
+                  }}>
+                    {val === 100 ? 'FULL' : (val === 50 ? 'HALF' : (val === 25 ? 'QUARTER' : `${val}%`))}
                   </div>
                 )}
                 <div style={{
@@ -619,14 +640,14 @@ export const PackingTVView = ({ user, onClose }) => {
                   textShadow: `0 4px 15px ${clr.shadow}`, lineHeight: 1,
                   marginTop: '0.5vh'
                 }}>
-                  {pct === null ? '—' : isRoti ? (pct === 'yes' ? 'YES' : 'NO') : (isCount ? `${val}` : `${val}%`)}
+                  {pct === null ? '—' : isYesNo ? (pct === 'yes' ? 'YES' : 'NO') : (isCount ? `${val}` : `${val}%`)}
                 </div>
                 <div style={{
                   fontSize: 'clamp(12px, 2vh, 24px)', fontWeight: 800,
                   color: 'var(--text-tertiary)', textTransform: 'uppercase',
                   marginTop: '0.5vh', letterSpacing: '0.12em'
                 }}>
-                  {pct === null ? 'No response' : isRoti ? 'Response' : (isCount ? 'Pieces' : 'Portion')}
+                  {pct === null ? 'No response' : isYesNo ? 'Response' : (isCount ? 'Pieces' : 'Portion')}
                 </div>
               </div>
             </div>
@@ -721,15 +742,6 @@ export const PackingTVView = ({ user, onClose }) => {
         ))}
       </div>
 
-      {/* Footer */}
-      <div style={{ marginTop: '1.5vh', display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
-        <button onClick={onClose} style={{
-          background: 'rgba(255,255,255,0.1)', border: '2px solid rgba(255,255,255,0.2)', color: '#fff',
-          padding: '1.5vh 5vh', borderRadius: '1.5vh', fontSize: 'clamp(14px, 2vh, 22px)', fontWeight: 800, cursor: 'pointer'
-        }}>
-          DISMISS (X)
-        </button>
-      </div>
     </div>
   )
 }

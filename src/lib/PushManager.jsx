@@ -34,27 +34,46 @@ async function savePushSubscription(userId, subscription) {
   else console.log('[PushManager] Push subscription saved to Supabase ✅')
 }
 
-function showToast(title, body, url) {
+function navigateTo(url) {
+  if (!url || url === '/') return
+  window.dispatchEvent(new CustomEvent('app-navigate', {
+    detail: { url, source: 'push' }
+  }))
+}
+
+function showToast({ title, body, url, image, sender_name }) {
   toast(
     (t) => (
       <div
-        onClick={() => { if (url) window.location.href = url; toast.dismiss(t.id) }}
-        style={{ cursor: url ? 'pointer' : 'default', display: 'flex', gap: 12, alignItems: 'flex-start' }}
+        onClick={() => { navigateTo(url || '/profile/notifications'); toast.dismiss(t.id) }}
+        style={{ cursor: 'pointer', display: 'flex', gap: 12, alignItems: 'flex-start' }}
       >
-        <div style={{
-          width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-          background: 'linear-gradient(135deg, #c5a059, #8a6d2f)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 16, boxShadow: '0 4px 14px rgba(197,160,89,0.35)',
-        }}>✦</div>
-        <div style={{ minWidth: 0 }}>
+        {image ? (
+          <div style={{
+            width: 48, height: 48, borderRadius: 10, flexShrink: 0, overflow: 'hidden',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
+          }}>
+            <img src={image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </div>
+        ) : (
+          <div style={{
+            width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+            background: 'linear-gradient(135deg, #c5a059, #8a6d2f)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 16, boxShadow: '0 4px 14px rgba(197,160,89,0.35)',
+          }}>✦</div>
+        )}
+        <div style={{ minWidth: 0, flex: 1 }}>
+          {sender_name && (
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#c5a059', letterSpacing: '0.04em', marginBottom: 2, textTransform: 'uppercase' }}>
+              {sender_name}
+            </div>
+          )}
           <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: '0.02em', marginBottom: 3, color: '#F5E6C8' }}>
             {title || 'Al-Mawaid'}
           </div>
           {body && <div style={{ fontSize: 12.5, lineHeight: 1.45, color: 'rgba(250,243,224,0.78)' }}>{body}</div>}
-          {url && url !== '/' && (
-            <div style={{ fontSize: 11, marginTop: 6, color: '#c5a059', fontWeight: 600 }}>Open →</div>
-          )}
+          <div style={{ fontSize: 11, marginTop: 6, color: '#c5a059', fontWeight: 600 }}>Open →</div>
         </div>
       </div>
     ),
@@ -66,7 +85,7 @@ function showToast(title, body, url) {
         border: '1px solid rgba(197,160,89,0.35)',
         borderRadius: 16,
         padding: '14px 16px',
-        maxWidth: 360,
+        maxWidth: 380,
         boxShadow: '0 18px 40px rgba(0,0,0,0.45)',
       },
     }
@@ -94,8 +113,8 @@ function subscribeRealtime(realtimeChannel, user, cancelledRef, retryCount = 0) 
         filter: `user_id=eq.${user.id}`,
       },
       (payload) => {
-        const { message, type, title, url } = payload.new
-        showToast(title || 'Al-Mawaid', message, url)
+        const { message, type, title, url, sender_name } = payload.new
+        showToast({ title: title || 'Al-Mawaid', body: message, url, sender_name })
       }
     )
     .subscribe((status) => {
@@ -183,21 +202,14 @@ export default function PushManager() {
               }
             })
             PushNotifications.addListener('pushNotificationReceived', (n) => {
-              showToast(n.title, n.body, n.data?.url)
+              showToast({ title: n.title, body: n.body, url: n.data?.url })
             })
             // ── Deep link: user taps notification → navigate to correct in-app page ──
             PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
               const data = action.notification.data
-              const url = data?.url || '/'
+              const url = data?.url || '/profile/notifications'
               if (url && typeof window !== 'undefined') {
-                // Use React Router navigation if available, else fallback to location
-                try {
-                  window.__pendingNotificationUrl = url
-                  // Dispatch custom event for the app to pick up
-                  window.dispatchEvent(new CustomEvent('notification-deep-link', { detail: { url } }))
-                } catch (e) {
-                  console.warn('[PushManager] Deep link navigation failed:', e)
-                }
+                navigateTo(url)
               }
             })
           }
@@ -259,24 +271,22 @@ export default function PushManager() {
 
         const swMessageHandler = (event) => {
           if (event.data?.type === 'PUSH_RECEIVED') {
-            showToast(event.data.title, event.data.body, event.data.url)
+            showToast({
+              title: event.data.title,
+              body: event.data.body,
+              url: event.data.url,
+              image: event.data.image,
+              sender_name: event.data.sender_name,
+            })
           }
-          // Handle deep link from service worker notification click
           if (event.data?.type === 'NOTIFICATION_DEEP_LINK') {
-            const url = event.data.url
-            if (url && url !== '/') {
-              window.location.href = url
-            }
+            navigateTo(event.data.url || '/profile/notifications')
           }
         }
         navigator.serviceWorker.addEventListener('message', swMessageHandler)
 
-        // ── Listen for notification deep-link events (from SW notification click) ──
         const handleDeepLink = (e) => {
-          const url = e.detail?.url
-          if (url && url !== '/') {
-            window.location.href = url
-          }
+          navigateTo(e.detail?.url || '/profile/notifications')
         }
         window.addEventListener('notification-deep-link', handleDeepLink)
 

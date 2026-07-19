@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   message TEXT NOT NULL,
   type TEXT NOT NULL DEFAULT 'info' CHECK (type IN ('info', 'survey', 'survey_reminder', 'survey_digest', 'menu', 'broadcast')),
   url TEXT DEFAULT '/',
+  sender_name TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 

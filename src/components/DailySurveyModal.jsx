@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { X, ChevronRight, Sun, Moon } from 'lucide-react'
+import { X, ChevronRight, Sun, Moon, Check, CheckCircle } from 'lucide-react'
 import { supabase } from '../lib/firebaseClient'
 import { useAuth } from '../admin/context'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
@@ -11,7 +11,8 @@ const THEME = {
   border: 'rgba(139,92,246,0.15)', borderActive: 'rgba(139,92,246,0.4)',
   accent: '#D4AF37', accentGrad: 'linear-gradient(135deg, #D4AF37, #B8860B)',
   accentBg: 'rgba(212,175,55,0.1)', text: '#f0f0f5', textSub: 'rgba(240,240,245,0.5)',
-  inputBg: 'rgba(255,255,255,0.05)', successText: '#4CAF50'
+  inputBg: 'rgba(255,255,255,0.05)', successText: '#4CAF50',
+  success: '#4CAF50', danger: '#F44336'
 }
 
 const getTodayKey = () => {
@@ -25,7 +26,6 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
   const [step, setStep] = useState(1)
   const [lunchStatus, setLunchStatus] = useState(null)
   const [dinnerStatus, setDinnerStatus] = useState(null)
-  const [rotiStatus, setRotiStatus] = useState(null)
   const [responses, setResponses] = useState({})
   const [loading, setLoading] = useState(false)
   const { autoSaveStatus, scheduleSave, setAutoSaveStatus } = useSurveyAutoSave()
@@ -38,8 +38,18 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
   const menu = weeklyMenu[today] || { lunch: [], dinner: [] }
   const dayKey = today.substring(0, 3).toLowerCase()
 
+  const allLunchDishes = menu.lunch || []
+  const allDinnerDishes = menu.dinner || []
+
+  // All dishes combined (lunch + dinner) with their meal type
+  const allDishes = [
+    ...allLunchDishes.map(d => ({ name: d, meal: 'lunch' })),
+    ...allDinnerDishes.map(d => ({ name: d, meal: 'dinner' }))
+  ]
+
   useEffect(() => { if (loading) setAutoSaveStatus('idle') }, [loading])
 
+  // Auto-save responses to Supabase
   useEffect(() => {
     if (Object.keys(responses).length === 0) return
     if (loading) return
@@ -56,35 +66,26 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
           thali_number: userData.thali_no, email: userData.email,
           updated_at: new Date().toISOString()
         }
-        if (lunchStatus !== null) {
-          updateObj[`${dayKey}_l_status`] = lunchStatus ? 'Applied' : 'Skipped'
-          if (lunchStatus) {
-            menu.lunch.forEach((dish, idx) => {
-              const col = `${dayKey}_l_dish_${idx + 1}`
-              const val = responses[dish]
-              if (val !== undefined) {
-                updateObj[col] = denormalizeDishValue(val, dish, isCountInput(appSettings, today, 'lunch', idx))
-              } else if (existing && existing[col] !== undefined && existing[col] !== null) {
-                updateObj[col] = existing[col]
-              }
-            })
+        // Build lunch responses
+        allLunchDishes.forEach((dish, idx) => {
+          const col = `${dayKey}_l_dish_${idx + 1}`
+          const val = responses[dish]
+          if (val !== undefined) {
+            updateObj[col] = denormalizeDishValue(val, dish, isCountInput(appSettings, today, 'lunch', idx))
+          } else if (existing && existing[col] !== undefined && existing[col] !== null) {
+            updateObj[col] = existing[col]
           }
-        }
-        if (dinnerStatus !== null) {
-          updateObj[`${dayKey}_d_status`] = dinnerStatus ? 'Applied' : 'Skipped'
-          if (dinnerStatus) {
-            otherDinnerDishes.forEach((dish) => {
-              const menuIdx = dinnerDishes.indexOf(dish)
-              const col = `${dayKey}_d_dish_${menuIdx + 1}`
-              const val = responses[dish]
-              if (val !== undefined) {
-                updateObj[col] = denormalizeDishValue(val, dish, isCountInput(appSettings, today, 'dinner', menuIdx))
-              } else if (existing && existing[col] !== undefined && existing[col] !== null) {
-                updateObj[col] = existing[col]
-              }
-            })
+        })
+        // Build dinner responses
+        allDinnerDishes.forEach((dish, idx) => {
+          const col = `${dayKey}_d_dish_${idx + 1}`
+          const val = responses[dish]
+          if (val !== undefined) {
+            updateObj[col] = denormalizeDishValue(val, dish, isCountInput(appSettings, today, 'dinner', idx))
+          } else if (existing && existing[col] !== undefined && existing[col] !== null) {
+            updateObj[col] = existing[col]
           }
-        }
+        })
         await supabase.from('survey_submissions_flat')
           .upsert([updateObj], { onConflict: 'user_id,week_id' })
         setAutoSaveStatus('saved')
@@ -92,23 +93,27 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
       } catch { setAutoSaveStatus('idle') }
     }, 600)
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
-  }, [responses, lunchStatus, dinnerStatus, dayKey, loading])
+  }, [responses, dayKey, loading])
 
- 
-  // ── Auto-save responses to localStorage as draft ──
+  // Auto-save to localStorage as draft
   useEffect(() => {
     if (Object.keys(responses).length === 0) return
-    if (initialLoadRef?.current) return
+    if (initialLoadRef.current) return
+    const currentWeekId = getWeekDate(appSettings)
+    const draftKey = `survey_draft_${currentWeekId}_${user?.id}`
     const timer = setTimeout(() => {
-      saveDraft({ responses, updatedAt: new Date().toISOString() })
+      try { localStorage.setItem(draftKey, JSON.stringify({ responses, updatedAt: new Date().toISOString() })) } catch {}
     }, 800)
     return () => clearTimeout(timer)
   }, [responses])
- useEffect(() => {
+
+  // Load user data
+  useEffect(() => {
     supabase.from('user_stats').select('thali_number, email').eq('user_id', user?.id).single()
       .then(({ data }) => { if (data) setUserData({ thali_no: data.thali_number || '', email: data.email || user?.email }) })
   }, [user?.id])
 
+  // Load existing submission
   useEffect(() => {
     const loadExisting = async () => {
       const currentWeekId = getWeekDate(appSettings)
@@ -121,42 +126,21 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
         if (lunchVal) setLunchStatus(lunchVal === 'Applied')
         if (dinnerVal) setDinnerStatus(dinnerVal === 'Applied')
         const newResponses = {}
-        ;(menu.lunch || []).forEach((dish, idx) => {
+        allLunchDishes.forEach((dish, idx) => {
           const col = `${dk}_l_dish_${idx + 1}`
           const val = existing[col]
           if (val !== undefined && val !== null && val !== 'No') {
-            if (isCountInput(appSettings, today, 'lunch', idx)) {
-              newResponses[dish] = { status: 'yes', value: Number(val) }
-            } else {
-              newResponses[dish] = val.endsWith('%') ? parseInt(val, 10) : Number(val)
-            }
+            newResponses[dish] = normalizeDishValue(val, dish, isCountInput(appSettings, today, 'lunch', idx))
           }
         })
-        const allDinner = menu.dinner || []
-        allDinner.forEach((dish, idx) => {
-          if (isRotiItem(dish)) return
+        allDinnerDishes.forEach((dish, idx) => {
           const col = `${dk}_d_dish_${idx + 1}`
           const val = existing[col]
           if (val !== undefined && val !== null && val !== 'No') {
-            if (isCountInput(appSettings, today, 'dinner', idx)) {
-              newResponses[dish] = { status: 'yes', value: Number(val) }
-            } else {
-              newResponses[dish] = val.endsWith('%') ? parseInt(val, 10) : Number(val)
-            }
+            newResponses[dish] = normalizeDishValue(val, dish, isCountInput(appSettings, today, 'dinner', idx))
           }
         })
         setResponses(newResponses)
-        const rotiDish = allDinner.find(d => isRotiItem(d))
-        if (rotiDish) {
-          const ri = allDinner.indexOf(rotiDish)
-          const rv = existing[`${dk}_d_dish_${ri + 1}`]
-          if (rv) setRotiStatus(rv === 'Yes')
-        }
-        if (dinnerVal === 'Applied') {
-          setStep(allDinner.some(d => isRotiItem(d)) ? 4 : 5)
-        } else if (lunchVal === 'Applied') {
-          setStep(3)
-        }
       }
       setExistingLoaded(true)
       initialLoadRef.current = false
@@ -164,23 +148,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
     loadExisting()
   }, [user?.id, today])
 
-
-  // ── Restore draft from localStorage on mount ──
-  useEffect(() => {
-    if (!dataLoaded) return
-    const draft = loadDraft()
-    if (draft && !existingData) {
-      console.log('[DailySurveyModal] Draft restored from localStorage')
-      if (draft.responses && Object.keys(draft.responses).length > 0) {
-        setResponses(draft.responses)
-      }
-    }
-  }, [dataLoaded])
-  const dinnerDishes = menu.dinner || []
-  const rotiItems = dinnerDishes.filter(d => isRotiItem(d))
-  const otherDinnerDishes = dinnerDishes.filter(d => !isRotiItem(d))
-
-  const submitSurvey = async (hasLunch, hasDinner) => {
+  const submitSurvey = async () => {
     setLoading(true)
     try {
       const currentWeekId = getWeekDate(appSettings)
@@ -189,9 +157,10 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
         thali_number: userData.thali_no, email: userData.email,
         updated_at: new Date().toISOString()
       }
-      if (hasLunch) {
+      // Set lunch status and responses
+      if (lunchStatus) {
         updateObj[`${dayKey}_l_status`] = 'Applied'
-        menu.lunch.forEach((dish, idx) => {
+        allLunchDishes.forEach((dish, idx) => {
           const val = responses[dish]
           if (val !== undefined) {
             updateObj[`${dayKey}_l_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCountInput(appSettings, today, 'lunch', idx))
@@ -200,17 +169,13 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
       } else if (lunchStatus === false) {
         updateObj[`${dayKey}_l_status`] = 'Skipped'
       }
-      if (hasDinner) {
+      // Set dinner status and responses
+      if (dinnerStatus) {
         updateObj[`${dayKey}_d_status`] = 'Applied'
-        if (rotiItems.length > 0) {
-          const ri = dinnerDishes.indexOf(rotiItems[0])
-          updateObj[`${dayKey}_d_dish_${ri + 1}`] = rotiStatus ? 'Yes' : 'No'
-        }
-        otherDinnerDishes.forEach(dish => {
-          const menuIdx = dinnerDishes.indexOf(dish)
+        allDinnerDishes.forEach((dish, idx) => {
           const val = responses[dish]
           if (val !== undefined) {
-            updateObj[`${dayKey}_d_dish_${menuIdx + 1}`] = denormalizeDishValue(val, dish, isCountInput(appSettings, today, 'dinner', menuIdx))
+            updateObj[`${dayKey}_d_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCountInput(appSettings, today, 'dinner', idx))
           }
         })
       } else if (dinnerStatus === false) {
@@ -219,8 +184,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
       await supabase.from('survey_submissions_flat')
         .upsert([updateObj], { onConflict: 'user_id,week_id' })
       try {
-        // Confirmation to the member (one short, calm message)
-        await supabase.functions.invoke('sendPush', {
+        await supabase.functions.invoke('send-push', {
           body: {
             title: 'Al-Mawaid · Preference saved',
             body: 'Your meal choices for today are locked in. Shukran — see you at thali.',
@@ -229,10 +193,10 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
             user_id: user?.id,
           }
         })
-        await supabase.functions.invoke('sendPush', {
+        await supabase.functions.invoke('send-push', {
           body: {
             title: 'Al-Mawaid · Daily response',
-            body: `Thali ${userData.thali_no || '—'} updated today’s meal preferences.`,
+            body: `Thali ${userData.thali_no || '—'} updated today's meal preferences.`,
             url: '/admin/survey-tracking',
             target_type: 'admins',
           }
@@ -240,185 +204,270 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
       } catch (pushErr) {
         console.warn('[DailySurvey] Push notification skipped:', pushErr)
       }
-      clearDraft(); onClose()
+      onClose()
     } catch (err) {
       console.error('Submit error:', err)
       alert('Error saving survey: ' + err.message)
     } finally { setLoading(false) }
   }
 
+  // When user selects "Yes" for a meal, show dishes — non-count default to yes, count dishes start unselected
+  const handleMealYes = (meal) => {
+    const dishes = meal === 'lunch' ? allLunchDishes : allDinnerDishes
+    const newResponses = { ...responses }
+    dishes.forEach((dish, idx) => {
+      if (newResponses[dish] === undefined || newResponses[dish] === null) {
+        if (isCountInput(appSettings, today, meal, idx)) {
+          // Count dishes: start as "no" so user sees yes/no toggle first
+          newResponses[dish] = 'no'
+        } else {
+          newResponses[dish] = 'yes'
+        }
+      }
+    })
+    setResponses(newResponses)
+  }
+
+  // Toggle a single dish between yes/no
+  const toggleDish = (dish) => {
+    const current = responses[dish]
+    if (current === 'yes' || current === 'no') {
+      setResponses(prev => ({ ...prev, [dish]: current === 'yes' ? 'no' : 'yes' }))
+    } else if (current && current.status === 'yes') {
+      // Count dish: toggle to no
+      setResponses(prev => ({ ...prev, [dish]: 'no' }))
+    } else if (current !== undefined && current !== null) {
+      setResponses(prev => ({ ...prev, [dish]: 'no' }))
+    }
+  }
+
+  // Select all dishes as "yes"
+  const selectAllDishes = () => {
+    const newResponses = { ...responses }
+    allDishes.forEach(({ name, meal }) => {
+      const mealIdx = meal === 'lunch'
+        ? allLunchDishes.indexOf(name)
+        : allDinnerDishes.indexOf(name)
+      if (isCountInput(appSettings, today, meal, mealIdx)) {
+        newResponses[name] = { status: 'yes', value: 1 }
+      } else {
+        newResponses[name] = 'yes'
+      }
+    })
+    setResponses(newResponses)
+  }
+
+  // Unselect all dishes (set to "no")
+  const unselectAllDishes = () => {
+    const newResponses = { ...responses }
+    allDishes.forEach(({ name }) => {
+      newResponses[name] = 'no'
+    })
+    setResponses(newResponses)
+  }
+
   const handleNext = async () => {
-    if (step === 1) { if (lunchStatus === null) return; setStep(lunchStatus ? 2 : 3) }
-    else if (step === 2) { if (Object.keys(responses).filter(k => menu.lunch.includes(k)).length < menu.lunch.length) return; setStep(3) }
-    else if (step === 3) { if (dinnerStatus === null) return; if (!dinnerStatus) await submitSurvey(lunchStatus, false); else setStep(rotiItems.length > 0 ? 4 : 5) }
-    else if (step === 4) { if (rotiStatus === null) return; setStep(5) }
-    else if (step === 5) {
-      const dinnerDishesToCheck = otherDinnerDishes
-      if (Object.keys(responses).filter(k => dinnerDishesToCheck.includes(k)).length < dinnerDishesToCheck.length) return
-      await submitSurvey(lunchStatus, true)
+    if (step === 1) {
+      // Lunch yes/no selected
+      if (lunchStatus === null) return
+      if (lunchStatus) {
+        // Auto-select all lunch dishes as "yes" and move to dinner
+        handleMealYes('lunch')
+      }
+      setStep(2)
+    } else if (step === 2) {
+      // Dinner yes/no
+      if (dinnerStatus === null) return
+      if (dinnerStatus) {
+        handleMealYes('dinner')
+      }
+      // Submit everything
+      await submitSurvey()
     }
   }
 
-  const DishSelector = ({ dish, meal }) => {
-    const isRoti = isRotiItem(dish)
-    const isCount = !isRoti && isCountInput(appSettings, today, meal, (meal === 'lunch' ? menu.lunch : dinnerDishes).indexOf(dish))
-    const resp = responses[dish]
-
-    if (isRoti) {
-      return (
-        <div style={{ marginBottom: 8, padding: '10px 14px', borderRadius: 12, background: THEME.card, border: `1px solid ${resp ? THEME.accent : THEME.border}` }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: THEME.text, marginBottom: 8 }}>{dish}</div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {['yes', 'no'].map(opt => (
-              <button key={opt} onClick={() => { setResponses(prev => ({ ...prev, [dish]: opt })) }} style={{
-                flex: 1, padding: '8px', borderRadius: 8,
-                border: `1.5px solid ${resp === opt ? '#4CAF50' : THEME.border}`,
-                background: resp === opt ? 'rgba(76,175,80,0.12)' : 'transparent',
-                color: resp === opt ? '#4CAF50' : THEME.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer'
-              }}>{opt === 'yes' ? '✅ Yes' : '❌ No'}</button>
-            ))}
-          </div>
-        </div>
-      )
-    }
-    if (isCount) {
-      const val = resp?.value || 0
-      return (
-        <div style={{ marginBottom: 8, padding: '10px 14px', borderRadius: 12, background: THEME.card, border: `1px solid ${resp && resp.status === 'yes' ? THEME.accent : THEME.border}` }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: THEME.text, marginBottom: 8 }}>{dish}</div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button onClick={() => setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: Math.max(0, val - 1) } }))} style={{ width: 36, height: 36, borderRadius: 8, border: `1px solid ${THEME.border}`, background: THEME.inputBg, color: THEME.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
-            <span style={{ fontSize: 20, fontWeight: 800, color: THEME.accent, minWidth: 40, textAlign: 'center' }}>{val}</span>
-            <button onClick={() => setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: Math.min(99, val + 1) } }))} style={{ width: 36, height: 36, borderRadius: 8, border: `1px solid ${THEME.border}`, background: THEME.inputBg, color: THEME.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-          </div>
-        </div>
-      )
-    }
-    return (
-      <div style={{ marginBottom: 8, padding: '10px 14px', borderRadius: 12, background: THEME.card, border: `1px solid ${resp !== undefined ? THEME.accent : THEME.border}` }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: THEME.text, marginBottom: 8 }}>{dish}</div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {[0, 25, 50, 75, 100].map(pct => (
-            <button key={pct} onClick={() => { setResponses(prev => ({ ...prev, [dish]: pct })) }} style={{
-              flex: 1, padding: '8px 4px', borderRadius: 8,
-              border: `1.5px solid ${resp === pct ? THEME.accent : THEME.border}`,
-              background: resp === pct ? THEME.accentBg : 'transparent',
-              color: resp === pct ? THEME.accent : THEME.textSub, fontSize: 11, fontWeight: 800, cursor: 'pointer'
-            }}>{pct === 0 ? '0%' : pct + '%'}</button>
-          ))}
-        </div>
-      </div>
-    )
-  }
-
-  const StepIndicator = () => {
-    const steps = lunchStatus ? ['Lunch', 'Dishes', 'Dinner', rotiItems.length > 0 ? 'Roti' : null, 'Dishes'].filter(Boolean) : []
-    return (
-      <div style={{ display: 'flex', gap: 6, marginBottom: 20, justifyContent: 'center' }}>
-        {steps.map((s, i) => (
-          <div key={i} style={{
-            padding: '6px 14px', borderRadius: 20,
-            background: i + 1 === step ? THEME.accentBg : 'transparent',
-            border: `1px solid ${i + 1 === step ? THEME.accent : THEME.border}`,
-            color: i + 1 === step ? THEME.accent : THEME.textSub,
-            fontSize: 11, fontWeight: 700, fontFamily: "'DM Sans',sans-serif"
-          }}>{s}</div>
-        ))}
-      </div>
-    )
-  }
+  const lunchCount = allLunchDishes.filter(d => {
+    const v = responses[d]
+    return v === 'yes' || (typeof v === 'number' && v > 0) || (v && v.status === 'yes')
+  }).length
+  const dinnerCount = allDinnerDishes.filter(d => {
+    const v = responses[d]
+    return v === 'yes' || (typeof v === 'number' && v > 0) || (v && v.status === 'yes')
+  }).length
 
   const renderStep = () => {
     switch (step) {
       case 1:
         return (
-          <div style={{ marginBottom: 16, padding: 20, borderRadius: 16, background: 'rgba(212,175,55,0.08)', border: `1px solid ${THEME.accent}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <Sun size={20} color={THEME.accent} />
-              <div style={{ fontSize: 18, fontWeight: 700, color: THEME.text, fontFamily: "'Playfair Display',serif" }}>Lunch Today</div>
+          <div>
+            {/* Lunch Yes/No */}
+            <div style={{ marginBottom: 16, padding: 20, borderRadius: 16, background: 'rgba(212,175,55,0.08)', border: `1px solid ${THEME.accent}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <Sun size={20} color={THEME.accent} />
+                <div style={{ fontSize: 18, fontWeight: 700, color: THEME.text, fontFamily: "'Playfair Display',serif" }}>Lunch Today</div>
+              </div>
+              <div style={{ fontSize: 14, color: THEME.textSub, marginBottom: 12 }}>
+                Would you like lunch today? Menu: {allLunchDishes.join(', ') || 'Preparation in progress...'}
+              </div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button onClick={() => { setLunchStatus(true); handleMealYes('lunch') }} style={{
+                  flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${lunchStatus ? '#4CAF50' : THEME.border}`,
+                  background: lunchStatus ? 'rgba(76,175,80,0.1)' : 'transparent', color: lunchStatus ? '#4CAF50' : THEME.textSub,
+                  cursor: 'pointer', fontSize: 15, fontWeight: 800
+                }}>Yes, I want</button>
+                <button onClick={() => setLunchStatus(false)} style={{
+                  flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${lunchStatus === false ? '#F44336' : THEME.border}`,
+                  background: lunchStatus === false ? 'rgba(244,67,54,0.1)' : 'transparent', color: lunchStatus === false ? '#F44336' : THEME.textSub,
+                  cursor: 'pointer', fontSize: 15, fontWeight: 800
+                }}>No, I'll skip</button>
+              </div>
             </div>
-            <div style={{ fontSize: 14, color: THEME.textSub, marginBottom: 12 }}>Would you like lunch today? Menu: {(menu.lunch || []).join(', ') || 'Preparation in progress...'}</div>
-            <div style={{ display: 'flex', gap: 12 }}>
-              <button onClick={() => setLunchStatus(true)} style={{
-                flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${lunchStatus ? '#4CAF50' : THEME.border}`,
-                background: lunchStatus ? 'rgba(76,175,80,0.1)' : 'transparent', color: lunchStatus ? '#4CAF50' : THEME.textSub,
-                cursor: 'pointer', fontSize: 15, fontWeight: 800
-              }}>✅ Yes, I want</button>
-              <button onClick={() => setLunchStatus(false)} style={{
-                flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${lunchStatus === false ? '#F44336' : THEME.border}`,
-                background: lunchStatus === false ? 'rgba(244,67,54,0.1)' : 'transparent', color: lunchStatus === false ? '#F44336' : THEME.textSub,
-                cursor: 'pointer', fontSize: 15, fontWeight: 800
-              }}>❌ No, I'll skip</button>
-            </div>
+
+            {/* Show all lunch dishes with yes/no toggle when "Yes" is selected */}
+            {lunchStatus === true && allLunchDishes.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: THEME.accent }}>
+                    Select your dishes ({lunchCount}/{allLunchDishes.length})
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={selectAllDishes} style={{
+                      padding: '6px 12px', borderRadius: 8, border: `1px solid ${THEME.accent}`,
+                      background: THEME.accentBg, color: THEME.accent, fontSize: 11, fontWeight: 700, cursor: 'pointer'
+                    }}>Select All</button>
+                    <button onClick={unselectAllDishes} style={{
+                      padding: '6px 12px', borderRadius: 8, border: `1px solid ${THEME.border}`,
+                      background: 'transparent', color: THEME.textSub, fontSize: 11, fontWeight: 700, cursor: 'pointer'
+                    }}>Clear All</button>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
+                  {allLunchDishes.map((dish, idx) => (
+                    <DishToggle key={idx} dish={dish} meal="lunch" idx={idx} responses={responses} toggleDish={toggleDish} setResponses={setResponses} appSettings={appSettings} today={today} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Show all dinner dishes with yes/no toggle when dinner is also selected */}
+            {lunchStatus === true && dinnerStatus === true && allDinnerDishes.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: THEME.accent }}>
+                    Dinner dishes ({dinnerCount}/{allDinnerDishes.length})
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
+                  {allDinnerDishes.map((dish, idx) => (
+                    <DishToggle key={idx} dish={dish} meal="dinner" idx={idx} responses={responses} toggleDish={toggleDish} setResponses={setResponses} appSettings={appSettings} today={today} />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )
       case 2:
         return (
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <Sun size={20} color={THEME.accent} />
-              <div style={{ fontSize: 18, fontWeight: 700, color: THEME.text, fontFamily: "'Playfair Display',serif" }}>Lunch Portions</div>
+            {/* Dinner Yes/No */}
+            <div style={{ marginBottom: 16, padding: 20, borderRadius: 16, background: 'rgba(212,175,55,0.08)', border: `1px solid ${THEME.accent}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <Moon size={20} color={THEME.accent} />
+                <div style={{ fontSize: 18, fontWeight: 700, color: THEME.text, fontFamily: "'Playfair Display',serif" }}>Dinner Today</div>
+              </div>
+              <div style={{ fontSize: 14, color: THEME.textSub, marginBottom: 12 }}>
+                Would you like dinner today? Menu: {allDinnerDishes.join(', ') || 'Preparation in progress...'}
+              </div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button onClick={() => { setDinnerStatus(true); handleMealYes('dinner') }} style={{
+                  flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${dinnerStatus ? '#4CAF50' : THEME.border}`,
+                  background: dinnerStatus ? 'rgba(76,175,80,0.1)' : 'transparent', color: dinnerStatus ? '#4CAF50' : THEME.textSub,
+                  cursor: 'pointer', fontSize: 15, fontWeight: 800
+                }}>Yes, I want</button>
+                <button onClick={() => setDinnerStatus(false)} style={{
+                  flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${dinnerStatus === false ? '#F44336' : THEME.border}`,
+                  background: dinnerStatus === false ? 'rgba(244,67,54,0.1)' : 'transparent', color: dinnerStatus === false ? '#F44336' : THEME.textSub,
+                  cursor: 'pointer', fontSize: 15, fontWeight: 800
+                }}>No, I'll skip</button>
+              </div>
             </div>
-            <div style={{ marginBottom: 16 }}>
-              {(menu.lunch || []).length > 0 ? (menu.lunch || []).map((dish, idx) => <DishSelector key={idx} dish={dish} meal="lunch" />)
-                : <div style={{ padding: 16, textAlign: 'center', color: THEME.textSub, fontSize: 13, fontStyle: 'italic' }}>Menu being prepared...</div>}
-            </div>
-          </div>
-        )
-      case 3:
-        return (
-          <div style={{ marginBottom: 16, padding: 20, borderRadius: 16, background: 'rgba(212,175,55,0.08)', border: `1px solid ${THEME.accent}` }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <Moon size={20} color={THEME.accent} />
-              <div style={{ fontSize: 18, fontWeight: 700, color: THEME.text, fontFamily: "'Playfair Display',serif" }}>Dinner Today</div>
-            </div>
-            <div style={{ fontSize: 14, color: THEME.textSub, marginBottom: 12 }}>Would you like dinner today? Menu: {(menu.dinner || []).join(', ') || 'Preparation in progress...'}</div>
-            <div style={{ display: 'flex', gap: 12 }}>
-              <button onClick={() => setDinnerStatus(true)} style={{
-                flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${dinnerStatus ? '#4CAF50' : THEME.border}`,
-                background: dinnerStatus ? 'rgba(76,175,80,0.1)' : 'transparent', color: dinnerStatus ? '#4CAF50' : THEME.textSub,
-                cursor: 'pointer', fontSize: 15, fontWeight: 800
-              }}>✅ Yes, I want</button>
-              <button onClick={() => setDinnerStatus(false)} style={{
-                flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${dinnerStatus === false ? '#F44336' : THEME.border}`,
-                background: dinnerStatus === false ? 'rgba(244,67,54,0.1)' : 'transparent', color: dinnerStatus === false ? '#F44336' : THEME.textSub,
-                cursor: 'pointer', fontSize: 15, fontWeight: 800
-              }}>❌ No, I'll skip</button>
-            </div>
-          </div>
-        )
-      case 4:
-        return (
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: THEME.text, marginBottom: 12, fontFamily: "'Playfair Display',serif" }}>Roti / Bread</div>
-            <div style={{ display: 'flex', gap: 12 }}>
-              <button onClick={() => setRotiStatus(true)} style={{
-                flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${rotiStatus ? '#4CAF50' : THEME.border}`,
-                background: rotiStatus ? 'rgba(76,175,80,0.1)' : 'transparent', color: rotiStatus ? '#4CAF50' : THEME.textSub,
-                cursor: 'pointer', fontSize: 15, fontWeight: 800
-              }}>✅ Yes</button>
-              <button onClick={() => setRotiStatus(false)} style={{
-                flex: 1, padding: '14px', borderRadius: 12, border: `1.5px solid ${rotiStatus === false ? '#F44336' : THEME.border}`,
-                background: rotiStatus === false ? 'rgba(244,67,54,0.1)' : 'transparent', color: rotiStatus === false ? '#F44336' : THEME.textSub,
-                cursor: 'pointer', fontSize: 15, fontWeight: 800
-              }}>❌ No</button>
-            </div>
-          </div>
-        )
-      case 5:
-        return (
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <Moon size={20} color={THEME.accent} />
-              <div style={{ fontSize: 18, fontWeight: 700, color: THEME.text, fontFamily: "'Playfair Display',serif" }}>Dinner Portions</div>
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              {otherDinnerDishes.length > 0 ? otherDinnerDishes.map((dish, idx) => <DishSelector key={idx} dish={dish} meal="dinner" />)
-                : <div style={{ padding: 16, textAlign: 'center', color: THEME.textSub, fontSize: 13, fontStyle: 'italic' }}>Menu being prepared...</div>}
-            </div>
+
+            {/* Show all dinner dishes with yes/no toggle when "Yes" is selected */}
+            {dinnerStatus === true && allDinnerDishes.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: THEME.accent }}>
+                    Select your dishes ({dinnerCount}/{allDinnerDishes.length})
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => {
+                      const newResp = { ...responses }
+                      allDinnerDishes.forEach((d, idx) => {
+                        if (isCountInput(appSettings, today, 'dinner', idx)) {
+                          newResp[d] = { status: 'yes', value: 1 }
+                        } else {
+                          newResp[d] = 'yes'
+                        }
+                      })
+                      setResponses(newResp)
+                    }} style={{
+                      padding: '6px 12px', borderRadius: 8, border: `1px solid ${THEME.accent}`,
+                      background: THEME.accentBg, color: THEME.accent, fontSize: 11, fontWeight: 700, cursor: 'pointer'
+                    }}>Select All</button>
+                    <button onClick={() => {
+                      const newResp = { ...responses }
+                      allDinnerDishes.forEach(d => { newResp[d] = 'no' })
+                      setResponses(newResp)
+                    }} style={{
+                      padding: '6px 12px', borderRadius: 8, border: `1px solid ${THEME.border}`,
+                      background: 'transparent', color: THEME.textSub, fontSize: 11, fontWeight: 700, cursor: 'pointer'
+                    }}>Clear All</button>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
+                  {allDinnerDishes.map((dish, idx) => (
+                    <DishToggle key={idx} dish={dish} meal="dinner" idx={idx} responses={responses} toggleDish={toggleDish} setResponses={setResponses} appSettings={appSettings} today={today} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Show lunch summary */}
+            {lunchStatus === true && (
+              <div style={{ marginTop: 12, padding: 14, borderRadius: 12, background: THEME.card, border: `1px solid ${THEME.border}` }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: THEME.textSub, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Lunch Summary</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {allLunchDishes.map((dish, idx) => {
+                    const val = responses[dish]
+                    const isActive = val === 'yes' || (typeof val === 'number' && val > 0) || (val && val.status === 'yes')
+                    const displayVal = val?.status === 'yes' ? `${val.value} pcs` : (isActive ? 'Yes' : 'No')
+                    return (
+                      <span key={idx} style={{
+                        padding: '4px 10px', borderRadius: 8,
+                        background: isActive ? 'rgba(76,175,80,0.12)' : 'rgba(244,67,54,0.08)',
+                        border: `1px solid ${isActive ? '#4CAF50' : '#F4433640'}`,
+                        color: isActive ? '#4CAF50' : '#F44336',
+                        fontSize: 11, fontWeight: 700
+                      }}>
+                        {dish}: {displayVal}
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )
     }
+  }
+
+  const getButtonText = () => {
+    if (step === 1) {
+      if (lunchStatus === null) return 'Next'
+      if (lunchStatus) return `Next — Dinner (${allLunchDishes.length} lunch dishes)`
+      return 'Next — Dinner'
+    }
+    return 'Save & Finish'
   }
 
   return (
@@ -440,30 +489,185 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {autoSaveStatus === 'saving' && <span style={{ fontSize: 11, color: THEME.textSub }}>Saving...</span>}
-            {autoSaveStatus === 'saved' && <span style={{ fontSize: 11, color: THEME.successText }}>✓ Saved</span>}
+            {autoSaveStatus === 'saved' && <span style={{ fontSize: 11, color: THEME.successText }}>Saved</span>}
             <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', cursor: 'pointer', padding: 8, borderRadius: 10, color: THEME.textSub, display: 'flex' }}>
               <X size={20} />
             </button>
           </div>
         </div>
 
-        <StepIndicator />
+        {/* Step Indicator */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 20, justifyContent: 'center' }}>
+          {['Lunch', 'Dinner'].map((s, i) => (
+            <div key={i} style={{
+              padding: '6px 14px', borderRadius: 20,
+              background: i + 1 === step ? THEME.accentBg : 'transparent',
+              border: `1px solid ${i + 1 === step ? THEME.accent : THEME.border}`,
+              color: i + 1 === step ? THEME.accent : THEME.textSub,
+              fontSize: 11, fontWeight: 700, fontFamily: "'DM Sans',sans-serif",
+              display: 'flex', alignItems: 'center', gap: 6
+            }}>
+              {s}
+              {i === 0 && lunchStatus !== null && <Check size={12} />}
+              {i === 1 && dinnerStatus !== null && <Check size={12} />}
+            </div>
+          ))}
+        </div>
+
         {renderStep()}
 
-        <button onClick={handleNext} disabled={loading} style={{
+        <button onClick={handleNext} disabled={loading || (step === 1 && lunchStatus === null) || (step === 2 && dinnerStatus === null)} style={{
           width: '100%', padding: '14px', borderRadius: 14, border: 'none',
           background: loading ? THEME.border : THEME.accentGrad, color: '#000',
           cursor: loading ? 'not-allowed' : 'pointer', fontSize: 15, fontWeight: 900,
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8,
           fontFamily: "'DM Sans',sans-serif", boxShadow: loading ? 'none' : `0 8px 20px ${THEME.accentBg}`,
-          opacity: loading ? 0.6 : 1
+          opacity: (loading || (step === 1 && lunchStatus === null) || (step === 2 && dinnerStatus === null)) ? 0.6 : 1
         }}>
           {loading ? 'Saving...' : <>
-            {step >= 3 && !dinnerStatus ? 'Save & Finish' : step >= 5 ? 'Save & Finish' : 'Next'}
+            {getButtonText()}
             <ChevronRight size={18} />
           </>}
         </button>
       </div>
+    </div>
+  )
+}
+
+// Individual dish toggle component with yes/no + count support
+function DishToggle({ dish, meal, idx, responses, toggleDish, setResponses, appSettings, today }) {
+  const val = responses[dish]
+  const isCount = isCountInput(appSettings, today, meal, idx)
+  const isRoti = isRotiItem(dish)
+
+  // Determine the yes/no state
+  let isYes = false
+  if (isCount) {
+    // Count: { status: 'yes', value: N } or 'yes' means yes, 'no' or undefined means no
+    isYes = (val && val.status === 'yes') || val === 'yes'
+  } else {
+    // Percentage or roti: 'yes' or numeric > 0 means yes
+    isYes = val === 'yes' || (typeof val === 'number' && val > 0) || val === undefined || val === null
+  }
+
+  // Count value for display
+  const countValue = isCount && isYes ? (val?.value || 1) : 0
+
+  const handleYes = (e) => {
+    e.stopPropagation()
+    if (isCount) {
+      setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: prev[dish]?.value || 1 } }))
+    } else if (isRoti) {
+      setResponses(prev => ({ ...prev, [dish]: 'yes' }))
+    } else {
+      setResponses(prev => ({ ...prev, [dish]: 100 }))
+    }
+  }
+
+  const handleNo = (e) => {
+    e.stopPropagation()
+    if (isCount) {
+      setResponses(prev => ({ ...prev, [dish]: 'no' }))
+    } else if (isRoti) {
+      setResponses(prev => ({ ...prev, [dish]: 'no' }))
+    } else {
+      setResponses(prev => ({ ...prev, [dish]: 0 }))
+    }
+  }
+
+  const handleCountChange = (e, delta) => {
+    e.stopPropagation()
+    const newVal = Math.max(1, Math.min(99, countValue + delta))
+    setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: newVal } }))
+  }
+
+  const handleCountInput = (e, val) => {
+    e.stopPropagation()
+    const num = parseInt(val) || 0
+    setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: Math.max(1, Math.min(99, num)) } }))
+  }
+
+  return (
+    <div style={{
+      padding: '12px 14px', borderRadius: 12,
+      background: isYes ? 'rgba(76,175,80,0.08)' : 'rgba(244,67,54,0.05)',
+      border: `1.5px solid ${isYes ? '#4CAF50' : '#F4433640'}`,
+      transition: 'all 0.2s'
+    }}>
+      {/* Dish name */}
+      <div style={{ marginBottom: 8 }}>
+        <div style={{
+          fontSize: 13, fontWeight: 600, color: isYes ? THEME.text : 'rgba(240,240,245,0.4)',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+        }}>{dish}</div>
+        <div style={{
+          fontSize: 10, fontWeight: 500, color: THEME.textSub, marginTop: 2, textTransform: 'uppercase'
+        }}>{meal}</div>
+      </div>
+
+      {/* Yes / No buttons */}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={handleYes} style={{
+          flex: 1, padding: '8px 0', borderRadius: 8,
+          border: `1.5px solid ${isYes ? '#4CAF50' : THEME.border}`,
+          background: isYes ? 'rgba(76,175,80,0.12)' : 'transparent',
+          color: isYes ? '#4CAF50' : THEME.textSub,
+          fontSize: 12, fontWeight: 700, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4
+        }}>
+          <Check size={12} /> Yes
+        </button>
+        <button onClick={handleNo} style={{
+          flex: 1, padding: '8px 0', borderRadius: 8,
+          border: `1.5px solid ${!isYes ? '#F44336' : THEME.border}`,
+          background: !isYes ? 'rgba(244,67,54,0.1)' : 'transparent',
+          color: !isYes ? '#F44336' : THEME.textSub,
+          fontSize: 12, fontWeight: 700, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4
+        }}>
+          ✕ No
+        </button>
+      </div>
+
+      {/* Count input row: only visible when count dish is "yes" */}
+      {isCount && isYes && (
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+            marginTop: 10, padding: '8px 0', borderTop: `1px solid rgba(76,175,80,0.15)`
+          }}
+        >
+          <button onClick={(e) => handleCountChange(e, -1)} style={{
+            width: 34, height: 34, borderRadius: 8,
+            border: `1px solid ${THEME.border}`, background: THEME.inputBg,
+            color: THEME.text, cursor: 'pointer', fontSize: 18, fontWeight: 700,
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>−</button>
+          <input
+            type="number"
+            min={1}
+            max={99}
+            value={countValue}
+            onChange={(e) => handleCountInput(e, e.target.value)}
+            style={{
+              width: 48, height: 34, borderRadius: 8,
+              border: `1px solid ${THEME.accent}`, background: THEME.inputBg,
+              color: THEME.accent, fontSize: 18, fontWeight: 800,
+              textAlign: 'center', outline: 'none', fontFamily: 'inherit',
+              MozAppearance: 'textfield',
+              WebkitAppearance: 'textfield'
+            }}
+          />
+          <button onClick={(e) => handleCountChange(e, 1)} style={{
+            width: 34, height: 34, borderRadius: 8,
+            border: `1px solid ${THEME.border}`, background: THEME.inputBg,
+            color: THEME.text, cursor: 'pointer', fontSize: 18, fontWeight: 700,
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>+</button>
+          <span style={{ fontSize: 10, fontWeight: 600, color: THEME.textSub, marginLeft: 4 }}>pcs</span>
+        </div>
+      )}
     </div>
   )
 }

@@ -8,6 +8,14 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://pquusffhuholbnlmuyen.supabase.co'
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
 
+function getWeekMonday(date: Date): string {
+  const d = new Date(date)
+  const day = d.getDay()
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1)
+  const monday = new Date(d.setDate(diff))
+  return monday.toISOString().split('T')[0]
+}
+
 serve(async (req) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -23,11 +31,13 @@ serve(async (req) => {
     let totalProcessed = 0
 
     // ── 1. Process scheduled broadcasts ──
+    // Atomic lock: update scheduled→processing so crashed runs don't get stuck
     const { data: dueBroadcasts, error: bcErr } = await supabase
       .from('broadcast_schedule')
-      .select('*')
+      .update({ status: 'processing' })
       .eq('status', 'scheduled')
       .lte('scheduled_for', now)
+      .select('*')
       .order('scheduled_for', { ascending: true })
       .limit(20)
 
@@ -36,70 +46,99 @@ serve(async (req) => {
     if (dueBroadcasts?.length) {
       for (const broadcast of dueBroadcasts) {
         try {
-          await supabase.from('broadcast_schedule').update({ status: 'sending' }).eq('id', broadcast.id)
-
-          let targets = []
+          let targets: string[] = []
           if (broadcast.target_type === 'specific' && broadcast.target_user_id) {
             targets = [broadcast.target_user_id]
           } else if (broadcast.target_type === 'admins') {
             const { data: admins } = await supabase.from('user_stats').select('user_id').eq('role', 'admin')
-            targets = admins?.map(a => a.user_id) || []
+            targets = admins?.map((a: any) => a.user_id) || []
+          } else if (broadcast.target_type === 'opt_in' || broadcast.target_type === 'opt_out') {
+            const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+            const dayNum = new Date().getDay()
+            const h = new Date().getHours()
+            if (dayNum !== 0) {
+              const today = dayMap[dayNum]
+              const mealName = h < 15 ? 'lunch' : 'dinner'
+              const dayKey = today.substring(0, 3).toLowerCase()
+              const mealKey = mealName === 'lunch' ? 'l' : 'd'
+              const statusField = `${dayKey}_${mealKey}_status`
+              const weekId = getWeekMonday(new Date())
+              const { data: subs } = await supabase
+                .from('survey_submissions_flat')
+                .select('user_id, ' + statusField)
+                .eq('week_id', weekId)
+              if (subs) {
+                targets = subs
+                  .filter((s: any) => broadcast.target_type === 'opt_in'
+                    ? s[statusField] === 'Applied'
+                    : s[statusField] !== 'Applied')
+                  .map((s: any) => s.user_id)
+              }
+            }
+            if (targets.length === 0) {
+              const { data: users } = await supabase.from('user_stats').select('user_id').limit(5000)
+              targets = users?.map((u: any) => u.user_id) || []
+            }
           } else {
             const { data: users } = await supabase.from('user_stats').select('user_id').limit(5000)
-            targets = users?.map(u => u.user_id) || []
+            targets = users?.map((u: any) => u.user_id) || []
           }
 
-          // Always insert in-app notifications (triggers Supabase Realtime toast)
-          const notifications = targets.map(user_id => ({
-            user_id, title: broadcast.title || 'Notification',
-            message: broadcast.body || '', type: 'broadcast', url: broadcast.media_url || '/',
-          }))
+          if (targets.length > 0) {
+            const notifications = targets.map((user_id: string) => ({
+              user_id, title: broadcast.title || 'Notification',
+              message: broadcast.body || '', type: 'broadcast', url: '/profile/notifications',
+              sender_name: broadcast.sender_name || 'Al-Mawaid',
+            }))
 
-          if (notifications.length) {
             const { error: notifErr } = await supabase.from('notifications').insert(notifications)
             if (notifErr) throw notifErr
-          }
 
-          // Send push: Firebase CF (AAB FCM + web) with edge fallback
-          if (broadcast.channel === 'push' || !broadcast.channel) {
-            const pushBody = {
-              title: broadcast.title || 'Al-Mawaid',
-              body: broadcast.body || '',
-              url: '/',
-              target_type: broadcast.target_type === 'specific' ? 'specific' : null,
-              user_id: broadcast.target_user_id || null,
-              image_url: broadcast.media_url || undefined,
-              sender_name: broadcast.sender_name || 'Al-Mawaid',
-            }
-            try {
-              const fbRes = await fetch('https://us-central1-al-mawaid-8ffef.cloudfunctions.net/sendPush', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(pushBody),
-              })
-              const fbJson = await fbRes.json().catch(() => ({}))
-              if (!fbRes.ok || !(fbJson.sent > 0)) {
-                await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
-                  },
-                  body: JSON.stringify(pushBody),
-                })
+            // Send push: Firebase CF (AAB FCM + web) with edge fallback
+            if (broadcast.channel === 'push' || !broadcast.channel) {
+              const pushBody = {
+                title: broadcast.title || 'Al-Mawaid',
+                body: broadcast.body || '',
+                url: '/',
+                target_type: broadcast.target_type === 'specific' ? 'specific' : null,
+                user_id: broadcast.target_user_id || null,
+                image_url: broadcast.media_url || undefined,
+                sender_name: broadcast.sender_name || 'Al-Mawaid',
+                big_picture_url: broadcast.media_url || undefined,
+                actions: broadcast.actions || undefined,
+                style: broadcast.style || undefined,
+                collapse_key: broadcast.collapse_key || undefined,
               }
-            } catch (pushErr) {
-              console.error(`[process-scheduled] Push send failed for broadcast ${broadcast.id}:`, pushErr.message)
               try {
-                await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
+                const fbRes = await fetch('https://us-central1-al-mawaid-8ffef.cloudfunctions.net/sendPush', {
                   method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
-                  },
+                  headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify(pushBody),
                 })
-              } catch (_) { /* already logged */ }
+                const fbJson = await fbRes.json().catch(() => ({}))
+                if (!fbRes.ok || !(fbJson.sent > 0)) {
+                  await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
+                    },
+                    body: JSON.stringify(pushBody),
+                  })
+                }
+              } catch (pushErr) {
+                console.error(`[process-scheduled] Push send failed for broadcast ${broadcast.id}:`, pushErr.message)
+                try {
+                  await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
+                    },
+                    body: JSON.stringify(pushBody),
+                  })
+                } catch (_) { /* already logged */ }
+              }
             }
           }
 
@@ -108,7 +147,7 @@ serve(async (req) => {
           }).eq('id', broadcast.id)
 
           totalProcessed++
-        } catch (err) {
+        } catch (err: any) {
           console.error(`[process-scheduled] Failed broadcast ${broadcast.id}:`, err.message)
           await supabase.from('broadcast_schedule').update({
             status: 'failed', failed_count: (broadcast.failed_count || 0) + 1,
@@ -123,6 +162,7 @@ serve(async (req) => {
       .select('week_start')
       .not('publish_at', 'is', null)
       .lte('publish_at', now)
+      .order('publish_at', { ascending: true })
       .limit(1)
 
     if (menuErr) throw menuErr
@@ -130,7 +170,6 @@ serve(async (req) => {
     if (dueMenus?.length) {
       const weekStart = dueMenus[0].week_start
 
-      // Check if we already sent a notice for this week
       const { data: existingNotice } = await supabase
         .from('notices')
         .select('id')
@@ -140,16 +179,17 @@ serve(async (req) => {
 
       if (!existingNotice) {
         await supabase.from('notices').insert({
-          title: '🍽️ New Weekly Menu Available',
+          title: 'New Weekly Menu Available',
           message: `The menu for week of ${weekStart} is now live! Check it out in the app.`,
-          url: '/', type: 'menu',
+          body: `The menu for week of ${weekStart} is now live! Check it out in the app.`,
+          url: '/', type: 'menu', sender_name: 'Al-Mawaid',
         })
         totalProcessed++
       }
     }
 
     return new Response(JSON.stringify({ ok: true, processed: totalProcessed }), { status: 200, headers })
-  } catch (err) {
+  } catch (err: any) {
     return new Response(JSON.stringify({ ok: false, error: err.message }), { status: 500, headers })
   }
 })

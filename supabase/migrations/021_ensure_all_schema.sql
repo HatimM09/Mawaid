@@ -227,8 +227,12 @@ CREATE TABLE IF NOT EXISTS notifications (
   message TEXT NOT NULL,
   type TEXT NOT NULL DEFAULT 'info' CHECK (type IN ('info', 'survey', 'survey_reminder', 'survey_digest', 'menu', 'broadcast')),
   url TEXT DEFAULT '/',
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT now(),
+  sender_name TEXT
 );
+
+-- Add sender_name column if missing
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS sender_name TEXT;
 
 CREATE TABLE IF NOT EXISTS broadcast_templates (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -254,7 +258,7 @@ CREATE TABLE IF NOT EXISTS broadcast_schedule (
   target_type TEXT NOT NULL DEFAULT 'all' CHECK (target_type IN ('all', 'specific', 'admins', 'opt_in', 'opt_out')),
   target_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   channel TEXT DEFAULT 'in-app' CHECK (channel IN ('in-app', 'push', 'both')),
-  status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'sending', 'sent', 'failed')),
+  status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'processing', 'sending', 'sent', 'failed')),
   scheduled_for TIMESTAMPTZ NOT NULL,
   total_targets INTEGER DEFAULT 0,
   sent_count INTEGER DEFAULT 0,
@@ -264,6 +268,11 @@ CREATE TABLE IF NOT EXISTS broadcast_schedule (
   sent_at TIMESTAMPTZ,
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Update status check constraint if old constraint still exists
+ALTER TABLE broadcast_schedule DROP CONSTRAINT IF EXISTS broadcast_schedule_status_check;
+ALTER TABLE broadcast_schedule ADD CONSTRAINT broadcast_schedule_status_check
+  CHECK (status IN ('scheduled', 'processing', 'sending', 'sent', 'failed'));
 
 -- ── 3. Indexes ──
 

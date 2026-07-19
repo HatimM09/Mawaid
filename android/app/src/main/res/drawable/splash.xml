@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Solid background color -->
     <item android:drawable="@color/splash_background" />
-    
-    <!-- Centered brand logo (vector wheat/plate motif — matches animated AVG) -->
+
+    <item
+        android:gravity="center"
+        android:width="140dp"
+        android:height="140dp">
+        <shape android:shape="oval">
+            <solid android:color="#15D4AF37" />
+        </shape>
+    </item>
+
     <item
         android:gravity="center"
         android:width="120dp"

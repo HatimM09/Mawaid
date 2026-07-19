@@ -22,6 +22,9 @@ const KhidmatPortal = lazy(() => import('./admin/KhidmatPortal'))
 const InventoryManagerPortal = lazy(() => import('./admin/InventoryManagerPortal'))
 const AutomationPage = lazy(() => import('./admin/AutomationPage'))
 
+// User-facing pages
+const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
+
 const LoadingFallback = () => (
   <div style={{
     minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -63,6 +66,7 @@ export default function MainRouter() {
           </Route>
 
           {/* Public user app or fallback */}
+          <Route path="notifications" element={<NotificationsPage />} />
           <Route path="/*" element={<App />} />
 
           {/* Catch-all */}

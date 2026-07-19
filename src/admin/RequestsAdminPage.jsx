@@ -119,7 +119,7 @@ export default function RequestsAdminPage() {
           ? `Your ${typeLabel} request was approved. You’re all set.`
           : `Your ${typeLabel} request couldn’t be approved. Open the app for details.`
 
-        await supabase.functions.invoke('sendPush', {
+        await supabase.functions.invoke('send-push', {
           body: {
             title,
             body,

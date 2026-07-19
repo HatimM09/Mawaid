@@ -102,6 +102,12 @@ serve(async (req) => {
       sender_name,
       image_url,
       channels,
+      // Rich push options
+      big_picture_url,
+      actions,
+      style,
+      ttl,
+      collapse_key,
     } = raw
     const user_id = rawUserId || target_user_id || null
     // channels: optional filter — ['webpush','expo','fcm']. Default = all.
@@ -171,7 +177,7 @@ serve(async (req) => {
     if (webPushSubs.length > 0) {
       const results = await Promise.allSettled(
         webPushSubs.map((sub: any) =>
-          sendWebPush(sub.subscription_json, title, body, url || '/', image_url, sender_name)
+          sendWebPush(sub.subscription_json, title, body, url || '/', image_url, sender_name, big_picture_url, actions, style)
         )
       )
       for (let i = 0; i < results.length; i++) {
@@ -202,7 +208,7 @@ serve(async (req) => {
     // Send FCM Push (native Android / Capacitor)
     if (fcmSubs.length > 0) {
       const results = await Promise.allSettled(
-        fcmSubs.map((sub: any) => sendFCMPush(sub.fcm_token, title, body, url || '/'))
+        fcmSubs.map((sub: any) => sendFCMPush(sub.fcm_token, title, body, url || '/', big_picture_url, actions, style, collapse_key))
       )
       for (let i = 0; i < results.length; i++) {
         if (results[i].status === 'fulfilled') {
@@ -227,7 +233,7 @@ serve(async (req) => {
   }
 })
 
-async function sendWebPush(subscriptionJson: string | object, title: string, body: string, url: string, image?: string, sender_name?: string) {
+async function sendWebPush(subscriptionJson: string | object, title: string, body: string, url: string, image?: string, sender_name?: string, bigPictureUrl?: string, actions?: any[], style?: string) {
   if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
     throw new Error('VAPID keys not configured')
   }
@@ -235,10 +241,10 @@ async function sendWebPush(subscriptionJson: string | object, title: string, bod
   const payload = JSON.stringify({
     title, body, url, image: image || undefined, sender_name: sender_name || undefined,
     badge: '/al-mawaid.png', vibrate: [200, 100, 200], requireInteraction: true,
-    // Unique tag per notification so each shows individually on Android
     tag: `al-mawaid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    actions: [{ action: 'open', title: 'View' }, { action: 'dismiss', title: 'Dismiss' }],
+    actions: actions || [{ action: 'open', title: 'View' }, { action: 'dismiss', title: 'Dismiss' }],
     timestamp: Date.now(),
+    bigPictureUrl, style,
   })
   return webpush.sendNotification(subscription, payload)
 }
@@ -256,30 +262,54 @@ async function sendExpoPush(expoToken: string, title: string, body: string, url:
   return res.json()
 }
 
-async function sendFCMPush(fcmToken: string, title: string, body: string, url: string) {
+async function sendFCMPush(fcmToken: string, title: string, body: string, url: string, bigPictureUrl?: string, actions?: any[], style?: string, collapseKey?: string) {
   const accessToken = await getFCMAccessToken()
+  const androidNotification: any = {
+    channelId: 'default',
+    sound: 'default',
+    priority: 'high',
+    clickAction: url || '/',
+  }
+
+  // Rich push: BigPictureStyle
+  if (bigPictureUrl && style !== 'inbox') {
+    androidNotification.imageUrl = bigPictureUrl
+    androidNotification.style = 'bigpicture'
+    androidNotification.bigPictureUrl = bigPictureUrl
+  }
+
+  // Action buttons (max 3)
+  if (actions && actions.length > 0) {
+    androidNotification.actions = actions.slice(0, 3).map((a: any, idx: number) => ({
+      action: a.action || `action_${idx}`,
+      title: a.title || `Action ${idx + 1}`,
+      icon: a.icon || undefined,
+    }))
+  }
+
+  const message: any = {
+    message: {
+      token: fcmToken,
+      notification: { title, body },
+      android: {
+        priority: 'high',
+        notification: androidNotification,
+      },
+      data: url ? { url } : undefined,
+    },
+  }
+
+  if (collapseKey) {
+    message.message.android.collapseKey = collapseKey
+  }
+
   const res = await fetch(`https://fcm.googleapis.com/v1/projects/${FCM_PROJECT_ID}/messages:send`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({
-      message: {
-        token: fcmToken,
-        notification: { title, body },
-        android: {
-          priority: 'high',
-          notification: {
-            channelId: 'default',
-            sound: 'default',
-            priority: 'high',
-            clickAction: url || '/',
-          },
-        },
-        data: url ? { url } : undefined,
-      },
-    }),
+    body: JSON.stringify(message),
   })
   if (!res.ok) {
     const err = await res.json()

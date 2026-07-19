@@ -124,12 +124,16 @@ export default function SurveyDashboard() {
 
       const { data: allUsers } = await supabase.from('user_stats').select('*')
       const { data: submissions } = await supabase.from('survey_submissions_flat')
-        .select(`user_id, ${statusCol}`)
+        .select(`user_id, ${statusCol}, updated_at`)
         .eq('week_id', weekId)
 
       const subMap = {}
+      const subTimeMap = {}
       if (submissions) {
-        submissions.forEach(sub => { subMap[sub.user_id] = sub[statusCol] })
+        submissions.forEach(sub => {
+          subMap[sub.user_id] = sub[statusCol]
+          subTimeMap[sub.user_id] = sub.updated_at
+        })
       }
 
       const dishCols = []
@@ -161,6 +165,7 @@ export default function SurveyDashboard() {
           ...u,
           status: subMap[u.user_id] || 'Not Submitted',
           dishResponses: dishMap[u.user_id] || {},
+          updated_at: subTimeMap[u.user_id] || null,
         }))
         .sort((a, b) => {
           const order = { Applied: 0, Skipped: 1, 'Not Submitted': 2 }
@@ -393,6 +398,11 @@ export default function SurveyDashboard() {
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{u.name || 'Unknown'}</div>
                 <div style={{ fontSize: 11, color: T.textSub }}>Thali #{u.thali_number || '—'}</div>
+                {u.updated_at && (
+                  <div style={{ fontSize: 9, color: T.textSub, fontWeight: 500, marginTop: 2, opacity: 0.7 }}>
+                    📅 {new Date(u.updated_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                )}
               </div>
               <Badge color={u.status === 'Applied' ? '#4CAF50' : u.status === 'Skipped' ? '#ef4444' : '#f59e0b'}>
                 {u.status === 'Applied' ? '✅ Applied' : u.status === 'Skipped' ? '❌ Skipped' : '⏳ Pending'}
@@ -409,6 +419,11 @@ export default function SurveyDashboard() {
               <div style={{ fontSize: 12, color: T.textSub, marginBottom: 16 }}>Thali #{selectedUser.thali_number || '—'}</div>
               <div style={{ padding: 12, borderRadius: 8, background: T.inputBg, marginBottom: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Status: <Badge color={selectedUser.status === 'Applied' ? '#4CAF50' : '#ef4444'}>{selectedUser.status}</Badge></div>
+                {selectedUser.updated_at && (
+                  <div style={{ fontSize: 10, color: T.textSub, fontWeight: 600, marginTop: 6 }}>
+                    Last edited: {new Date(selectedUser.updated_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                )}
               </div>
               {Object.keys(selectedUser.dishResponses).length > 0 && (
                 <div>

@@ -16,7 +16,7 @@ export default defineConfig({
       filename: 'sw.js',
       registerType: 'prompt',
       injectRegister: null,
-      includeAssets: ['al-mawaid.png', 'wheat_bg.png', 'icons.svg'],
+      includeAssets: ['al-mawaid.png', 'al-mawaid.svg', 'wheat_bg.png', 'icons.svg'],
       manifest: {
         name: 'Al-Mawaid | المَوَائِد',
         short_name: 'Al-Mawaid',
@@ -30,6 +30,12 @@ export default defineConfig({
         categories: ['food', 'lifestyle'],
         icons: [
           {
+            src: '/al-mawaid.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
+            purpose: 'any'
+          },
+          {
             src: '/al-mawaid.png',
             sizes: '192x192',
             type: 'image/png',
@@ -40,12 +46,6 @@ export default defineConfig({
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any'
-          },
-          {
-            src: '/al-mawaid.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable'
           }
         ]
       }

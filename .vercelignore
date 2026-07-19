@@ -1,0 +1,16 @@
+# Exclude heavy build artifacts
+android/
+native/
+api/
+functions/
+scripts/
+supabase/
+app-release.aab
+deploy.ps1
+git_push.ps1
+secret_payload.json
+*.aab
+fix*.mjs
+fix*.cjs
+fix*.js
+fix*.py

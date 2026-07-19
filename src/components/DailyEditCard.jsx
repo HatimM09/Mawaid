@@ -352,7 +352,21 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
           </div>
         )}
 
-        {/* Close button at bottom */}
+        {/* Submit All & Close buttons */}
+        <button
+          onClick={() => { onComplete(); onClose(); }}
+          style={{
+            width: '100%', padding: 14, borderRadius: 14,
+            border: 'none',
+            background: t.accentGrad || t.accent,
+            color: '#000', fontSize: 15, fontWeight: 900,
+            cursor: 'pointer', marginTop: 8,
+            fontFamily: "'DM Sans',sans-serif",
+            boxShadow: `0 8px 24px ${t.accentBg || 'rgba(224, 160, 60, 0.25)'}`
+          }}
+        >
+          Submit All Changes
+        </button>
         <button
           onClick={onClose}
           style={{

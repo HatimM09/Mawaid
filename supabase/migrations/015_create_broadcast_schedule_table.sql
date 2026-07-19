@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS broadcast_schedule (
   target_type TEXT NOT NULL DEFAULT 'all' CHECK (target_type IN ('all', 'specific', 'admins', 'opt_in', 'opt_out')),
   target_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   channel TEXT DEFAULT 'in-app' CHECK (channel IN ('in-app', 'push', 'both')),
-  status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'sending', 'sent', 'failed')),
+  status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'processing', 'sending', 'sent', 'failed')),
   scheduled_for TIMESTAMPTZ NOT NULL,
   total_targets INTEGER DEFAULT 0,
   sent_count INTEGER DEFAULT 0,

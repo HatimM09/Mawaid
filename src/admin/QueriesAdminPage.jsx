@@ -79,7 +79,7 @@ export default function QueriesAdminPage() {
           type: 'query_resolved'
         })
         // Send push notification for when app is closed
-        await supabase.functions.invoke('sendPush', {
+        await supabase.functions.invoke('send-push', {
           body: {
             title: 'Al-Mawaid · Query closed',
             body: `Your "${subjectLabel}" ticket is resolved. Open the app if you need anything else.`,
@@ -124,7 +124,7 @@ export default function QueriesAdminPage() {
             type: 'query_reply'
           })
           // Send push notification
-          await supabase.functions.invoke('sendPush', {
+          await supabase.functions.invoke('send-push', {
             body: {
               title: 'Al-Mawaid · Reply from admin',
               body: `"${subjectLabel}" — ${shortBody}`,

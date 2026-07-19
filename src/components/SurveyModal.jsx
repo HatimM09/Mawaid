@@ -311,7 +311,7 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
       })
       // Notify admins that a user submitted their survey
       try {
-        await supabase.functions.invoke('sendPush', {
+        await supabase.functions.invoke('send-push', {
           body: {
             title: 'Al-Mawaid · Weekly survey in',
             body: `Thali ${userData.thali_no || '—'} submitted the full week meal plan.`,

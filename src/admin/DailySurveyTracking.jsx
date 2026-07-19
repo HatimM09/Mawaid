@@ -669,13 +669,12 @@ function SurveyResponseDisplay({ user, meal, day, onClose }) {
         boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.05)'
       }}>
         {dishEntries.map(([dish, val]) => {
+          const isYesNo = val === 'yes' || val === 'no'
           const isRoti = val !== null && ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri'].some(k => dish.toLowerCase().includes(k))
           const isCount = val !== null && typeof val === 'string' && !val.endsWith('%') && val !== 'yes' && val !== 'no'
           const numVal = val !== null ? (parseInt(val) || 0) : null
-          const isActive = val !== null && (val === 'yes' || (isCount && numVal > 0) || (!isRoti && !isCount && numVal > 0))
-          const displayVal = val === null ? '—' : isRoti ? (val === 'yes' ? 'YES' : 'NO') : (
-            isCount ? `${numVal}` : (typeof val === 'string' && val.endsWith('%') ? val : `${numVal}%`)
-          )
+          const isActive = val !== null && (val === 'yes' || (isCount && numVal > 0) || (!isRoti && !isCount && !isYesNo && numVal > 0))
+          const displayVal = val === null ? '—' : isYesNo ? (val === 'yes' ? 'YES' : 'NO') : isCount ? `${numVal}` : (typeof val === 'string' && val.endsWith('%') ? val : `${numVal}%`)
 
           return (
             <div key={dish} style={{ 
@@ -754,7 +753,14 @@ function MemberRow({ user, onClick }) {
         <div style={{ width: 32, height: 32, borderRadius: 8, background: T.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: T.accent }}>
           {user.thali_number}
         </div>
-        <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{user.name}</div>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{user.name}</div>
+          {user.updated_at && (
+            <div style={{ fontSize: 9, color: T.textSub, fontWeight: 500, marginTop: 2, opacity: 0.7 }}>
+              📅 {new Date(user.updated_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+            </div>
+          )}
+        </div>
       </div>
       <ChevronRight size={16} color={T.textSub} />
     </div>

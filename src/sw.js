@@ -63,6 +63,7 @@ self.addEventListener('push', (event) => {
     body = '',
     url = '/',
     image,
+    icon,
     badge = '/al-mawaid.png',
     vibrate = [200, 100, 200],
     requireInteraction = true,
@@ -71,22 +72,26 @@ self.addEventListener('push', (event) => {
     timestamp,
     silent,
     renotify = true,
+    sender_name,
     data: extraData = {},
   } = data
 
+  const displayTitle = sender_name ? `${sender_name} · Al-Mawaid` : title
+
+  const displayBody = body || (sender_name ? `Message from ${sender_name}` : '')
+
   // Generate unique tag so each notification shows individually on Android
-  // Format: al-mawaid_timestamp_random — still grouped under 'al-mawaid' prefix for identification
   const uniqueTag = tag || `al-mawaid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
   const notificationOptions = {
-    body,
-    icon: '/al-mawaid.png',
+    body: displayBody,
+    icon: icon || '/al-mawaid.png',
     badge,
     vibrate,
     requireInteraction,
     tag: uniqueTag,
     actions,
-    data: { url, ...extraData },
+    data: { url, sender_name, ...extraData },
     renotify,
     silent,
   }
@@ -97,16 +102,16 @@ self.addEventListener('push', (event) => {
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       const focusedClient = clients.find((c) => c.focused)
       if (focusedClient) {
-        // App is in focus — send to in-app toast via PushManager
         focusedClient.postMessage({
           type: 'PUSH_RECEIVED',
           title,
           body,
           url,
           image,
+          sender_name,
         })
       } else {
-        return self.registration.showNotification(title, notificationOptions)
+        return self.registration.showNotification(displayTitle, notificationOptions)
       }
     })
   )
@@ -115,25 +120,26 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   const action = event.action
-  const urlToOpen = event.notification.data?.url || '/'
+  const notifData = event.notification.data || {}
+  const urlToOpen = notifData.url || '/profile/notifications'
 
   if (action === 'dismiss') return
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      // Check if any client window is already open
-      for (const client of windowClients) {
-        if (client.url.includes(self.location.origin)) {
-          // Send deep-link message to the client so React Router can handle it
-          client.postMessage({
-            type: 'NOTIFICATION_DEEP_LINK',
-            url: urlToOpen,
-          })
-          if ('focus' in client) return client.focus()
-        }
+      const originClient = windowClients.find((c) => c.url.includes(self.location.origin))
+      if (originClient) {
+        originClient.postMessage({
+          type: 'NOTIFICATION_DEEP_LINK',
+          url: urlToOpen,
+        })
+        if ('focus' in originClient) return originClient.focus()
       }
-      // No open window — open a new one
-      if (clients.openWindow) return clients.openWindow(urlToOpen)
+      // No open window — open app with alerts flag
+      const targetUrl = urlToOpen.startsWith('/')
+        ? self.location.origin + '/?alerts=1'
+        : urlToOpen
+      if (clients.openWindow) return clients.openWindow(targetUrl)
     })
   )
 })

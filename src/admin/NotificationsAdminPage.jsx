@@ -53,6 +53,12 @@ const DEFAULT_FORM = {
   media_url: '',
   channel: 'in-app',
   delivery: 'now',
+  // Rich push options
+  big_picture_url: '',
+  style: 'bigpicture',
+  actions: '',
+  collapse_key: '',
+  ttl: 86400,
 }
 
 export default function NotificationsAdminPage() {
@@ -132,7 +138,7 @@ export default function NotificationsAdminPage() {
       setStats({
         total: nRes.data?.length || 0,
         sent: scheduleData.filter(s => s.status === 'sent').length,
-        pending: scheduleData.filter(s => s.status === 'pending').length,
+        pending: scheduleData.filter(s => s.status === 'scheduled' || s.status === 'processing').length,
         failed: scheduleData.filter(s => s.status === 'failed').length,
         scheduled: scheduleData.filter(s => s.status === 'scheduled').length,
         templates: tRes.data?.length || 0,
@@ -195,14 +201,12 @@ export default function NotificationsAdminPage() {
       const { data } = await supabase.from('user_stats').select('user_id').eq('role', 'admin')
       return (data || []).map((d) => d.user_id).filter(Boolean)
     }
-    const { data: subs } = await supabase.from('push_subscriptions').select('user_id').limit(5000)
-    const fromSubs = [...new Set((subs || []).map((s) => s.user_id).filter(Boolean))]
-    if (fromSubs.length) return fromSubs
+    // For 'all', 'opt_in', 'opt_out' — get ALL users so everyone gets in-app notifications
     const { data: all } = await supabase.from('user_stats').select('user_id').limit(5000)
     return (all || []).map((u) => u.user_id).filter(Boolean)
   }
 
-  const insertInAppNotifications = async (targetType, targetUserId, title, body, url = '/') => {
+  const insertInAppNotifications = async (targetType, targetUserId, title, body, url = '/', sender_name) => {
     try {
       const targets = await resolveTargetUserIds(targetType, targetUserId)
       if (!targets.length) return
@@ -212,6 +216,7 @@ export default function NotificationsAdminPage() {
         message: body || '',
         type: 'broadcast',
         url: url || '/',
+        sender_name: sender_name || 'Al-Mawaid',
       }))
       // Chunk inserts to avoid payload limits
       for (let i = 0; i < rows.length; i += 200) {
@@ -289,12 +294,13 @@ export default function NotificationsAdminPage() {
         form.target_user_id,
         form.title,
         form.body,
-        form.media_url || '/'
+        '/profile/notifications',
+        form.sender_name
       )
 
       if (form.channel === 'push') {
         try {
-          const { data: pushResult, error: pushError } = await supabase.functions.invoke('sendPush', {
+          const { data: pushResult, error: pushError } = await supabase.functions.invoke('send-push', {
             body: {
               title: form.title,
               body: form.body,
@@ -303,6 +309,11 @@ export default function NotificationsAdminPage() {
               url: '/',
               image_url: form.media_url || undefined,
               sender_name: form.sender_name,
+              big_picture_url: form.big_picture_url || form.media_url || undefined,
+              actions: form.actions ? JSON.parse(form.actions) : undefined,
+              style: form.style || undefined,
+              collapse_key: form.collapse_key || undefined,
+              ttl: form.ttl || undefined,
             }
           })
           if (pushError) throw pushError
@@ -475,12 +486,13 @@ export default function NotificationsAdminPage() {
       entry.target_user_id,
       entry.title,
       entry.body,
-      entry.media_url || '/'
+      '/profile/notifications',
+      entry.sender_name
     )
 
     if (entry.channel === 'push') {
       try {
-        const { data: pushResult, error: pushError } = await supabase.functions.invoke('sendPush', {
+        const { data: pushResult, error: pushError } = await supabase.functions.invoke('send-push', {
           body: {
             title: entry.title,
             body: entry.body,
@@ -489,6 +501,8 @@ export default function NotificationsAdminPage() {
             url: '/',
             image_url: entry.media_url || undefined,
             sender_name: entry.sender_name || 'Admin',
+            big_picture_url: entry.media_url || undefined,
+            style: 'bigpicture',
           }
         })
         if (pushError) throw pushError
@@ -515,7 +529,7 @@ export default function NotificationsAdminPage() {
   }).slice(0, 15)
 
   const scheduledBroadcasts = schedule.filter(s =>
-    s.status === 'scheduled' || s.status === 'pending'
+    s.status === 'scheduled' || s.status === 'processing'
   ).slice(0, 15)
 
   const filteredHistory = [...notices].filter(n => {
@@ -1077,6 +1091,140 @@ export default function NotificationsAdminPage() {
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* Row 7: Rich Push Options */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  {/* Big Picture Image */}
+                  <div>
+                    <label htmlFor="bigPictureUrl" style={{
+                      display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
+                      fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
+                    }}>Big Picture Image (URL)</label>
+                    <input
+                      id="bigPictureUrl"
+                      name="bigPictureUrl"
+                      placeholder="https://example.com/image.jpg"
+                      value={form.big_picture_url}
+                      onChange={e => setForm({ ...form, big_picture_url: e.target.value })}
+                      style={{
+                        width: '100%', boxSizing: 'border-box',
+                        padding: '10px 12px', borderRadius: 12,
+                        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
+                        color: 'var(--text-primary)', fontSize: 12, outline: 'none', fontFamily: 'inherit',
+                      }}
+                      title="Optional: Full-screen image for rich notifications"
+                    />
+                  </div>
+
+                  {/* Style Selector */}
+                  <div>
+                    <label htmlFor="pushStyle" style={{
+                      display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
+                      fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
+                    }}>Rich Style</label>
+                    <select
+                      id="pushStyle"
+                      name="pushStyle"
+                      value={form.style}
+                      onChange={e => setForm({ ...form, style: e.target.value })}
+                      style={{
+                        width: '100%', boxSizing: 'border-box',
+                        padding: '10px 12px', borderRadius: 12,
+                        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
+                        color: 'var(--text-primary)', fontSize: 12, outline: 'none', fontFamily: 'inherit',
+                      }}
+                    >
+                      <option value="bigpicture">Big Picture</option>
+                      <option value="bigtext">Big Text</option>
+                      <option value="inbox">Inbox</option>
+                    </select>
+                  </div>
+
+                  {/* Collapse Key */}
+                  <div>
+                    <label htmlFor="collapseKey" style={{
+                      display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
+                      fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
+                    }}>Collapse Key</label>
+                    <input
+                      id="collapseKey"
+                      name="collapseKey"
+                      placeholder="e.g. survey_reminder"
+                      value={form.collapse_key}
+                      onChange={e => setForm({ ...form, collapse_key: e.target.value })}
+                      style={{
+                        width: '100%', boxSizing: 'border-box',
+                        padding: '10px 12px', borderRadius: 12,
+                        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
+                        color: 'var(--text-primary)', fontSize: 12, outline: 'none', fontFamily: 'inherit',
+                      }}
+                      title="Group similar notifications (e.g., survey_reminder)"
+                    />
+                  </div>
+                </div>
+
+                {/* Row 8: Actions */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                  {/* Action 1 */}
+                  <div>
+                    <label htmlFor="action1" style={{
+                      display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
+                      fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
+                    }}>Action 1 (View)</label>
+                    <input
+                      id="action1"
+                      name="action1"
+                      placeholder='{"action":"open","title":"View"}'
+                      value={form.actions}
+                      onChange={e => setForm({ ...form, actions: e.target.value })}
+                      style={{
+                        width: '100%', boxSizing: 'border-box',
+                        padding: '10px 12px', borderRadius: 12,
+                        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
+                        color: 'var(--text-primary)', fontSize: 12, outline: 'none', fontFamily: 'inherit',
+                      }}
+                      title='JSON array: [{"action":"open","title":"View"},{"action":"dismiss","title":"Dismiss"}]'
+                    />
+                  </div>
+
+                  {/* TTL */}
+                  <div>
+                    <label htmlFor="ttl" style={{
+                      display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
+                      fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
+                    }}>TTL (seconds)</label>
+                    <input
+                      id="ttl"
+                      name="ttl"
+                      type="number"
+                      min="0"
+                      max="2419200"
+                      value={form.ttl}
+                      onChange={e => setForm({ ...form, ttl: parseInt(e.target.value) || 86400 })}
+                      style={{
+                        width: '100%', boxSizing: 'border-box',
+                        padding: '10px 12px', borderRadius: 12,
+                        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
+                        color: 'var(--text-primary)', fontSize: 12, outline: 'none', fontFamily: 'inherit',
+                      }}
+                      title="Time to live in seconds (max 28 days = 2419200)"
+                    />
+                  </div>
+                </div>
+
+                {/* Rich Push Help Text */}
+                <div style={{
+                  padding: '12px 16px', borderRadius: 10,
+                  background: 'rgba(197, 160, 89, 0.04)', border: '1px solid rgba(197, 160, 89, 0.1)',
+                  fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.6
+                }}>
+                  <strong style={{ color: T.accent }}>Rich Push Tips:</strong>
+                  • <strong>Big Picture</strong> shows full image below notification (Android FCM)
+                  • <strong>Actions</strong> add buttons like "View", "Dismiss", "Snooze" (max 3)
+                  • <strong>Collapse Key</strong> groups similar notifications (e.g., "survey_reminder")
+                  • <strong>TTL</strong> = how long FCM keeps message if device offline (default 24h)
+                  • Image URL must be HTTPS and accessible (auto-used as big_picture_url if media attached)
                 </div>
 
                 {/* Save as Template button row */}

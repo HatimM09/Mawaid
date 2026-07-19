@@ -47,11 +47,12 @@ serve(async (req) => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_ROLE_KEY}` },
           body: JSON.stringify({
-            title: '📋 Weekly Survey Open',
+            title: 'Weekly Survey Open',
             body: 'The survey for the coming week is now open! Submit your meal preferences (Sat 8PM – Mon 11AM).',
-            url: '/',
+            url: '/profile/notifications',
             target_type: 'all',
             type: 'survey',
+            sender_name: 'Al-Mawaid',
           }),
         })
       } catch (e) { console.error('auto_open push failed:', e) }
@@ -77,19 +78,19 @@ serve(async (req) => {
       const { data: users } = await supabase.from('user_stats').select('user_id').eq('role', 'member')
       if (!users?.length) return new Response(JSON.stringify({ ok: true, sent: 0 }), { status: 200, headers })
 
-      const pendingUsers = []
-      for (const u of users) {
-        const { data: sub } = await supabase
-          .from('survey_submissions_flat')
-          .select(statusField)
-          .eq('user_id', u.user_id)
-          .eq('week_id', weekId)
-          .maybeSingle()
+      const userIds = users.map(u => u.user_id)
+      const { data: submissions } = await supabase
+        .from('survey_submissions_flat')
+        .select('user_id, ' + statusField)
+        .eq('week_id', weekId)
+        .in('user_id', userIds)
 
-        if (!sub || !sub[statusField]) {
-          pendingUsers.push(u.user_id)
-        }
-      }
+      const submittedIds = new Set(
+        (submissions || [])
+          .filter(s => s[statusField])
+          .map(s => s.user_id)
+      )
+      const pendingUsers = userIds.filter(id => !submittedIds.has(id))
 
       if (pendingUsers.length === 0) {
         return new Response(JSON.stringify({ ok: true, sent: 0 }), { status: 200, headers })
@@ -101,6 +102,7 @@ serve(async (req) => {
         message: `Don't forget to submit your ${dayName} ${mealType === 'l' ? 'lunch' : 'dinner'} survey!`,
         type: 'survey_reminder',
         url: '/',
+        sender_name: 'Al-Mawaid',
       }))
 
       await supabase.from('notifications').insert(notifications)
@@ -145,6 +147,7 @@ serve(async (req) => {
           message: `${dayName}: Lunch ${lunchApplied}✅ / ${lunchSkipped}❌ / ${lunchPending}⏳ | Dinner ${dinnerApplied}✅ / ${dinnerSkipped}❌ / ${dinnerPending}⏳`,
           type: 'survey_digest',
           url: '/admin/survey-tracking',
+          sender_name: 'Al-Mawaid',
         }))
         await supabase.from('notifications').insert(notifications)
       }

@@ -525,7 +525,11 @@ const GlobalStyles = () => {
 // ══════════════════════════════════════════════════════════════
 function ThaliUserApp() {
   const { user } = useAuth()
-  const [activeTab, setActiveTab] = useState('home')
+  const initialParams = new URLSearchParams(window.location.search)
+  const initialTab = initialParams.get('alerts') === '1' ? 'profile' : 'home'
+  const initialSubPage = initialParams.get('alerts') === '1' ? 'notifications' : 'main'
+  const [activeTab, setActiveTab] = useState(initialTab)
+  const [activeSubPage, setActiveSubPage] = useState(initialSubPage)
   const [showDailySurvey, setShowDailySurvey] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('almawaid_theme') || 'dark')
   const t = THEMES[theme] || THEMES.dark
@@ -575,6 +579,33 @@ function ThaliUserApp() {
       }).catch(() => {})
     }
   }, [theme])
+
+  // ── Handle deep links from notifications (SW clicks / PushManager) ──
+  useEffect(() => {
+    if (activeSubPage !== 'main') {
+      setActiveTab('profile')
+    }
+  }, [activeSubPage])
+
+  useEffect(() => {
+    const handleAppNavigate = (e) => {
+      const url = e.detail?.url || ''
+      if (url.includes('/profile/notifications') || url.includes('alerts=1')) {
+        setActiveTab('profile')
+        setActiveSubPage('notifications')
+      } else if (url.includes('/profile')) {
+        setActiveTab('profile')
+      } else if (url !== '/' && url) {
+        window.location.href = url
+      }
+    }
+    window.addEventListener('app-navigate', handleAppNavigate)
+    // Clean up ?alerts=1 from URL after handling
+    if (window.location.search.includes('alerts=1')) {
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+    return () => window.removeEventListener('app-navigate', handleAppNavigate)
+  }, [])
 
   // ── Native Notification System (Supabase Realtime) ──
   useEffect(() => {
@@ -758,7 +789,7 @@ function ThaliUserApp() {
           const hasMedia = toastNotice.media && toastNotice.media[0]
           return (
           <div
-            onClick={() => { setActiveTab('profile'); setToastNotice(null) }}
+            onClick={() => { setActiveTab('profile'); setActiveSubPage('notifications'); setToastNotice(null) }}
             onTouchStart={(e) => {
               dragStartY.current = e.touches[0].clientY
               dragY.current = 0
@@ -843,7 +874,7 @@ function ThaliUserApp() {
         {activeTab === 'menu' && <WeeklyMenuPage />}
 
         {activeTab === 'post' && <PostPage />}
-        {activeTab === 'profile' && <ProfilePage theme={theme} setTheme={handleSetTheme} markRead={markNotificationsRead} appSettings={appSettings} />}
+        {activeTab === 'profile' && <ProfilePage theme={theme} setTheme={handleSetTheme} markRead={markNotificationsRead} appSettings={appSettings} activeSubPage={activeSubPage} setActiveSubPage={setActiveSubPage} />}
 
         <OfflineBanner />
         {showDailySurvey && <DailySurveyModal onClose={() => { setShowDailySurvey(false); setActiveTab('home') }} appSettings={appSettings} />}
@@ -1462,21 +1493,29 @@ function ThaliRequestsSection() {
       const { error: dbErr } = await supabase.from('thali_requests').insert([payload])
       if (dbErr) throw dbErr
       
-      // Send push notification for request submission
+      // Notify admins about the new request
       try {
         const typeLabels = { resume: 'Resume Thali', stop: 'Stop Thali', extra: 'Extra Food', miqaat: 'Miqaat Pirsu' }
         const typeLabel = typeLabels[type] || type
-        await supabase.functions.invoke('sendPush', {
+        await supabase.from('notifications').insert([{
+          user_id: null,
+          title: '📋 New ' + typeLabel + ' Request',
+          message: (user?.email?.split('@')[0] || 'A user') + ' submitted a ' + typeLabel + ' request.',
+          url: '/admin/requests',
+          type: 'new_request',
+          sender_name: 'Al-Mawaid',
+          target_audience: 'admins'
+        }])
+        await supabase.functions.invoke('send-push', {
           body: {
-            title: 'Al-Mawaid · Request received',
-            body: `Your ${typeLabel} request is with the kitchen team. We’ll notify you when it’s reviewed.`,
-            target_type: 'specific',
-            user_id: user.id,
-            url: '/post'
+            title: '📋 New ' + typeLabel + ' Request',
+            body: (user?.email?.split('@')[0] || 'A user') + ' submitted a ' + typeLabel + ' request.',
+            target_type: 'admins',
+            url: '/admin/requests'
           }
         })
       } catch (notifyErr) {
-        console.warn('Request submission notification failed:', notifyErr)
+        console.warn('Admin request notification failed:', notifyErr)
       }
       
       setSuccess(`✅ ${type === 'resume' ? 'Resume' : type === 'stop' ? 'Stop' : 'Extra food'} request submitted!`)
@@ -1720,6 +1759,31 @@ function QueriesSection() {
         status: 'open'
       }])
       if (dbErr) throw dbErr
+
+      // Notify admins about the new query
+      try {
+        const userName = user?.email?.split('@')[0] || 'A user'
+        await supabase.from('notifications').insert([{
+          user_id: null,
+          title: '📩 New Query from ' + userName,
+          message: comment.substring(0, 120) + (comment.length > 120 ? '…' : ''),
+          url: '/admin/queries',
+          type: 'new_query',
+          sender_name: 'Al-Mawaid',
+          target_audience: 'admins'
+        }])
+        await supabase.functions.invoke('send-push', {
+          body: {
+            title: '📩 New Query Received',
+            body: userName + ' submitted: "' + comment.substring(0, 80) + (comment.length > 80 ? '…"' : '"'),
+            target_type: 'admins',
+            url: '/admin/queries'
+          }
+        })
+      } catch (notifyErr) {
+        console.warn('Admin query notification failed:', notifyErr)
+      }
+
       setSuccess('✅ Query submitted! Our team will respond shortly.')
       setComment(''); setMediaFiles([]); loadQueries()
     } catch (err) { setError(err.message) } finally { setSubmitting(false) }
@@ -1784,8 +1848,10 @@ function QueriesSection() {
 // ══════════════════════════════════════════════════════════════
 // PROFILE PAGE (Member)
 // ══════════════════════════════════════════════════════════════
-function ProfilePage({ theme, setTheme, markRead, appSettings }) {
-  const [activeSubPage, setActiveSubPage] = useState('main')
+function ProfilePage({ theme, setTheme, markRead, appSettings, activeSubPage: externalSubPage, setActiveSubPage: externalSetSubPage }) {
+  const [internalSubPage, setInternalSubPage] = useState('main')
+  const activeSubPage = externalSubPage !== undefined ? externalSubPage : internalSubPage
+  const setActiveSubPage = externalSetSubPage || setInternalSubPage
   if (activeSubPage === 'surveys') return <MySurveysPage onBack={() => setActiveSubPage('main')} />
   if (activeSubPage === 'requests') return <MyRequestsPage onBack={() => setActiveSubPage('main')} />
   if (activeSubPage === 'khidmat') return <KhidmatTeamPage onBack={() => setActiveSubPage('main')} />
@@ -1949,7 +2015,8 @@ function MySurveysPage({ onBack }) {
                 grouped[day][meal] = {
                   wants_food: status === 'Applied',
                   dish_responses: dishResponses,
-                  edit_count: (data.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0
+                  edit_count: (data.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0,
+                  updated_at: data.updated_at || null
                 }
               }
             })
@@ -1984,7 +2051,8 @@ function MySurveysPage({ onBack }) {
                 grouped[day][meal] = {
                   wants_food: status === 'Applied',
                   dish_responses: dishResponses,
-                  edit_count: (rows.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0
+                  edit_count: (rows.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0,
+                  updated_at: rows.updated_at || null
                 };
               }
             });
@@ -2015,6 +2083,11 @@ function MySurveysPage({ onBack }) {
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{meal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}</span>
                     <span style={{ fontSize: 10, color: (r.edit_count || 0) < 1 ? t.accent : t.textSub, fontFamily: "'DM Sans',sans-serif", fontWeight: 600 }}>{r.edit_count === undefined ? '' : (r.edit_count || 0) === 0 ? 'Not edited yet' : `Edited ${r.edit_count} time(s)`}</span>
+                    {r.updated_at && (
+                      <span style={{ fontSize: 9, color: t.textSub, fontFamily: "'DM Sans',sans-serif", fontWeight: 500, opacity: 0.7, marginLeft: 6 }}>
+                        • {new Date(r.updated_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
                   </div>
                   {r.wants_food !== undefined ? (
                     <>

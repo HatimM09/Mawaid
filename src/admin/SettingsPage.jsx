@@ -235,20 +235,6 @@ export default function SettingsPage() {
       ),
     ])
 
-    if (!menuErr && publishAt) {
-      const { data: existingNotice } = await supabase
-        .from('notices').select('id').eq('type', 'menu')
-        .ilike('message', `%${weekId}%`).maybeSingle()
-      if (!existingNotice) {
-        try {
-          await supabase.from('notices').insert({
-            title: '🍽️ This Week\'s Menu Updated', message: 'The menu has been updated. Check out what\'s cooking!',
-            url: '/', type: 'menu', created_at: new Date().toISOString()
-          })
-        } catch (_) { /* notice insert is best-effort */ }
-      }
-    }
-
     setSaving(false)
     setMsg(settingsErr || menuErr
       ? { text: `Save failed: ${(settingsErr || menuErr).message}`, type: 'error' }
@@ -612,7 +598,7 @@ export default function SettingsPage() {
                         }
                         // 🔔 Send push notification to all users about the published menu
                         try {
-                          await supabase.functions.invoke('sendPush', {
+                          await supabase.functions.invoke('send-push', {
                             body: {
                               title: 'Al-Mawaid · New menu is live',
                               body: `This week’s thali menu (${thisWeek}) is ready — open the app to see lunch & dinner.`,
