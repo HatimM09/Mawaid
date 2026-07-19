@@ -551,8 +551,8 @@ export const PackingTVView = ({ user, onClose }) => {
       }}>
         {!isApplied && total > 0 && (
           <div style={{ gridColumn: '1 / -1', textAlign: 'center', marginBottom: '1vh' }}>
-            <div style={{ fontSize: 'clamp(20px, 5vh, 60px)', fontWeight: 1000, color: status === 'Not Submitted' ? '#fbbf24' : '#f43f5e', opacity: 0.7 }}>
-              {status === 'Not Submitted' ? '⏳ NO RESPONSE YET' : '❌ SKIPPED'}
+            <div style={{ fontSize: 'clamp(20px, 5vh, 60px)', fontWeight: 1000, color: !status ? '#fbbf24' : '#f43f5e', opacity: 0.7 }}>
+              {!status ? '⏳ NO RESPONSE YET' : '❌ SKIPPED'}
             </div>
           </div>
         )}

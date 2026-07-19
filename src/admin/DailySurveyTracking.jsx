@@ -63,8 +63,7 @@ export default function DailySurveyTracking() {
       
       const buildDishMap = (dishList, mk) => {
         const result = {}
-        const status = row ? row[`${dayKey}_${mk}_status`] : null
-        result._status = status || (row ? 'Not Submitted' : 'Not Submitted')
+        result._status = row ? row[`${dayKey}_${mk}_status`] : null
         dishList.forEach((d, i) => {
           const val = row ? row[`${dayKey}_${mk}_dish_${i + 1}`] : null
           if (val !== undefined && val !== null && val !== '') {
@@ -217,7 +216,7 @@ export default function DailySurveyTracking() {
       
       const buildDishMap = (dishList, mk, r) => {
         const result = {}
-        result._status = r ? r[`${dayKey}_${mk}_status`] : 'Not Submitted'
+        result._status = r ? r[`${dayKey}_${mk}_status`] : null
         dishList.forEach((d, i) => {
           const val = r ? r[`${dayKey}_${mk}_dish_${i + 1}`] : null
           if (val !== undefined && val !== null && val !== '') {
