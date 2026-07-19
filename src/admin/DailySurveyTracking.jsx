@@ -330,6 +330,10 @@ export default function DailySurveyTracking() {
   const noResponse = filtered.filter(u => !u.status)
 
   const dishStats = {}
+  const menuDishes = weeklyMenu[day]?.[meal] || []
+  menuDishes.forEach(dish => {
+    dishStats[dish] = { total: 0, count: 0, yesNoCount: 0, yesCount: 0, isCount: false, isPct: false }
+  })
   yesMembers.forEach(u => {
     Object.entries(u.dishResponses || {}).forEach(([dish, val]) => {
       if (!dishStats[dish]) dishStats[dish] = { total: 0, count: 0, yesNoCount: 0, yesCount: 0, isCount: false, isPct: false }
@@ -503,7 +507,7 @@ export default function DailySurveyTracking() {
                 {noResponse.length === 0 ? (
                   <div style={{ padding: 20, textAlign: 'center', color: T.textSub, fontSize: 12 }}>All users have responded!</div>
                 ) : noResponse.map(u => (
-                  <PendingMemberRow key={u.user_id} user={u} />
+                  <PendingMemberRow key={u.user_id} user={u} onClick={() => setSelectedUser(u)} />
                 ))}
               </div>
             </AdminCard>
@@ -626,12 +630,26 @@ export default function DailySurveyTracking() {
   )
 }
 
-function PendingMemberRow({ user }) {
+function PendingMemberRow({ user, onClick }) {
   return (
-    <div style={{ 
-      padding: '10px 14px', borderRadius: 12, background: T.inputBg, border: `1px solid ${T.border}`,
-      display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: T.textSub
-    }}>
+    <div 
+      onClick={onClick}
+      style={{ 
+        padding: '10px 14px', borderRadius: 12, background: T.inputBg, border: `1px solid ${T.border}`,
+        display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: T.textSub,
+        cursor: 'pointer', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+      }}
+      onMouseEnter={e => {
+        e.currentTarget.style.borderColor = T.accent;
+        e.currentTarget.style.background = T.cardHover;
+        e.currentTarget.style.transform = 'translateX(4px)';
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.borderColor = T.border;
+        e.currentTarget.style.background = T.inputBg;
+        e.currentTarget.style.transform = 'translateX(0)';
+      }}
+    >
       <div style={{ 
         width: 28, height: 28, borderRadius: 6, background: 'rgba(255,255,255,0.03)', 
         display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: T.accent 
@@ -639,6 +657,7 @@ function PendingMemberRow({ user }) {
         {user.thali_number}
       </div>
       <div style={{ fontWeight: 600, color: T.text }}>{user.name}</div>
+      <ChevronRight size={16} color={T.textSub} style={{ marginLeft: 'auto' }} />
     </div>
   )
 }
