@@ -1,6 +1,6 @@
 // src/admin/ui.jsx — shared admin UI primitives
-import React from 'react'
-import { AlertCircle, X } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { AlertCircle, X, Maximize2, Minimize2 } from 'lucide-react'
 
 export const T = {
   bg: 'var(--bg-deep)',
@@ -36,7 +36,7 @@ export const updateSystemTheme = (themeId) => {
     root.style.setProperty('--bg-surface', 'rgba(255, 255, 255, 0.04)');
     root.style.setProperty('--bg-card', 'rgba(255, 255, 255, 0.04)');
     root.style.setProperty('--bg-card-hover', 'rgba(139, 92, 246, 0.06)');
-    root.style.setProperty('--bg-grad', 'radial-gradient(ellipse at 50% 0%, #1a1a2e 0%, #0c0c14 70%)');
+    root.style.setProperty('--bg-grad', 'linear-gradient(180deg, #0c0c14 0%, #1a1a2e 100%)');
     root.style.setProperty('--text-primary', '#f0f0f5');
     root.style.setProperty('--text-tertiary', 'rgba(240, 240, 245, 0.72)');
     root.style.setProperty('--accent-primary', '#a78bfa');
@@ -60,12 +60,12 @@ export const updateSystemTheme = (themeId) => {
     root.style.setProperty('--bg-surface', '#ffffff');
     root.style.setProperty('--bg-card', '#ffffff');
     root.style.setProperty('--bg-card-hover', '#faf5ff');
-    root.style.setProperty('--bg-grad', 'linear-gradient(135deg, #f5f0ff 0%, #ede4ff 50%, #e8dff5 100%)');
+    root.style.setProperty('--bg-grad', 'linear-gradient(180deg, #f5f0ff 0%, #ede9fe 100%)');
     root.style.setProperty('--text-primary', '#1e1b4b');
     root.style.setProperty('--text-tertiary', '#4a4468');
     root.style.setProperty('--accent-primary', '#7c3aed');
     root.style.setProperty('--accent-cyan', '#7c3aed');
-    root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #8b5cf6, #6d28d9)');
+    root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #7c3aed, #6d28d9)');
     root.style.setProperty('--accent-bg', 'rgba(124, 58, 237, 0.08)');
     root.style.setProperty('--accent-border', 'rgba(124, 58, 237, 0.3)');
     root.style.setProperty('--border-light', '#e0d4f5');
@@ -84,12 +84,12 @@ export const updateSystemTheme = (themeId) => {
     root.style.setProperty('--bg-surface', 'rgba(197, 160, 89, 0.03)');
     root.style.setProperty('--bg-card', 'rgba(197, 160, 89, 0.03)');
     root.style.setProperty('--bg-card-hover', 'rgba(197, 160, 89, 0.06)');
-    root.style.setProperty('--bg-grad', 'radial-gradient(circle at 0% 0%, #161b22 0%, #0a0d14 100%)');
+    root.style.setProperty('--bg-grad', 'linear-gradient(180deg, #0a0d14 0%, #141a24 100%)');
     root.style.setProperty('--text-primary', '#f0f4f8');
     root.style.setProperty('--text-tertiary', 'rgba(240, 244, 248, 0.72)');
     root.style.setProperty('--accent-primary', '#c5a059');
     root.style.setProperty('--accent-cyan', '#c5a059');
-    root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #d4b47a 0%, #c5a059 50%, #a68446 100%)');
+    root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #c5a059, #d4af37)');
     root.style.setProperty('--accent-bg', 'rgba(197, 160, 89, 0.08)');
     root.style.setProperty('--accent-border', 'rgba(197, 160, 89, 0.3)');
     root.style.setProperty('--border-light', 'rgba(197, 160, 89, 0.12)');
@@ -505,243 +505,378 @@ const pctColor = (val, isRoti, rotiVal) => {
   const n = parseInt(val) || 0
   if (n === 0) return { fill: '#6b7280', border: '#6b7280', bg: 'rgba(107,114,128,0.08)', badge: '#6b7280', shadow: 'rgba(107,114,128,0.08)', text: 'rgba(255,255,255,0.4)', tagBg: 'rgba(107,114,128,0.12)', tagBorder: 'rgba(107,114,128,0.2)', tagColor: '#9ca3af' }
   if (n <= 25) return { fill: '#f59e0b', border: '#f59e0b', bg: 'rgba(245,158,11,0.12)', badge: '#f59e0b', shadow: 'rgba(245,158,11,0.2)', text: '#fff', tagBg: 'rgba(245,158,11,0.2)', tagBorder: 'rgba(245,158,11,0.3)', tagColor: '#fbbf24' }
-  if (n <= 50) return { fill: '#d4af37', border: '#d4af37', bg: 'rgba(212,175,55,0.12)', badge: '#d4af37', shadow: 'rgba(212,175,55,0.25)', text: '#fff', tagBg: 'rgba(212,175,55,0.2)', tagBorder: 'rgba(212,175,55,0.3)', tagColor: '#fcd34d' }
+  if (n <= 50) return { fill: '#d4af37', border: '#d4af37', bg: 'rgba(212,175,55,0.12)', badge: '#d4af37', shadow: 'rgba(212,175,55,0.25)', text: '#fff', tagBg: 'var(--border-light)', tagBorder: 'var(--accent-border)', tagColor: '#fcd34d' }
   return { fill: '#10b981', border: '#10b981', bg: 'rgba(16,185,129,0.12)', badge: '#10b981', shadow: 'rgba(16,185,129,0.25)', text: '#fff', tagBg: 'rgba(16,185,129,0.2)', tagBorder: 'rgba(16,185,129,0.3)', tagColor: '#34d399' }
 }
 
-export const PackingTVView = ({ user, onClose }) => {
-  const [imgError, setImgError] = React.useState(false)
+export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverride }) => {
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
-  // Meal toggle: show one meal at a time when both exist
-  const hasBothMeals = user.lunch && user.dinner
-  const allMeals = hasBothMeals
-    ? [
-        { name: 'Lunch', key: 'lunch', data: user.lunch, icon: '☀️' },
-        { name: 'Dinner', key: 'dinner', data: user.dinner, icon: '🌙' }
-      ]
-    : [
-        { name: (user.currentMeal || 'Meal').charAt(0).toUpperCase() + (user.currentMeal || 'Meal').slice(1), key: 'meal', data: { status: user.status || 'Not Submitted', dishes: user.dishResponses || {} }, icon: '🍽️' }
-      ]
-  const [selectedMealKey, setSelectedMealKey] = React.useState(allMeals[0]?.key || 'meal')
-  const meals = hasBothMeals
-    ? [allMeals.find(m => m.key === selectedMealKey) || allMeals[0]]
-    : allMeals
-
-  const MealSection = ({ meal }) => {
-    const { status, dishes } = meal.data
-    const dishEntries = Object.entries(dishes).filter(([k]) => k !== '_status')
-    const isApplied = status === 'Applied'
-
-    const total = dishEntries.length
-    const gridCols = total === 1 ? '1fr' : total === 2 ? 'repeat(2, 1fr)' : total === 3 ? 'repeat(3, 1fr)' : total === 4 ? 'repeat(4, 1fr)' : total === 5 ? 'repeat(5, 1fr)' : total <= 6 ? 'repeat(3, 1fr)' : total <= 9 ? 'repeat(3, 1fr)' : 'repeat(4, 1fr)'
-
-    const pctColorNull = (val, isRoti, raw) => {
-      const inactive = { bg: 'rgba(255,255,255,0.02)', border: 'rgba(255,255,255,0.08)', fill: 'rgba(255,255,255,0.03)', shadow: 'rgba(255,255,255,0)', badge: 'rgba(255,255,255,0.1)', text: 'rgba(255,255,255,0.2)', tagBg: 'rgba(255,255,255,0.05)', tagColor: 'rgba(255,255,255,0.2)', tagBorder: 'rgba(255,255,255,0.08)' }
-      if (val === null) return inactive
-      return pctColor(val, isRoti, raw)
+  const toggleFullscreen = async () => {
+    if (!document.fullscreenElement) {
+      try {
+        await document.documentElement.requestFullscreen()
+        setIsFullscreen(true)
+      } catch (e) {
+        // Fullscreen not supported or denied
+        console.warn('Fullscreen request failed:', e)
+      }
+    } else {
+      try {
+        await document.exitFullscreen()
+        setIsFullscreen(false)
+      } catch (e) {
+        console.warn('Exit fullscreen failed:', e)
+      }
     }
+  }
 
-    return (
+  // Sync state when user exits via Escape or OS gesture;
+  // also exit fullscreen on unmount so the admin isn't stuck in fullscreen after closing
+  useEffect(() => {
+    const handleChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    document.addEventListener('fullscreenchange', handleChange)
+    return () => {
+      document.removeEventListener('fullscreenchange', handleChange)
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+    }
+  }, [])
+
+  const getTimeBasedMeal = () => {
+    const hour = new Date().getHours()
+    const minutes = new Date().getMinutes()
+    const timeInMinutes = hour * 60 + minutes
+    if (timeInMinutes < 15 * 60) return 'lunch'
+    if (timeInMinutes < 20 * 60) return 'dinner'
+    return 'lunch'
+  }
+
+  const displayMeal = mealOverride && currentMeal ? currentMeal : (meal || getTimeBasedMeal())
+
+  const mealData = displayMeal === 'lunch' ? user.lunch : user.dinner
+  const dishes = mealData?.dishes || user.dishResponses || {}
+  const dishEntries = Object.entries(dishes).filter(([k]) => k !== '_status')
+  const total = dishEntries.length
+
+  const status = mealData?.status || 'Not Submitted'
+
+  const mealLabels = { lunch: 'LUNCH', dinner: 'DINNER' }
+  const mealIcons = { lunch: '☀️', dinner: '🌙' }
+
+  const getResponseStyle = (value) => {
+    if (value === null || value === undefined) {
+      return { bg: 'rgba(255,255,255,0.02)', border: 'rgba(255,255,255,0.06)', label: '—', labelColor: 'rgba(255,255,255,0.15)', glow: null, typeLabel: '', typeColor: 'transparent' }
+    }
+    if (value === 'yes') {
+      return { bg: 'rgba(16, 185, 129, 0.08)', border: '#10b981', label: 'YES', labelColor: '#10b981', glow: 'rgba(16, 185, 129, 0.5)', typeLabel: 'ROTI', typeColor: '#10b981' }
+    }
+    if (value === 'no') {
+      return { bg: 'rgba(239, 68, 68, 0.08)', border: '#ef4444', label: 'NO', labelColor: '#ef4444', glow: 'rgba(239, 68, 68, 0.5)', typeLabel: 'ROTI', typeColor: '#ef4444' }
+    }
+    const num = parseInt(value) || 0
+    const isPercent = typeof value === 'string' && value.endsWith('%')
+    if (num > 0) {
+      return {
+        bg: 'rgba(212, 175, 55, 0.06)', border: 'rgba(212, 175, 55, 0.5)',
+        label: isPercent ? value : `${num}`,
+        labelColor: '#ffffff', glow: 'rgba(212, 175, 55, 0.5)',
+        typeLabel: isPercent ? 'PCT' : 'COUNT',
+        typeColor: '#fcd34d'
+      }
+    }
+    return { bg: 'rgba(255,255,255,0.02)', border: 'rgba(255,255,255,0.06)', label: '0', labelColor: 'rgba(255,255,255,0.15)', glow: null, typeLabel: '', typeColor: 'transparent' }
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: '#050508', color: '#fff',
+      height: '100dvh', width: '100dvw',
+      overflow: 'hidden',
+      display: 'flex', flexDirection: 'column',
+      fontFamily: "'Space Grotesk', 'Inter', sans-serif"
+    }}>
+      {/* Fullscreen toggle — top left */}
+      <button
+        onClick={toggleFullscreen}
+        title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Enter fullscreen'}
+        aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+        style={{
+          position: 'fixed', top: '1.5vh', left: '1.5vw', zIndex: 10000,
+          background: isFullscreen
+            ? 'rgba(212,175,55,0.15)'
+            : 'rgba(255,255,255,0.08)',
+          border: `1.5px solid ${isFullscreen ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.15)'}`,
+          color: isFullscreen ? '#fcd34d' : '#fff',
+          width: 44, height: 44, borderRadius: '50%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 18, cursor: 'pointer',
+          transition: 'all 0.2s', backdropFilter: 'blur(20px)',
+          boxShadow: isFullscreen ? '0 0 20px rgba(212,175,55,0.2)' : 'none'
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.background = 'rgba(212,175,55,0.2)'
+          e.currentTarget.style.borderColor = 'rgba(212,175,55,0.5)'
+          e.currentTarget.style.color = '#fcd34d'
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.background = isFullscreen ? 'rgba(212,175,55,0.15)' : 'rgba(255,255,255,0.08)'
+          e.currentTarget.style.borderColor = isFullscreen ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.15)'
+          e.currentTarget.style.color = isFullscreen ? '#fcd34d' : '#fff'
+        }}
+      >
+        {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+      </button>
+
+      {/* Close button */}
+      <button onClick={onClose} style={{
+        position: 'fixed', top: '1.5vh', right: '1.5vw', zIndex: 10000,
+        background: 'rgba(255,255,255,0.08)', border: '1.5px solid rgba(255,255,255,0.15)',
+        color: '#fff', width: 44, height: 44, borderRadius: '50%',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 20, fontWeight: 900, cursor: 'pointer',
+        transition: 'all 0.2s', backdropFilter: 'blur(20px)'
+      }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.15)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)' }} onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)' }}>
+        ✕
+      </button>
+
+      {/* ── COMPACT HEADER — Bright White for Distance Readability ── */}
       <div style={{
-        flex: 1, display: 'grid',
-        gridTemplateColumns: gridCols,
-        gap: '1vh 1vw',
-        minHeight: 0,
-        alignContent: 'center'
+        flexShrink: 0,
+        padding: 'clamp(44px, 6vh, 64px) clamp(16px, 3vw, 48px) clamp(4px, 1vh, 12px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 'clamp(12px, 3vw, 32px)',
+        flexWrap: 'wrap'
       }}>
-        {!isApplied && total > 0 && (
-          <div style={{ gridColumn: '1 / -1', textAlign: 'center', marginBottom: '1vh' }}>
-            <div style={{ fontSize: 'clamp(20px, 5vh, 60px)', fontWeight: 1000, color: !status ? '#fbbf24' : '#f43f5e', opacity: 0.7 }}>
-              {!status ? '⏳ NO RESPONSE YET' : '❌ SKIPPED'}
+        {/* Thali badge - bright white with gold glow for distance visibility */}
+        <div style={{
+          display: 'inline-flex', alignItems: 'center',
+          background: 'linear-gradient(135deg, rgba(212,175,55,0.25), rgba(212,175,55,0.06))',
+          border: '2px solid rgba(212,175,55,0.6)', borderRadius: 'clamp(14px, 2vw, 24px)',
+          padding: 'clamp(6px, 1vh, 12px) clamp(14px, 2vw, 28px)',
+          boxShadow: '0 0 30px rgba(212,175,55,0.15), inset 0 0 20px rgba(212,175,55,0.05)'
+        }}>
+          <span style={{
+            fontSize: 'clamp(40px, 8vw, 100px)', fontWeight: 900,
+            color: '#ffffff',
+            textShadow: '0 0 30px rgba(212,175,55,0.6), 0 0 60px rgba(212,175,55,0.3)',
+            letterSpacing: '0.04em'
+          }}>#{user?.thali_number || '—'}</span>
+        </div>
+
+        {/* Meal badge - bright text on darker bg */}
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          padding: 'clamp(6px, 0.8vh, 10px) clamp(12px, 1.5vw, 22px)',
+          background: 'rgba(212,175,55,0.08)', border: '2px solid rgba(212,175,55,0.4)', borderRadius: 50,
+          boxShadow: '0 0 20px rgba(212,175,55,0.1)'
+        }}>
+          <span style={{ fontSize: 'clamp(14px, 1.8vw, 22px)' }}>{mealIcons[displayMeal]}</span>
+          <span style={{
+            fontSize: 'clamp(12px, 1.4vw, 18px)', fontWeight: 900,
+            color: '#ffffff',
+            textShadow: '0 0 12px rgba(212,175,55,0.4)',
+            textTransform: 'uppercase', letterSpacing: '0.12em', whiteSpace: 'nowrap'
+          }}>{mealLabels[displayMeal]}</span>
+          {mealOverride && (
+            <span style={{
+              fontSize: 9, fontWeight: 800, color: '#fbbf24',
+              background: 'rgba(251, 191, 36, 0.2)', padding: '2px 8px', borderRadius: 10,
+              textTransform: 'uppercase', letterSpacing: '0.08em'
+            }}>MANUAL</span>
+          )}
+        </div>
+
+        {/* Status badge - bright white status text with colored glow */}
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          padding: 'clamp(6px, 0.8vh, 10px) clamp(14px, 1.5vw, 24px)', borderRadius: 50,
+          background: status === 'Applied'
+            ? 'rgba(16, 185, 129, 0.15)'
+            : status === 'Skipped'
+              ? 'rgba(239, 68, 68, 0.15)'
+              : 'rgba(245, 158, 11, 0.15)',
+          border: `2px solid ${status === 'Applied' ? 'rgba(16,185,129,0.6)' : status === 'Skipped' ? 'rgba(239,68,68,0.6)' : 'rgba(245,158,11,0.6)'}`,
+          boxShadow: `0 0 24px ${status === 'Applied' ? 'rgba(16,185,129,0.15)' : status === 'Skipped' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'}`
+        }}>
+          <span style={{
+            width: 12, height: 12, borderRadius: '50%',
+            background: status === 'Applied' ? '#10b981' : status === 'Skipped' ? '#ef4444' : '#f59e0b',
+            boxShadow: `0 0 16px ${status === 'Applied' ? '#10b981' : status === 'Skipped' ? '#ef4444' : '#f59e0b'}`
+          }} />
+          <span style={{
+            fontSize: 'clamp(11px, 1.2vw, 16px)', fontWeight: 800,
+            color: '#ffffff',
+            textShadow: status === 'Applied'
+              ? '0 0 16px rgba(16,185,129,0.5)'
+              : status === 'Skipped'
+                ? '0 0 16px rgba(239,68,68,0.5)'
+                : '0 0 16px rgba(245,158,11,0.5)',
+            textTransform: 'uppercase', letterSpacing: '0.1em'
+          }}>
+            {status === 'Applied' ? '✅ PROCEED' : status === 'Skipped' ? '❌ SKIPPED' : '⏳ NO RESPONSE'}
+          </span>
+        </div>
+      </div>
+
+      {/* ── MAIN DISH GRID - FILLS FULL SCREEN ── */}
+      <div style={{
+        flex: 1, minHeight: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 'clamp(6px, 1.5vh, 16px) clamp(8px, 2vw, 32px) clamp(8px, 1.5vh, 16px)',
+        overflow: 'hidden'
+      }}>
+        {dishEntries.length > 0 ? (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: total === 1 ? 'minmax(300px, 600px)' : total === 5 ? 'repeat(3, 1fr)' : `repeat(auto-fit, minmax(min(${total <= 2 ? '45vw' : total <= 4 ? '32vw' : '22vw'}, 100%), 1fr))`,
+            gap: 'clamp(8px, 1.2vw, 20px)',
+            width: '100%',
+            height: '100%',
+            maxHeight: '100%',
+            alignContent: 'center',
+            justifyItems: total === 5 ? 'center' : 'stretch',
+            gridTemplateRows: total === 5 ? 'repeat(2, 1fr)' : undefined
+          }}>
+            {dishEntries.map(([dish, value], idx) => {
+              const style = getResponseStyle(value)
+              const isActive = value !== null && value !== undefined
+              
+              return (
+                <div key={dish} style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 'clamp(4px, 1vw, 12px) clamp(4px, 0.8vw, 12px)',
+                  background: style.bg,
+                  border: `2px solid ${style.border}`,
+                  borderRadius: 'clamp(12px, 1.5vw, 20px)',
+                  boxShadow: style.glow ? `0 0 30px ${style.glow}` : '0 4px 16px rgba(0,0,0,0.3)',
+                  textAlign: 'center',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  animation: `fadeInDish 0.5s cubic-bezier(0.16, 1, 0.3, 1) ${idx * 0.08}s both`
+                }}>
+                  {/* Glow effect */}
+                  {style.glow && (
+                    <div style={{
+                      position: 'absolute', inset: 0,
+                      background: `radial-gradient(ellipse at center, ${style.glow} 0%, transparent 70%)`,
+                      pointerEvents: 'none', opacity: 0.4
+                    }} />
+                  )}
+
+                  {/* Type Badge — bright white text with colored border for distance visibility */}
+                  {style.typeLabel && (
+                    <div style={{
+                      position: 'absolute', top: 'clamp(4px, 0.6vw, 10px)', right: 'clamp(4px, 0.6vw, 10px)',
+                      zIndex: 2,
+                      padding: 'clamp(2px, 0.3vw, 6px) clamp(6px, 0.7vw, 12px)',
+                      borderRadius: 'clamp(4px, 0.5vw, 8px)',
+                      background: `${style.typeColor}15`,
+                      border: `1px solid ${style.typeColor}60`,
+                      color: '#ffffff',
+                      textShadow: '0 0 10px rgba(255,255,255,0.3)',
+                      fontSize: 'clamp(8px, 0.7vw, 12px)',
+                      fontWeight: 900,
+                      letterSpacing: '0.08em',
+                      fontFamily: "'Space Grotesk', sans-serif"
+                    }}>
+                      {style.typeLabel}
+                    </div>
+                  )}
+
+                  {/* Dish Name — BRIGHT WHITE with aura glow for distance readability */}
+                  <div style={{
+                    zIndex: 1, width: '100%',
+                    fontSize: 'clamp(28px, min(7vw, 9vh), 88px)',
+                    fontWeight: 800,
+                    color: '#ffffff',
+                    textShadow: '0 0 24px rgba(255,255,255,0.15), 0 2px 8px rgba(0,0,0,0.5)',
+                    lineHeight: 1.1,
+                    marginBottom: 'clamp(6px, 0.6vw, 12px)',
+                    paddingRight: 'clamp(24px, 3vw, 48px)',
+                    paddingLeft: 'clamp(4px, 0.5vw, 10px)',
+                    wordBreak: 'break-word',
+                    textAlign: 'center',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                    boxSizing: 'border-box'
+                  }}>
+                    {dish}
+                  </div>
+
+                  {/* Value — BRIGHT WHITE with colored glow, visible from 20+ feet */}
+                  <div style={{
+                    zIndex: 1,
+                    fontSize: 'clamp(48px, min(10vw, 13vh), 96px)',
+                    fontWeight: 900,
+                    color: '#ffffff',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    lineHeight: 0.95,
+                    textShadow: style.glow
+                      ? `0 0 40px ${style.glow}, 0 0 80px ${style.glow}, 0 2px 8px rgba(0,0,0,0.4)`
+                      : '0 0 20px rgba(255,255,255,0.1)',
+                    letterSpacing: '-0.03em',
+                    marginTop: 'clamp(2px, 0.3vw, 6px)'
+                  }}>
+                    {style.label}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 'clamp(40px, 6vw, 72px)', marginBottom: 16, opacity: 0.3 }}>🍽️</div>
+            <div style={{ fontSize: 'clamp(20px, 3vw, 28px)', fontWeight: 600, color: 'rgba(255,255,255,0.5)' }}>
+              No dishes for {mealLabels[displayMeal].toLowerCase()}
+            </div>
+            <div style={{ fontSize: 'clamp(14px, 1.8vw, 18px)', color: 'rgba(255,255,255,0.25)' }}>
+              Menu not available or no responses recorded
             </div>
           </div>
         )}
-        {dishEntries.map(([dish, pct], idx) => {
-          const isYesNo = pct === 'yes' || pct === 'no'
-          const isCount = pct !== null && typeof pct === 'string' && !pct.endsWith('%') && pct !== 'yes' && pct !== 'no'
-          const isRoti = pct !== null && ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri'].some(k => dish.toLowerCase().includes(k))
-          const val = pct !== null ? (parseInt(pct) || 0) : null
-          const fillHeight = pct === null ? '0%' : (isYesNo || isRoti) ? (pct === 'yes' ? '100%' : '0%') : (isCount ? (val > 0 ? '100%' : '0%') : `${val}%`)
-          const clr = pctColorNull(isYesNo || isCount || isRoti ? (val !== null && val > 0 ? 100 : 0) : val, isRoti, pct)
-          
-          return (
-            <div key={dish} style={{
-              background: clr.bg,
-              border: `clamp(2px, 0.4vh, 5px) solid ${clr.border}`,
-              borderRadius: '2vh',
-              display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center',
-              padding: '1.5vh 1.5vw', position: 'relative', overflow: 'hidden',
-              boxShadow: `0 0 20px ${clr.shadow}`,
-              textAlign: 'center',
-              minWidth: 0, minHeight: 0,
-              boxSizing: 'border-box'
-            }}>
-              <div style={{
-                position: 'absolute', left: 0, right: 0, bottom: 0,
-                height: fillHeight,
-                background: clr.fill,
-                opacity: 0.1,
-                transition: 'height 1.5s cubic-bezier(0.4, 0, 0.2, 1)',
-                zIndex: 1
-              }} />
-              <div style={{
-                width: 'clamp(48px, 8vh, 90px)', height: 'clamp(48px, 8vh, 90px)', borderRadius: '50%',
-                background: clr.badge,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 'clamp(20px, 4vh, 48px)', fontWeight: 1000, color: '#fff', zIndex: 2,
-                boxShadow: `0 0 20px ${clr.shadow}`
-              }}>
-                {idx + 1}
-              </div>
-              <div style={{
-                fontSize: 'clamp(18px, 3.5vh, 42px)',
-                fontWeight: 1000, color: '#fff',
-                textTransform: 'uppercase', letterSpacing: '0.02em',
-                margin: '1vh 0', zIndex: 2,
-                lineHeight: 1.2,
-                wordBreak: 'break-word',
-                maxWidth: '100%'
-              }}>{dish}</div>
-              <div style={{ zIndex: 2 }}>
-                {isYesNo && pct === 'yes' && (
-                  <div style={{
-                    display: 'inline-block', padding: '0.6vh 2vw', borderRadius: '1vh',
-                    background: clr.tagBg, color: clr.tagColor,
-                    fontSize: 'clamp(14px, 2.5vh, 30px)', fontWeight: 900,
-                    border: `2px solid ${clr.tagBorder}`
-                  }}>
-                    YES
-                  </div>
-                )}
-                {isCount && val > 0 && (
-                  <div style={{
-                    display: 'inline-block', padding: '0.6vh 2vw', borderRadius: '1vh',
-                    background: clr.tagBg, color: clr.tagColor,
-                    fontSize: 'clamp(14px, 2.5vh, 30px)', fontWeight: 900,
-                    border: `2px solid ${clr.tagBorder}`
-                  }}>
-                    {val} pcs
-                  </div>
-                )}
-                {!isYesNo && !isCount && !isRoti && val !== null && val > 0 && (
-                  <div style={{
-                    display: 'inline-block', padding: '0.6vh 2vw', borderRadius: '1vh',
-                    background: clr.tagBg, color: clr.tagColor,
-                    fontSize: 'clamp(14px, 2.5vh, 30px)', fontWeight: 900,
-                    border: `2px solid ${clr.tagBorder}`
-                  }}>
-                    {val === 100 ? 'FULL' : (val === 50 ? 'HALF' : (val === 25 ? 'QUARTER' : `${val}%`))}
-                  </div>
-                )}
-                <div style={{
-                  fontSize: 'clamp(32px, 7vh, 85px)',
-                  fontWeight: 1000, color: clr.text,
-                  textShadow: `0 4px 15px ${clr.shadow}`, lineHeight: 1,
-                  marginTop: '0.5vh'
-                }}>
-                  {pct === null ? '—' : isYesNo ? (pct === 'yes' ? 'YES' : 'NO') : (isCount ? `${val}` : `${val}%`)}
-                </div>
-                <div style={{
-                  fontSize: 'clamp(12px, 2vh, 24px)', fontWeight: 800,
-                  color: 'var(--text-tertiary)', textTransform: 'uppercase',
-                  marginTop: '0.5vh', letterSpacing: '0.12em'
-                }}>
-                  {pct === null ? 'No response' : isYesNo ? 'Response' : (isCount ? 'Pieces' : 'Portion')}
-                </div>
-              </div>
-            </div>
-          )
-        })}
       </div>
-    )
-  }
-  
-  return (
-    <div style={{ 
-      position: 'fixed', inset: 0, zIndex: 9999, 
-      background: '#000', color: '#fff',
-      display: 'flex', flexDirection: 'column',
-      padding: '3vh 3vw', boxSizing: 'border-box',
-      overflow: 'hidden', animation: 'fadeIn 0.3s ease-out',
-      height: '100vh', width: '100vw'
-    }}>
+
+      {/* ── DISMISS BUTTON ── */}
+      <div style={{
+        flexShrink: 0,
+        padding: 'clamp(4px, 0.8vh, 10px) 0 clamp(8px, 1.5vh, 16px)',
+        display: 'flex', justifyContent: 'center'
+      }}>
+        <button onClick={onClose} style={{
+          padding: 'clamp(8px, 1vh, 14px) clamp(32px, 6vw, 56px)', borderRadius: 12,
+          border: '1px solid rgba(255,255,255,0.08)',
+          background: 'rgba(255,255,255,0.03)',
+          color: 'rgba(255,255,255,0.4)',
+          fontSize: 'clamp(12px, 1.2vw, 15px)', fontWeight: 600,
+          cursor: 'pointer', transition: 'all 0.2s',
+          fontFamily: "'Space Grotesk', sans-serif",
+          textTransform: 'uppercase', letterSpacing: '0.08em'
+        }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = 'rgba(255,255,255,0.4)' }}
+        >
+          Dismiss
+        </button>
+      </div>
+
       <style>{`
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @media (max-width: 768px) {
-          .tv-header { flex-direction: row !important; justify-content: space-between !important; align-items: center !important; gap: 12px; }
-          .tv-header-right { text-align: right !important; }
-          .meal-split { flex-direction: column !important; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+        @keyframes fadeInDish {
+          from { opacity: 0; transform: translateY(24px) scale(0.95); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
         }
       `}</style>
-
-      {/* Dismiss Button */}
-      <button onClick={onClose} style={{
-        position: 'absolute', top: '2vh', right: '2vw',
-        background: 'rgba(244, 63, 94, 0.15)', border: '2px solid rgba(244, 63, 94, 0.4)',
-        color: '#f43f5e', width: 'clamp(44px, 5vh, 60px)', height: 'clamp(44px, 5vh, 60px)', borderRadius: '50%',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 'clamp(18px, 2.5vh, 28px)', fontWeight: 900, cursor: 'pointer', zIndex: 10005,
-        boxShadow: '0 0 20px rgba(244, 63, 94, 0.2)', lineHeight: 1
-      }}>✕</button>
-
-      {/* Header */}
-      <div className="tv-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5vh', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '2vw' }}>
-          {user.avatar_url && !imgError ? (
-            <img src={user.avatar_url} alt={user.name} onError={() => setImgError(true)}
-              style={{ width: 'clamp(60px, 10vh, 120px)', height: 'clamp(60px, 10vh, 120px)', borderRadius: '2.5vh', objectFit: 'cover',
-                border: '4px solid var(--accent-gold)', boxShadow: '0 12px 32px rgba(0,0,0,0.4)', flexShrink: 0 }} />
-          ) : (
-            <div style={{ width: 'clamp(60px, 10vh, 120px)', height: 'clamp(60px, 10vh, 120px)', borderRadius: '2.5vh',
-              background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 'clamp(28px, 5vh, 60px)', fontWeight: 900, color: '#000', flexShrink: 0,
-              border: '4px solid var(--accent-gold)', boxShadow: '0 12px 32px rgba(0,0,0,0.4)' }}>
-              {(user.name || 'U').charAt(0).toUpperCase()}
-            </div>
-          )}
-          <div>
-            <div style={{ fontSize: 'clamp(18px, 3vh, 36px)', fontWeight: 800, color: 'var(--accent-gold)', textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-              Thali Dispatch • {user.currentDay ? user.currentDay.toUpperCase() : ''}
-            </div>
-            <div style={{ fontSize: 'clamp(32px, 6.5vh, 80px)', fontWeight: 1000, lineHeight: 1.1, marginTop: '0.5vh' }}>{user.name}</div>
-          </div>
-        </div>
-        <div className="tv-header-right" style={{ textAlign: 'right', marginRight: 'clamp(60px, 6vw, 100px)' }}>
-          <div style={{ fontSize: 'clamp(16px, 3vh, 32px)', color: 'var(--text-tertiary)', fontWeight: 700 }}>Thali</div>
-          <div style={{ fontSize: 'clamp(48px, 12vh, 140px)', fontWeight: 1000, lineHeight: 1, color: '#fff' }}>#{user.thali_number}</div>
-        </div>
-      </div>
-
-      {/* Meal Toggle Buttons */}
-      {hasBothMeals && (
-        <div style={{ display: 'flex', gap: '1.5vw', marginBottom: '2vh', flexShrink: 0, justifyContent: 'center' }}>
-          {allMeals.map(m => (
-            <button key={m.key} onClick={() => setSelectedMealKey(m.key)} style={{
-              padding: '1.5vh 4vw', borderRadius: '2vh', border: `3px solid ${selectedMealKey === m.key ? 'var(--accent-gold)' : 'rgba(255,255,255,0.2)'}`,
-              background: selectedMealKey === m.key ? 'var(--accent-grad)' : 'rgba(255,255,255,0.05)',
-              color: selectedMealKey === m.key ? '#000' : '#fff',
-              fontSize: 'clamp(18px, 3.5vh, 40px)', fontWeight: 900, cursor: 'pointer',
-              boxShadow: selectedMealKey === m.key ? '0 0 30px rgba(212,175,55,0.3)' : 'none'
-            }}>
-              {m.icon} {m.name}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Meals Content */}
-      <div className="meal-split" style={{ flex: 1, display: 'flex', gap: '2vh 2vw', minHeight: 0 }}>
-        {meals.map((meal) => (
-          <div key={meal.key} style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
-            <div style={{ fontSize: 'clamp(12px, 2vh, 24px)', fontWeight: 900, color: 'var(--accent-gold)', marginBottom: '1vh', letterSpacing: '0.15em', flexShrink: 0 }}>
-              {meal.icon} {meal.name.toUpperCase()}
-            </div>
-            <MealSection meal={meal} />
-          </div>
-        ))}
-      </div>
-
     </div>
   )
 }
@@ -753,73 +888,109 @@ export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => 
   
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, padding: 8 }}>
-      {/* High-Contrast Status Banner */}
+      {/* Status Banner */}
       <div style={{ 
-        padding: '24px', borderRadius: 24, textAlign: 'center',
-        background: user.status === 'Applied' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(244, 63, 94, 0.1)',
+        padding: 'clamp(16px, 3vw, 28px)', borderRadius: 20, textAlign: 'center',
+        background: user.status === 'Applied' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(244, 63, 94, 0.08)',
         border: `2px solid ${user.status === 'Applied' ? '#10b981' : '#f43f5e'}`,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.2em', opacity: 0.7, marginBottom: 8 }}>Dispatch Decision</div>
-        <div style={{ fontSize: 42, fontWeight: 900, color: user.status === 'Applied' ? '#10b981' : '#f43f5e' }}>
+        <div style={{ fontSize: 'clamp(11px, 1.2vw, 14px)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.15em', opacity: 0.6, marginBottom: 6 }}>Dispatch Decision</div>
+        <div style={{ fontSize: 'clamp(28px, 5vw, 48px)', fontWeight: 900, color: user.status === 'Applied' ? '#10b981' : '#f43f5e' }}>
           {user.status === 'Applied' ? '✅ PROCEED' : user.status === 'Skipped' ? '❌ SKIPPED' : '⏳ NO RESPONSE'}
         </div>
       </div>
 
       <div style={{ 
         display: 'grid', 
-        gridTemplateColumns: total === 1 ? '1fr' : total <= 3 ? `repeat(${total}, 1fr)` : total === 4 ? 'repeat(4, 1fr)' : total === 5 ? 'repeat(5, 1fr)' : 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: 20 
+        gridTemplateColumns: total <= 2 ? `repeat(${total}, 1fr)` : `repeat(auto-fit, minmax(min(220px, 100%), 1fr))`,
+        gap: 'clamp(12px, 2vw, 20px)',
+        justifyItems: total === 5 ? 'center' : 'stretch'
       }}>
-        {dishEntries.map(([dish, pct]) => {
+        {dishEntries.map(([dish, pct], idx) => {
           const isCount = pct !== null && typeof pct === 'string' && !pct.endsWith('%') && pct !== 'yes' && pct !== 'no'
           const isRoti = pct !== null && ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri'].some(k => dish.toLowerCase().includes(k))
           const val = pct !== null ? (parseInt(pct) || 0) : null
           const isActive = pct !== null && (pct === 'yes' || (isCount && val > 0) || (!isRoti && !isCount && val > 0))
           const fillHeight = pct === null ? '0%' : isRoti ? (pct === 'yes' ? '100%' : '0%') : (isCount ? (val > 0 ? '100%' : '0%') : `${val}%`)
+          const color = isActive ? 'var(--accent-primary)' : 'rgba(239, 68, 68, 0.25)'
           
           return (
             <div key={dish} style={{ 
-              aspectRatio: '1 / 1', 
-              background: isActive ? 'rgba(212, 175, 55, 0.06)' : 'rgba(255,255,255,0.02)', 
-              border: `2px solid ${isActive ? 'var(--accent-gold)' : 'rgba(239, 68, 68, 0.15)'}`,
-              borderRadius: 32,
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: 24,
+              padding: 'clamp(16px, 2.5vw, 28px)',
+              background: isActive ? 'rgba(212, 175, 55, 0.04)' : 'rgba(255,255,255,0.02)', 
+              border: `2px solid ${isActive ? 'var(--accent-border)' : 'rgba(239, 68, 68, 0.12)'}`,
+              borderRadius: 'clamp(20px, 3vw, 32px)',
               position: 'relative',
               overflow: 'hidden',
-              boxShadow: isActive ? '0 10px 30px rgba(212, 175, 55, 0.1)' : 'none'
+              boxShadow: isActive ? '0 8px 24px rgba(0,0,0,0.2)' : 'none',
+              animation: `fadeInDishResp 0.4s ease-out ${idx * 0.06}s both`
             }}>
+              {/* Bottom fill bar */}
               <div style={{ 
                 position: 'absolute', 
                 bottom: 0, left: 0, right: 0, 
                 height: fillHeight,
-                background: val !== null && (val > 50 || pct === 'yes') ? 'var(--accent-grad)' : 'rgba(212, 175, 55, 0.2)',
-                opacity: 0.3,
+                background: val !== null && (val > 50 || pct === 'yes') ? 'var(--accent-grad)' : 'rgba(212, 175, 55, 0.15)',
+                opacity: 0.2,
                 transition: 'height 1s ease-out'
               }} />
 
-              <div style={{ fontSize: 13, fontWeight: 900, color: 'var(--text-tertiary)', textTransform: 'uppercase', marginBottom: 12, textAlign: 'center', zIndex: 2 }}>{dish}</div>
+              {/* Type Badge */}
+              {isActive && pct !== null && pct !== 'yes' && pct !== 'no' && (
+                <div style={{
+                  position: 'absolute', top: 'clamp(6px, 1vw, 12px)', right: 'clamp(6px, 1vw, 12px)',
+                  zIndex: 3,
+                  padding: '2px 8px', borderRadius: 6,
+                  background: isCount ? 'rgba(197, 160, 89, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                  border: `1px solid ${isCount ? '#c5a059' : '#f59e0b'}50`,
+                  color: isCount ? '#c5a059' : '#f59e0b',
+                  fontSize: 'clamp(8px, 1vw, 11px)',
+                  fontWeight: 900,
+                  letterSpacing: '0.08em',
+                  fontFamily: "'Space Grotesk', sans-serif"
+                }}>
+                  {isCount ? 'COUNT' : 'PCT'}
+                </div>
+              )}              <div style={{ 
+        fontSize: 'clamp(18px, 2.5vw, 32px)', fontWeight: 900, 
+        color: isActive ? '#ffffff' : 'rgba(239, 68, 68, 0.3)',
+        textShadow: isActive ? '0 0 20px rgba(255,255,255,0.15), 0 2px 8px rgba(0,0,0,0.4)' : 'none',
+        textTransform: 'uppercase', 
+        marginBottom: 'clamp(6px, 1vw, 12px)', 
+        textAlign: 'center', zIndex: 2,
+        paddingRight: 'clamp(20px, 3vw, 48px)',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+        wordBreak: 'break-word',
+        boxSizing: 'border-box'
+      }}>{dish}</div>
               
               <div style={{ 
-                fontSize: isRoti ? 48 : 72, 
-                fontWeight: 950, 
-                color: isActive ? '#fff' : 'rgba(239, 68, 68, 0.3)',
-                textShadow: isActive ? '0 4px 12px rgba(0,0,0,0.5)' : 'none',
-                zIndex: 2,
-                lineHeight: 1
-              }}>
-                {pct === null ? '—' : isRoti ? (pct === 'yes' ? 'YES' : 'NO') : (isCount ? `${val}` : `${val}%`)}
-              </div>
+        fontSize: isRoti ? 'clamp(40px, 7vw, 72px)' : 'clamp(48px, 10vw, 96px)', 
+        fontWeight: 950, 
+        color: '#ffffff',
+        textShadow: isActive
+          ? '0 0 30px rgba(212,175,55,0.4), 0 0 60px rgba(212,175,55,0.15), 0 2px 10px rgba(0,0,0,0.5)'
+          : 'none',
+        opacity: isActive ? 1 : 0.2,
+        zIndex: 2,
+        lineHeight: 1
+      }}>
+        {pct === null ? '—' : isRoti ? (pct === 'yes' ? 'YES' : 'NO') : (isCount ? `${val}` : `${val}%`)}
+      </div>
               
               {val !== null && val > 0 && !isRoti && (
                  <div style={{ 
-                   marginTop: 12, padding: '4px 12px', borderRadius: 10, background: 'var(--accent-gold)', 
-                   color: '#000', fontSize: 12, fontWeight: 900, zIndex: 2 
+                   marginTop: 'clamp(8px, 1vw, 12px)', padding: '4px 12px', borderRadius: 8, background: 'var(--accent-grad)', 
+                   color: '#000', fontSize: 'clamp(10px, 1vw, 12px)', fontWeight: 900, zIndex: 2 
                  }}>
-                   {isCount ? `${val} pcs` : (val === 100 ? 'FULL PORTION' : 'HALF PORTION')}
+                   {isCount ? `${val} person${val === '1' ? '' : 's'}` : (val === 100 ? 'FULL PORTION' : 'HALF PORTION')}
                  </div>
               )}
             </div>
@@ -833,12 +1004,11 @@ export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => 
       </div>
 
       <style>{`
-        @keyframes pulse {
-          0% { transform: scale(1); }
-          50% { transform: scale(1.02); opacity: 0.9; }
-        100% { transform: scale(1); }
-         }
-       `}</style>
+        @keyframes fadeInDishResp {
+          from { opacity: 0; transform: translateY(16px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
      </div>
    )
 }

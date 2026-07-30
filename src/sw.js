@@ -46,8 +46,6 @@ registerRoute(
 )
 
 // ── Native Web Push handler ─────────────────────────────────────────────────
-// IMPORTANT: Each notification gets a unique tag so Android shows every
-// notification individually rather than replacing the previous one.
 self.addEventListener('push', (event) => {
   let data = { title: 'Al-Mawaid', body: '', url: '/' }
   if (event.data) {
@@ -65,10 +63,10 @@ self.addEventListener('push', (event) => {
     image,
     icon,
     badge = '/al-mawaid.png',
-    vibrate = [200, 100, 200],
+    vibrate = [100, 50, 100],
     requireInteraction = true,
     tag,
-    actions = [{ action: 'open', title: 'View' }, { action: 'dismiss', title: 'Dismiss' }],
+    actions,
     timestamp,
     silent,
     renotify = true,
@@ -76,11 +74,9 @@ self.addEventListener('push', (event) => {
     data: extraData = {},
   } = data
 
-  const displayTitle = sender_name ? `${sender_name} · Al-Mawaid` : title
-
+  const displayTitle = sender_name ? `Al-Mawaid · ${sender_name}` : title
   const displayBody = body || (sender_name ? `Message from ${sender_name}` : '')
 
-  // Generate unique tag so each notification shows individually on Android
   const uniqueTag = tag || `al-mawaid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
   const notificationOptions = {
@@ -90,55 +86,44 @@ self.addEventListener('push', (event) => {
     vibrate,
     requireInteraction,
     tag: uniqueTag,
-    actions,
-    data: { url, sender_name, ...extraData },
-    renotify,
     silent,
+    renotify,
+    data: { url, sender_name, deep: true, ...extraData },
   }
   if (image) notificationOptions.image = image
   if (timestamp) notificationOptions.timestamp = timestamp
+  if (actions && Array.isArray(actions) && actions.length) {
+    notificationOptions.actions = actions
+  } else {
+    notificationOptions.actions = [
+      { action: 'open', title: 'Open' },
+      { action: 'dismiss', title: 'Dismiss' },
+    ]
+  }
 
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      const focusedClient = clients.find((c) => c.focused)
-      if (focusedClient) {
-        focusedClient.postMessage({
-          type: 'PUSH_RECEIVED',
-          title,
-          body,
-          url,
-          image,
-          sender_name,
-        })
-      } else {
-        return self.registration.showNotification(displayTitle, notificationOptions)
-      }
-    })
-  )
+  event.waitUntil(self.registration.showNotification(displayTitle, notificationOptions))
 })
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   const action = event.action
   const notifData = event.notification.data || {}
-  const urlToOpen = notifData.url || '/profile/notifications'
+  const urlToOpen = notifData.url || '/'
 
   if (action === 'dismiss') return
 
+  const targetUrl = urlToOpen.startsWith('/')
+    ? self.location.origin + urlToOpen
+    : urlToOpen
+
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      const originClient = windowClients.find((c) => c.url.includes(self.location.origin))
-      if (originClient) {
-        originClient.postMessage({
-          type: 'NOTIFICATION_DEEP_LINK',
-          url: urlToOpen,
-        })
-        if ('focus' in originClient) return originClient.focus()
+      for (const client of windowClients) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          client.postMessage({ type: 'NOTIFICATION_DEEP_LINK', url: urlToOpen })
+          return client.focus()
+        }
       }
-      // No open window — open app with alerts flag
-      const targetUrl = urlToOpen.startsWith('/')
-        ? self.location.origin + '/?alerts=1'
-        : urlToOpen
       if (clients.openWindow) return clients.openWindow(targetUrl)
     })
   )

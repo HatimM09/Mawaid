@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/firebaseClient'
 import {
-  Clock, RefreshCw, Bell, BarChart3, Calendar, Send,
+  Clock, RefreshCw, BarChart3, Calendar, Send,
   Sun, Moon, Activity, CheckCircle, XCircle, AlertTriangle,
-  Zap, Timer, MessageSquare, Settings, Shield
+  Zap, Timer, MessageSquare, Settings, Shield, Megaphone
 } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Btn, StatCard, Badge, Grid, Alert, SectionHeader } from './ui'
 import { getWeekDate } from '../common/utils'
@@ -158,7 +158,6 @@ export default function AutomationPage() {
   const [scheduledCount, setScheduledCount] = useState(0)
   const [pendingSurveyCount, setPendingSurveyCount] = useState(0)
   const [todayApplied, setTodayApplied] = useState(0)
-  const [todayFeedback, setTodayFeedback] = useState(0)
   const [totalMembers, setTotalMembers] = useState(0)
 
   const loadRef = useRef(null)
@@ -195,7 +194,6 @@ export default function AutomationPage() {
         { count: sc },
         { count: ps },
         { count: ta },
-        { count: tf },
         { count: tm },
       ] = await Promise.all([
         supabase.from('broadcast_schedule').select('id', { count: 'exact', head: true }).eq('status', 'scheduled'),
@@ -205,14 +203,12 @@ export default function AutomationPage() {
         isSunday
           ? { count: 0 }
           : supabase.from('survey_submissions_flat').select('id', { count: 'exact', head: true }).eq('week_id', weekId).eq(statusField, 'Applied'),
-        supabase.from('daily_feedback').select('id', { count: 'exact', head: true }),
         supabase.from('user_stats').select('user_id', { count: 'exact', head: true }),
       ])
 
       setScheduledCount(sc)
       setPendingSurveyCount(ps)
       setTodayApplied(ta)
-      setTodayFeedback(tf)
       setTotalMembers(tm)
     } catch (e) {
       console.error('Automation load error:', e)
@@ -331,28 +327,6 @@ export default function AutomationPage() {
 
   const systemProcesses = [
     {
-      title: 'Survey Reminders',
-      description: 'Auto-sends push notifications every 30 min to members with pending surveys.',
-      icon: <Bell size={18} />,
-      status: 'auto',
-      liveStatus: 'open',
-      stats: [
-        { label: 'Pending Today', value: pendingSurveyCount, color: '#f59e0b' },
-        { label: 'Reminder Interval', value: '30 min', color: T.accent },
-      ],
-    },
-    {
-      title: 'Daily Survey Digest',
-      description: 'Sends daily summary to admins at 6PM with applied/skipped/pending counts.',
-      icon: <BarChart3 size={18} />,
-      status: 'auto',
-      liveStatus: 'open',
-      stats: [
-        { label: 'Meals Tracked', value: todayApplied, color: '#10b981' },
-        { label: 'Feedback Today', value: todayFeedback, color: '#6366f1' },
-      ],
-    },
-    {
       title: 'Scheduled Broadcasts',
       description: 'Upcoming automated notifications and menu publish schedules.',
       icon: <Send size={18} />,
@@ -361,17 +335,6 @@ export default function AutomationPage() {
       stats: [
         { label: 'Scheduled', value: scheduledCount, color: '#6366f1' },
         { label: 'Auto-publish', value: settings.publish_at ? 'Set' : 'Not Set', color: settings.publish_at ? '#10b981' : T.textSub },
-      ],
-    },
-    {
-      title: 'Auto Survey Window',
-      description: 'Auto-closes survey Monday 11:30AM. Auto-opens Saturday 8PM via Cloud Functions.',
-      icon: <Timer size={18} />,
-      status: 'auto',
-      liveStatus: liveSurveyStatus,
-      stats: [
-        { label: 'Auto-Close', value: 'Mon 11:30 AM', color: '#ef4444' },
-        { label: 'Auto-Open', value: 'Sat 8:00 PM', color: '#10b981' },
       ],
     },
   ]
@@ -421,7 +384,7 @@ export default function AutomationPage() {
         <StatCard icon={<Activity size={20} />} label="Live Window Status" value={liveSurveyStatus === 'open' ? 'SURVEY OPEN' : 'SURVEY CLOSED'} color={liveSurveyStatus === 'open' ? '#10b981' : '#ef4444'} sub={liveSurveyStatus === 'open' ? 'Members can submit' : 'Opens Saturday 8PM'} />
         <StatCard icon={<BarChart3 size={20} />} label="Today's Applied" value={todayApplied} color="#6366f1" sub={`Out of ${totalMembers} members`} />
         <StatCard icon={<Timer size={20} />} label="Scheduled Broadcasts" value={scheduledCount} color="#f59e0b" sub="Awaiting delivery" />
-        <StatCard icon={<Bell size={20} />} label="Pending Surveys" value={pendingSurveyCount} color={pendingSurveyCount > 0 ? '#f59e0b' : '#10b981'} sub={pendingSurveyCount > 0 ? 'Reminders active' : 'All caught up'} />
+
       </div>
 
       <div style={{ marginBottom: 32 }}>
@@ -468,6 +431,66 @@ export default function AutomationPage() {
         </Grid>
       </div>
 
+      {/* Notification Actions */}
+      <SectionHeader style={{ marginTop: 32, marginBottom: 12 }}>📢 Trigger Notifications</SectionHeader>
+      <Grid cols={2} gap={16} style={{ marginBottom: 32 }}>
+        <AdminCard>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <Megaphone size={20} color={T.accent} />
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Test Notification</div>
+          </div>
+          <div style={{ fontSize: 12, color: T.textSub, marginBottom: 16, lineHeight: 1.4 }}>
+            Send a test push notification to all admin users to verify notification delivery.
+          </div>
+          <Btn onClick={async () => {
+            const { data: admins } = await supabase.from('user_stats').select('user_id').eq('role', 'admin')
+            if (!admins?.length) { setMsg('No admin users found'); return }
+            let sent = 0
+            for (const a of admins) {
+              const { error } = await supabase.from('notifications').insert({
+                user_id: a.user_id, title: '🔔 Al-Mawaid Test',
+                message: 'This is a test notification from the Automation dashboard.',
+                url: '/admin/automation', type: 'test'
+              })
+              if (!error) sent++
+            }
+            setMsg(`✅ Test notification sent to ${sent} admin(s)`)
+            setTimeout(() => setMsg(''), 4000)
+          }} style={{ width: '100%' }}>
+            <Megaphone size={14} /> Send Test
+          </Btn>
+        </AdminCard>
+
+        <AdminCard>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <Send size={20} color={T.accent} />
+            <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Broadcast Now</div>
+          </div>
+          <div style={{ fontSize: 12, color: T.textSub, marginBottom: 16, lineHeight: 1.4 }}>
+            Create and send an instant broadcast notification to all members.
+          </div>
+          <Btn onClick={async () => {
+            const title = prompt('Broadcast title:', 'Al-Mawaid Announcement')
+            if (!title) return
+            const message = prompt('Broadcast message:', '')
+            if (!message) return
+            const { data: subs } = await supabase.from('push_subscriptions').select('user_id').limit(5000)
+            const userIds = [...new Set((subs || []).map(s => s.user_id).filter(Boolean))]
+            let sent = 0
+            for (const uid of userIds) {
+              const { error } = await supabase.from('notifications').insert({
+                user_id: uid, title, message, url: '/', type: 'broadcast'
+              })
+              if (!error) sent++
+            }
+            setMsg(`✅ Broadcast sent to ${sent} member(s)`)
+            setTimeout(() => setMsg(''), 4000)
+          }} style={{ width: '100%' }}>
+            <Send size={14} /> Broadcast
+          </Btn>
+        </AdminCard>
+      </Grid>
+
       {/* Survey Configuration */}
       <AdminCard style={{ marginTop: 32 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap', gap: 10 }}>
@@ -504,9 +527,9 @@ export default function AutomationPage() {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 16 }}>
           <div>
-            <label style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
+            <div style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
               Survey Window Timing
-            </label>
+            </div>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <div>
                 <span style={{ fontSize: 10, color: T.textSub }}>Opens Saturday</span>

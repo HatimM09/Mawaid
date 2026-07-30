@@ -43,12 +43,35 @@ export default function NotificationsPage() {
   const [dateFilter, setDateFilter] = useState('all') // all, today, week, month
   const [sortOrder, setSortOrder] = useState('desc') // desc, asc
 
+  // Pagination
+  const [visibleCount, setVisibleCount] = useState(50)
+  const PAGE_SIZE = 50
+
+  // Archived view
+  const [showArchived, setShowArchived] = useState(false)
+
   // Selection
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [selectAll, setSelectAll] = useState(false)
 
   // Detail modal
   const [detailItem, setDetailItem] = useState(null)
+
+  // Get archived notifications
+  const fetchArchived = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return []
+      const { data } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .not('archived_at', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(50)
+      return data || []
+    } catch { return [] }
+  }, [])
 
   // Stats
   const [stats, setStats] = useState({ total: 0, unread: 0, types: {} })
@@ -202,10 +225,19 @@ export default function NotificationsPage() {
     return result
   }, [notifications, sortOrder])
 
-  // Unique types for filter dropdown
+  const paginatedNotifications = useMemo(() => {
+    return filteredNotifications.slice(0, visibleCount)
+  }, [filteredNotifications, visibleCount])
+
+  const hasMore = visibleCount < filteredNotifications.length
+
+  // Unique types for filter dropdown with readable labels
   const availableTypes = useMemo(() => {
     const types = new Set(notifications.map(n => n.type))
-    return Array.from(types).sort()
+    return Array.from(types).sort().map(t => ({
+      value: t,
+      label: (TYPE_CONFIG[t] || TYPE_CONFIG.default).label
+    }))
   }, [notifications])
 
   // Handle notification click (mark read + navigate)
@@ -285,9 +317,8 @@ export default function NotificationsPage() {
             }}
           >
             <option value="all">All Types</option>
-            {availableTypes.map(t => {
-              const cfg = getTypeConfig(t)
-              return <option key={t} value={t}>{cfg.label}</option>
+            {availableTypes.map(({ value, label }) => {
+              return <option key={value} value={value}>{label}</option>
             })}
           </select>
 
@@ -323,6 +354,16 @@ export default function NotificationsPage() {
             <option value="week">This Week</option>
             <option value="month">This Month</option>
           </select>
+
+          {/* Archived Toggle */}
+          <Btn
+            variant="ghost"
+            size="sm"
+            onClick={() => { setShowArchived(!showArchived); if (!showArchived) fetchArchived().then(a => setNotifications(a)); else fetchNotifications() }}
+            style={{ color: showArchived ? T.accent : 'var(--text-tertiary)' }}
+          >
+            <Archive size={14} /> {showArchived ? 'Inbox' : 'Archived'}
+          </Btn>
 
           {/* Sort */}
           <Btn variant="ghost" size="sm" onClick={() => setSortOrder(s => s === 'desc' ? 'asc' : 'desc')}>
@@ -368,7 +409,7 @@ export default function NotificationsPage() {
             <Spinner size={32} style={{ marginBottom: 16 }} />
             Loading notifications...
           </div>
-        ) : filteredNotifications.length === 0 ? (
+        ) : paginatedNotifications.length === 0 ? (
           <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-tertiary)' }}>
             <Bell size={48} style={{ marginBottom: 16, opacity: 0.3 }} />
             <p style={{ fontSize: 16, marginBottom: 8 }}>No notifications found</p>
@@ -376,7 +417,7 @@ export default function NotificationsPage() {
           </div>
         ) : (
           <div style={{ maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' }}>
-            {filteredNotifications.map((item, index) => {
+            {paginatedNotifications.map((item, index) => {
               const cfg = getTypeConfig(item.type)
               const Icon = cfg.icon
               const isUnread = !item.read_at
@@ -389,7 +430,7 @@ export default function NotificationsPage() {
                   style={{
                     display: 'flex', alignItems: 'flex-start', gap: 14,
                     padding: '16px 20px',
-                    borderBottom: index < filteredNotifications.length - 1 ? '1px solid rgba(255,255,255,0.02)' : 'none',
+                    borderBottom: index < paginatedNotifications.length - 1 ? '1px solid rgba(255,255,255,0.02)' : 'none',
                     background: isSelected
                       ? 'rgba(197, 160, 89, 0.06)'
                       : isUnread
@@ -423,12 +464,17 @@ export default function NotificationsPage() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <h4 style={{
-                          fontSize: 14, fontWeight: isUnread ? 700 : 500, color: 'var(--text-primary)',
-                          margin: 0, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        }}>
-                          {item.title || 'Notification'}
-                        </h4>
+                                        <h4 style={{
+                            fontSize: 14, fontWeight: isUnread ? 700 : 500, color: 'var(--text-primary)',
+                            margin: 0, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}>
+                            {item.title || 'Notification'}
+                          </h4>
+                          {item.sender_name && item.sender_name !== 'Al-Mawaid' && (
+                            <div style={{ fontSize: 10, fontWeight: 700, color: T.accent, marginTop: 1, letterSpacing: '0.03em' }}>
+                              from {item.sender_name}
+                            </div>
+                          )}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2, flexWrap: 'wrap' }}>
                           <Badge size="xs" style={{ background: `${cfg.color}20`, color: cfg.color, border: `1px solid ${cfg.color}40` }}>
                             <Icon size={10} /> {cfg.label}
@@ -443,12 +489,11 @@ export default function NotificationsPage() {
                       margin: 0, lineHeight: 1.55, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
                     }}>
                       {item.message || item.body || ''}
-                    </p>
-                    {item.url && item.url !== '/' && (
-                      <div style={{ marginTop: 8, fontSize: 11, color: T.accent, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <ChevronRight size={12} /> Opens: {item.url}
-                      </div>
-                    )}
+                    </p>                        {item.url && item.url !== '/' && (
+                          <div style={{ marginTop: 8, fontSize: 11, color: T.accent, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <ChevronRight size={12} /> Opens: {item.url}
+                          </div>
+                        )}
                   </div>
 
                   {/* Actions */}
@@ -469,6 +514,24 @@ export default function NotificationsPage() {
                 </div>
               )
             })}
+            {/* Load More */}
+            {hasMore && (
+              <div style={{ padding: '20px', textAlign: 'center' }}>
+                <button
+                  onClick={() => setVisibleCount(prev => prev + PAGE_SIZE)}
+                  style={{
+                    padding: '10px 24px', borderRadius: 12,
+                    background: 'rgba(197,160,89,0.08)', border: '1px solid rgba(197,160,89,0.2)',
+                    color: T.accent, cursor: 'pointer', fontSize: 13, fontWeight: 700,
+                    fontFamily: 'inherit', transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(197,160,89,0.15)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'rgba(197,160,89,0.08)'}
+                >
+                  Load More ({filteredNotifications.length - visibleCount} remaining)
+                </button>
+              </div>
+            )}
           </div>
         )}
       </AdminCard>
@@ -492,6 +555,7 @@ export default function NotificationsPage() {
                   <Badge size="xs" style={{ background: `${cfg.color}20`, color: cfg.color, border: `1px solid ${cfg.color}40` }}>
                     <Icon size={10} /> {cfg.label}
                   </Badge>
+                  {detailItem.sender_name && <span>• {detailItem.sender_name}</span>}
                   <span>{fmtDateTime(detailItem.created_at)}</span>
                   {detailItem.read_at && <span style={{ color: '#34d399' }}>• Read at {fmtDateTime(detailItem.read_at)}</span>}
                 </div>

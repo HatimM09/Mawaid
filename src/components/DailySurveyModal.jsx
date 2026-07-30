@@ -4,7 +4,7 @@ import { supabase } from '../lib/firebaseClient'
 import { useAuth } from '../admin/context'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { getWeekDate } from '../common/utils'
-import { isRotiItem, isCountInput, normalizeDishValue, denormalizeDishValue, useSurveyAutoSave } from '../hooks/useSurvey'
+import { isRotiItem, isCountInput, normalizeDishValue, denormalizeDishValue, useSurveyAutoSave, getPctColor } from '../hooks/useSurvey'
 
 const THEME = {
   bg: '#0d0d1a', card: 'rgba(255,255,255,0.03)', cardActive: 'rgba(255,255,255,0.06)',
@@ -58,7 +58,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
     saveTimerRef.current = setTimeout(async () => {
       setAutoSaveStatus('saving')
       try {
-        const currentWeekId = getWeekDate(appSettings)
+        const currentWeekId = getWeekDate()
         const { data: existing } = await supabase.from('survey_submissions_flat')
           .select('*').eq('user_id', user?.id).eq('week_id', currentWeekId).maybeSingle()
         const updateObj = {
@@ -99,7 +99,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
   useEffect(() => {
     if (Object.keys(responses).length === 0) return
     if (initialLoadRef.current) return
-    const currentWeekId = getWeekDate(appSettings)
+    const currentWeekId = getWeekDate()
     const draftKey = `survey_draft_${currentWeekId}_${user?.id}`
     const timer = setTimeout(() => {
       try { localStorage.setItem(draftKey, JSON.stringify({ responses, updatedAt: new Date().toISOString() })) } catch {}
@@ -116,7 +116,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
   // Load existing submission
   useEffect(() => {
     const loadExisting = async () => {
-      const currentWeekId = getWeekDate(appSettings)
+      const currentWeekId = getWeekDate()
       const { data: existing } = await supabase.from('survey_submissions_flat')
         .select('*').eq('user_id', user?.id).eq('week_id', currentWeekId).maybeSingle()
       if (existing) {
@@ -151,7 +151,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
   const submitSurvey = async () => {
     setLoading(true)
     try {
-      const currentWeekId = getWeekDate(appSettings)
+      const currentWeekId = getWeekDate()
       const updateObj = {
         user_id: user?.id, week_id: currentWeekId,
         thali_number: userData.thali_no, email: userData.email,
@@ -432,30 +432,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
               </div>
             )}
 
-            {/* Show lunch summary */}
-            {lunchStatus === true && (
-              <div style={{ marginTop: 12, padding: 14, borderRadius: 12, background: THEME.card, border: `1px solid ${THEME.border}` }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: THEME.textSub, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Lunch Summary</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {allLunchDishes.map((dish, idx) => {
-                    const val = responses[dish]
-                    const isActive = val === 'yes' || (typeof val === 'number' && val > 0) || (val && val.status === 'yes')
-                    const displayVal = val?.status === 'yes' ? `${val.value} pcs` : (isActive ? 'Yes' : 'No')
-                    return (
-                      <span key={idx} style={{
-                        padding: '4px 10px', borderRadius: 8,
-                        background: isActive ? 'rgba(76,175,80,0.12)' : 'rgba(244,67,54,0.08)',
-                        border: `1px solid ${isActive ? '#4CAF50' : '#F4433640'}`,
-                        color: isActive ? '#4CAF50' : '#F44336',
-                        fontSize: 11, fontWeight: 700
-                      }}>
-                        {dish}: {displayVal}
-                      </span>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
+
           </div>
         )
     }
@@ -665,7 +642,7 @@ function DishToggle({ dish, meal, idx, responses, toggleDish, setResponses, appS
             color: THEME.text, cursor: 'pointer', fontSize: 18, fontWeight: 700,
             display: 'flex', alignItems: 'center', justifyContent: 'center'
           }}>+</button>
-          <span style={{ fontSize: 10, fontWeight: 600, color: THEME.textSub, marginLeft: 4 }}>pcs</span>
+          <span style={{ fontSize: 10, fontWeight: 600, color: THEME.textSub, marginLeft: 4 }}>person{countValue === 1 ? '' : 's'}</span>
         </div>
       )}
     </div>

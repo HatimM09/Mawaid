@@ -27,6 +27,7 @@ import OfflineBanner from './components/OfflineBanner'
 import DailyEditCard from './components/DailyEditCard'
 import SurveyModal from './components/SurveyModal'
 import DailySurveyModal from './components/DailySurveyModal'
+import { getWeekDate } from './common/utils'
 import {
   HomePageSkeleton, WeeklyMenuSkeleton, ProfileSkeleton,
   ListPageSkeleton, RequestsSkeleton, NotificationsSkeleton, KhidmatTeamSkeleton
@@ -134,19 +135,6 @@ const getSurveyWindowMessage = (appSettings = {}, userId = null) => {
   if (appSettings.survey_status === 'open') return 'Survey window is open (Admin Override)!'
   if (isSurveyOpen(appSettings, userId)) return 'Survey window is open! (Sat 8PM – Mon 11AM)'
   return 'Survey window opens Saturday 8:00 PM and closes Monday 11:00 AM.'
-}
-
-const getWeekDate = () => {
-  const now = new Date()
-  const day = now.getDay()
-  const hour = now.getHours()
-  let diff = now.getDate() - day + (day === 0 ? -6 : 1)
-  // If we are in the Saturday 8PM+ or Sunday window, we are filling for the Monday coming in next week
-  if (day === 0 || (day === 6 && hour >= 20)) {
-    diff += 7
-  }
-  const monday = new Date(now.setDate(diff))
-  return monday.toISOString().split('T')[0]
 }
 
 const isRotiItem = (dish) => {
@@ -715,12 +703,19 @@ function ThaliUserApp() {
         if (isForMe) {
           setToastNotice(notice)
           setUnreadCount(prev => prev + 1)
+          // Play notification chime for important broadcasts
+          if (notice.title || notice.sender_name) {
+            playNotificationChime()
+          }
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification(notice.title || 'Al-Mawaid Alert', {
               body: notice.body || '', icon: '/al-mawaid.png', badge: '/al-mawaid.png'
             })
           }
-          setTimeout(() => setToastNotice(null), 8000)
+          // Proportional timing: longer content = longer display
+          const bodyLen = (notice.body || '').length
+          const toastDuration = Math.max(6000, Math.min(bodyLen * 50, 12000))
+          setTimeout(() => setToastNotice(null), toastDuration)
         }
       })
       .subscribe()
@@ -741,9 +736,10 @@ function ThaliUserApp() {
     { id: 'home', label: 'Home', Icon: Home, aria: 'Home Dashboard' },
     { id: 'menu', label: 'Menu', Icon: Utensils, aria: 'Weekly Menu' },
     { id: 'post', label: 'Requests', Icon: FileText, aria: 'My Requests & Queries' },
+    { id: 'staff', label: 'Team', Icon: Users, aria: 'Our Team' },
     { id: 'profile', label: 'Profile', Icon: User, aria: 'My Profile & Settings' },
   ]
-  const tabLabels = { home: 'AL-MAWAID', menu: 'WEEKLY MENU', survey: 'DAILY SURVEY', post: 'REQUESTS', profile: 'PROFILE' }
+  const tabLabels = { home: 'AL-MAWAID', menu: 'WEEKLY MENU', survey: 'DAILY SURVEY', post: 'REQUESTS', staff: 'OUR TEAM', profile: 'PROFILE' }
 
   return (
     <ThemeCtx.Provider value={t}>
@@ -814,13 +810,14 @@ function ThaliUserApp() {
               dragY.current = 0
             }}
             style={{
-              position: 'fixed', top: 20, left: '50%',
+              position: 'fixed', top: 16, left: '50%',
               width: 'calc(100% - 32px)', maxWidth: 400, zIndex: 10000,
-              background: `linear-gradient(135deg, ${toneColor}08, rgba(20,18,12,0.98))`,
-              border: `1.5px solid ${toneColor}40`,
-              borderRadius: 20, overflow: 'hidden',
-              boxShadow: `0 20px 50px rgba(0,0,0,0.5), 0 0 30px ${toneColor}15`,
+              background: 'rgba(14,12,10,0.96)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 18, overflow: 'hidden',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
               cursor: 'pointer',
+              backdropFilter: 'blur(20px)',
               transform: dragOffset > 0
                 ? `translateX(-50%) translateY(${dragOffset}px)`
                 : 'translateX(-50%)',
@@ -830,42 +827,36 @@ function ThaliUserApp() {
               animation: dragOffset === 0 && !isDragging
                 ? 'slideDown 0.5s cubic-bezier(0.4, 0, 0.2, 1)'
                 : undefined,
-              backdropFilter: 'blur(20px)'
             }}
           >
             {hasMedia && (
               <div style={{
-                width: '100%', height: 100,
+                width: '100%', height: 120,
                 background: `url(${toastNotice.media[0]}) center/cover no-repeat`,
-                borderBottom: `1px solid ${toneColor}20`
+                borderBottom: '1px solid rgba(255,255,255,0.06)'
               }} />
             )}
-            <div style={{ padding: 16, display: 'flex', gap: 14 }}>
+            <div style={{ padding: 14, display: 'flex', gap: 12 }}>
               <div style={{
-                width: 44, height: 44, borderRadius: 14,
-                background: `linear-gradient(135deg, ${toneColor}, ${toneColor}88)`,
+                width: 40, height: 40, borderRadius: 12,
+                background: 'var(--accent-grad)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0, boxShadow: `0 4px 12px ${toneColor}30`,
-                color: '#000', fontSize: 16, fontWeight: 900
+                flexShrink: 0, color: '#0a0d14', fontSize: 15, fontWeight: 800
               }}>
                 {senderInitial}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: toneColor }}>
-                    {toastNotice.sender_name || 'Al-Mawaid'}
-                  </span>
-                  <span style={{ width: 4, height: 4, borderRadius: '50%', background: toneColor, opacity: 0.5 }} />
-                  <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.55)' }}>just now</span>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-primary)', letterSpacing: '0.04em', marginBottom: 1, textTransform: 'uppercase' }}>
+                  {toastNotice.sender_name || 'Al-Mawaid'}
                 </div>
-                <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', marginBottom: 2 }}>{toastNotice.title}</div>
-                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', wordBreak: 'break-word', lineHeight: 1.65 }}>{toastNotice.body}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 1 }}>{toastNotice.title}</div>
+                {toastNotice.body && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.5 }}>{toastNotice.body}</div>}
               </div>
-              <button onClick={(e) => { e.stopPropagation(); setToastNotice(null) }} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: 'rgba(255,255,255,0.4)', width: 28, height: 28, borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
-                <X size={14} />
+              <button onClick={(e) => { e.stopPropagation(); setToastNotice(null) }} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: 'rgba(255,255,255,0.35)', width: 26, height: 26, borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                <X size={13} />
               </button>
             </div>
-            <div style={{ height: 3, background: `linear-gradient(90deg, ${toneColor}, ${toneColor}44)`, animation: 'toastCountdown 8s linear forwards' }} />
+            <div style={{ height: 2, background: 'linear-gradient(90deg, var(--accent-primary), transparent)', animation: `toastCountdown ${Math.max(6, Math.min((toastNotice.body || '').length * 0.05, 12))}s linear forwards` }} />
           </div>
           )
         })()}
@@ -874,6 +865,7 @@ function ThaliUserApp() {
         {activeTab === 'menu' && <WeeklyMenuPage />}
 
         {activeTab === 'post' && <PostPage />}
+        {activeTab === 'staff' && <StaffDirectoryPage />}
         {activeTab === 'profile' && <ProfilePage theme={theme} setTheme={handleSetTheme} markRead={markNotificationsRead} appSettings={appSettings} activeSubPage={activeSubPage} setActiveSubPage={setActiveSubPage} />}
 
         <OfflineBanner />
@@ -910,10 +902,11 @@ function HomePage({ setActiveTab, appSettings = {} }) {
   const [showQR, setShowQR] = useState(false)
   const [profileData, setProfileData] = useState({ name: '', thali_number: '', avatar_url: '' })
   const [statsLoading, setStatsLoading] = useState(true)
+  const [weeklySurveySubmitted, setWeeklySurveySubmitted] = useState(false)
   const surveyOpen = isSurveyOpen(appSettings, user.id)
   const todayKey = getTodayKey()
 
-  // Auto-edit card state — show at most once per meal window
+  // Auto-edit card state — auto-popup when edit window opens
   const [showDailyEditCard, setShowDailyEditCard] = useState(false)
   const [dailyEditMealInfo, setDailyEditMealInfo] = useState(null)
 
@@ -922,7 +915,7 @@ function HomePage({ setActiveTab, appSettings = {} }) {
 
   const markEditPromptDone = useCallback((day, meal) => {
     if (!day || !meal) return
-    try { localStorage.setItem(editPromptStorageKey(day, meal), '1') } catch { /* ignore */ }
+    try { localStorage.setItem(editPromptStorageKey(day, meal), '1') } catch {}
   }, [user?.id])
 
   const wasEditPromptShown = useCallback((day, meal) => {
@@ -932,10 +925,10 @@ function HomePage({ setActiveTab, appSettings = {} }) {
   // Check if auto-edit is enabled and current time is within the timing window
   const checkAutoEditWindow = useCallback(() => {
     if (!user || !weeklyMenu) return
-    
+
     const lunchAuto = appSettings.lunch_edit_status === 'auto'
     const dinnerAuto = appSettings.dinner_edit_status === 'auto'
-    
+
     if (!lunchAuto && !dinnerAuto) {
       setShowDailyEditCard(false)
       setDailyEditMealInfo(null)
@@ -944,7 +937,7 @@ function HomePage({ setActiveTab, appSettings = {} }) {
 
     const currentWeekId = getWeekDate()
     const today = todayKey
-    
+
     const pick = (day, meal) => {
       if (wasEditPromptShown(day, meal)) return false
       setDailyEditMealInfo({ day, meal })
@@ -952,19 +945,18 @@ function HomePage({ setActiveTab, appSettings = {} }) {
       return true
     }
 
-    // Check if lunch is editable now (in auto mode)
-    const canEditLunch = lunchAuto && canEditMeal(today, currentWeekId, 'lunch', appSettings, user.id)
-    // Check if dinner is editable now (in auto mode)
-    const canEditDinner = dinnerAuto && canEditMeal(today, currentWeekId, 'dinner', appSettings, user.id)
+    if (lunchAuto && canEditMeal(today, currentWeekId, 'lunch', appSettings, user.id)) {
+      if (pick(today, 'lunch')) return
+    }
+    if (dinnerAuto && canEditMeal(today, currentWeekId, 'dinner', appSettings, user.id)) {
+      if (pick(today, 'dinner')) return
+    }
 
-    if (canEditLunch && pick(today, 'lunch')) return
-    if (canEditDinner && pick(today, 'dinner')) return
-
-    // After dinner closes, check if next day's lunch is editable
     const todayIdx = DAYS.indexOf(today)
     const nextDay = todayIdx >= 0 ? DAYS[(todayIdx + 1) % DAYS.length] : null
-    const canEditNextLunch = nextDay && lunchAuto && canEditMeal(nextDay, currentWeekId, 'lunch', appSettings, user.id)
-    if (canEditNextLunch && pick(nextDay, 'lunch')) return
+    if (nextDay && lunchAuto && canEditMeal(nextDay, currentWeekId, 'lunch', appSettings, user.id)) {
+      if (pick(nextDay, 'lunch')) return
+    }
 
     setShowDailyEditCard(false)
     setDailyEditMealInfo(null)
@@ -987,19 +979,30 @@ function HomePage({ setActiveTab, appSettings = {} }) {
   // Feedback State
   const [submittingFeedback, setSubmittingFeedback] = useState(false)
   const [feedbackSubmitted, setFeedbackSubmitted] = useState({ lunch: false, dinner: false })
+  const [feedbackError, setFeedbackError] = useState('')
   const [lunchStars, setLunchStars] = useState(0)
   const [dinnerStars, setDinnerStars] = useState(0)
   const [lunchComment, setLunchComment] = useState('')
   const [dinnerComment, setDinnerComment] = useState('')
   const STAR_LABELS = { 1: '😞 Poor', 2: '😐 Fair', 3: '🙂 Good', 4: '😄 Great', 5: '🤩 Excellent' }
 
-  useEffect(() => { loadData() }, [user?.id])
+  useEffect(() => { loadData() }, [user?.id, todayKey])
+
+  // Reset feedback state when day changes
+  useEffect(() => {
+    setFeedbackSubmitted({ lunch: false, dinner: false })
+    setLunchStars(0)
+    setDinnerStars(0)
+    setLunchComment('')
+    setDinnerComment('')
+  }, [todayKey])
 
   const loadData = async () => {
     try {
-      const [{ data: profile }, { data: existingFb }] = await Promise.all([
+      const [{ data: profile }, { data: existingFb }, { data: surveyData }] = await Promise.all([
         supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
         supabase.from('daily_feedback').select('*').eq('user_id', user.id).eq('day', todayKey).maybeSingle(),
+        supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id).order('week_id', { ascending: false }).limit(1).maybeSingle(),
       ])
       if (profile) setProfileData({ name: profile.name || '', thali_number: profile.thali_number || '', avatar_url: profile.avatar_url || '' })
       if (existingFb) {
@@ -1008,6 +1011,15 @@ function HomePage({ setActiveTab, appSettings = {} }) {
         setDinnerStars(existingFb.dinner_stars || 0)
         setLunchComment(existingFb.lunch_comment || '')
         setDinnerComment(existingFb.dinner_comment || '')
+      }
+      // Check if weekly survey is fully submitted for current week
+      const currentWeekId = getWeekDate()
+      if (surveyData && surveyData.week_id === currentWeekId) {
+        const allDone = DAYS.every(day => {
+          const dk = day.substring(0, 3).toLowerCase()
+          return surveyData[`${dk}_l_status`] && surveyData[`${dk}_d_status`]
+        })
+        setWeeklySurveySubmitted(allDone)
       }
     } catch { }
     setStatsLoading(false)
@@ -1071,7 +1083,8 @@ const handleSubmitCombined = async () => {
         </div>
       )}
 
-      {/* Weekly Survey Section */}
+      {/* Weekly Survey Section - hidden entirely when survey is fully submitted */}
+      {(!weeklySurveySubmitted) && (
       <Card organic style={{
         marginBottom: 20, borderRadius: 24,
         background: (surveyOpen || isAnyMealEditable) ? t.accentBg : 'rgba(0,0,0,0.2)',
@@ -1106,6 +1119,7 @@ const handleSubmitCombined = async () => {
           </button>
         </div>
       </Card>
+      )}
 
 
       {/* Daily Feedback Section */}
@@ -1157,7 +1171,7 @@ const handleSubmitCombined = async () => {
                 )}
                 {/* Separate comment field per meal */}
                 <div style={{ marginTop: 16 }}>
-                  <label style={{ display: 'block', fontSize: 10, fontWeight: 800, color: t.textSub, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{meal === 'lunch' ? 'Lunch' : 'Dinner'} Comment</label>
+                  <label htmlFor={`${meal}Comment`} style={{ display: 'block', fontSize: 10, fontWeight: 800, color: t.textSub, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{meal === 'lunch' ? 'Lunch' : 'Dinner'} Comment</label>
                   {submitted ? (
                     <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: `1px solid ${t.border}`, color: t.textSub, fontSize: 13, minHeight: 60, boxSizing: 'border-box', fontStyle: 'italic' }}>
                       {meal === 'lunch' ? lunchComment || '—' : dinnerComment || '—'}
@@ -1165,6 +1179,7 @@ const handleSubmitCombined = async () => {
                   ) : (
                     <textarea
                       name={`${meal}Comment`}
+                      id={`${meal}Comment`}
                       value={meal === 'lunch' ? lunchComment : dinnerComment}
                       onChange={e => meal === 'lunch' ? setLunchComment(e.target.value) : setDinnerComment(e.target.value)}
                       placeholder={`Tell us how ${meal} was...`}
@@ -1176,7 +1191,13 @@ const handleSubmitCombined = async () => {
             )
           })}
         </div>
-        
+
+        {feedbackError && (
+          <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(220,60,60,0.09)', border: '1px solid rgba(220,60,60,0.28)', color: '#e05555', fontSize: 13, marginBottom: 12, fontFamily: "'DM Sans',sans-serif" }}>
+            {feedbackError}
+          </div>
+        )}
+
         {feedbackSubmitted.lunch && feedbackSubmitted.dinner ? (
           <div style={{ width: '100%', padding: '14px 0', textAlign: 'center', color: t.successText, fontSize: 14, fontWeight: 700, fontFamily: "'DM Sans',sans-serif" }}>
             ✅ Feedback submitted for today. Shukran!
@@ -1188,7 +1209,7 @@ const handleSubmitCombined = async () => {
         )}
       </Card>
 
-      {/* Auto Daily Edit Card - shows when edit status is AUTO and current time is within window */}
+      {/* Auto Daily Edit Card — auto-appears when edit window opens, saves only on Submit */}
       {showDailyEditCard && dailyEditMealInfo && (
         <DailyEditCard
           weeklyMenu={weeklyMenu}
@@ -1369,7 +1390,7 @@ function WeeklyMenuPage() {
                             {dish}
                             {resp !== null && (
                               <span style={{ fontWeight: '800', color: resp === 'yes' ? '#4CAF50' : resp === 'no' ? '#F44336' : t.accent }}>
-                                {resp === 'yes' ? '✅' : resp === 'no' ? '❌' : (typeof resp === 'number' && resp <= 100 && resp % 25 === 0 ? `${resp}%` : `${resp}`)}
+                                {resp === 'yes' ? '✅' : resp === 'no' ? '❌' : (typeof resp === 'number' && resp <= 100 && resp % 25 === 0 ? `${resp}%` : `${resp} person${resp === 1 ? '' : 's'}`)}
                               </span>
                             )}
                           </div>
@@ -1404,7 +1425,7 @@ function WeeklyMenuPage() {
                             {dish}
                             {resp !== null && (
                               <span style={{ fontWeight: '800', color: resp === 'yes' ? '#4CAF50' : resp === 'no' ? '#F44336' : t.accent }}>
-                                {resp === 'yes' ? '✅' : resp === 'no' ? '❌' : (typeof resp === 'number' && resp <= 100 && resp % 25 === 0 ? `${resp}%` : `${resp}`)}
+                                {resp === 'yes' ? '✅' : resp === 'no' ? '❌' : (typeof resp === 'number' && resp <= 100 && resp % 25 === 0 ? `${resp}%` : `${resp} person${resp === 1 ? '' : 's'}`)}
                               </span>
                             )}
                           </div>
@@ -1497,10 +1518,17 @@ function ThaliRequestsSection() {
       try {
         const typeLabels = { resume: 'Resume Thali', stop: 'Stop Thali', extra: 'Extra Food', miqaat: 'Miqaat Pirsu' }
         const typeLabel = typeLabels[type] || type
+        // Fetch user's name from profile
+        let userName = 'A user'
+        try {
+          const { data: profile } = await supabase.from('user_stats').select('name, thali_number').eq('user_id', user.id).maybeSingle()
+          if (profile?.name) userName = profile.name
+          if (profile?.thali_number) userName += ` (#${profile.thali_number})`
+        } catch {}
         await supabase.from('notifications').insert([{
           user_id: null,
           title: '📋 New ' + typeLabel + ' Request',
-          message: (user?.email?.split('@')[0] || 'A user') + ' submitted a ' + typeLabel + ' request.',
+          message: userName + ' submitted a ' + typeLabel + ' request.',
           url: '/admin/requests',
           type: 'new_request',
           sender_name: 'Al-Mawaid',
@@ -1509,7 +1537,7 @@ function ThaliRequestsSection() {
         await supabase.functions.invoke('send-push', {
           body: {
             title: '📋 New ' + typeLabel + ' Request',
-            body: (user?.email?.split('@')[0] || 'A user') + ' submitted a ' + typeLabel + ' request.',
+            body: userName + ' submitted a ' + typeLabel + ' request.',
             target_type: 'admins',
             url: '/admin/requests'
           }
@@ -1534,7 +1562,7 @@ function ThaliRequestsSection() {
           <div style={{ padding: '0 16px 16px' }}>
             {!resumeMealType ? (
               <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>SELECT MEAL TO RESUME</label>
+                <span style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>SELECT MEAL TO RESUME</span>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {['lunch', 'dinner', 'both'].map(m => (
                     <button key={m} onClick={() => setResumeMealType(m)}
@@ -1551,8 +1579,8 @@ function ThaliRequestsSection() {
                   <button onClick={() => setResumeMealType(null)} style={{ marginLeft: 10, background: 'none', border: 'none', color: t.textSub, cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>Change</button>
                 </div>
                 <div style={{ marginBottom: 12 }}>
-                  <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>RESUME FROM</label>
-                  <input type="date" name="resumeFrom" value={resumeFrom} min={today} onChange={e => setResumeFrom(e.target.value)} style={inp} />
+                  <label htmlFor="resumeFrom" style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>RESUME FROM</label>
+                  <input type="date" id="resumeFrom" name="resumeFrom" value={resumeFrom} min={today} onChange={e => setResumeFrom(e.target.value)} style={inp} />
                 </div>
                 {error && <ErrorBanner msg={error} />}
                 <button onClick={() => handleSubmit('resume')} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting...' : 'Submit Resume Request'}</button>
@@ -1567,7 +1595,7 @@ function ThaliRequestsSection() {
           <div style={{ padding: '0 16px 16px' }}>
             {!stopMealType ? (
               <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>SELECT MEAL TO STOP</label>
+                <span style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>SELECT MEAL TO STOP</span>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {['lunch', 'dinner', 'both'].map(m => (
                     <button key={m} onClick={() => setStopMealType(m)}
@@ -1584,8 +1612,8 @@ function ThaliRequestsSection() {
                   <button onClick={() => setStopMealType(null)} style={{ marginLeft: 10, background: 'none', border: 'none', color: t.textSub, cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>Change</button>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-                  <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>FROM</label><input type="date" name="stopFrom" value={stopFrom} min={today} onChange={e => setStopFrom(e.target.value)} style={inp} /></div>
-                  <div><label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>TO</label><input type="date" name="stopTo" value={stopTo} min={stopFrom || today} onChange={e => setStopTo(e.target.value)} style={inp} /></div>
+                  <div><label htmlFor="stopFrom" style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>FROM</label><input type="date" id="stopFrom" name="stopFrom" value={stopFrom} min={today} onChange={e => setStopFrom(e.target.value)} style={inp} /></div>
+                  <div><label htmlFor="stopTo" style={{ display: 'block', fontSize: 10, fontWeight: 700, color: t.textSub, marginBottom: 6, letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif" }}>TO</label><input type="date" id="stopTo" name="stopTo" value={stopTo} min={stopFrom || today} onChange={e => setStopTo(e.target.value)} style={inp} /></div>
                 </div>
                 {error && <ErrorBanner msg={error} />}
                 <button onClick={() => handleSubmit('stop')} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : 'linear-gradient(135deg,#e05555,#c03030)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting...' : 'Submit Stop Request'}</button>
@@ -1762,7 +1790,13 @@ function QueriesSection() {
 
       // Notify admins about the new query
       try {
-        const userName = user?.email?.split('@')[0] || 'A user'
+        // Fetch user's name from profile
+        let userName = 'A user'
+        try {
+          const { data: profile } = await supabase.from('user_stats').select('name, thali_number').eq('user_id', user.id).maybeSingle()
+          if (profile?.name) userName = profile.name
+          if (profile?.thali_number) userName += ` (#${profile.thali_number})`
+        } catch {}
         await supabase.from('notifications').insert([{
           user_id: null,
           title: '📩 New Query from ' + userName,
@@ -1774,7 +1808,7 @@ function QueriesSection() {
         }])
         await supabase.functions.invoke('send-push', {
           body: {
-            title: '📩 New Query Received',
+            title: '📩 New Query from ' + userName,
             body: userName + ' submitted: "' + comment.substring(0, 80) + (comment.length > 80 ? '…"' : '"'),
             target_type: 'admins',
             url: '/admin/queries'
@@ -2276,7 +2310,7 @@ function MyRequestsPage({ onBack }) {
   )
 }
 
-function KhidmatTeamPage({ onBack }) {
+function StaffDirectoryPage() {
   const t = useTheme()
   const [staff, setStaff] = useState([])
   const [helpline, setHelpline] = useState('')
@@ -2292,8 +2326,6 @@ function KhidmatTeamPage({ onBack }) {
   }, [])
   return (
     <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
-      <BackHeader title="Khidmat Guzaar" onBack={onBack} />
-      
       {helpline && (
         <Card active style={{ marginBottom: 16, border: `2px solid ${t.accent}`, background: `${t.accent}10` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -2337,6 +2369,15 @@ function KhidmatTeamPage({ onBack }) {
           </Card>
         )
       })}
+    </main>
+  )
+}
+
+function KhidmatTeamPage({ onBack }) {
+  return (
+    <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+      <BackHeader title="Khidmat Guzaar" onBack={onBack} />
+      <StaffDirectoryPage />
     </main>
   )
 }

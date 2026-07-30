@@ -453,16 +453,16 @@ export default function SurveyDashboard() {
         <AdminCard style={{ marginBottom: 20 }}>
           <SectionHeader>Survey Window</SectionHeader>
           <div style={{ marginBottom: 12 }}>
-            <label style={labelStyle}>Status</label>
-            <select value={autoSettings.survey_status} onChange={e => update('survey_status', e.target.value)} style={selectStyle}>
+            <label htmlFor="autoSurveyStatus" style={labelStyle}>Status</label>
+            <select id="autoSurveyStatus" value={autoSettings.survey_status} onChange={e => update('survey_status', e.target.value)} style={selectStyle}>
               <option value="auto">Auto (Sat 8PM – Mon 11AM)</option>
               <option value="open">Open (Override)</option>
               <option value="closed">Closed (Override)</option>
             </select>
           </div>
           <div style={{ marginBottom: 12 }}>
-            <label style={labelStyle}>Survey Open Hour</label>
-            <select value={autoSettings.survey_open_hour} onChange={e => update('survey_open_hour', e.target.value)} style={selectStyle}>
+            <label htmlFor="autoSurveyOpenHour" style={labelStyle}>Survey Open Hour</label>
+            <select id="autoSurveyOpenHour" value={autoSettings.survey_open_hour} onChange={e => update('survey_open_hour', e.target.value)} style={selectStyle}>
               {[18, 19, 20, 21, 22].map(h => <option key={h} value={h}>{h}:00</option>)}
             </select>
           </div>
@@ -471,8 +471,8 @@ export default function SurveyDashboard() {
         <AdminCard style={{ marginBottom: 20 }}>
           <SectionHeader>Daily Edit Windows</SectionHeader>
           <div style={{ marginBottom: 12 }}>
-            <label style={labelStyle}>Lunch Edit</label>
-            <select value={autoSettings.lunch_edit_status} onChange={e => update('lunch_edit_status', e.target.value)} style={selectStyle}>
+            <label htmlFor="autoLunchEditStatus" style={labelStyle}>Lunch Edit</label>
+            <select id="autoLunchEditStatus" value={autoSettings.lunch_edit_status} onChange={e => update('lunch_edit_status', e.target.value)} style={selectStyle}>
               <option value="auto">Auto</option>
               <option value="open">Open</option>
               <option value="closed">Closed</option>
@@ -480,17 +480,17 @@ export default function SurveyDashboard() {
           </div>
           <Grid cols={2}>
             <div>
-              <label style={labelStyle}>Opens at</label>
-              <input type="time" value={autoSettings.lunch_edit_open} onChange={e => update('lunch_edit_open', e.target.value)} style={inputStyle} />
+              <label htmlFor="autoLunchEditOpen" style={labelStyle}>Opens at</label>
+              <input id="autoLunchEditOpen" type="time" value={autoSettings.lunch_edit_open} onChange={e => update('lunch_edit_open', e.target.value)} style={inputStyle} />
             </div>
             <div>
-              <label style={labelStyle}>Closes at</label>
-              <input type="time" value={autoSettings.lunch_edit_close} onChange={e => update('lunch_edit_close', e.target.value)} style={inputStyle} />
+              <label htmlFor="autoLunchEditClose" style={labelStyle}>Closes at</label>
+              <input id="autoLunchEditClose" type="time" value={autoSettings.lunch_edit_close} onChange={e => update('lunch_edit_close', e.target.value)} style={inputStyle} />
             </div>
           </Grid>
           <div style={{ margin: '12px 0' }}>
-            <label style={labelStyle}>Dinner Edit</label>
-            <select value={autoSettings.dinner_edit_status} onChange={e => update('dinner_edit_status', e.target.value)} style={selectStyle}>
+            <label htmlFor="autoDinnerEditStatus" style={labelStyle}>Dinner Edit</label>
+            <select id="autoDinnerEditStatus" value={autoSettings.dinner_edit_status} onChange={e => update('dinner_edit_status', e.target.value)} style={selectStyle}>
               <option value="auto">Auto</option>
               <option value="open">Open</option>
               <option value="closed">Closed</option>
@@ -498,12 +498,12 @@ export default function SurveyDashboard() {
           </div>
           <Grid cols={2}>
             <div>
-              <label style={labelStyle}>Opens at</label>
-              <input type="time" value={autoSettings.dinner_edit_open} onChange={e => update('dinner_edit_open', e.target.value)} style={inputStyle} />
+              <label htmlFor="autoDinnerEditOpen" style={labelStyle}>Opens at</label>
+              <input id="autoDinnerEditOpen" type="time" value={autoSettings.dinner_edit_open} onChange={e => update('dinner_edit_open', e.target.value)} style={inputStyle} />
             </div>
             <div>
-              <label style={labelStyle}>Closes at</label>
-              <input type="time" value={autoSettings.dinner_edit_close} onChange={e => update('dinner_edit_close', e.target.value)} style={inputStyle} />
+              <label htmlFor="autoDinnerEditClose" style={labelStyle}>Closes at</label>
+              <input id="autoDinnerEditClose" type="time" value={autoSettings.dinner_edit_close} onChange={e => update('dinner_edit_close', e.target.value)} style={inputStyle} />
             </div>
           </Grid>
         </AdminCard>

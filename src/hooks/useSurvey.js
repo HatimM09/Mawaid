@@ -8,6 +8,15 @@ export const isRotiItem = (dish) => {
   return rotiKeywords.some(k => dish.toLowerCase().includes(k))
 }
 
+export const getPctColor = (pct) => {
+  if (pct === 0) return '#F44336'
+  if (pct === 25) return '#FFC107'
+  if (pct === 50) return '#2196F3'
+  if (pct === 75) return '#9E9E9E'
+  if (pct === 100) return '#4CAF50'
+  return undefined
+}
+
 export const isPortionItem = (dish) => {
   const portionKeywords = ["pulav", "pulao", "dal chawal", "dhal chawal", "biryani", "khichdi", "khichadi", "rice", "pilaf", "polo"]
   return portionKeywords.some(k => dish.toLowerCase().includes(k))
@@ -129,7 +138,7 @@ export function useSurveyData(weeklyMenu, appSettings = {}) {
   const { user } = useAuth()
   const [surveyData, setSurveyData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const currentWeekId = getWeekDate(appSettings)
+  const currentWeekId = getWeekDate()
 
   const loadSurvey = useCallback(async () => {
     if (!user) { setLoading(false); return }
@@ -226,7 +235,7 @@ export function useSurveyAutoSave() {
 export function useSurveyWindow(appSettings = {}) {
   const { user } = useAuth()
   const surveyOpen = isSurveyOpen(appSettings, user?.id)
-  const currentWeekId = getWeekDate(appSettings)
+  const currentWeekId = getWeekDate()
 
   const isAnyMealEditable = DAYS.some(d =>
     canEditMeal(d, currentWeekId, 'lunch', appSettings, user?.id) ||

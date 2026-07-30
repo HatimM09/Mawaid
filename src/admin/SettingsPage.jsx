@@ -147,41 +147,64 @@ export default function SettingsPage() {
   const [publishing, setPublishing] = useState(false)
   const [dishInputConfig, setDishInputConfig] = useState({})
   const [clearing, setClearing] = useState(false)
+  const [hasDraft, setHasDraft] = useState(false)
 
   useEffect(() => { load() }, [])
 
   const load = async () => {
     setLoading(true)
     try {
-      const { data: settings } = await supabase.from('app_settings').select('*')
-      if (settings) {
-        settings.forEach(row => {
-          if (row.key === 'lunch_edit_status') setLunchEditStatus(row.value)
-          if (row.key === 'dinner_edit_status') setDinnerEditStatus(row.value)
-          if (row.key === 'helpline_number') setHelpline(row.value)
-          if (row.key === 'lunch_edit_open') setLunchEditOpen(row.value)
-          if (row.key === 'lunch_edit_close') setLunchEditClose(row.value)
-          if (row.key === 'dinner_edit_open') setDinnerEditOpen(row.value)
-          if (row.key === 'dinner_edit_close') setDinnerEditClose(row.value)
-          if (row.key === 'dish_input_config') { try { setDishInputConfig(JSON.parse(row.value)) } catch(e) { setDishInputConfig({}) } }
-        })
-      }
-      const { data: menuData } = await supabase
-        .from('weekly_menu')
-        .select('*')
-        .eq('week_start', thisWeek)
-      if (menuData && menuData.length > 0) {
-        const formatted = {}
-        let hasPublishAt = null
-        menuData.forEach(row => {
-          formatted[row.day_name] = { lunch: row.lunch ? row.lunch.split(',').map(s => s.trim()).filter(Boolean).join(', ') : '', dinner: row.dinner ? row.dinner.split(',').map(s => s.trim()).filter(Boolean).join(', ') : '', ar: row.day_ar }
-          if (row.publish_at) hasPublishAt = row.publish_at
-        })
-        setMenu(formatted)
-        setPublishAt(hasPublishAt ? new Date(hasPublishAt).toISOString().slice(0, 16) : '')
+      const { data: draftRow } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'draft_data')
+        .maybeSingle()
+
+      if (draftRow && draftRow.value) {
+        const draft = JSON.parse(draftRow.value)
+        setLunchEditStatus(draft.lunch_edit_status || 'auto')
+        setDinnerEditStatus(draft.dinner_edit_status || 'auto')
+        setHelpline(draft.helpline_number || '')
+        setLunchEditOpen(draft.lunch_edit_open || '20:00')
+        setLunchEditClose(draft.lunch_edit_close || '11:00')
+        setDinnerEditOpen(draft.dinner_edit_open || '12:00')
+        setDinnerEditClose(draft.dinner_edit_close || '15:30')
+        if (draft.dish_input_config) setDishInputConfig(draft.dish_input_config)
+        if (draft.menu) setMenu(draft.menu)
+        if (draft.publishAt) setPublishAt(draft.publishAt)
+        setHasDraft(true)
       } else {
-        setMenu(DEFAULT_MENU)
-        setPublishAt('')
+        const { data: settings } = await supabase.from('app_settings').select('*')
+        if (settings) {
+          settings.forEach(row => {
+            if (row.key === 'lunch_edit_status') setLunchEditStatus(row.value)
+            if (row.key === 'dinner_edit_status') setDinnerEditStatus(row.value)
+            if (row.key === 'helpline_number') setHelpline(row.value)
+            if (row.key === 'lunch_edit_open') setLunchEditOpen(row.value)
+            if (row.key === 'lunch_edit_close') setLunchEditClose(row.value)
+            if (row.key === 'dinner_edit_open') setDinnerEditOpen(row.value)
+            if (row.key === 'dinner_edit_close') setDinnerEditClose(row.value)
+            if (row.key === 'dish_input_config') { try { setDishInputConfig(JSON.parse(row.value)) } catch(e) { setDishInputConfig({}) } }
+          })
+        }
+        const { data: menuData } = await supabase
+          .from('weekly_menu')
+          .select('*')
+          .eq('week_start', thisWeek)
+        if (menuData && menuData.length > 0) {
+          const formatted = {}
+          let hasPublishAt = null
+          menuData.forEach(row => {
+            formatted[row.day_name] = { lunch: row.lunch ? row.lunch.split(',').map(s => s.trim()).filter(Boolean).join(', ') : '', dinner: row.dinner ? row.dinner.split(',').map(s => s.trim()).filter(Boolean).join(', ') : '', ar: row.day_ar }
+            if (row.publish_at) hasPublishAt = row.publish_at
+          })
+          setMenu(formatted)
+          setPublishAt(hasPublishAt ? new Date(hasPublishAt).toISOString().slice(0, 16) : '')
+        } else {
+          setMenu(DEFAULT_MENU)
+          setPublishAt('')
+        }
+        setHasDraft(false)
       }
     } catch (e) {
       console.error('Settings load error:', e)
@@ -211,35 +234,30 @@ export default function SettingsPage() {
     setSaving(true)
     setMsg({ text: '', type: 'success' })
 
-    const weekId = thisWeek
-    const defaults = [
-      { key: 'lunch_edit_status', value: lunchEditStatus },
-      { key: 'dinner_edit_status', value: dinnerEditStatus },
-      { key: 'helpline_number', value: helpline || '+91 98765 43210' },
-      { key: 'lunch_edit_open', value: lunchEditOpen },
-      { key: 'lunch_edit_close', value: lunchEditClose },
-      { key: 'dinner_edit_open', value: dinnerEditOpen },
-      { key: 'dinner_edit_close', value: dinnerEditClose },
-      { key: 'dish_input_config', value: JSON.stringify(dishInputConfig) },
-    ]
+    const draft = {
+      lunch_edit_status: lunchEditStatus,
+      dinner_edit_status: dinnerEditStatus,
+      helpline_number: helpline,
+      lunch_edit_open: lunchEditOpen,
+      lunch_edit_close: lunchEditClose,
+      dinner_edit_open: dinnerEditOpen,
+      dinner_edit_close: dinnerEditClose,
+      dish_input_config: dishInputConfig,
+      menu: menu,
+      publishAt: publishAt,
+    }
 
-    const [{ error: settingsErr }, { error: menuErr }] = await Promise.all([
-      supabase.from('app_settings').upsert(defaults, { onConflict: 'key' }),
-      supabase.from('weekly_menu').upsert(
-        Object.entries(menu).map(([day, val]) => ({
-          day_name: day, week_start: weekId,
-          day_ar: val.ar || '', lunch: (val.lunch || '').split(',').map(s => s.trim()).filter(Boolean).join(', '), dinner: (val.dinner || '').split(',').map(s => s.trim()).filter(Boolean).join(', '),
-          publish_at: publishAt ? new Date(publishAt).toISOString() : null,
-        })),
-        { onConflict: 'week_start,day_name' }
-      ),
-    ])
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({ key: 'draft_data', value: JSON.stringify(draft) }, { onConflict: 'key' })
 
     setSaving(false)
-    setMsg(settingsErr || menuErr
-      ? { text: `Save failed: ${(settingsErr || menuErr).message}`, type: 'error' }
-      : { text: `✅ Settings saved at ${new Date().toLocaleTimeString()}`, type: 'success' }
-    )
+    if (error) {
+      setMsg({ text: `Save failed: ${error.message}`, type: 'error' })
+    } else {
+      setHasDraft(true)
+      setMsg({ text: `✅ Draft saved. Use "Publish & Notify" to make changes live.`, type: 'success' })
+    }
   }
 
   const updateMenu = (day, meal, val) => {
@@ -569,6 +587,18 @@ export default function SettingsPage() {
                     setMsg({ text: '', type: 'success' })
                     const isFuture = publishAt && new Date(publishAt).getTime() > Date.now()
                     const publishTimestamp = isFuture ? new Date(publishAt).toISOString() : new Date().toISOString()
+
+                    const settingsDefaults = [
+                      { key: 'lunch_edit_status', value: lunchEditStatus },
+                      { key: 'dinner_edit_status', value: dinnerEditStatus },
+                      { key: 'helpline_number', value: helpline || '+91 98765 43210' },
+                      { key: 'lunch_edit_open', value: lunchEditOpen },
+                      { key: 'lunch_edit_close', value: lunchEditClose },
+                      { key: 'dinner_edit_open', value: dinnerEditOpen },
+                      { key: 'dinner_edit_close', value: dinnerEditClose },
+                      { key: 'dish_input_config', value: JSON.stringify(dishInputConfig) },
+                    ]
+
                     const menuRows = Object.entries(menu).map(([day, val]) => ({
                       day_name: day,
                       week_start: thisWeek,
@@ -577,44 +607,56 @@ export default function SettingsPage() {
                       dinner: val.dinner,
                       publish_at: publishTimestamp,
                     }))
-                    const { error: saveErr } = await supabase
-                      .from('weekly_menu')
-                      .upsert(menuRows, { onConflict: 'week_start,day_name' })
-                    if (saveErr) {
-                      setMsg({ text: `Save failed: ${saveErr.message}`, type: 'error' })
+
+                    const { error: settingsErr } = await supabase
+                      .from('app_settings')
+                      .upsert(settingsDefaults, { onConflict: 'key' })
+
+                    if (settingsErr) {
+                      setMsg({ text: `Publish failed (settings): ${settingsErr.message}`, type: 'error' })
                     } else {
-                      if (!isFuture) {
-                        const { data: existingNotice } = await supabase
-                          .from('notices').select('id').eq('type', 'menu')
-                          .ilike('message', `%${thisWeek}%`).maybeSingle()
-                        if (!existingNotice) {
-                          try {
-                            await supabase.from('notices').insert({
-                              title: '🍽️ New Weekly Menu Available',
-                              message: `The menu for week of ${thisWeek} is now live! Check it out in the app.`,
-                              url: '/', type: 'menu',
-                            })
-                          } catch (_) { /* notice insert is best-effort */ }
-                        }
-                        // 🔔 Send push notification to all users about the published menu
-                        try {
-                          await supabase.functions.invoke('send-push', {
-                            body: {
-                              title: 'Al-Mawaid · New menu is live',
-                              body: `This week’s thali menu (${thisWeek}) is ready — open the app to see lunch & dinner.`,
-                              target_type: 'all',
-                              user_id: null,
-                              url: '/',
-                            }
-                          })
-                        } catch (pushErr) {
-                          console.warn('[Settings] Menu publish push notification failed:', pushErr)
-                        }
-                        setMsg({ text: `✅ Menu published and push notification sent!`, type: 'success' })
+                      const { error: menuErr } = await supabase
+                        .from('weekly_menu')
+                        .upsert(menuRows, { onConflict: 'week_start,day_name' })
+
+                      if (menuErr) {
+                        setMsg({ text: `Publish failed (menu): ${menuErr.message}`, type: 'error' })
                       } else {
-                        setMsg({ text: `✅ Menu scheduled for ${new Date(publishAt).toLocaleString()}`, type: 'success' })
+                        await supabase.from('app_settings').delete().eq('key', 'draft_data')
+                        setHasDraft(false)
+
+                        if (!isFuture) {
+                          const { data: existingNotice } = await supabase
+                            .from('notices').select('id').eq('type', 'menu')
+                            .ilike('message', `%${thisWeek}%`).maybeSingle()
+                          if (!existingNotice) {
+                            try {
+                              await supabase.from('notices').insert({
+                                title: '🍽️ New Weekly Menu Available',
+                                message: `The menu for week of ${thisWeek} is now live! Check it out in the app.`,
+                                url: '/', type: 'menu',
+                              })
+                            } catch (_) { /* notice insert is best-effort */ }
+                          }
+                          try {
+                            await supabase.functions.invoke('send-push', {
+                              body: {
+                                title: 'Al-Mawaid · New menu is live',
+                                body: `This week’s thali menu (${thisWeek}) is ready — open the app to see lunch & dinner.`,
+                                target_type: 'all',
+                                user_id: null,
+                                url: '/',
+                              }
+                            })
+                          } catch (pushErr) {
+                            console.warn('[Settings] Menu publish push notification failed:', pushErr)
+                          }
+                          setMsg({ text: `✅ Changes published and push notification sent!`, type: 'success' })
+                        } else {
+                          setMsg({ text: `✅ Changes scheduled for ${new Date(publishAt).toLocaleString()}`, type: 'success' })
+                        }
+                        setPublishAt(publishTimestamp.slice(0, 16))
                       }
-                      setPublishAt(publishTimestamp.slice(0, 16))
                     }
                     setPublishing(false)
                   }}
@@ -639,6 +681,51 @@ export default function SettingsPage() {
         </AdminCard>
 
         {msg.text && <Alert msg={msg.text} type={msg.type} />}
+
+        {hasDraft && (
+          <AdminCard>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 14,
+              padding: '6px 0', flexWrap: 'wrap',
+            }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10, flex: 1,
+              }}>
+                <div style={{
+                  width: 10, height: 10, borderRadius: '50%',
+                  background: '#f59e0b', flexShrink: 0,
+                  animation: 'pulse 2s infinite',
+                }} />
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>
+                    Unpublished Changes
+                  </div>
+                  <div style={{ fontSize: 12, color: T.textSub, marginTop: 2 }}>
+                    Your draft is saved but not yet visible to users. Click <strong>"Publish & Notify"</strong> above to make changes live.
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!window.confirm('Discard all draft changes? This cannot be undone.')) return
+                  await supabase.from('app_settings').delete().eq('key', 'draft_data')
+                  setHasDraft(false)
+                  setMsg({ text: 'Draft discarded. Reloading published settings...', type: 'info' })
+                  load()
+                }}
+                style={{
+                  padding: '8px 16px', borderRadius: 8,
+                  background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                  color: '#ef4444', fontSize: 12, fontWeight: 800, cursor: 'pointer',
+                  fontFamily: 'inherit', whiteSpace: 'nowrap',
+                }}
+              >
+                Discard Draft
+              </button>
+            </div>
+          </AdminCard>
+        )}
 
         {/* Cache & Reset */}
         <AdminCard>
@@ -681,7 +768,7 @@ export default function SettingsPage() {
           <Btn type="button" variant="ghost" onClick={load}><RefreshCw size={15} />Reset</Btn>
           <Btn type="submit" disabled={saving} size="lg">
             <Save size={16} />
-            {saving ? 'Saving…' : 'Save All Settings'}
+            {saving ? 'Saving…' : 'Save Draft'}
           </Btn>
         </div>
       </form>

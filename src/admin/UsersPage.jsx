@@ -27,17 +27,19 @@ export default function UsersPage() {
   const [showAllQr, setShowAllQr] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const sentinelRef = useRef(null)
+  const pageRef = useRef(0)
+  const hasMoreRef = useRef(true)
 
   // ── Infinite Scroll: auto-load when sentinel is visible (stable ref avoids stale closures) ──
   const loadRef = useRef(null)
   // ── Infinite Scroll: auto-load when sentinel is visible (stable ref avoids stale closures) ──
   useEffect(() => {
-    if (!hasMore || fetchingMore || loading || users.length === 0) return
+    if (!hasMoreRef.current || fetchingMore || loading || users.length === 0) return
     const el = sentinelRef.current
     if (!el) return
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && hasMore && !fetchingMore && !loading) {
+        if (entry.isIntersecting && hasMoreRef.current && !fetchingMore && !loading) {
           loadRef.current(false)
         }
       },
@@ -45,18 +47,21 @@ export default function UsersPage() {
     )
     observer.observe(el)
     return () => observer.disconnect()
-  }, [hasMore, fetchingMore, loading, users.length])
+  }, [fetchingMore, loading, users.length])
 
   const load = useCallback(async (isInitial = false) => {
     if (isInitial) {
       setLoading(true)
+      pageRef.current = 0
+      hasMoreRef.current = true
       setPage(0)
       setHasMore(true)
     } else {
       setFetchingMore(true)
     }
 
-    const currentPage = isInitial ? 0 : page
+    const currentPage = pageRef.current
+    pageRef.current += 1
     const { data, error } = await supabase
       .from('user_stats')
       .select('*', { count: 'exact' })
@@ -69,12 +74,17 @@ export default function UsersPage() {
       if (isInitial) setUsers(data || [])
       else setUsers(prev => [...prev, ...(data || [])])
       
-      if ((data || []).length < limit) setHasMore(false)
-      if (!isInitial) setPage(p => p + 1)
+      if ((data || []).length < limit) {
+        hasMoreRef.current = false
+        setHasMore(false)
+      }
+      if (!isInitial) {
+        setPage(p => p + 1)
+      }
     }
     setLoading(false)
     setFetchingMore(false)
-  }, [limit, page])
+  }, [limit])
 
   loadRef.current = load
 
@@ -161,6 +171,7 @@ export default function UsersPage() {
       }
       dataToSave.user_id = authUserId
       dataToSave.email = editForm.email
+      dataToSave.thali_number = (dataToSave.thali_number || '').replace(/^#/, '')
       
       const { error } = await supabase
         .from('user_stats')
@@ -299,7 +310,7 @@ export default function UsersPage() {
         </div>          <button onClick={(e) => { e.stopPropagation(); downloadUserQr(u.user_id || u.id, u.name || u.thali_number) }}
           style={{
             padding: '4px 6px', borderRadius: 6, border: `1px solid ${T.border}`,
-            background: 'transparent', color: T.textSub, cursor: 'pointer', fontSize: 9, fontWeight: 700,
+            background: 'var(--accent-bg)', color: T.textSub, cursor: 'pointer', fontSize: 9, fontWeight: 700,
             fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 3, transition: 'all 0.2s',
           }}
           onMouseEnter={e => { e.currentTarget.style.background = 'rgba(197,160,89,0.08)'; e.currentTarget.style.color = T.accent; }}
@@ -311,7 +322,7 @@ export default function UsersPage() {
         <button onClick={(e) => { e.stopPropagation(); printAllQrLabels() }}
           style={{
             padding: '4px 6px', borderRadius: 6, border: `1px solid rgba(96,165,250,0.2)`,
-            background: 'transparent', color: '#60a5fa', cursor: 'pointer', fontSize: 9, fontWeight: 700,
+            background: 'var(--accent-bg)', color: '#60a5fa', cursor: 'pointer', fontSize: 9, fontWeight: 700,
             fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 3, transition: 'all 0.2s',
           }}
           onMouseEnter={e => { e.currentTarget.style.background = 'rgba(96,165,250,0.08)'; e.currentTarget.style.color = '#93c5fd'; }}
@@ -458,7 +469,7 @@ export default function UsersPage() {
                   <button onClick={() => downloadUserQr(u.user_id || u.id, u.name || u.thali_number)}
                     style={{
                       padding: '3px 8px', borderRadius: 6, border: `1px solid ${T.border}`,
-                      background: 'transparent', color: T.textSub, cursor: 'pointer', fontSize: 9, fontWeight: 700,
+                      background: 'var(--accent-bg)', color: T.textSub, cursor: 'pointer', fontSize: 9, fontWeight: 700,
                       fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 3,
                     }}
                   >
@@ -467,7 +478,7 @@ export default function UsersPage() {
                   <button onClick={() => printAllQrLabels()}
                     style={{
                       padding: '3px 8px', borderRadius: 6, border: `1px solid rgba(96,165,250,0.2)`,
-                      background: 'transparent', color: '#60a5fa', cursor: 'pointer', fontSize: 9, fontWeight: 700,
+                      background: 'var(--accent-bg)', color: '#60a5fa', cursor: 'pointer', fontSize: 9, fontWeight: 700,
                       fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 3,
                     }}
                   >
@@ -629,7 +640,7 @@ export default function UsersPage() {
               <Input label="Email (Primary Key)" name="userEmail" value={editForm.email} onChange={e => setEditForm({...editForm, email: e.target.value})} disabled={!isAdding} required />
               <Grid cols={2}>
                 <Input label="Full Name" name="userName" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} />
-                <Input label="Thali Number" name="userThali" value={editForm.thali_number} onChange={e => setEditForm({...editForm, thali_number: e.target.value})} />
+                <Input label="Thali Number" name="userThali" value={editForm.thali_number} onChange={e => setEditForm({...editForm, thali_number: e.target.value.replace(/^#/, '')})} />
               </Grid>
               <Input label="Phone Number" name="userPhone" value={editForm.phone} onChange={e => setEditForm({...editForm, phone: e.target.value})} />
               <Input label="Residential Address" name="userAddress" value={editForm.address} onChange={e => setEditForm({...editForm, address: e.target.value})} />

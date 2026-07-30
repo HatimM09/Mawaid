@@ -1,5 +1,6 @@
 // src/admin/DailySurveyTracking.jsx
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/firebaseClient'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { 
@@ -13,9 +14,12 @@ import {
 } from './ui'
 
 import { getWeekDate, DAYS } from '../common/utils'
+import { getPctColor } from '../hooks/useSurvey'
 
 export default function DailySurveyTracking() {
   const weeklyMenu = useWeeklyMenu() || {}
+  const [searchParams] = useSearchParams()
+  const urlMeal = searchParams.get('meal')
   const [loading, setLoading] = useState(true)
   const [day, setDay] = useState(() => {
     const d = new Date().getDay()
@@ -25,11 +29,14 @@ export default function DailySurveyTracking() {
   })
   const getAutoMeal = useCallback(() => {
     const h = new Date().getHours() + new Date().getMinutes() / 60
-    if (h < 13) return 'lunch'
-    if (h < 18) return 'dinner'
-    return 'lunch'
+    if (h >= 20 || h < 14) return 'lunch'
+    return 'dinner'
   }, [])
-  const [meal, setMeal] = useState(getAutoMeal)
+  const [meal, setMeal] = useState(() => {
+    if (urlMeal === 'lunch' || urlMeal === 'dinner') return urlMeal
+    return getAutoMeal()
+  })
+  const [mealOverride, setMealOverride] = useState(false)
   const [search, setSearch] = useState('')
   const [users, setUsers] = useState([])
   const [selectedUser, setSelectedUser] = useState(null)
@@ -47,6 +54,8 @@ export default function DailySurveyTracking() {
   }
 
   const processDirectScan = async (userId) => {
+    // Auto-fullscreen on scan — must be synchronous before any await to preserve user gesture
+    document.documentElement.requestFullscreen().catch(() => {})
     try {
       const { data: u } = await supabase.from('user_stats').select('*').eq('user_id', userId).maybeSingle()
       if (!u) {
@@ -130,24 +139,26 @@ export default function DailySurveyTracking() {
   const advancedDayRef = useRef(null)
   useEffect(() => {
     const tick = () => {
-      const autoMeal = getAutoMeal()
-      if (autoMeal !== meal) setMeal(autoMeal)
-      // After 6 PM, advance day once per day
+      if (!mealOverride) {
+        const autoMeal = getAutoMeal()
+        if (autoMeal !== meal) setMeal(autoMeal)
+      }
+      // After 8 PM, advance day once per day
       const h = new Date().getHours()
       const todayStr = new Date().toDateString()
-      if (h >= 18 && advancedDayRef.current !== todayStr) {
+      if (h >= 20 && advancedDayRef.current !== todayStr) {
         const dayIdx = DAYS.indexOf(day)
         if (dayIdx !== -1) {
           advancedDayRef.current = todayStr
           setDay(DAYS[(dayIdx + 1) % DAYS.length])
         }
       }
-      if (h < 18) advancedDayRef.current = null
+      if (h < 20) advancedDayRef.current = null
     }
     tick()
     const id = setInterval(tick, 60000)
     return () => clearInterval(id)
-  }, [meal, day, getAutoMeal])
+  }, [meal, day, getAutoMeal, mealOverride])
 
   const handleWirelessScan = async (userId) => {
     await processDirectScan(userId)
@@ -396,7 +407,7 @@ export default function DailySurveyTracking() {
           {/* Meal Filters */}
           <div style={{ display: 'flex', background: T.inputBg, padding: 3, borderRadius: 12, border: `1px solid ${T.border}` }}>
             {['lunch', 'dinner'].map(m => (
-              <button key={m} onClick={() => setMeal(m)}
+              <button key={m} onClick={() => { setMeal(m); setMealOverride(true) }}
                 style={{ 
                   padding: '6px 12px', borderRadius: 8, border: 'none', 
                   background: meal === m ? (m === 'lunch' ? T.accentGrad : '#5e9ce0') : 'transparent', 
@@ -439,19 +450,21 @@ export default function DailySurveyTracking() {
               <div style={{ fontSize: 9, fontWeight: 800, color: T.textSub, letterSpacing: '0.05em', textTransform: 'uppercase', marginRight: 4 }}>Totals:</div>
               {Object.entries(dishStats).map(([dish, stat]) => {
                 const isYesNo = stat.yesNoCount > 0
-                const displayVal = isYesNo 
+                const avgPct = stat.isPct && stat.count ? Math.round(stat.total / stat.count) : null
+                const displayVal = isYesNo
                   ? `${stat.yesCount}/${stat.yesNoCount}`
                   : (stat.isCount ? stat.total : (stat.count ? Math.round(stat.total / stat.count) : 0))
-                const unit = isYesNo ? 'yes' : (stat.isCount ? 'pcs' : '%')
-                
+                const unit = isYesNo ? 'yes' : (stat.isCount ? `person${stat.total === 1 ? '' : 's'}` : '%')
+                const statColor = avgPct !== null ? getPctColor(avgPct) : (isYesNo && stat.yesNoCount > 0 ? (stat.yesCount / stat.yesNoCount >= 0.5 ? '#4CAF50' : '#F44336') : T.accent)
+
                 return (
-                  <div key={dish} style={{ 
-                    display: 'flex', alignItems: 'center', gap: 6, 
-                    background: T.inputBg, padding: '5px 10px', 
-                    borderRadius: 10, border: `1px solid ${T.border}`
+                  <div key={dish} style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    background: T.inputBg, padding: '5px 10px',
+                    borderRadius: 10, border: `1px solid ${statColor ? `${statColor}40` : T.border}`
                   }}>
                     <span style={{ fontSize: 10, fontWeight: 700, color: T.textSub, textTransform: 'uppercase' }}>{dish}</span>
-                    <span style={{ fontSize: 13, fontWeight: 900, color: T.accent }}>{displayVal}<span style={{ fontSize: 9, fontWeight: 700, color: T.textSub, marginLeft: 2 }}>{unit}</span></span>
+                    <span style={{ fontSize: 13, fontWeight: 900, color: statColor || T.accent }}>{displayVal}<span style={{ fontSize: 9, fontWeight: 700, color: T.textSub, marginLeft: 2 }}>{unit}</span></span>
                   </div>
                 )
               })}
@@ -472,7 +485,7 @@ export default function DailySurveyTracking() {
                 {yesMembers.length === 0 ? (
                   <div style={{ padding: 20, textAlign: 'center', color: T.textSub, fontSize: 12 }}>No one has applied yet.</div>
                 ) : yesMembers.map(u => (
-                  <MemberRow key={u.user_id} user={u} onClick={() => setSelectedUser(u)} />
+                  <MemberRow key={u.user_id} user={u} onClick={() => { document.documentElement.requestFullscreen().catch(() => {}); setSelectedUser(u) }} />
                 ))}
               </div>
             </AdminCard>
@@ -489,7 +502,7 @@ export default function DailySurveyTracking() {
                 {noMembers.length === 0 ? (
                   <div style={{ padding: 20, textAlign: 'center', color: T.textSub, fontSize: 12 }}>No opt-outs yet.</div>
                 ) : noMembers.map(u => (
-                  <MemberRow key={u.user_id} user={u} onClick={() => setSelectedUser(u)} />
+                  <MemberRow key={u.user_id} user={u} onClick={() => { document.documentElement.requestFullscreen().catch(() => {}); setSelectedUser(u) }} />
                 ))}
               </div>
             </AdminCard>
@@ -506,7 +519,7 @@ export default function DailySurveyTracking() {
                 {noResponse.length === 0 ? (
                   <div style={{ padding: 20, textAlign: 'center', color: T.textSub, fontSize: 12 }}>All users have responded!</div>
                 ) : noResponse.map(u => (
-                  <PendingMemberRow key={u.user_id} user={u} onClick={() => setSelectedUser(u)} />
+                  <PendingMemberRow key={u.user_id} user={u} onClick={() => { document.documentElement.requestFullscreen().catch(() => {}); setSelectedUser(u) }} />
                 ))}
               </div>
             </AdminCard>
@@ -618,9 +631,9 @@ export default function DailySurveyTracking() {
       {selectedUser && (
         <PackingTVView 
           user={selectedUser} 
-          meal={meal} 
+          meal={meal}
           day={day} 
-          onClose={() => setSelectedUser(null)} 
+          onClose={() => setSelectedUser(null)}
         />
       )}
 
@@ -634,8 +647,8 @@ function PendingMemberRow({ user, onClick }) {
     <div 
       onClick={onClick}
       style={{ 
-        padding: '10px 14px', borderRadius: 12, background: T.inputBg, border: `1px solid ${T.border}`,
-        display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: T.textSub,
+        padding: '16px 22px', borderRadius: 14, background: T.inputBg, border: `1px solid ${T.border}`,
+        display: 'flex', alignItems: 'center', gap: 14, fontSize: 15, color: T.textSub,
         cursor: 'pointer', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
       }}
       onMouseEnter={e => {
@@ -650,13 +663,16 @@ function PendingMemberRow({ user, onClick }) {
       }}
     >
       <div style={{ 
-        width: 28, height: 28, borderRadius: 6, background: 'rgba(255,255,255,0.03)', 
-        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: T.accent 
+        width: 24, height: 24, borderRadius: 8, background: 'rgba(212,175,55,0.08)', 
+        border: '1px solid rgba(212,175,55,0.3)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 10, fontWeight: 900, color: '#ffffff',
+        textShadow: '0 0 8px rgba(212,175,55,0.3)'
       }}>
-        {user.thali_number}
+        #{user.thali_number}
       </div>
-      <div style={{ fontWeight: 600, color: T.text }}>{user.name}</div>
-      <ChevronRight size={16} color={T.textSub} style={{ marginLeft: 'auto' }} />
+      <div style={{ fontWeight: 600, color: '#ffffff', textShadow: '0 0 6px rgba(255,255,255,0.08)' }}>{user.name}</div>
+      <ChevronRight size={18} color={T.textSub} style={{ marginLeft: 'auto' }} />
     </div>
   )
 }
@@ -666,7 +682,7 @@ function MemberRow({ user, onClick }) {
     <div 
       onClick={onClick}
       style={{ 
-        padding: '12px 16px', borderRadius: 14, background: T.inputBg, border: `1px solid ${T.border}`,
+        padding: '18px 24px', borderRadius: 16, background: T.inputBg, border: `1px solid ${T.border}`,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer',
         transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
       }}
@@ -681,20 +697,27 @@ function MemberRow({ user, onClick }) {
         e.currentTarget.style.transform = 'translateX(0)';
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ width: 32, height: 32, borderRadius: 8, background: T.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: T.accent }}>
-          {user.thali_number}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div style={{
+          width: 24, height: 24, borderRadius: 8,
+          background: 'rgba(212,175,55,0.1)',
+          border: '1px solid rgba(212,175,55,0.35)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 10, fontWeight: 900, color: '#ffffff',
+          textShadow: '0 0 8px rgba(212,175,55,0.3)'
+        }}>
+          #{user.thali_number}
         </div>
         <div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{user.name}</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: '#ffffff', textShadow: '0 0 6px rgba(255,255,255,0.08)' }}>{user.name}</div>
           {user.updated_at && (
-            <div style={{ fontSize: 9, color: T.textSub, fontWeight: 500, marginTop: 2, opacity: 0.7 }}>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: 500, marginTop: 2, opacity: 0.7 }}>
               📅 {new Date(user.updated_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
             </div>
           )}
         </div>
       </div>
-      <ChevronRight size={16} color={T.textSub} />
+      <ChevronRight size={18} color={T.textSub} />
     </div>
   )
 }

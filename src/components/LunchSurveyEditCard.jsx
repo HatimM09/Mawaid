@@ -482,10 +482,10 @@ export default function LunchSurveyEditCard({
               }}>
                 {response === 'yes' ? '✅ Yes' : 
                  response === 'no' ? '❌ No' : 
-                 typeof response === 'number' && isCount ? `${response} portions` : 
+                 typeof response === 'number' && isCount ? `${response} person${response === 1 ? '' : 's'}` : 
                  typeof response === 'number' ? `📊 ${response}%` : 
                  response === undefined ? 'Not answered' : 
-                 response?.status === 'yes' ? `${response.value} portions` : 
+                 response?.status === 'yes' ? `${response.value} person${response.value === 1 ? '' : 's'}` : 
                  `${response}`}
               </div>
               {isCount && response !== 'no' && response !== undefined && (

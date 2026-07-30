@@ -90,7 +90,20 @@ serve(async (req) => {
           .filter(s => s[statusField])
           .map(s => s.user_id)
       )
-      const pendingUsers = userIds.filter(id => !submittedIds.has(id))
+
+      // Also skip users who have already submitted daily feedback for today
+      const todayKey = dayName
+      const { data: feedbackUsers } = await supabase
+        .from('daily_feedback')
+        .select('user_id')
+        .eq('day', todayKey)
+        .in('user_id', userIds)
+
+      const feedbackSubmittedIds = new Set(
+        (feedbackUsers || []).map(f => f.user_id)
+      )
+
+      const pendingUsers = userIds.filter(id => !submittedIds.has(id) && !feedbackSubmittedIds.has(id))
 
       if (pendingUsers.length === 0) {
         return new Response(JSON.stringify({ ok: true, sent: 0 }), { status: 200, headers })

@@ -24,6 +24,7 @@ const AutomationPage = lazy(() => import('./admin/AutomationPage'))
 
 // User-facing pages
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'))
 
 const LoadingFallback = () => (
   <div style={{
@@ -67,6 +68,7 @@ export default function MainRouter() {
 
           {/* Public user app or fallback */}
           <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="privacy" element={<PrivacyPolicy />} />
           <Route path="/*" element={<App />} />
 
           {/* Catch-all */}

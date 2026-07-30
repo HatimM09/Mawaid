@@ -73,7 +73,7 @@ export default function Dashboard() {
     const crcVal = crc32(physData.slice(4, 17));
     const crcBytes = new Uint8Array(4);
     new DataView(crcBytes.buffer).setUint32(0, crcVal, false);
-    const result = new Uint8Array(uint8.length + 17);
+    const result = new Uint8Array(uint8.length + 21);
     result.set(uint8.slice(0, 33), 0);
     result.set(physData, 33);
     result.set(crcBytes, 50);
@@ -338,8 +338,9 @@ export default function Dashboard() {
     ])
 
     const today = ['sun','mon','tue','wed','thu','fri','sat'][new Date().getDay()]
-    const meal = new Date().getHours() < 16 ? 'l' : 'd'
-    const todayKey = `${today}_${meal}_status`
+    const h = new Date().getHours() + new Date().getMinutes() / 60
+    const isLunch = h >= 20 || h < 14
+    const todayKey = `${today}_${isLunch ? 'l' : 'd'}_status`
     
     const submissions = allSubmissions.data || []
     const todayCount = submissions.filter(s => s[todayKey] === 'Applied').length
@@ -536,7 +537,7 @@ export default function Dashboard() {
         </AdminCard>
 
         <AdminCard 
-          onClick={() => navigate('/admin/surveys')}
+          onClick={() => navigate(`/admin/survey-tracking?meal=${new Date().getHours() + new Date().getMinutes() / 60 >= 20 || new Date().getHours() + new Date().getMinutes() / 60 < 14 ? 'lunch' : 'dinner'}`)}
           style={{ gridArea: 'stat2', background: 'rgba(212, 175, 55, 0.05)', border: '1px solid rgba(212, 175, 55, 0.1)', cursor: 'pointer', transition: 'all 0.3s' }}
           className="hover-lift"
         >
@@ -544,7 +545,7 @@ export default function Dashboard() {
             <span style={{ fontSize: 16 }}>🍱</span>
           </div>
           <div style={{ fontSize: 32, fontWeight: 900, marginTop: 12 }}>{stats.todayThalis}</div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)' }}>Thalis for {new Date().getHours() < 16 ? 'Lunch' : 'Dinner'}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)' }}>Thalis for {new Date().getHours() + new Date().getMinutes() / 60 >= 20 || new Date().getHours() + new Date().getMinutes() / 60 < 14 ? 'Lunch' : 'Dinner'}</div>
         </AdminCard>
 
         <AdminCard 
@@ -677,11 +678,10 @@ export default function Dashboard() {
           <div style={{ flex: 1, overflowY: 'auto', maxHeight: 200, display: 'flex', flexDirection: 'column', gap: 8 }} className="custom-scroll">
             {missingSurveys.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 12, color: 'var(--text-tertiary)' }}>All members have submitted! ✓</div>
-            ) : missingSurveys.map(u => (
-              <div key={u.user_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)' }}>
+            ) : missingSurveys.map(u => (                  <div key={u.user_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--accent-gold)', width: 30 }}>#{u.thali_number || '—'}</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{u.name || 'Anonymous'}</div>
+                  <div style={{ fontSize: 10, fontWeight: 900, color: '#ffffff', width: 30, textShadow: '0 0 6px rgba(212,175,55,0.2)' }}>#{u.thali_number || '—'}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#ffffff', textShadow: '0 0 6px rgba(255,255,255,0.06)' }}>{u.name || 'Anonymous'}</div>
                 </div>
                 <ArrowUpRight size={14} color="var(--text-tertiary)" />
               </div>
@@ -789,7 +789,7 @@ export default function Dashboard() {
         }
         @keyframes requestsGlow {
           0% { filter: drop-shadow(0 0 0px rgba(212,175,55,0)); }
-          40% { filter: drop-shadow(0 0 14px rgba(212,175,55,0.5)); }
+          40% { filter: drop-shadow(0 0 14px var(--border-active)); }
           100% { filter: drop-shadow(0 0 0px rgba(212,175,55,0)); }
         }
         .requests-glow {
@@ -852,7 +852,7 @@ export default function Dashboard() {
                     onClick={() => setSelectedQRUser(u)}
                     style={{
                       padding: '12px 14px', borderRadius: 12,
-                      background: selectedQRUser?.user_id === u.user_id ? 'rgba(212,175,55,0.08)' : 'rgba(255,255,255,0.01)',
+                      background: selectedQRUser?.user_id === u.user_id ? 'var(--border-light)' : 'rgba(255,255,255,0.01)',
                       border: `1px solid ${selectedQRUser?.user_id === u.user_id ? 'var(--accent-gold)' : 'var(--border-glass)'}`,
                       marginBottom: 8, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                     }}
@@ -880,15 +880,15 @@ export default function Dashboard() {
                     borderRadius: 12, display: 'flex', flexDirection: 'row'
                   }}>
                     {/* Top gold header bar */}
-                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 24, background: 'linear-gradient(90deg, #8b6914, #d4af37, #8b6914)', zIndex: 1 }}>
+                    <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 24, background: T.accentGrad || 'var(--accent-grad)', zIndex: 1 }}>
                       <div style={{ color: '#fff', fontSize: 10, fontWeight: 800, textAlign: 'center', lineHeight: '24px', fontFamily: "'DM Sans',sans-serif" }}>
                         AL-MAWAID  •  المَوَائِد
                       </div>
                     </div>
                     {/* Bottom gold footer bar */}
-                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 14, background: 'linear-gradient(90deg, #8b6914, #d4af37, #8b6914)', zIndex: 1 }} />
+                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 14, background: T.accentGrad || 'var(--accent-grad)', zIndex: 1 }} />
                     {/* Vertical divider */}
-                    <div style={{ position: 'absolute', left: '50%', top: 24, bottom: 14, width: 1, background: 'linear-gradient(180deg, transparent 0%, rgba(184,134,11,0.3) 20%, rgba(184,134,11,0.3) 80%, transparent 100%)', zIndex: 1 }} />
+                    <div style={{ position: 'absolute', left: '50%', top: 24, bottom: 14, width: 1, background: T.accentGrad || 'var(--accent-grad)', zIndex: 1 }} />
                     
                     {/* Left: Logo + Identity */}
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, paddingTop: 24, paddingBottom: 14, zIndex: 2 }}>

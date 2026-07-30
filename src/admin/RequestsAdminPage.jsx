@@ -85,7 +85,7 @@ export default function RequestsAdminPage() {
             .maybeSingle()
 
           if (lastStopReq && lastStopReq.details) {
-            const thaliMatch = lastStopReq.details.match(/Thali:\s*([^\s(]+)/)
+            const thaliMatch = lastStopReq.details.match(/Thali:\s*#?([A-Za-z0-9\/_-]+)/)
             if (thaliMatch) {
               const oldThali = thaliMatch[1].trim()
               await supabase.from('user_stats').update({ thali_number: oldThali }).eq('user_id', reqObj.user_id)
@@ -100,13 +100,13 @@ export default function RequestsAdminPage() {
     await supabase.from('thali_requests').update({ status }).eq('id', id)
     setRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r))
 
-    // Send push notification to user
+    // Send notification to user
     if (userId && (status === 'approved' || status === 'rejected')) {
       try {
-        const typeLabels = { 
-          resume: 'Resume Thali', 
-          stop: 'Stop Thali', 
-          extra: 'Extra Food', 
+        const typeLabels = {
+          resume: 'Resume Thali',
+          stop: 'Stop Thali',
+          extra: 'Extra Food',
           miqaat: 'Miqaat Pirsu',
           change: 'Thali Change'
         }
@@ -119,6 +119,17 @@ export default function RequestsAdminPage() {
           ? `Your ${typeLabel} request was approved. You’re all set.`
           : `Your ${typeLabel} request couldn’t be approved. Open the app for details.`
 
+        // Insert in-app notification for real-time toast
+        await supabase.from('notifications').insert({
+          user_id: userId,
+          title,
+          message: body,
+          url: '/post',
+          type: status === 'approved' ? 'request_approved' : 'request_rejected',
+          sender_name: 'Al-Mawaid'
+        })
+
+        // Send push notification for when app is closed
         await supabase.functions.invoke('send-push', {
           body: {
             title,
@@ -129,7 +140,7 @@ export default function RequestsAdminPage() {
           }
         })
       } catch (notifyErr) {
-        console.warn('Push notification failed:', notifyErr)
+        console.warn('Notification failed:', notifyErr)
       }
     }
   }

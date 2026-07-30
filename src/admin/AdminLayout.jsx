@@ -332,7 +332,7 @@ export default function AdminLayout() {
           }
           .global-bottom-nav button {
             flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-            background: none; border: none; cursor: pointer; color: rgba(255,248,225,0.4);
+            background: none; border: none; cursor: pointer; color: var(--text-tertiary);
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             height: 100%;
             position: relative;
@@ -494,7 +494,7 @@ export default function AdminLayout() {
                       borderRadius: 11, background: 'var(--accent-grad)',
                       color: '#000', fontSize: 10, fontWeight: 900,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      padding: '0 5px', boxShadow: '0 2px 8px rgba(212,175,55,0.4)'
+                      padding: '0 5px', boxShadow: '0 2px 8px var(--border-active)'
                     }}>
                       {navCounts[label] > 99 ? '99+' : navCounts[label]}
                     </div>
@@ -507,7 +507,7 @@ export default function AdminLayout() {
                 onClick={handleLogout} 
                 style={{ 
                   width: '100%', padding: '16px', borderRadius: 16, 
-                  background: 'linear-gradient(135deg, rgba(255,92,92,0.1), rgba(255,92,92,0.05))', 
+                  background: 'var(--accent-grad)', 
                   color: '#ff5c5c', border: '1.5px solid rgba(255,92,92,0.3)', 
                   cursor: 'pointer', display: 'flex', alignItems: 'center', 
                   justifyContent: 'center', gap: 12, fontWeight: 800,
@@ -605,7 +605,7 @@ export default function AdminLayout() {
               position: 'fixed', top: 80, right: 20,
               width: 'calc(100% - 40px)', maxWidth: 350, zIndex: 10000,
               background: 'rgba(15, 12, 8, 0.95)', border: '1.5px solid rgba(212, 175, 55, 0.4)',
-              borderRadius: 20, padding: 16, display: 'flex', gap: 14,
+              borderRadius: 20, overflow: 'hidden', display: 'flex', flexDirection: 'column',
               boxShadow: '0 20px 50px rgba(0,0,0,0.5)', cursor: 'pointer',
               transform: dragOffset > 0 ? `translateY(${dragOffset}px)` : 'none',
               transition: isDragging ? 'none' : 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -613,17 +613,30 @@ export default function AdminLayout() {
               backdropFilter: 'blur(20px)'
             }}
           >
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Bell size={20} color="#000" />
+            {/* Media banner */}
+            {toastNotice.media && toastNotice.media[0] && (
+              <div style={{
+                width: '100%', height: 100,
+                background: `url(${toastNotice.media[0]}) center/cover no-repeat`,
+                borderBottom: '1px solid rgba(255,255,255,0.06)'
+              }} />
+            )}
+            <div style={{ padding: 16, display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Bell size={20} color="#000" />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-primary)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 2 }}>
+                  {toastNotice.sender_name || 'Al-Mawaid'}
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent-gold)', marginBottom: 2 }}>{toastNotice.title}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.5 }}>{toastNotice.body}</div>
+              </div>
+              <button onClick={(e) => { e.stopPropagation(); setToastNotice(null) }} aria-label="Dismiss notification" style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: 'rgba(255,255,255,0.4)', width: 26, height: 26, borderRadius: 8, padding: 4, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <X size={14} />
+              </button>
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent-gold)', marginBottom: 2 }}>{toastNotice.title}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{toastNotice.body}</div>
-            </div>
-            <button onClick={(e) => { e.stopPropagation(); setToastNotice(null) }} aria-label="Dismiss notification" style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', padding: 4, cursor: 'pointer' }}>
-              <X size={16} />
-            </button>
-          <div style={{position:"absolute",bottom:0,left:0,height:3,right:0,background:"var(--accent-primary)",borderRadius:"0 0 20px 20px",animation:"toastCountdown 8s linear forwards"}} />
+            <div style={{height:3,background:"var(--accent-primary)",borderRadius:"0 0 20px 20px",animation:`toastCountdown ${Math.max(6, Math.min((toastNotice.body || '').length * 0.05, 12))}s linear forwards`}} />
           </div>
         )}
       </div>

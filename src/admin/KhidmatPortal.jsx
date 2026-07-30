@@ -1,11 +1,11 @@
 // src/admin/KhidmatPortal.jsx (updated)
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Home, Users, Package, Settings, LogOut, Bell,
   ChevronRight, Calendar, Star, Utensils, MessageSquare,
   TrendingUp, Check, Info, ArrowUpRight, Search, Clock,
   ChevronLeft, Phone, MapPin, LifeBuoy, Lock, MessageCircle,
-  AlertCircle, Wallet, ClipboardList, Menu
+  AlertCircle, Wallet, ClipboardList, Menu, ToggleLeft, ToggleRight, ChevronDown, ChevronUp, Sun, Moon
 } from 'lucide-react'
 import { supabase } from '../lib/firebaseClient'
 import { AuthCtx, ThemeCtx, useAuth, useTheme } from './context'
@@ -86,6 +86,252 @@ function Card({ children, style = {}, active, organic, title, count, icon }) {
   )
 }
 
+// Premium Scan Header Card Component
+function ScanHeaderCard({ staffInfo, onScan, onNotices, currentMeal, mealOverride, onMealToggle, onResetAuto }) {
+  const mealLabels = { lunch: 'LUNCH', dinner: 'DINNER' }
+  const mealIcons = { lunch: Sun, dinner: Moon }
+  
+  return (
+    <Card organic style={{ 
+      display: 'flex', 
+      flexDirection: 'column', 
+      gap: 20,
+      background: 'linear-gradient(135deg, rgba(197, 160, 89, 0.05) 0%, rgba(15, 12, 8, 0.9) 100%)',
+      border: '1px solid var(--accent-border)',
+      position: 'relative',
+      overflow: 'hidden'
+    }}>
+      {/* Subtle gold accent line at top */}
+      <div style={{ 
+        position: 'absolute', 
+        top: 0, 
+        left: 0, 
+        right: 0, 
+        height: 3,
+        background: 'var(--accent-grad)',
+        opacity: 0.8
+      }} />
+      
+      {/* Staff Profile Row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+        <div style={{
+          width: 64, height: 64, borderRadius: '50%', 
+          background: 'linear-gradient(135deg, var(--accent-bg), var(--accent-border))',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', 
+          fontSize: 24, fontWeight: 900, color: 'var(--accent-primary)',
+          boxShadow: '0 8px 20px rgba(0,0,0,0.2)', border: '2px solid var(--accent-border)',
+          flexShrink: 0
+        }}>
+          {staffInfo.name.charAt(0)}
+        </div>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--accent-primary)', fontFamily: "'Space Grotesk', sans-serif", letterSpacing: '0.02em' }}>
+            {staffInfo.name}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+            {staffInfo.role}
+          </div>
+        </div>
+        
+        {/* Meal Toggle Section */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          {/* Current Meal Display */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            padding: '10px 16px',
+            background: 'rgba(197, 160, 89, 0.1)',
+            border: '1px solid var(--accent-border)',
+            borderRadius: 50,
+            minWidth: 160
+          }}>
+            <span style={{ 
+              fontSize: 11, 
+              fontWeight: 800, 
+              color: 'var(--text-tertiary)', 
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              whiteSpace: 'nowrap'
+            }}>
+              CURRENT MEAL
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 16 }}>{mealIcons[currentMeal]}</span>
+              <span style={{ 
+                fontSize: 14, 
+                fontWeight: 900, 
+                color: 'var(--accent-primary)',
+                fontFamily: "'Space Grotesk', sans-serif",
+                whiteSpace: 'nowrap'
+              }}>
+                {mealLabels[currentMeal]}
+              </span>
+            </div>
+            {mealOverride && (
+              <span style={{ 
+                fontSize: 9, 
+                fontWeight: 700, 
+                color: '#f59e0b',
+                background: 'rgba(245, 158, 11, 0.15)',
+                padding: '2px 8px',
+                borderRadius: 10,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em'
+              }}>
+                MANUAL
+              </span>
+            )}
+          </div>
+          
+          {/* Meal Toggle Buttons - Only show when admin wants to override */}
+          <div style={{ display: 'flex', gap: 6, background: 'rgba(255,255,255,0.02)', padding: 4, borderRadius: 12, border: '1px solid var(--border-light)' }}>
+            {['lunch', 'dinner'].map(meal => (
+              <button
+                key={meal}
+                onClick={() => onMealToggle(meal)}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: 10,
+                  border: 'none',
+                  background: currentMeal === meal ? 'var(--accent-grad)' : 'transparent',
+                  color: currentMeal === meal ? '#000' : 'var(--text-tertiary)',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  whiteSpace: 'nowrap'
+                }}
+                onMouseEnter={e => {
+                  if (currentMeal !== meal) {
+                    e.currentTarget.style.background = 'var(--accent-bg)'
+                    e.currentTarget.style.color = 'var(--accent-primary)'
+                  }
+                }}
+                onMouseLeave={e => {
+                  if (currentMeal !== meal) {
+                    e.currentTarget.style.background = 'transparent'
+                    e.currentTarget.style.color = 'var(--text-tertiary)'
+                  }
+                }}
+              >
+                <span style={{ fontSize: 14 }}>{mealIcons[meal]}</span>
+                <span style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  {mealLabels[meal].charAt(0)}
+                </span>
+              </button>
+            ))}
+          </div>
+          
+          {/* Reset to Auto Button */}
+          {mealOverride && (
+            <button
+              onClick={onResetAuto}
+              style={{
+                padding: '8px 14px',
+                borderRadius: 10,
+                border: '1px solid var(--border-light)',
+                background: 'transparent',
+                color: 'var(--text-tertiary)',
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                whiteSpace: 'nowrap'
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = 'var(--accent-bg)'
+                e.currentTarget.style.color = 'var(--accent-primary)'
+                e.currentTarget.style.borderColor = 'var(--accent-border)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = 'transparent'
+                e.currentTarget.style.color = 'var(--text-tertiary)'
+                e.currentTarget.style.borderColor = 'var(--border-light)'
+              }}
+            >
+              <RefreshCw size={14} />
+              <span style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>AUTO</span>
+            </button>
+          )}
+        </div>
+        
+        {/* Action Buttons */}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            onClick={onScan}
+            aria-label="Scan QR code"
+            style={{ 
+              background: 'var(--accent-grad)', 
+              border: 'none', 
+              borderRadius: 12, 
+              padding: '12px 16px', 
+              cursor: 'pointer', 
+              color: '#000',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontWeight: 700,
+              fontSize: 13,
+              boxShadow: '0 4px 20px rgba(197, 160, 89, 0.3)',
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.transform = 'translateY(-2px)'
+              e.currentTarget.style.boxShadow = '0 8px 30px rgba(197, 160, 89, 0.5)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.transform = 'translateY(0)'
+              e.currentTarget.style.boxShadow = '0 4px 20px rgba(197, 160, 89, 0.3)'
+            }}
+          >
+            <Scan size={18} />
+            <span>SCAN THALI</span>
+          </button>
+          <button
+            onClick={onNotices}
+            aria-label="View notices"
+            style={{ 
+              background: 'rgba(255,255,255,0.03)', 
+              border: '1px solid var(--border-light)', 
+              borderRadius: 12, 
+              padding: '12px 16px', 
+              cursor: 'pointer', 
+              color: 'var(--accent-primary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontWeight: 700,
+              fontSize: 13,
+              transition: 'all 0.2s'
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'var(--accent-bg)'
+              e.currentTarget.style.borderColor = 'var(--accent-border)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'rgba(255,255,255,0.03)'
+              e.currentTarget.style.borderColor = 'var(--border-light)'
+            }}
+          >
+            <Bell size={18} />
+            <span>NOTICES</span>
+          </button>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+// Need to import RefreshCw
+import { RefreshCw } from 'lucide-react'
+
 export default function KhidmatPortal({ signOut, user }) {
   const [activeTab, setActiveTab] = useState('home')
   const [staffInfo, setStaffInfo] = useState({ name: 'Staff Member', role: 'Team Member' })
@@ -93,6 +339,39 @@ export default function KhidmatPortal({ signOut, user }) {
   const [isScanning, setIsScanning] = useState(false)
   const [scannedUser, setScannedUser] = useState(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  
+  // Time-based meal state with admin override
+  const [currentMeal, setCurrentMeal] = useState(() => getCurrentMealByTime())
+  const [mealOverride, setMealOverride] = useState(false)
+  const [scannedMeal, setScannedMeal] = useState('lunch')
+  
+  // Track if user has manually toggled meal view
+  const [lastManualMeal, setLastManualMeal] = useState(null)
+
+  // Time-based meal logic: Lunch until 3pm, Dinner 3pm-8pm
+  function getCurrentMealByTime() {
+    const hour = new Date().getHours()
+    const minutes = new Date().getMinutes()
+    const timeInMinutes = hour * 60 + minutes
+    // Lunch: before 15:00 (3pm), Dinner: 15:00-20:00 (3pm-8pm)
+    if (timeInMinutes < 15 * 60) return 'lunch'
+    if (timeInMinutes < 20 * 60) return 'dinner'
+    return 'lunch' // After 8pm, default to lunch for next day
+  }
+
+  // Sync with time unless admin has overridden
+  useEffect(() => {
+    if (!mealOverride) {
+      const meal = getCurrentMealByTime()
+      setCurrentMeal(meal)
+    }
+    const interval = setInterval(() => {
+      if (!mealOverride) {
+        setCurrentMeal(getCurrentMealByTime())
+      }
+    }, 60000) // Check every minute
+    return () => clearInterval(interval)
+  }, [mealOverride])
 
   // --- WIRELESS SCANNER SUPPORT ---
   useEffect(() => {
@@ -159,13 +438,38 @@ export default function KhidmatPortal({ signOut, user }) {
         return { status: status || 'Not Submitted', dishes }
       }
 
+      // Use scanned meal (which respects admin override) or current meal
+      const mealToShow = scannedMeal || currentMeal
+      
       setScannedUser({
         ...u,
         currentDay: today,
+        currentMeal: mealToShow,
         lunch: buildMealData('lunch'),
         dinner: buildMealData('dinner')
       })
+      // Set the scanned meal to current meal (respecting override)
+      setScannedMeal(mealToShow)
     } catch (e) { console.error(e) }
+  }
+
+  // Admin meal toggle handler
+  const handleMealToggle = (meal) => {
+    setMealOverride(true)
+    setCurrentMeal(meal)
+    setScannedMeal(meal)
+    setLastManualMeal(meal)
+    // Update scanned user if exists
+    if (scannedUser) {
+      setScannedUser(prev => prev ? { ...prev, currentMeal: meal } : null)
+    }
+  }
+
+  // Reset to auto time-based meal
+  const handleResetToAuto = () => {
+    setMealOverride(false)
+    setCurrentMeal(getCurrentMealByTime())
+    setLastManualMeal(null)
   }
 
   // --- CAMERA SCANNER ---
@@ -245,10 +549,15 @@ export default function KhidmatPortal({ signOut, user }) {
       color: 'var(--text-primary)', overflowX: 'hidden', fontFamily: "'Inter', sans-serif"
     }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Amiri:wght@400;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Amiri:wght@400;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulseGlow { 0%, 100% { box-shadow: 0 0 20px rgba(197, 160, 89, 0.3); } 50% { box-shadow: 0 0 40px rgba(197, 160, 89, 0.6); } }
+        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
         .spin { animation: spin 0.8s linear infinite; }
-        ::-webkit-scrollbar { width: 0; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, var(--accent-primary), #d4af37); border-radius: 3px; }
         .kh-nav-inner { 
           display: flex; align-items: center; gap: 4px; 
           width: 100%; padding: 0 10px;
@@ -305,34 +614,16 @@ export default function KhidmatPortal({ signOut, user }) {
         {activeTab === 'home' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-            {/* Staff Profile - Organic */}
-            <Card organic style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-              <div style={{
-                width: 64, height: 64, borderRadius: '50%', background: 'var(--accent-bg)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, fontWeight: 900, color: 'var(--accent-primary)',
-                boxShadow: '0 8px 20px rgba(0,0,0,0.2)', border: '2px solid var(--accent-border)'
-              }}>
-                {staffInfo.name.charAt(0)}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--accent-primary)', fontFamily: "'Inter', sans-serif" }}>{staffInfo.name}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{staffInfo.role}</div>
-              </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button
-                  onClick={() => setIsScanning(true)}
-                  aria-label="Scan QR code"
-                  style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)', borderRadius: 12, padding: 10, cursor: 'pointer', color: 'var(--accent-primary)' }}>
-                  <Scan size={20} />
-                </button>
-                <button
-                  onClick={() => setActiveTab('notices')}
-                  aria-label="View notices"
-                  style={{ background: 'var(--accent-bg)', border: '1px solid var(--accent-border)', borderRadius: 12, padding: 10, cursor: 'pointer', color: 'var(--accent-primary)' }}>
-                  <Bell size={20} />
-                </button>
-              </div>
-            </Card>
+            {/* Staff Profile - Premium */}
+            <ScanHeaderCard 
+              staffInfo={staffInfo} 
+              onScan={() => setIsScanning(true)}
+              onNotices={() => setActiveTab('notices')}
+              currentMeal={currentMeal}
+              mealOverride={mealOverride}
+              onMealToggle={handleMealToggle}
+              onResetAuto={handleResetToAuto}
+            />
 
             {/* MODALS */}
             {isScanning && (
@@ -348,7 +639,13 @@ export default function KhidmatPortal({ signOut, user }) {
             {scannedUser && (
               <PackingTVView 
                 user={scannedUser} 
-                onClose={() => setScannedUser(null)} 
+                onClose={() => setScannedUser(null)}
+                meal={scannedMeal}
+                day={scannedUser.currentDay}
+                currentMeal={currentMeal}
+                mealOverride={mealOverride}
+                onMealToggle={handleMealToggle}
+                onResetAuto={handleResetToAuto}
               />
             )}
 

@@ -388,7 +388,7 @@ export default function SurveysPage() {
           }
           return (
             <span key={d} style={{ fontSize: 11, background: 'rgba(255,255,255,0.04)', padding: '2px 6px', borderRadius: 6, border: `1px solid ${T.border}` }}>
-              {d}: <strong style={{ color: T.accent }}>{isCount ? numVal : `${numVal}%`}</strong>
+              {d}: <strong style={{ color: T.accent }}>{isCount ? `${numVal} person${numVal === 1 ? '' : 's'}` : `${numVal}%`}</strong>
             </span>
           )
         })}
@@ -421,7 +421,7 @@ export default function SurveysPage() {
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 13, fontWeight: 800, color: T.accent }}>
-              {numVal}
+              {numVal} <span style={{ fontSize: 10, fontWeight: 600, color: T.textSub }}>person{numVal === 1 ? '' : 's'}</span>
             </span>
           </div>
         )
@@ -483,10 +483,11 @@ export default function SurveysPage() {
       {selectedUser && (
         <PackingTVView 
           user={selectedUser} 
+          meal={mealFilter}
           onClose={() => {
             setSelectedUser(null)
             setSearchParams({})
-          }} 
+          }}
         />
       )}
 
@@ -506,11 +507,11 @@ export default function SurveysPage() {
                   <div key={s.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 10, borderBottom: `1px solid ${T.border}` }}>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <span style={{ color: T.text, fontSize: 15, fontWeight: 700 }}>{s.name}</span>
-                      <span style={{ color: T.textSub, fontSize: 11 }}>{s.isCount ? 'Total pieces' : s.isPct ? 'Total portions' : 'Yes count'}: {s.raw}</span>
+                      <span style={{ color: T.textSub, fontSize: 11 }}>{s.isCount ? 'Total persons' : s.isPct ? 'Total portions' : 'Yes count'}: {s.raw}</span>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ color: T.accent, fontSize: 28, fontWeight: 900 }}>{s.portions}</div>
-                      <div style={{ fontSize: 10, color: T.textSub, textTransform: 'uppercase', fontWeight: 800 }}>{s.isCount ? 'Pieces' : s.isPct ? 'Portions' : 'Members'}</div>
+                      <div style={{ fontSize: 10, color: T.textSub, textTransform: 'uppercase', fontWeight: 800 }}>{s.isCount ? 'Persons' : s.isPct ? 'Portions' : 'Members'}</div>
                     </div>
                   </div>
                 ))}

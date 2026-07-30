@@ -157,14 +157,11 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
         }
       })
       setUserResponses(respMap)
-      // Already filled this meal → don't keep re-prompting
-      const alreadyComplete = mi.dishes.length > 0 && mi.dishes.every((d) => respMap[d] !== undefined)
-      if (alreadyComplete) onCompleteRef.current()
     }
     loadData().finally(() => setDataLoading(false))
   }, [user, weeklyMenu, isOpen, appSettings])
 
-  const saveResponse = async (dish, value) => {
+  const saveAllResponses = async () => {
     if (!user || saving) return
     setSaving(true)
     try {
@@ -173,12 +170,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
       const weekId = getWeekDate()
       const dayKey = mi.day.substring(0, 3).toLowerCase()
       const mealKey = mi.meal === 'lunch' ? 'l' : 'd'
-      const dishIdx = mi.dishes.indexOf(dish)
-      if (dishIdx === -1) return
-      const newResponses = { ...userResponses, [dish]: value }
-      setUserResponses(newResponses)
       const statusKey = dayKey + '_' + mealKey + '_status'
-      // Load existing submission to merge with current state (avoid data loss)
       const { data: existing } = await supabase.from('survey_submissions_flat')
         .select('*').eq('user_id', user.id).eq('week_id', weekId).maybeSingle()
       const upsertObj = {
@@ -189,7 +181,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
       }
       mi.dishes.forEach((d, idx) => {
         const colName = dayKey + '_' + mealKey + '_dish_' + (idx + 1)
-        const val = newResponses[d]
+        const val = userResponses[d]
         if (val !== undefined) {
           const isCount = isCountInput(appSettings, mi.day, mi.meal, idx)
           if (isRotiItem(d)) {
@@ -207,17 +199,16 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
         .from('survey_submissions_flat')
         .upsert([upsertObj], { onConflict: 'user_id,week_id' })
       if (error) throw error
-
-      // Once every dish for this meal has a response, close — show only once per window
-      const allFilled = mi.dishes.every((d) => newResponses[d] !== undefined && newResponses[d] !== null && newResponses[d] !== '')
-      if (allFilled) {
-        onCompleteRef.current()
-      }
+      onCompleteRef.current()
     } catch (err) {
       console.error('Error saving quick edit:', err)
     } finally {
       setSaving(false)
     }
+  }
+
+  const setDishResponse = (dish, value) => {
+    setUserResponses(prev => ({ ...prev, [dish]: value }))
   }
 
   const mealInfo = weeklyMenu ? getCardMealInfo(weeklyMenu, appSettings) : null
@@ -294,22 +285,22 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
                     <span>{dish}</span>
                     {resp !== undefined && (
                       <span style={{ fontSize: 13, fontWeight: 800, color: resp === 'yes' ? '#4CAF50' : resp === 'no' ? '#F44336' : t.accent }}>
-                        {isRotiItem(dish) ? (resp === 'yes' ? '✅' : '❌') : isCount ? (resp === 'no' ? '❌' : (typeof resp === 'number' ? resp : 0)) : (typeof resp === 'number' ? resp + '%' : resp)}
+                        {isRotiItem(dish) ? (resp === 'yes' ? '✅' : '❌') : isCount ? (resp === 'no' ? '❌' : (typeof resp === 'number' ? `${resp} person${resp === 1 ? '' : 's'}` : 0)) : (typeof resp === 'number' ? resp + '%' : resp)}
                       </span>
                     )}
                   </div>
                   {isRotiItem(dish) ? (
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button onClick={() => saveResponse(dish, 'yes')} disabled={saving}
+                      <button onClick={() => setDishResponse(dish, 'yes')} disabled={saving}
                         style={{ flex: 1, padding: '8px', borderRadius: 8, border: `1.5px solid ${resp === 'yes' ? '#4CAF50' : t.border}`, background: resp === 'yes' ? 'rgba(76,175,80,0.12)' : 'transparent', color: resp === 'yes' ? '#4CAF50' : t.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>✅ Yes</button>
-                      <button onClick={() => saveResponse(dish, 'no')} disabled={saving}
+                      <button onClick={() => setDishResponse(dish, 'no')} disabled={saving}
                         style={{ flex: 1, padding: '8px', borderRadius: 8, border: `1.5px solid ${resp === 'no' ? '#F44336' : t.border}`, background: resp === 'no' ? 'rgba(244,67,54,0.12)' : 'transparent', color: resp === 'no' ? '#F44336' : t.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>❌ No</button>
                     </div>
                   ) : isCount ? (
                     resp === 'no' ? (
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                         <span style={{ fontSize: 13, color: '#F44336', fontWeight: 700 }}>❌ Skipped</span>
-                        <button onClick={() => saveResponse(dish, 1)} disabled={saving} style={{
+                        <button onClick={() => setDishResponse(dish, 1)} disabled={saving} style={{
                           marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, border: `1.5px solid ${t.accent}`,
                           background: t.accentBg, color: t.accent,
                           fontSize: 12, fontWeight: 700, cursor: 'pointer'
@@ -317,14 +308,17 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
                       </div>
                     ) : (
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                        <button onClick={() => saveResponse(dish, Math.max(0, (typeof resp === 'number' ? resp : 0) - 1))} disabled={saving} style={{
+                        <button onClick={() => setDishResponse(dish, Math.max(0, (typeof resp === 'number' ? resp : 0) - 1))} disabled={saving} style={{
                           width: 36, height: 36, borderRadius: 8, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
                         }}>−</button>
-                        <span style={{ fontSize: 20, fontWeight: 800, color: t.accent, minWidth: 40, textAlign: 'center' }}>{typeof resp === 'number' ? resp : 0}</span>
-                        <button onClick={() => saveResponse(dish, (typeof resp === 'number' ? resp : 0) + 1)} disabled={saving} style={{
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ fontSize: 20, fontWeight: 800, color: t.accent, minWidth: 30, textAlign: 'center' }}>{typeof resp === 'number' ? resp : 0}</span>
+                          <span style={{ fontSize: 11, color: t.textSub, fontWeight: 600 }}>{(typeof resp === 'number' ? resp : 0) === 1 ? 'person' : 'persons'}</span>
+                        </div>
+                        <button onClick={() => setDishResponse(dish, (typeof resp === 'number' ? resp : 0) + 1)} disabled={saving} style={{
                           width: 36, height: 36, borderRadius: 8, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
                         }}>+</button>
-                        <button onClick={() => saveResponse(dish, 'no')} disabled={saving} style={{
+                        <button onClick={() => setDishResponse(dish, 'no')} disabled={saving} style={{
                           marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, border: `1.5px solid ${t.border}`,
                           background: 'transparent', color: t.textSub,
                           fontSize: 12, fontWeight: 700, cursor: 'pointer'
@@ -334,7 +328,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
                   ) : (
                     <div style={{ display: 'flex', gap: 6 }}>
                       {[0, 25, 50, 75, 100].map(pct => (
-                        <button key={pct} onClick={() => saveResponse(dish, pct)} disabled={saving}
+                        <button key={pct} onClick={() => setDishResponse(dish, pct)} disabled={saving}
                           style={{
                             flex: 1, padding: '8px 4px', borderRadius: 8,
                             border: `1.5px solid ${resp === pct ? t.accent : t.border}`,
@@ -354,18 +348,20 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
 
         {/* Submit All & Close buttons */}
         <button
-          onClick={() => { onComplete(); onClose(); }}
+          onClick={saveAllResponses}
+          disabled={saving}
           style={{
             width: '100%', padding: 14, borderRadius: 14,
             border: 'none',
-            background: t.accentGrad || t.accent,
+            background: saving ? t.border : (t.accentGrad || t.accent),
             color: '#000', fontSize: 15, fontWeight: 900,
-            cursor: 'pointer', marginTop: 8,
+            cursor: saving ? 'not-allowed' : 'pointer', marginTop: 8,
             fontFamily: "'DM Sans',sans-serif",
-            boxShadow: `0 8px 24px ${t.accentBg || 'rgba(224, 160, 60, 0.25)'}`
+            boxShadow: saving ? 'none' : `0 8px 24px ${t.accentBg || 'rgba(224, 160, 60, 0.25)'}`,
+            opacity: saving ? 0.6 : 1
           }}
         >
-          Submit All Changes
+          {saving ? 'Saving...' : 'Submit All Changes'}
         </button>
         <button
           onClick={onClose}

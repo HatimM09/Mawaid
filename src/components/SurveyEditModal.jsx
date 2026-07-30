@@ -314,8 +314,8 @@ export default function SurveyEditModal({
               let displayText = ''
               if (response === 'no') displayText = 'Skipped'
               else if (response === 'yes') displayText = 'Selected'
-              else if (typeof response === 'number') displayText = `${response} portions`
-              else if (response.status === 'yes') displayText = `${response.value} portions`
+              else if (typeof response === 'number') displayText = `${response} person${response === 1 ? '' : 's'}`
+              else if (response.status === 'yes') displayText = `${response.value} person${response.value === 1 ? '' : 's'}`
               else if (typeof response === 'string') displayText = response
               else displayText = 'Unknown'
 

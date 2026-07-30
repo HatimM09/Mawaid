@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import LunchSurveyEditCard from './LunchSurveyEditCard'
 import { supabase } from '../lib/firebaseClient'
 import { THEMES } from '../admin/ui'
+import { getWeekDate } from '../common/utils'
 
 /**
  * LunchSurveyEditor - Direct editing interface for lunch survey responses
@@ -55,7 +56,7 @@ export default function LunchSurveyEditor({
       }
 
       // Load current week's survey
-      const currentWeekId = new Date().toISOString().split('T')[0]
+      const currentWeekId = getWeekDate()
       const { data: surveyData } = await supabase
         .from('survey_submissions_flat')
         .select('*')
@@ -134,7 +135,7 @@ export default function LunchSurveyEditor({
   const saveSurveyResponse = async (dish, response) => {
     try {
       const { user } = await supabase.auth.getUser()
-      const currentWeekId = new Date().toISOString().split('T')[0]
+      const currentWeekId = getWeekDate()
       const today = new Date().toISOString().split('T')[0].toLowerCase().slice(0, 3)
       const mealKey = 'l'
       
@@ -178,7 +179,7 @@ export default function LunchSurveyEditor({
 
     try {
       const { user } = await supabase.auth.getUser()
-      const currentWeekId = new Date().toISOString().split('T')[0]
+      const currentWeekId = getWeekDate()
       const today = new Date().toISOString().split('T')[0].toLowerCase().slice(0, 3)
       const mealKey = 'l'
 
@@ -450,10 +451,10 @@ export default function LunchSurveyEditor({
               displayText = 'Selected'
               statusColor = t.accent
             } else if (typeof response === 'number') {
-              displayText = `${response} portions`
+              displayText = `${response} person${response === 1 ? '' : 's'}`
               statusColor = t.accent
             } else if (response.status === 'yes') {
-              displayText = `${response.value} portions`
+              displayText = `${response.value} person${response.value === 1 ? '' : 's'}`
               statusColor = t.accent
             } else {
               displayText = 'Unknown'

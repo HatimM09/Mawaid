@@ -53,12 +53,6 @@ const DEFAULT_FORM = {
   media_url: '',
   channel: 'in-app',
   delivery: 'now',
-  // Rich push options
-  big_picture_url: '',
-  style: 'bigpicture',
-  actions: '',
-  collapse_key: '',
-  ttl: 86400,
 }
 
 export default function NotificationsAdminPage() {
@@ -77,6 +71,8 @@ export default function NotificationsAdminPage() {
   // Form
   const [form, setForm] = useState(DEFAULT_FORM)
   const [activeView, setActiveView] = useState('compose') // 'compose' or 'history'
+  const [formError, setFormError] = useState('')
+  const formErrorTimer = useRef(null)
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('')
@@ -228,14 +224,27 @@ export default function NotificationsAdminPage() {
   }
 
   // ── Send Broadcast ───────────────────────────────────────────
+  const showFormError = (msg) => {
+    setFormError(msg)
+    if (formErrorTimer.current) clearTimeout(formErrorTimer.current)
+    formErrorTimer.current = setTimeout(() => setFormError(''), 5000)
+  }
+
   const handleSend = async () => {
     if (!form.title || !form.body) {
-      alert('Title and Message are required')
+      showFormError('Title and Message are required')
       return
+    }
+    // Confirmation for sending to all users
+    const targetCount = getTargetCount(form.target_type, form.target_user_id)
+    if (form.target_type === 'all' && targetCount > 10) {
+      const confirmed = window.confirm(`Send this broadcast to ${targetCount} users? This cannot be undone.`)
+      if (!confirmed) return
     }
     setSubmitting(true)
 
-    const targetCount = getTargetCount(form.target_type, form.target_user_id)
+    let sentCount = 0
+    let failedCount = 0
     const now = new Date().toISOString()
     const isScheduled = form.delivery === 'schedule' && form.scheduled_at
 
@@ -259,7 +268,7 @@ export default function NotificationsAdminPage() {
       .single()
 
     if (noticeError) {
-      alert('Error saving notice: ' + noticeError.message)
+      showFormError('Error saving notice: ' + noticeError.message)
       setSubmitting(false)
       return
     }
@@ -285,9 +294,6 @@ export default function NotificationsAdminPage() {
     await supabase.from('broadcast_schedule').insert([scheduleEntry])
 
     if (!isScheduled) {
-      let sentCount = 0
-      let failedCount = 0
-
       // Always write in-app notifications so open web/AAB clients get Realtime toasts
       await insertInAppNotifications(
         form.target_type,
@@ -309,11 +315,6 @@ export default function NotificationsAdminPage() {
               url: '/',
               image_url: form.media_url || undefined,
               sender_name: form.sender_name,
-              big_picture_url: form.big_picture_url || form.media_url || undefined,
-              actions: form.actions ? JSON.parse(form.actions) : undefined,
-              style: form.style || undefined,
-              collapse_key: form.collapse_key || undefined,
-              ttl: form.ttl || undefined,
             }
           })
           if (pushError) throw pushError
@@ -337,6 +338,12 @@ export default function NotificationsAdminPage() {
     setUploadProgress(0)
     fetchAll()
     setSubmitting(false)
+    // Show delivery feedback
+    if (form.channel === 'push') {
+      showFormError(`✅ Sent! ${sentCount} delivered, ${failedCount} failed.`)
+    } else {
+      showFormError(`✅ Broadcast sent to ${targetCount} recipient(s).`)
+    }
   }
 
   // ── Save as Template ─────────────────────────────────────────
@@ -353,7 +360,7 @@ export default function NotificationsAdminPage() {
       created_by: (await supabase.auth.getUser()).data?.user?.id,
     }])
     if (error) {
-      alert('Error saving template: ' + error.message)
+      showFormError('Error saving template: ' + error.message)
     } else {
       setShowSaveModal(false)
       setSaveTemplateName('')
@@ -395,7 +402,7 @@ export default function NotificationsAdminPage() {
       setUploadProgress(100)
     } catch (err) {
       console.error('Upload error:', err)
-      alert('Failed to upload image: ' + err.message)
+      showFormError('Failed to upload image: ' + err.message)
       // Keep local preview but user will see it didn't persist
     }
     setUploading(false)
@@ -409,7 +416,7 @@ export default function NotificationsAdminPage() {
     if (file && file.type.startsWith('image/')) {
       uploadFile(file)
     } else if (file) {
-      alert('Please drop an image file (PNG, JPEG, WebP, GIF)')
+      showFormError('Please drop an image file (PNG, JPEG, WebP, GIF)')
     }
   }, [])
 
@@ -455,6 +462,8 @@ export default function NotificationsAdminPage() {
     setActiveView('compose')
     setPresetOpen(false)
   }
+
+  // ── Delete actions ───────────────────────────────────────────
 
   // ── Delete actions ───────────────────────────────────────────
   const deleteNotice = async (id) => {
@@ -582,7 +591,7 @@ export default function NotificationsAdminPage() {
       {/* Notification card inside phone */}
       <div style={{ padding: '12px 16px 20px' }}>
         <div style={{
-          background: 'linear-gradient(135deg, rgba(197, 160, 89, 0.08), rgba(197, 160, 89, 0.02))',
+          background: T.accentGrad || 'var(--accent-grad)',
           borderRadius: 20, overflow: 'hidden',
           border: `1px solid ${form.tone || '#c5a059'}25`,
           boxShadow: `0 8px 25px rgba(0,0,0,0.3)`
@@ -801,15 +810,21 @@ export default function NotificationsAdminPage() {
 
                 {/* Row 3: Message */}
                 <div>
-                  <label htmlFor="notificationBody" style={{
-                    display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
-                    fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
-                  }}>Message</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <label htmlFor="notificationBody" style={{
+                      display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
+                      fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase',
+                    }}>Message</label>
+                    <span style={{ fontSize: 10, color: 'var(--text-tertiary)', opacity: 0.5 }}>
+                      {form.body.length}/500
+                    </span>
+                  </div>
                   <textarea
                     id="notificationBody"
                     name="notificationBody"
                     placeholder="Add notification text..."
                     value={form.body}
+                    maxLength={500}
                     onChange={e => setForm({ ...form, body: e.target.value })}
                     style={{
                       width: '100%', boxSizing: 'border-box',
@@ -881,6 +896,21 @@ export default function NotificationsAdminPage() {
                     </select>
                   </div>
                 </div>
+
+                {/* Inline error toast */}
+                {formError && (
+                  <div style={{
+                    padding: '10px 14px', borderRadius: 10,
+                    background: formError.startsWith('✅') ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
+                    border: `1px solid ${formError.startsWith('✅') ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
+                    color: formError.startsWith('✅') ? '#34d399' : '#ef4444',
+                    fontSize: 12, fontWeight: 600,
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}>
+                    <span>{formError.startsWith('✅') ? '✓' : '✕'}</span>
+                    {formError.replace(/^[✅✕]\s*/, '')}
+                  </div>
+                )}
 
                 {/* Row 5: Image Upload (Drag & Drop) */}
                 <div>
@@ -1093,138 +1123,44 @@ export default function NotificationsAdminPage() {
                   </div>
                 </div>
 
-                {/* Row 7: Rich Push Options */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                  {/* Big Picture Image */}
+                {/* Image & Tone Row */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div>
-                    <label htmlFor="bigPictureUrl" style={{
+                    <div style={{
                       display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
                       fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
-                    }}>Big Picture Image (URL)</label>
-                    <input
-                      id="bigPictureUrl"
-                      name="bigPictureUrl"
-                      placeholder="https://example.com/image.jpg"
-                      value={form.big_picture_url}
-                      onChange={e => setForm({ ...form, big_picture_url: e.target.value })}
-                      style={{
-                        width: '100%', boxSizing: 'border-box',
-                        padding: '10px 12px', borderRadius: 12,
-                        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
-                        color: 'var(--text-primary)', fontSize: 12, outline: 'none', fontFamily: 'inherit',
-                      }}
-                      title="Optional: Full-screen image for rich notifications"
-                    />
+                    }}>Notification Tone</div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {TONES.map(t => (
+                        <button
+                          key={t.value}
+                          type="button"
+                          onClick={() => setForm({ ...form, tone: t.value })}
+                          style={{
+                            width: 36, height: 36, borderRadius: '50%',
+                            background: t.color,
+                            border: form.tone === t.value ? '3px solid #fff' : '3px solid transparent',
+                            cursor: 'pointer', transition: 'all 0.2s',
+                            boxShadow: form.tone === t.value ? '0 0 12px rgba(255,255,255,0.2)' : 'none',
+                          }}
+                          title={t.label}
+                        />
+                      ))}
+                    </div>
                   </div>
-
-                  {/* Style Selector */}
                   <div>
-                    <label htmlFor="pushStyle" style={{
+                    <div style={{
                       display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
                       fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
-                    }}>Rich Style</label>
-                    <select
-                      id="pushStyle"
-                      name="pushStyle"
-                      value={form.style}
-                      onChange={e => setForm({ ...form, style: e.target.value })}
-                      style={{
-                        width: '100%', boxSizing: 'border-box',
-                        padding: '10px 12px', borderRadius: 12,
-                        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
-                        color: 'var(--text-primary)', fontSize: 12, outline: 'none', fontFamily: 'inherit',
-                      }}
-                    >
-                      <option value="bigpicture">Big Picture</option>
-                      <option value="bigtext">Big Text</option>
-                      <option value="inbox">Inbox</option>
-                    </select>
+                    }}>Image (attached media shows in notification)</div>
+                    <div style={{
+                      padding: '10px 12px', borderRadius: 12,
+                      background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
+                      color: 'var(--text-tertiary)', fontSize: 12,
+                    }}>
+                      {form.media_url ? '✅ Image attached' : 'Drag & drop or upload an image above'}
+                    </div>
                   </div>
-
-                  {/* Collapse Key */}
-                  <div>
-                    <label htmlFor="collapseKey" style={{
-                      display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
-                      fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
-                    }}>Collapse Key</label>
-                    <input
-                      id="collapseKey"
-                      name="collapseKey"
-                      placeholder="e.g. survey_reminder"
-                      value={form.collapse_key}
-                      onChange={e => setForm({ ...form, collapse_key: e.target.value })}
-                      style={{
-                        width: '100%', boxSizing: 'border-box',
-                        padding: '10px 12px', borderRadius: 12,
-                        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
-                        color: 'var(--text-primary)', fontSize: 12, outline: 'none', fontFamily: 'inherit',
-                      }}
-                      title="Group similar notifications (e.g., survey_reminder)"
-                    />
-                  </div>
-                </div>
-
-                {/* Row 8: Actions */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                  {/* Action 1 */}
-                  <div>
-                    <label htmlFor="action1" style={{
-                      display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
-                      fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
-                    }}>Action 1 (View)</label>
-                    <input
-                      id="action1"
-                      name="action1"
-                      placeholder='{"action":"open","title":"View"}'
-                      value={form.actions}
-                      onChange={e => setForm({ ...form, actions: e.target.value })}
-                      style={{
-                        width: '100%', boxSizing: 'border-box',
-                        padding: '10px 12px', borderRadius: 12,
-                        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
-                        color: 'var(--text-primary)', fontSize: 12, outline: 'none', fontFamily: 'inherit',
-                      }}
-                      title='JSON array: [{"action":"open","title":"View"},{"action":"dismiss","title":"Dismiss"}]'
-                    />
-                  </div>
-
-                  {/* TTL */}
-                  <div>
-                    <label htmlFor="ttl" style={{
-                      display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
-                      fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
-                    }}>TTL (seconds)</label>
-                    <input
-                      id="ttl"
-                      name="ttl"
-                      type="number"
-                      min="0"
-                      max="2419200"
-                      value={form.ttl}
-                      onChange={e => setForm({ ...form, ttl: parseInt(e.target.value) || 86400 })}
-                      style={{
-                        width: '100%', boxSizing: 'border-box',
-                        padding: '10px 12px', borderRadius: 12,
-                        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
-                        color: 'var(--text-primary)', fontSize: 12, outline: 'none', fontFamily: 'inherit',
-                      }}
-                      title="Time to live in seconds (max 28 days = 2419200)"
-                    />
-                  </div>
-                </div>
-
-                {/* Rich Push Help Text */}
-                <div style={{
-                  padding: '12px 16px', borderRadius: 10,
-                  background: 'rgba(197, 160, 89, 0.04)', border: '1px solid rgba(197, 160, 89, 0.1)',
-                  fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.6
-                }}>
-                  <strong style={{ color: T.accent }}>Rich Push Tips:</strong>
-                  • <strong>Big Picture</strong> shows full image below notification (Android FCM)
-                  • <strong>Actions</strong> add buttons like "View", "Dismiss", "Snooze" (max 3)
-                  • <strong>Collapse Key</strong> groups similar notifications (e.g., "survey_reminder")
-                  • <strong>TTL</strong> = how long FCM keeps message if device offline (default 24h)
-                  • Image URL must be HTTPS and accessible (auto-used as big_picture_url if media attached)
                 </div>
 
                 {/* Save as Template button row */}
@@ -1297,7 +1233,7 @@ export default function NotificationsAdminPage() {
                   Will reach <strong style={{ color: T.accent }}>
 {form.target_type === 'specific' && form.target_user_id ? 1 :
                       form.target_type === 'all' ? realPushSubs :
-                      form.target_type === 'admins' ? realPushSubs :
+                      form.target_type === 'admins' ? (users.filter(u => u.role === 'admin').length || realPushSubs) :
                       users.length}
                   </strong> recipient{form.target_type === 'specific' && form.target_user_id ? '' : 's'}
                   {form.delivery === 'schedule' && form.scheduled_at
@@ -1341,7 +1277,7 @@ export default function NotificationsAdminPage() {
                 disabled={submitting}
                 style={{
                   height: 54, padding: '0 28px',
-                  background: 'transparent',
+                  background: 'var(--accent-bg)',
                   border: '1.5px solid rgba(212, 175, 55, 0.3)',
                   borderRadius: 14,
                   color: 'var(--text-primary)', fontWeight: 800, fontSize: 14,
@@ -1366,7 +1302,7 @@ export default function NotificationsAdminPage() {
             <AdminCard style={{
               padding: 24,
               display: 'flex', flexDirection: 'column', alignItems: 'center',
-              background: 'linear-gradient(180deg, rgba(197, 160, 89, 0.03) 0%, transparent 100%)'
+              background: T.accentGrad || 'var(--accent-grad)'
             }}>
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 6, marginBottom: 18,
@@ -1440,7 +1376,7 @@ export default function NotificationsAdminPage() {
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 style={{
-                  background: 'transparent', border: 'none', color: T.text,
+                  background: 'var(--accent-bg)', border: 'none', color: T.text,
                   outline: 'none', padding: '12px 8px', fontSize: 14, flex: 1,
                   fontFamily: 'inherit'
                 }}

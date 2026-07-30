@@ -173,19 +173,44 @@ serve(async (req) => {
 
     let sent = 0, failed = 0
 
+    // Helper: send with retry
+    async function sendWithRetry(fn: () => Promise<any>, maxRetries = 2): Promise<{ ok: boolean; err?: string }> {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          await fn()
+          return { ok: true }
+        } catch (err: any) {
+          if (attempt === maxRetries) return { ok: false, err: err.message }
+          // Only retry on transient errors (network/timeout/5xx), not on 400/404/410
+          const msg = err.message || ''
+          if (msg.includes('410') || msg.includes('404') || msg.includes('400') || msg.includes('expired')) {
+            return { ok: false, err: msg }
+          }
+          await new Promise(r => setTimeout(r, 1000 * (attempt + 1)))
+        }
+      }
+      return { ok: false }
+    }
+
     // Send Web Push notifications
     if (webPushSubs.length > 0) {
       const results = await Promise.allSettled(
         webPushSubs.map((sub: any) =>
-          sendWebPush(sub.subscription_json, title, body, url || '/', image_url, sender_name, big_picture_url, actions, style)
+          sendWithRetry(() => sendWebPush(sub.subscription_json, title, body, url || '/', image_url, sender_name, big_picture_url, actions, style))
         )
       )
       for (let i = 0; i < results.length; i++) {
-        if (results[i].status === 'fulfilled') {
+        if (results[i].status === 'fulfilled' && (results[i] as PromiseFulfilledResult<any>).value.ok) {
           sent++
         } else {
           failed++
-          const errMsg: string = (results[i] as PromiseRejectedResult).reason?.message || ''
+          const result = results[i]
+          let errMsg = ''
+          if (result.status === 'rejected') {
+            errMsg = (result as PromiseRejectedResult).reason?.message || ''
+          } else {
+            errMsg = (result as PromiseFulfilledResult<any>).value.err || ''
+          }
           if (errMsg.includes('410') || errMsg.includes('404') || errMsg.includes('expired')) {
             await supabase.from('push_subscriptions')
               .delete()
@@ -199,23 +224,32 @@ serve(async (req) => {
     // Send Expo Push notifications
     if (expoSubs.length > 0) {
       const results = await Promise.allSettled(
-        expoSubs.map((sub: any) => sendExpoPush(sub.fcm_token, title, body, url || '/'))
+        expoSubs.map((sub: any) => sendWithRetry(() => sendExpoPush(sub.fcm_token, title, body, url || '/')))
       )
-      sent += results.filter(r => r.status === 'fulfilled').length
-      failed += results.filter(r => r.status === 'rejected').length
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value.ok) sent++
+        else failed++
+      }
     }
 
     // Send FCM Push (native Android / Capacitor)
     if (fcmSubs.length > 0) {
       const results = await Promise.allSettled(
-        fcmSubs.map((sub: any) => sendFCMPush(sub.fcm_token, title, body, url || '/', big_picture_url, actions, style, collapse_key))
+        fcmSubs.map((sub: any) => sendWithRetry(() => sendFCMPush(sub.fcm_token, title, body, url || '/', big_picture_url, actions, style, collapse_key)))
       )
       for (let i = 0; i < results.length; i++) {
-        if (results[i].status === 'fulfilled') {
+        const result = results[i]
+        const ok = result.status === 'fulfilled' && result.value.ok
+        if (ok) {
           sent++
         } else {
           failed++
-          const errMsg: string = (results[i] as PromiseRejectedResult).reason?.message || ''
+          let errMsg = ''
+          if (result.status === 'rejected') {
+            errMsg = (result as PromiseRejectedResult).reason?.message || ''
+          } else {
+            errMsg = (result as PromiseFulfilledResult<any>).value.err || ''
+          }
           if (errMsg.includes('NotRegistered') || errMsg.includes('InvalidRegistration')) {
             await supabase.from('push_subscriptions')
               .delete()

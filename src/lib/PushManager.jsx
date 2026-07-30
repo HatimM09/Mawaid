@@ -50,43 +50,46 @@ function showToast({ title, body, url, image, sender_name }) {
       >
         {image ? (
           <div style={{
-            width: 48, height: 48, borderRadius: 10, flexShrink: 0, overflow: 'hidden',
-            boxShadow: '0 4px 14px rgba(0,0,0,0.4)',
+            width: 44, height: 44, borderRadius: 10, flexShrink: 0, overflow: 'hidden',
           }}>
             <img src={image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </div>
         ) : (
           <div style={{
-            width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-            background: 'linear-gradient(135deg, #c5a059, #8a6d2f)',
+            width: 36, height: 36, borderRadius: 8, flexShrink: 0,
+            background: 'var(--accent-grad)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 16, boxShadow: '0 4px 14px rgba(197,160,89,0.35)',
-          }}>✦</div>
+            fontSize: 15,
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0a0d14" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+          </div>
         )}
         <div style={{ minWidth: 0, flex: 1 }}>
           {sender_name && (
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#c5a059', letterSpacing: '0.04em', marginBottom: 2, textTransform: 'uppercase' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-primary)', letterSpacing: '0.04em', marginBottom: 1, textTransform: 'uppercase' }}>
               {sender_name}
             </div>
           )}
-          <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: '0.02em', marginBottom: 3, color: '#F5E6C8' }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: '#fff' }}>
             {title || 'Al-Mawaid'}
           </div>
-          {body && <div style={{ fontSize: 12.5, lineHeight: 1.45, color: 'rgba(250,243,224,0.78)' }}>{body}</div>}
-          <div style={{ fontSize: 11, marginTop: 6, color: '#c5a059', fontWeight: 600 }}>Open →</div>
+          {body && <div style={{ fontSize: 12, lineHeight: 1.4, color: 'rgba(255,255,255,0.65)', marginTop: 2 }}>{body}</div>}
         </div>
       </div>
     ),
     {
-      duration: 5500,
+      duration: body ? Math.max(5000, Math.min(body.length * 40, 10000)) : 5000,
       style: {
-        background: 'linear-gradient(160deg, #14100a 0%, #1a1308 100%)',
-        color: '#FAF3E0',
-        border: '1px solid rgba(197,160,89,0.35)',
-        borderRadius: 16,
-        padding: '14px 16px',
+        background: 'rgba(20,16,10,0.95)',
+        backdropFilter: 'blur(12px)',
+        color: '#fff',
+        border: '1px solid rgba(255,255,255,0.1)',
+        borderRadius: 14,
+        padding: '12px 14px',
         maxWidth: 380,
-        boxShadow: '0 18px 40px rgba(0,0,0,0.45)',
       },
     }
   )
@@ -113,7 +116,13 @@ function subscribeRealtime(realtimeChannel, user, cancelledRef, retryCount = 0) 
         filter: `user_id=eq.${user.id}`,
       },
       (payload) => {
-        const { message, type, title, url, sender_name } = payload.new
+        const { message, type, title, url, sender_name, silent } = payload.new
+        if (silent) return // Skip toast for silent notifications
+        // Dedup: skip if this notification was already shown
+        const dedupKey = `toast_${payload.new.id}`
+        if (sessionStorage.getItem(dedupKey)) return
+        sessionStorage.setItem(dedupKey, '1')
+        setTimeout(() => { try { sessionStorage.removeItem(dedupKey) } catch {} }, 5000)
         showToast({ title: title || 'Al-Mawaid', body: message, url, sender_name })
       }
     )
@@ -203,6 +212,26 @@ export default function PushManager() {
             })
             PushNotifications.addListener('pushNotificationReceived', (n) => {
               showToast({ title: n.title, body: n.body, url: n.data?.url })
+              // Play notification sound on native
+              try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext
+                if (AudioContext) {
+                  const ctx = new AudioContext()
+                  const now = ctx.currentTime
+                  const osc = ctx.createOscillator()
+                  const gain = ctx.createGain()
+                  osc.type = 'sine'
+                  osc.frequency.setValueAtTime(880, now)
+                  osc.frequency.exponentialRampToValueAtTime(660, now + 0.2)
+                  gain.gain.setValueAtTime(0.15, now)
+                  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3)
+                  osc.connect(gain)
+                  gain.connect(ctx.destination)
+                  osc.start(now)
+                  osc.stop(now + 0.3)
+                  setTimeout(() => ctx.close(), 600)
+                }
+              } catch {}
             })
             // ── Deep link: user taps notification → navigate to correct in-app page ──
             PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
@@ -237,11 +266,12 @@ export default function PushManager() {
             } catch (subErr) {
               // If the VAPID key changed since the last subscription, unsubscribe old and retry
               if (subErr.name === 'InvalidStateError' || (subErr.message && subErr.message.includes('applicationServerKey'))) {
-                console.warn('[PushManager] VAPID key mismatch — unsubscribing old subscription and retrying')
+                console.log('[PushManager] Re-subscribing with updated VAPID key...')
                 const oldSub = await swReg.pushManager.getSubscription()
                 if (oldSub) await oldSub.unsubscribe()
                 if (cancelledRef.current) return
                 sub = await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_KEY) })
+                console.log('[PushManager] Web Push re-subscribed successfully ✅')
               } else {
                 throw subErr
               }
