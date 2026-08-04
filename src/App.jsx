@@ -9,7 +9,7 @@ import {
   Eye, EyeOff, AlertCircle, ChevronDown, ChevronUp,
   ClipboardList, ChevronLeft, ChevronRight, Phone, MapPin,
   Users, Wallet, Bell, LifeBuoy, Info, MessageCircle, Upload, Utensils,
-  Sun, Moon, Medal, Package, Shield, Menu, QrCode, Camera
+  Sun, Moon, Medal, Package, Shield, Menu, QrCode, Camera, Clock
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { QRCodeCanvas } from 'qrcode.react'
@@ -24,10 +24,10 @@ import PushManager from './lib/PushManager'
 import UpdatePrompt from './components/UpdatePrompt'
 import { Toaster } from 'react-hot-toast'
 import OfflineBanner from './components/OfflineBanner'
-import DailyEditCard from './components/DailyEditCard'
+import DailyEditCard, { getCardMealInfo } from './components/DailyEditCard'
 import SurveyModal from './components/SurveyModal'
 import DailySurveyModal from './components/DailySurveyModal'
-import { getWeekDate } from './common/utils'
+import { getWeekDate, getCalendarWeekDate } from './common/utils'
 import {
   HomePageSkeleton, WeeklyMenuSkeleton, ProfileSkeleton,
   ListPageSkeleton, RequestsSkeleton, NotificationsSkeleton, KhidmatTeamSkeleton
@@ -135,6 +135,25 @@ const getSurveyWindowMessage = (appSettings = {}, userId = null) => {
   if (appSettings.survey_status === 'open') return 'Survey window is open (Admin Override)!'
   if (isSurveyOpen(appSettings, userId)) return 'Survey window is open! (Sat 8PM – Mon 11AM)'
   return 'Survey window opens Saturday 8:00 PM and closes Monday 11:00 AM.'
+}
+
+// Format minutes since midnight into a friendly 12-hour label
+const formatEditTime = (h, m) => {
+  const period = h >= 12 ? 'PM' : 'AM'
+  let hh = h % 12
+  if (hh === 0) hh = 12
+  return `${hh}${m ? ':' + String(m).padStart(2, '0') : ''} ${period}`
+}
+
+// Daily quick-edit window (open → close) for a meal, from appSettings with defaults
+const getEditWindow = (appSettings = {}, mealType) => {
+  const parseHm = (val, defaultH, defaultM) => {
+    const p = (val || '').split(':').map(Number)
+    return (p.length === 2 && !isNaN(p[0]) && !isNaN(p[1])) ? { h: p[0], m: p[1] } : { h: defaultH, m: defaultM }
+  }
+  const open = mealType === 'lunch' ? parseHm(appSettings.lunch_edit_open, 20, 0) : parseHm(appSettings.dinner_edit_open, 12, 0)
+  const close = mealType === 'lunch' ? parseHm(appSettings.lunch_edit_close, 11, 0) : parseHm(appSettings.dinner_edit_close, 15, 30)
+  return { open: formatEditTime(open.h, open.m), close: formatEditTime(close.h, close.m) }
 }
 
 const isRotiItem = (dish) => {
@@ -736,10 +755,9 @@ function ThaliUserApp() {
     { id: 'home', label: 'Home', Icon: Home, aria: 'Home Dashboard' },
     { id: 'menu', label: 'Menu', Icon: Utensils, aria: 'Weekly Menu' },
     { id: 'post', label: 'Requests', Icon: FileText, aria: 'My Requests & Queries' },
-    { id: 'staff', label: 'Team', Icon: Users, aria: 'Our Team' },
     { id: 'profile', label: 'Profile', Icon: User, aria: 'My Profile & Settings' },
   ]
-  const tabLabels = { home: 'AL-MAWAID', menu: 'WEEKLY MENU', survey: 'DAILY SURVEY', post: 'REQUESTS', staff: 'OUR TEAM', profile: 'PROFILE' }
+  const tabLabels = { home: 'AL-MAWAID', menu: 'WEEKLY MENU', survey: 'DAILY SURVEY', post: 'REQUESTS', profile: 'PROFILE' }
 
   return (
     <ThemeCtx.Provider value={t}>
@@ -865,7 +883,6 @@ function ThaliUserApp() {
         {activeTab === 'menu' && <WeeklyMenuPage />}
 
         {activeTab === 'post' && <PostPage />}
-        {activeTab === 'staff' && <StaffDirectoryPage />}
         {activeTab === 'profile' && <ProfilePage theme={theme} setTheme={handleSetTheme} markRead={markNotificationsRead} appSettings={appSettings} activeSubPage={activeSubPage} setActiveSubPage={setActiveSubPage} />}
 
         <OfflineBanner />
@@ -897,7 +914,7 @@ function HomePage({ setActiveTab, appSettings = {} }) {
   const t = useTheme()
   const { user } = useAuth()
 
-  const weeklyMenu = useWeeklyMenu()
+  const weeklyMenu = useWeeklyMenu(getCalendarWeekDate())
   const [showSurvey, setShowSurvey] = useState(false)
   const [showQR, setShowQR] = useState(false)
   const [profileData, setProfileData] = useState({ name: '', thali_number: '', avatar_url: '' })
@@ -1053,6 +1070,12 @@ const handleSubmitCombined = async () => {
   // Any meal editable in the current week?
   const isAnyMealEditable = DAYS.some(d => canEditMeal(d, currentWeekId, 'lunch', appSettings, user.id) || canEditMeal(d, currentWeekId, 'dinner', appSettings, user.id))
 
+  // Time-window lunch/dinner quick-edit: only shown while a meal's edit window is live
+  const currentMealInfo = weeklyMenu ? getCardMealInfo(weeklyMenu, appSettings) : null
+  const currentEditableMeal = (currentMealInfo && canEditMeal(currentMealInfo.day, currentWeekId, currentMealInfo.meal, appSettings, user.id))
+    ? currentMealInfo
+    : null
+
   if (!weeklyMenu || statsLoading) return <HomePageSkeleton />
 
   return (
@@ -1070,6 +1093,77 @@ const handleSubmitCombined = async () => {
         </button>
       </Card>
 
+      {/* Time-based Daily Survey Edit button — shows during lunch/dinner edit window */}
+      {currentEditableMeal && (() => {
+        const isLunch = currentEditableMeal.meal === 'lunch'
+        const MealIcon = isLunch ? Sun : Moon
+        const window = getEditWindow(appSettings, currentEditableMeal.meal)
+        return (
+          <button
+            onClick={() => { setDailyEditMealInfo(currentEditableMeal); setShowDailyEditCard(true) }}
+            style={{
+              width: '100%', margin: '0 0 16px', padding: 0,
+              border: `1.5px solid ${t.accentBorder}`, cursor: 'pointer',
+              textAlign: 'left', borderRadius: 22, position: 'relative',
+              overflow: 'hidden', background: t.cardActive,
+              boxShadow: `0 18px 40px ${t.accentBg}`,
+              transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s'
+            }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 24px 50px ${t.accentBg}` }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 18px 40px ${t.accentBg}` }}
+          >
+            <div
+              style={{
+                position: 'absolute', top: -30, right: -30, width: 110, height: 110,
+                background: t.accentGrad, borderRadius: '50%', filter: 'blur(50px)', opacity: 0.16
+              }}
+            />
+            <div style={{
+              position: 'relative', zIndex: 1, width: '100%',
+              display: 'flex', alignItems: 'center', gap: 14,
+              padding: '18px 20px', borderRadius: 22, boxSizing: 'border-box',
+              background: `linear-gradient(135deg, ${t.accentBg}, transparent 55%)`
+            }}>
+              <div style={{
+                width: 48, height: 48, borderRadius: 14, background: t.accentGrad,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, boxShadow: `0 8px 18px ${t.accentBg}`
+              }}>
+                <MealIcon size={22} color="#fff" />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontSize: 10, fontWeight: 800, letterSpacing: '0.14em',
+                  color: t.accent, fontFamily: "'DM Sans',sans-serif", textTransform: 'uppercase'
+                }}>
+                  {isLunch ? 'Today\'s Lunch' : 'Today\'s Dinner'} &bull; Daily Edit
+                </div>
+                <div style={{
+                  fontSize: 18, fontWeight: 800, color: t.text,
+                  fontFamily: "'Playfair Display',serif", lineHeight: 1.25
+                }}>
+                  {isLunch ? 'Edit Lunch Survey' : 'Edit Dinner Survey'}
+                </div>
+                <div style={{
+                  fontSize: 12, color: t.textSub, marginTop: 4,
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  fontFamily: "'DM Sans',sans-serif", fontWeight: 600
+                }}>
+                  <Clock size={13} color={t.accent} />
+                  Edit window {window.open} – {window.close}
+                </div>
+              </div>
+              <div style={{
+                width: 36, height: 36, borderRadius: 12, background: t.accentGrad,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+              }}>
+                <ChevronRight size={20} color="#fff" />
+              </div>
+            </div>
+          </button>
+        )
+      })()}
+
       {showQR && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, backdropFilter: 'blur(10px)' }} onClick={() => setShowQR(false)}>
           <div style={{ background: '#fff', padding: 32, borderRadius: 32, textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.5)' }} onClick={e => e.stopPropagation()}>
@@ -1083,8 +1177,8 @@ const handleSubmitCombined = async () => {
         </div>
       )}
 
-      {/* Weekly Survey Section - hidden entirely when survey is fully submitted */}
-      {(!weeklySurveySubmitted) && (
+      {/* Weekly Survey Section - only shown while the weekly survey window is live */}
+      {(surveyOpen && !weeklySurveySubmitted) && (
       <Card organic style={{
         marginBottom: 20, borderRadius: 24,
         background: (surveyOpen || isAnyMealEditable) ? t.accentBg : 'rgba(0,0,0,0.2)',
@@ -1227,7 +1321,7 @@ const handleSubmitCombined = async () => {
 
 function WeeklyMenuPage() {
   const t = useTheme()
-  const weeklyMenu = useWeeklyMenu()
+  const weeklyMenu = useWeeklyMenu(getCalendarWeekDate())
   const todayKey = getTodayKey()
   const [expandedDay, setExpandedDay] = useState(todayKey)
   const { user } = useAuth()
@@ -1236,7 +1330,7 @@ function WeeklyMenuPage() {
   // Fetch user survey response
   useEffect(() => {
     const fetchSurvey = async () => {
-      const { data } = await supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id).eq('week_id', getWeekDate()).maybeSingle()
+      const { data } = await supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id).eq('week_id', getCalendarWeekDate()).maybeSingle()
       setUserSurvey(data)
     }
     fetchSurvey()
@@ -1514,7 +1608,7 @@ function ThaliRequestsSection() {
       const { error: dbErr } = await supabase.from('thali_requests').insert([payload])
       if (dbErr) throw dbErr
       
-      // Notify admins about the new request
+      // Notify admins about the new request (in-app rows + push via edge function)
       try {
         const typeLabels = { resume: 'Resume Thali', stop: 'Stop Thali', extra: 'Extra Food', miqaat: 'Miqaat Pirsu' }
         const typeLabel = typeLabels[type] || type
@@ -1525,20 +1619,14 @@ function ThaliRequestsSection() {
           if (profile?.name) userName = profile.name
           if (profile?.thali_number) userName += ` (#${profile.thali_number})`
         } catch {}
-        await supabase.from('notifications').insert([{
-          user_id: null,
-          title: '📋 New ' + typeLabel + ' Request',
-          message: userName + ' submitted a ' + typeLabel + ' request.',
-          url: '/admin/requests',
-          type: 'new_request',
-          sender_name: 'Al-Mawaid',
-          target_audience: 'admins'
-        }])
         await supabase.functions.invoke('send-push', {
           body: {
             title: '📋 New ' + typeLabel + ' Request',
             body: userName + ' submitted a ' + typeLabel + ' request.',
             target_type: 'admins',
+            notify_in_app: true,
+            type: 'new_request',
+            sender_name: 'Al-Mawaid',
             url: '/admin/requests'
           }
         })
@@ -1788,7 +1876,7 @@ function QueriesSection() {
       }])
       if (dbErr) throw dbErr
 
-      // Notify admins about the new query
+      // Notify admins about the new query (in-app rows + push via edge function)
       try {
         // Fetch user's name from profile
         let userName = 'A user'
@@ -1797,20 +1885,14 @@ function QueriesSection() {
           if (profile?.name) userName = profile.name
           if (profile?.thali_number) userName += ` (#${profile.thali_number})`
         } catch {}
-        await supabase.from('notifications').insert([{
-          user_id: null,
-          title: '📩 New Query from ' + userName,
-          message: comment.substring(0, 120) + (comment.length > 120 ? '…' : ''),
-          url: '/admin/queries',
-          type: 'new_query',
-          sender_name: 'Al-Mawaid',
-          target_audience: 'admins'
-        }])
         await supabase.functions.invoke('send-push', {
           body: {
             title: '📩 New Query from ' + userName,
             body: userName + ' submitted: "' + comment.substring(0, 80) + (comment.length > 80 ? '…"' : '"'),
             target_type: 'admins',
+            notify_in_app: true,
+            type: 'new_query',
+            sender_name: 'Al-Mawaid',
             url: '/admin/queries'
           }
         })
@@ -1944,7 +2026,7 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
       <NavCard label="My Identity QR" icon={<QrCode size={19} color="#fff" />} desc="Show your QR code for thali collection" onClick={() => setShowQR(true)} />
       <NavCard label="My Surveys" icon={<ClipboardList size={19} color="#fff" />} desc="View your weekly survey responses" onClick={() => onNav('surveys')} />
       <NavCard label="My Requests" icon={<img src="/al-mawaid.png" alt="" style={{ width: 22, height: 22, objectFit: 'contain' }} />} desc="Resume, stop & extra food requests" onClick={() => onNav('requests')} />
-      <NavCard label="Khidmat Guzaar" icon={<Users size={19} color="#fff" />} desc="Meet our Al-Mawaid team" onClick={() => onNav('khidmat')} />
+      <NavCard label="Khidmat Team" icon={<Users size={19} color="#fff" />} desc="Meet our Al-Mawaid team" onClick={() => onNav('khidmat')} />
       <NavCard label="Alerts" icon={<Bell size={19} color="#fff" />} desc="See notices and important updates" onClick={() => onNav('notifications')} />
       <NavCard label="Support Ticket" icon={<LifeBuoy size={19} color="#fff" />} desc="Raise general, thali, and delivery issues" onClick={() => onNav('support')} />
 

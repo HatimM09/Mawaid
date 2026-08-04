@@ -101,6 +101,7 @@ serve(async (req) => {
       scheduled_for,
       sender_name,
       image_url,
+      notify_in_app,
       channels,
       // Rich push options
       big_picture_url,
@@ -148,6 +149,37 @@ serve(async (req) => {
 
     if (targetUserIds.length === 0) {
       return new Response(JSON.stringify({ ok: true, sent: 0, message: 'No target users found' }), { status: 200, headers })
+    }
+
+    // ── In-app notification rows (Realtime toast + inbox) ──
+    // Runs with the service-role client so RLS never blocks inserts. For 'all'
+    // broadcasts every member gets a row even if they have no push subscription.
+    if (notify_in_app && title) {
+      try {
+        let inAppIds: string[] = []
+        if (target_type === 'specific' && user_id) {
+          inAppIds = [user_id]
+        } else if (target_type === 'admins') {
+          const { data: admins } = await supabase.from('user_stats').select('user_id').eq('role', 'admin')
+          inAppIds = admins?.map((a: any) => a.user_id).filter(Boolean) || []
+        } else {
+          const { data: members } = await supabase.from('user_stats').select('user_id').eq('role', 'member').limit(10000)
+          inAppIds = members?.map((m: any) => m.user_id).filter(Boolean) || []
+        }
+        if (inAppIds.length) {
+          const rows = inAppIds.map((uid: string) => ({
+            user_id: uid,
+            title: title || 'Al-Mawaid',
+            message: body || '',
+            url: url || '/',
+            type: type || 'info',
+            sender_name: sender_name || 'Al-Mawaid',
+          }))
+          await supabase.from('notifications').insert(rows)
+        }
+      } catch (e) {
+        console.error('[send-push] In-app notification insert failed:', e)
+      }
     }
 
     // Fetch subscriptions in chunks to avoid URL length limits

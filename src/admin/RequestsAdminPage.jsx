@@ -60,6 +60,13 @@ export default function RequestsAdminPage() {
     const userName = users[userId]?.name || 'User'
     const userThali = users[userId]?.thali_number
 
+    // 1-time-only guard: if this request already has the target status, do nothing
+    // (prevents duplicate notifications from double-clicks or realtime re-loads).
+    try {
+      const { data: latest } = await supabase.from('thali_requests').select('status').eq('id', id).maybeSingle()
+      if (latest && (latest.status || 'pending') === status) return
+    } catch {}
+
     if (status === 'approved' && reqObj) {
       try {
         if (reqObj.request_type === 'change' && reqObj.details) {
