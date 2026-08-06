@@ -1,7 +1,7 @@
 {
   "name": "al-mawaid",
   "private": true,
-  "version": "2.0.6",
+  "version": "2.0.7",
   "type": "module",
   "description": "Al-Mawaid Food Survey System with Firebase",
   "scripts": {
