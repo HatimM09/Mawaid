@@ -87,12 +87,40 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
   const isEditable = canEditMeal(currentDay, currentWeekId, currentMeal, appSettings, user?.id)
   const surveyOpen = isSurveyOpen(appSettings, user?.id)
   const userHasOverride = hasUserOverride(appSettings, user?.id)
+
+  // ── Override-scoped survey: when admin grants specific day/meal access, show ONLY those slots ──
+  const overrideSlots = useMemo(() => {
+    if (!user?.id || !appSettings.user_overrides) return null
+    try {
+      const overrides = typeof appSettings.user_overrides === 'string'
+        ? JSON.parse(appSettings.user_overrides)
+        : appSettings.user_overrides
+      const o = overrides[user.id]
+      if (!o || o.all) return null
+      const slots = []
+      DAYS.forEach((day, idx) => {
+        const dayOverride = o[day.toLowerCase()]
+        if (dayOverride) {
+          if (dayOverride.lunch) slots.push({ day, meal: 'lunch' })
+          if (dayOverride.dinner) slots.push({ day, meal: 'dinner' })
+        }
+      })
+      return slots.length ? slots : null
+    } catch { return null }
+  }, [appSettings.user_overrides, user?.id])
+
+  const slotList = useMemo(() => {
+    if (overrideSlots) return overrideSlots
+    return DAYS.flatMap(day => [{ day, meal: 'lunch' }, { day, meal: 'dinner' }])
+  }, [overrideSlots])
+
+  const dayIndices = useMemo(() => [...new Set(slotList.map(s => DAYS.indexOf(s.day)))], [slotList])
   const postSubmitEditUsed = existingData?.edit_metadata?.[`${dayKey}_${mealKey}_used`] || false
   const canPostSubmitEdit = surveySubmitted && isEditable && !postSubmitEditUsed
   const editBlocked = surveySubmitted ? (!isEditable || postSubmitEditUsed) : false
-  const totalSlots = 12
-  const currentSlot = currentDayIndex * 2 + (currentMeal === 'lunch' ? 0 : 1)
-  const isLast = currentDayIndex === 5 && currentMeal === 'dinner'
+  const totalSlots = slotList.length
+  const currentSlot = Math.max(0, slotList.findIndex(s => s.day === currentDay && s.meal === currentMeal))
+  const isLast = currentSlot === slotList.length - 1
   const dishes = menu[currentMeal] || []
   const hasDishes = dishes.length > 0
   const allDishesAnswered = wantsFood && dishes.every(dish => {
@@ -144,30 +172,28 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
       setExistingData(existing)
       setDataLoaded(true)
       const localSubmitted = localStorage.getItem(`survey_submitted_${currentWeekId}_${user?.id}`) === '1'
-      const allDone = existing && DAYS.every(day => {
-        const dk = day.substring(0, 3).toLowerCase()
-        return existing[`${dk}_l_status`] && existing[`${dk}_d_status`]
+      const allDone = existing && slotList.every(slot => {
+        const dk = slot.day.substring(0, 3).toLowerCase()
+        const mk = slot.meal === 'lunch' ? 'l' : 'd'
+        return existing[`${dk}_${mk}_status`]
       })
       // An admin override means the user may re-select their survey — never lock it as submitted
       setSurveySubmitted(userHasOverride ? false : (!!allDone || localSubmitted))
       if (existing && surveyOpen && !allDone && !localSubmitted) {
-        for (let d = 0; d < 6; d++) {
-          const day = DAYS[d]
-          const dk = day.substring(0, 3).toLowerCase()
-          for (const meal of ['lunch', 'dinner']) {
-            const mk = meal === 'lunch' ? 'l' : 'd'
-            if (!existing[`${dk}_${mk}_status`]) {
-              setCurrentDayIndex(d)
-              setCurrentMeal(meal)
-              return
-            }
+        for (const slot of slotList) {
+          const dk = slot.day.substring(0, 3).toLowerCase()
+          const mk = slot.meal === 'lunch' ? 'l' : 'd'
+          if (!existing[`${dk}_${mk}_status`]) {
+            setCurrentDayIndex(DAYS.indexOf(slot.day))
+            setCurrentMeal(slot.meal)
+            return
           }
         }
       }
     } catch {
       setDataLoaded(true)
     }
-  }, [user, currentWeekId, surveyOpen, userData.thali_no])
+  }, [user, currentWeekId, surveyOpen, userData.thali_no, slotList])
 
   useEffect(() => { loadExisting() }, [loadExisting])
 
@@ -282,18 +308,20 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
 
   const goToPrev = () => {
     if (currentSlot === 0) return
+    const prev = slotList[currentSlot - 1]
     setAnimatingDayDir('left')
-    if (currentMeal === 'lunch') { setCurrentMeal('dinner'); setCurrentDayIndex(currentDayIndex - 1) }
-    else { setCurrentMeal('lunch') }
+    setCurrentDayIndex(DAYS.indexOf(prev.day))
+    setCurrentMeal(prev.meal)
     setWantsFood(null); setResponses({})
     setTimeout(() => setAnimatingDayDir(null), 350)
   }
 
   const goToNext = () => {
     if (isLast) return
+    const next = slotList[currentSlot + 1]
     setAnimatingDayDir('right')
-    if (currentMeal === 'lunch') { setCurrentMeal('dinner') }
-    else { setCurrentDayIndex(currentDayIndex + 1); setCurrentMeal('lunch') }
+    setCurrentDayIndex(DAYS.indexOf(next.day))
+    setCurrentMeal(next.meal)
     setWantsFood(null); setResponses({})
     setTimeout(() => setAnimatingDayDir(null), 350)
   }
@@ -407,11 +435,12 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
 
   const allSlotsFilled = useMemo(() => {
     if (!existingData) return false
-    return DAYS.every(day => {
-      const dk = day.substring(0, 3).toLowerCase()
-      return existingData[`${dk}_l_status`] && existingData[`${dk}_d_status`]
+    return slotList.every(slot => {
+      const dk = slot.day.substring(0, 3).toLowerCase()
+      const mk = slot.meal === 'lunch' ? 'l' : 'd'
+      return existingData[`${dk}_${mk}_status`]
     })
-  }, [existingData])
+  }, [existingData, slotList])
 
   const handleConfirmAll = async () => {
     if (!allSlotsFilled) return
@@ -420,14 +449,18 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
     try {
       await supabase.from('notifications').insert({
         user_id: user?.id, title: 'Weekly Survey Submitted',
-        message: 'Your full week survey (Mon–Sat) has been saved.',
+        message: overrideSlots
+          ? `Your granted survey meals (${slotList.length} slot${slotList.length === 1 ? '' : 's'}) have been saved.`
+          : 'Your full week survey (Mon–Sat) has been saved.',
         url: '/post', type: 'survey'
       })
       try {
         await supabase.functions.invoke('send-push', {
           body: {
             title: 'Al-Mawaid · Weekly survey in',
-            body: `Thali ${userData.thali_no || '—'} submitted the full week meal plan.`,
+            body: overrideSlots
+              ? `Thali ${userData.thali_no || '—'} submitted override survey responses.`
+              : `Thali ${userData.thali_no || '—'} submitted the full week meal plan.`,
             url: '/admin/survey-tracking',
             target_type: 'admins',
           }
@@ -452,12 +485,15 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
 
   const handleDayChange = useCallback((newIdx) => {
     if (newIdx === currentDayIndex) return
+    const firstSlot = slotList.find(s => DAYS.indexOf(s.day) === newIdx)
+    if (!firstSlot) return
     setAnimatingDayDir(newIdx > currentDayIndex ? 'right' : 'left')
     setCurrentDayIndex(newIdx)
+    setCurrentMeal(firstSlot.meal)
     setWantsFood(null)
     setResponses({})
     setTimeout(() => setAnimatingDayDir(null), 350)
-  }, [currentDayIndex])
+  }, [currentDayIndex, slotList])
 
   const DayBar = () => (
     <div style={{
@@ -465,7 +501,8 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
       background: 'rgba(255,255,255,0.02)', borderRadius: 16,
       border: '1px solid rgba(255,255,255,0.04)'
     }}>
-      {DAYS.map((day, idx) => {
+      {dayIndices.map(idx => {
+        const day = DAYS[idx]
         const summary = dayStatusSummary[idx]
         const isComplete = summary === 'complete'
         const isPartial = summary === 'partial'
@@ -847,7 +884,7 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
             {/* Steps */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24, textAlign: 'left' }}>
               {[
-                { icon: '📅', text: '12 slots to fill — Mon lunch through Sat dinner' },
+                { icon: '📅', text: `${totalSlots} slot${totalSlots === 1 ? '' : 's'} to fill${overrideSlots ? ' — only your granted meals' : ' — Mon lunch through Sat dinner'}` },
                 { icon: '💾', text: 'Auto-saves as you go — never lose progress' },
                 { icon: '✏️', text: 'Can edit later if plans change' },
                 { icon: '✅', text: 'Review everything before final submit' },
@@ -1055,7 +1092,7 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
         {surveySubmitted && !editResponseMode && !canPostSubmitEdit && (
           <div style={{ padding: 20, borderRadius: 16, background: 'linear-gradient(135deg, rgba(76,175,80,0.1), rgba(76,175,80,0.02))', border: `1px solid #4CAF50`, marginBottom: 16, textAlign: 'center' }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: '#4CAF50', marginBottom: 6, fontFamily: "'DM Sans',sans-serif" }}>✅ Survey Already Submitted</div>
-            <div style={{ fontSize: 13, color: THEME.textSub, fontFamily: "'DM Sans',sans-serif" }}>You have already submitted your full week survey (Mon–Sat). Responses cannot be modified after submission.</div>
+            <div style={{ fontSize: 13, color: THEME.textSub, fontFamily: "'DM Sans',sans-serif" }}>{overrideSlots ? 'You have already submitted your granted survey meals. Responses cannot be modified after submission.' : 'You have already submitted your full week survey (Mon–Sat). Responses cannot be modified after submission.'}</div>
           </div>
         )}
 
@@ -1191,7 +1228,7 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
         </div>{/* ── End slide transition wrapper ── */}
 
         {/* ── Previous Selections Summary ── */}
-        {existingData && currentSlot > 0 && !surveySubmitted && !editResponseMode && (() => {
+        {!overrideSlots && existingData && currentSlot > 0 && !surveySubmitted && !editResponseMode && (() => {
           const prevDayIdx = currentMeal === 'lunch' ? currentDayIndex - 1 : currentDayIndex
           if (prevDayIdx < 0) return null
           const prevDay = DAYS[prevDayIdx]
@@ -1304,49 +1341,51 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
               marginBottom: 16
             }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: THEME.accent, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 4, fontFamily: "'DM Sans',sans-serif" }}>
-                Step 12 of 12
+                Step {totalSlots} of {totalSlots}
               </div>
               <div style={{ fontSize: 20, fontWeight: 800, color: THEME.text, fontFamily: "'Playfair Display',serif", marginBottom: 8 }}>
-                👁️ Review Your Weekly Plan
+                👁️ Review Your {overrideSlots ? 'Meals' : 'Weekly Plan'}
               </div>
               <div style={{ fontSize: 13, color: THEME.textSub, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>
-                Please review your meal selections for the week, then confirm to submit everything.
+                {overrideSlots ? 'Please review your granted meal selections, then confirm to submit.' : 'Please review your meal selections for the week, then confirm to submit everything.'}
               </div>
             </div>
 
-            {/* All 12 slots grid */}
+            {/* All slots grid (respects override scope) */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-              {DAYS.map((day, dIdx) => {
+              {slotList.map((slot, sIdx) => {
+                const day = slot.day
+                const meal = slot.meal
+                const dIdx = DAYS.indexOf(day)
                 const dk = day.substring(0, 3).toLowerCase()
+                const mk = meal === 'lunch' ? 'l' : 'd'
                 const dayMenu = weeklyMenu[day] || {}
-                return ['lunch', 'dinner'].map((meal, mIdx) => {
-                  const mk = meal === 'lunch' ? 'l' : 'd'
-                  const slotIdx = dIdx * 2 + mIdx
-                  const status = existingData?.[`${dk}_${mk}_status`]
-                  const isApplied = status === 'Applied'
-                  const isSkipped = status === 'Skipped'
-                  const slotDishes = dayMenu[meal] || []
+                const slotIdx = dIdx * 2 + (meal === 'lunch' ? 0 : 1)
+                const status = existingData?.[`${dk}_${mk}_status`]
+                const isApplied = status === 'Applied'
+                const isSkipped = status === 'Skipped'
+                const slotDishes = dayMenu[meal] || []
 
-                  return (
-                    <div
-                      key={`${day}-${meal}`}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 10,
-                        padding: 'clamp(10px, 1.5vw, 14px) clamp(12px, 2vw, 18px)',
-                        borderRadius: 12,
-                        background: isApplied
-                          ? 'linear-gradient(135deg, rgba(76,175,80,0.08), rgba(76,175,80,0.02))'
-                          : isSkipped
-                            ? 'linear-gradient(135deg, rgba(244,67,54,0.06), rgba(244,67,54,0.01))'
-                            : THEME.card,
-                        border: `1.5px solid ${
-                          isApplied ? '#4CAF50' : isSkipped ? '#F4433660' : THEME.border
-                        }`,
-                        textAlign: 'left', color: THEME.text,
-                        fontSize: 12, fontFamily: "'DM Sans',sans-serif",
-                        width: '100%', boxSizing: 'border-box'
-                      }}
-                    >
+                return (
+                  <div
+                    key={`${day}-${meal}`}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: 'clamp(10px, 1.5vw, 14px) clamp(12px, 2vw, 18px)',
+                      borderRadius: 12,
+                      background: isApplied
+                        ? 'linear-gradient(135deg, rgba(76,175,80,0.08), rgba(76,175,80,0.02))'
+                        : isSkipped
+                          ? 'linear-gradient(135deg, rgba(244,67,54,0.06), rgba(244,67,54,0.01))'
+                          : THEME.card,
+                      border: `1.5px solid ${
+                        isApplied ? '#4CAF50' : isSkipped ? '#F4433660' : THEME.border
+                      }`,
+                      textAlign: 'left', color: THEME.text,
+                      fontSize: 12, fontFamily: "'DM Sans',sans-serif",
+                      width: '100%', boxSizing: 'border-box'
+                    }}
+                  >
                       {/* Day + Meal label */}
                       <div style={{
                         minWidth: 72, flexShrink: 0,
@@ -1409,10 +1448,8 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
                     </div>
                   )
                 })
-              })}
+              }
             </div>
-
-            {/* Missing slots warning */}
             {!allSlotsFilled && (
               <div style={{
                 padding: '12px 16px', borderRadius: 12,
