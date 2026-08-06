@@ -2,10 +2,10 @@
 // Time-based meal card + helpers
 
 import React, { useState, useEffect, useRef } from 'react'
-import { Sun, Moon, X } from 'lucide-react'
+import { Sun, Moon } from 'lucide-react'
 import { useTheme, useAuth } from '../admin/context'
 import { supabase } from '../lib/firebaseClient'
-import { getWeekDate, DAYS } from '../common/utils'
+import { getCalendarWeekDate, DAYS } from '../common/utils'
 import { isRotiItem, isCountInput } from '../hooks/useSurvey'
 
 // ── Skeleton Placeholder ──
@@ -127,7 +127,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
     if (!user || !weeklyMenu || !isOpen) return
     setDataLoading(true)
     const loadData = async () => {
-      const weekId = getWeekDate()
+      const weekId = getCalendarWeekDate()
       const mi = getCardMealInfo(weeklyMenu, appSettings)
       if (!mi) return
       const dayKey = mi.day.substring(0, 3).toLowerCase()
@@ -167,7 +167,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
     try {
       const mi = getCardMealInfo(weeklyMenu, appSettings)
       if (!mi) return
-      const weekId = getWeekDate()
+      const weekId = getCalendarWeekDate()
       const dayKey = mi.day.substring(0, 3).toLowerCase()
       const mealKey = mi.meal === 'lunch' ? 'l' : 'd'
       const statusKey = dayKey + '_' + mealKey + '_status'
@@ -212,7 +212,22 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
   }
 
   const mealInfo = weeklyMenu ? getCardMealInfo(weeklyMenu, appSettings) : null
-  
+
+  // ── Premium selected-state helpers ──
+  const YC = '#4CAF50'
+  const NC = '#F44336'
+  const optGrad = (c) => `linear-gradient(145deg, ${c}2e 0%, ${c}0f 55%, ${c}05 100%)`
+  const optShadow = (c) => `0 6px 18px ${c}40, inset 0 1px 0 rgba(255,255,255,0.12)`
+  const pctColor = (p) => (p === 0 ? NC : p === 25 ? '#FFC107' : p === 50 ? '#2196F3' : p === 75 ? '#9E9E9E' : YC)
+  const sheen = (color) => (
+    <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg, rgba(255,255,255,0.16), transparent)', pointerEvents: 'none' }} />
+  )
+  const checkBadge = (color) => (
+    <span style={{ position: 'absolute', top: 4, right: 4, width: 17, height: 17, borderRadius: '50%', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 2px 8px ${color}70`, zIndex: 2 }}>
+      <span style={{ fontSize: 9, fontWeight: 900, color: '#0d0d1a', lineHeight: 1 }}>✓</span>
+    </span>
+  )
+
   if (!mealInfo || !isOpen) return null
 
   // ── Modal/Popup wrapper ──
@@ -239,32 +254,19 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
       >
         <div style={{ position: 'absolute', top: -40, right: -40, width: 120, height: 120, background: t.accentGrad, borderRadius: '50%', filter: 'blur(60px)', opacity: 0.15 }} />
         
-        {/* Header with close button */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px ' + t.accentBg }}>
-              {mealInfo.meal === 'lunch' ? <Sun size={16} color="#fff" /> : <Moon size={16} color="#fff" />}
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 15px ' + t.accentBg }}>
+            {mealInfo.meal === 'lunch' ? <Sun size={16} color="#fff" /> : <Moon size={16} color="#fff" />}
+          </div>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>
+              {mealInfo.day.charAt(0).toUpperCase() + mealInfo.day.slice(1)} &bull; {mealInfo.meal.toUpperCase()}
             </div>
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>
-                {mealInfo.day.charAt(0).toUpperCase() + mealInfo.day.slice(1)} &bull; {mealInfo.meal.toUpperCase()}
-              </div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif", lineHeight: 1.3 }}>
-                Quick Edit &bull; {mealInfo.meal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}
-              </div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif", lineHeight: 1.3 }}>
+              Quick Edit &bull; {mealInfo.meal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}
             </div>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'rgba(255,255,255,0.05)', border: 'none',
-              cursor: 'pointer', padding: 8, borderRadius: 10,
-              color: t.textSub, display: 'flex', alignItems: 'center',
-              justifyContent: 'center', flexShrink: 0
-            }}
-          >
-            <X size={20} />
-          </button>
         </div>
 
         {dataLoading ? (
@@ -274,72 +276,130 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
             {mealInfo.dishes.length > 0 ? mealInfo.dishes.map((dish, idx) => {
               const resp = userResponses[dish]
               const isCount = !isRotiItem(dish) && isCountInput(appSettings, mealInfo.day, mealInfo.meal, idx)
+              const isRoti = isRotiItem(dish)
+              let selColor = null
+              if (isRoti) selColor = resp === 'yes' ? YC : resp === 'no' ? NC : null
+              else if (isCount) selColor = resp === 'no' ? NC : typeof resp === 'number' ? YC : null
+              else if (typeof resp === 'number') selColor = pctColor(resp)
+              const statusLabel = isRoti
+                ? (resp === 'yes' ? '✅ Selected' : resp === 'no' ? '❌ Skipped' : '')
+                : isCount
+                  ? (resp === 'no' ? '❌ Skipped' : typeof resp === 'number' ? `✅ ${resp} ${resp === 1 ? 'person' : 'persons'}` : '')
+                  : (typeof resp === 'number' ? `${resp}%` : '')
               return (
                 <div key={idx} style={{
-                  padding: '10px 14px', borderRadius: 12,
-                  background: resp === 'yes' ? 'rgba(76, 175, 80, 0.12)' : resp === 'no' ? 'rgba(244, 67, 54, 0.12)' : resp !== undefined ? t.accentBg : t.inputBg,
-                  border: `1px solid ${resp ? t.accent : t.border}`,
-                  fontSize: 13, fontWeight: 600, color: t.textBody
+                  padding: '12px 14px', borderRadius: 14,
+                  position: 'relative', overflow: 'hidden',
+                  background: selColor ? `linear-gradient(145deg, ${selColor}1a, ${t.card})` : t.inputBg,
+                  border: `1.5px solid ${selColor || t.border}`,
+                  boxShadow: selColor ? `0 6px 20px ${selColor}22` : 'none',
+                  fontSize: 13, fontWeight: 600, color: t.textBody,
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <span>{dish}</span>
-                    {resp !== undefined && (
-                      <span style={{ fontSize: 13, fontWeight: 800, color: resp === 'yes' ? '#4CAF50' : resp === 'no' ? '#F44336' : t.accent }}>
-                        {isRotiItem(dish) ? (resp === 'yes' ? '✅' : '❌') : isCount ? (resp === 'no' ? '❌' : (typeof resp === 'number' ? `${resp} person${resp === 1 ? '' : 's'}` : 0)) : (typeof resp === 'number' ? resp + '%' : resp)}
-                      </span>
+                  {selColor && (
+                    <div style={{ position: 'absolute', top: -22, right: -22, width: 96, height: 96, borderRadius: '50%', background: selColor, filter: 'blur(42px)', opacity: 0.14, pointerEvents: 'none' }} />
+                  )}
+                  <div style={{ position: 'relative', zIndex: 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{dish}</span>
+                      {selColor && (
+                        <span style={{
+                          fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap',
+                          padding: '3px 10px', borderRadius: 100,
+                          background: `${selColor}1a`, color: selColor, border: `1px solid ${selColor}50`,
+                        }}>{statusLabel}</span>
+                      )}
+                    </div>
+                    {isRoti ? (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        {[['yes', YC, '✅ Yes'], ['no', NC, '❌ No']].map(([val, color, label]) => {
+                          const isSel = resp === val
+                          return (
+                            <button key={val} onClick={() => setDishResponse(dish, val)} disabled={saving}
+                              style={{
+                                flex: 1, padding: '10px 8px', borderRadius: 11,
+                                border: `1.5px solid ${isSel ? color : t.border}`,
+                                background: isSel ? optGrad(color) : 'transparent',
+                                color: isSel ? color : t.textSub,
+                                fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
+                                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                                transform: isSel ? 'scale(1.03)' : 'scale(1)',
+                                boxShadow: isSel ? optShadow(color) : 'none',
+                                position: 'relative', overflow: 'hidden', opacity: saving ? 0.6 : 1,
+                              }}
+                              onMouseEnter={e => { if (!isSel) { e.currentTarget.style.background = `${color}0d`; e.currentTarget.style.borderColor = `${color}55` } }}
+                              onMouseLeave={e => { if (!isSel) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = t.border } }}
+                            >
+                              {isSel && sheen(color)}
+                              {isSel && checkBadge(color)}
+                              {label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : isCount ? (
+                      typeof resp === 'number' ? (
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: 8,
+                            background: `linear-gradient(145deg, ${YC}1f, ${t.card})`, borderRadius: 12,
+                            padding: '4px 6px', border: `1px solid ${YC}40`, boxShadow: `0 4px 14px ${YC}18`,
+                          }}>
+                            <button onClick={() => setDishResponse(dish, Math.max(0, resp - 1))} disabled={saving}
+                              style={{ width: 34, height: 34, borderRadius: 9, border: `1px solid ${YC}50`, background: t.inputBg, color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}>−</button>
+                            <div style={{ textAlign: 'center', minWidth: 44 }}>
+                              <div style={{ fontSize: 22, fontWeight: 900, color: YC, lineHeight: 1, textShadow: `0 0 12px ${YC}55` }}>{resp}</div>
+                              <div style={{ fontSize: 8, color: t.textSub, fontWeight: 700 }}>{resp === 1 ? 'person' : 'persons'}</div>
+                            </div>
+                            <button onClick={() => setDishResponse(dish, resp + 1)} disabled={saving}
+                              style={{ width: 34, height: 34, borderRadius: 9, border: `1px solid ${YC}50`, background: t.inputBg, color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}>+</button>
+                          </div>
+                          <button onClick={() => setDishResponse(dish, 'no')} disabled={saving}
+                            style={{ marginLeft: 'auto', padding: '8px 16px', borderRadius: 10, border: `1.5px solid ${NC}50`, background: 'transparent', color: NC, fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>❌ Skip</button>
+                        </div>
+                      ) : resp === 'no' ? (
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <span style={{ fontSize: 12, color: NC, fontWeight: 800 }}>❌ Skipped</span>
+                          <button onClick={() => setDishResponse(dish, 1)} disabled={saving}
+                            style={{ marginLeft: 'auto', padding: '8px 16px', borderRadius: 10, border: `1.5px solid ${t.accent}`, background: `linear-gradient(145deg, ${t.accent}22, transparent)`, color: t.accent, fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>✅ Add back</button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button onClick={() => setDishResponse(dish, 1)} disabled={saving}
+                            style={{ flex: 1, padding: '10px 8px', borderRadius: 11, border: `1.5px solid ${YC}`, background: optGrad(YC), color: YC, fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', position: 'relative', overflow: 'hidden' }}>✅ Yes</button>
+                          <button onClick={() => setDishResponse(dish, 'no')} disabled={saving}
+                            style={{ flex: 1, padding: '10px 8px', borderRadius: 11, border: `1.5px solid ${NC}`, background: optGrad(NC), color: NC, fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>❌ No</button>
+                        </div>
+                      )
+                    ) : (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {[0, 25, 50, 75, 100].map(pct => {
+                          const isSel = resp === pct
+                          const pc = pctColor(pct)
+                          return (
+                            <button key={pct} onClick={() => setDishResponse(dish, pct)} disabled={saving}
+                              style={{
+                                flex: 1, padding: '9px 4px', borderRadius: 10,
+                                border: `1.5px solid ${isSel ? pc : t.border}`,
+                                background: isSel ? optGrad(pc) : 'transparent',
+                                color: isSel ? pc : t.textSub,
+                                fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit',
+                                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                                transform: isSel ? 'scale(1.05)' : 'scale(1)',
+                                boxShadow: isSel ? optShadow(pc) : 'none',
+                                position: 'relative', overflow: 'hidden', opacity: saving ? 0.6 : 1,
+                              }}
+                              onMouseEnter={e => { if (!isSel) { e.currentTarget.style.background = `${pc}0d`; e.currentTarget.style.borderColor = `${pc}55` } }}
+                              onMouseLeave={e => { if (!isSel) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = t.border } }}
+                            >
+                              {isSel && sheen(pc)}
+                              {pct === 0 ? '0%' : pct + '%'}
+                            </button>
+                          )
+                        })}
+                      </div>
                     )}
                   </div>
-                  {isRotiItem(dish) ? (
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button onClick={() => setDishResponse(dish, 'yes')} disabled={saving}
-                        style={{ flex: 1, padding: '8px', borderRadius: 8, border: `1.5px solid ${resp === 'yes' ? '#4CAF50' : t.border}`, background: resp === 'yes' ? 'rgba(76,175,80,0.12)' : 'transparent', color: resp === 'yes' ? '#4CAF50' : t.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>✅ Yes</button>
-                      <button onClick={() => setDishResponse(dish, 'no')} disabled={saving}
-                        style={{ flex: 1, padding: '8px', borderRadius: 8, border: `1.5px solid ${resp === 'no' ? '#F44336' : t.border}`, background: resp === 'no' ? 'rgba(244,67,54,0.12)' : 'transparent', color: resp === 'no' ? '#F44336' : t.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>❌ No</button>
-                    </div>
-                  ) : isCount ? (
-                    resp === 'no' ? (
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                        <span style={{ fontSize: 13, color: '#F44336', fontWeight: 700 }}>❌ Skipped</span>
-                        <button onClick={() => setDishResponse(dish, 1)} disabled={saving} style={{
-                          marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, border: `1.5px solid ${t.accent}`,
-                          background: t.accentBg, color: t.accent,
-                          fontSize: 12, fontWeight: 700, cursor: 'pointer'
-                        }}>✅ Add back</button>
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                        <button onClick={() => setDishResponse(dish, Math.max(0, (typeof resp === 'number' ? resp : 0) - 1))} disabled={saving} style={{
-                          width: 36, height: 36, borderRadius: 8, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
-                        }}>−</button>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <span style={{ fontSize: 20, fontWeight: 800, color: t.accent, minWidth: 30, textAlign: 'center' }}>{typeof resp === 'number' ? resp : 0}</span>
-                          <span style={{ fontSize: 11, color: t.textSub, fontWeight: 600 }}>{(typeof resp === 'number' ? resp : 0) === 1 ? 'person' : 'persons'}</span>
-                        </div>
-                        <button onClick={() => setDishResponse(dish, (typeof resp === 'number' ? resp : 0) + 1)} disabled={saving} style={{
-                          width: 36, height: 36, borderRadius: 8, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
-                        }}>+</button>
-                        <button onClick={() => setDishResponse(dish, 'no')} disabled={saving} style={{
-                          marginLeft: 'auto', padding: '8px 16px', borderRadius: 8, border: `1.5px solid ${t.border}`,
-                          background: 'transparent', color: t.textSub,
-                          fontSize: 12, fontWeight: 700, cursor: 'pointer'
-                        }}>Skip</button>
-                      </div>
-                    )
-                  ) : (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      {[0, 25, 50, 75, 100].map(pct => (
-                        <button key={pct} onClick={() => setDishResponse(dish, pct)} disabled={saving}
-                          style={{
-                            flex: 1, padding: '8px 4px', borderRadius: 8,
-                            border: `1.5px solid ${resp === pct ? t.accent : t.border}`,
-                            background: resp === pct ? t.accentBg : 'transparent',
-                            color: resp === pct ? t.accent : t.textSub,
-                            fontSize: 11, fontWeight: 800, cursor: 'pointer',
-                            transition: '0.2s', opacity: saving ? 0.6 : 1
-                          }}>{pct === 0 ? '0%' : pct + '%'}</button>
-                      ))}
-                    </div>
-                  )}
                 </div>
               )
             }) : <div style={{ fontSize: 12, color: t.textSub, fontStyle: 'italic' }}>Menu being prepared...</div>}

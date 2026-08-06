@@ -726,11 +726,9 @@ function ThaliUserApp() {
           if (notice.title || notice.sender_name) {
             playNotificationChime()
           }
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification(notice.title || 'Al-Mawaid Alert', {
-              body: notice.body || '', icon: '/al-mawaid.png', badge: '/al-mawaid.png'
-            })
-          }
+          // Note: we deliberately do NOT also fire a native Notification here —
+          // background delivery is handled by the push service worker, and showing
+          // both a toast AND a native popup for the same notice duplicates alerts.
           // Proportional timing: longer content = longer display
           const bodyLen = (notice.body || '').length
           const toastDuration = Math.max(6000, Math.min(bodyLen * 50, 12000))
@@ -751,13 +749,20 @@ function ThaliUserApp() {
   const LogoIcon = ({ size = 20, style = {} }) => (
     <img src="/al-mawaid.png" alt="" style={{ width: size, height: size, objectFit: 'contain', ...style }} />
   )
+  const surveyOverrideActive = hasUserOverride(appSettings, user.id)
   const tabs = [
     { id: 'home', label: 'Home', Icon: Home, aria: 'Home Dashboard' },
     { id: 'menu', label: 'Menu', Icon: Utensils, aria: 'Weekly Menu' },
+    ...(surveyOverrideActive ? [{ id: 'survey', label: 'Survey', Icon: ClipboardList, aria: 'Weekly Survey' }] : []),
     { id: 'post', label: 'Requests', Icon: FileText, aria: 'My Requests & Queries' },
     { id: 'profile', label: 'Profile', Icon: User, aria: 'My Profile & Settings' },
   ]
   const tabLabels = { home: 'AL-MAWAID', menu: 'WEEKLY MENU', survey: 'DAILY SURVEY', post: 'REQUESTS', profile: 'PROFILE' }
+
+  // If the admin revokes the override, the Survey tab disappears — fall back to Home
+  useEffect(() => {
+    if (!surveyOverrideActive && activeTab === 'survey') setActiveTab('home')
+  }, [surveyOverrideActive, activeTab])
 
   return (
     <ThemeCtx.Provider value={t}>
@@ -881,6 +886,7 @@ function ThaliUserApp() {
 
         {activeTab === 'home' && <HomePage setActiveTab={setActiveTab} setShowDailySurvey={setShowDailySurvey} appSettings={appSettings} />}
         {activeTab === 'menu' && <WeeklyMenuPage />}
+        {activeTab === 'survey' && <SurveyPage appSettings={appSettings} />}
 
         {activeTab === 'post' && <PostPage />}
         {activeTab === 'profile' && <ProfilePage theme={theme} setTheme={handleSetTheme} markRead={markNotificationsRead} appSettings={appSettings} activeSubPage={activeSubPage} setActiveSubPage={setActiveSubPage} />}
@@ -891,11 +897,15 @@ function ThaliUserApp() {
         <nav className="mobile-bottom-nav" aria-label="Main navigation">
           {tabs.map(({ id, label, Icon, aria }) => {
             const active = activeTab === id
+            const showSurveyBadge = id === 'survey' && surveyOverrideActive
             return (
-              <button key={id} onClick={() => setActiveTab(id)} className={active ? 'active' : ''} aria-label={aria || label}>
+              <button key={id} onClick={() => { if (id === 'survey') loadAppSettings(); setActiveTab(id) }} className={active ? 'active' : ''} aria-label={aria || label}>
                 <div>
                   <Icon size={22} />
                 </div>
+                {showSurveyBadge && (
+                  <span style={{ position: 'absolute', top: 6, right: '50%', transform: 'translateX(20px)', width: 9, height: 9, borderRadius: '50%', background: '#34d399', boxShadow: '0 0 8px rgba(52,211,153,0.9)', animation: 'pulse 2s infinite', zIndex: 2 }} />
+                )}
                 <span>{label}</span>
               </button>
             )
@@ -920,7 +930,6 @@ function HomePage({ setActiveTab, appSettings = {} }) {
   const [profileData, setProfileData] = useState({ name: '', thali_number: '', avatar_url: '' })
   const [statsLoading, setStatsLoading] = useState(true)
   const [weeklySurveySubmitted, setWeeklySurveySubmitted] = useState(false)
-  const surveyOpen = isSurveyOpen(appSettings, user.id)
   const todayKey = getTodayKey()
 
   // Auto-edit card state — auto-popup when edit window opens
@@ -1067,8 +1076,6 @@ const handleSubmitCombined = async () => {
 }
 
   const currentWeekId = getWeekDate()
-  // Any meal editable in the current week?
-  const isAnyMealEditable = DAYS.some(d => canEditMeal(d, currentWeekId, 'lunch', appSettings, user.id) || canEditMeal(d, currentWeekId, 'dinner', appSettings, user.id))
 
   // Time-window lunch/dinner quick-edit: only shown while a meal's edit window is live
   const currentMealInfo = weeklyMenu ? getCardMealInfo(weeklyMenu, appSettings) : null
@@ -1177,12 +1184,13 @@ const handleSubmitCombined = async () => {
         </div>
       )}
 
-      {/* Weekly Survey Section - only shown while the weekly survey window is live */}
-      {(surveyOpen && !weeklySurveySubmitted) && (
+      {/* Weekly Survey Section - only shown while the weekly survey window is live.
+          When the window is over it disappears, so only the daily edit card remains. */}
+      {isSurveyOpen(appSettings) && !weeklySurveySubmitted && (
       <Card organic style={{
         marginBottom: 20, borderRadius: 24,
-        background: (surveyOpen || isAnyMealEditable) ? t.accentBg : 'rgba(0,0,0,0.2)',
-        border: `1.5px solid ${(surveyOpen || isAnyMealEditable) ? t.accent : t.border}`,
+        background: t.accentBg,
+        border: `1.5px solid ${t.accent}`,
         position: 'relative', overflow: 'hidden', padding: '24px'
       }}>
         <div style={{ position: 'absolute', top: -40, right: -40, width: 120, height: 120, background: t.accentGrad, borderRadius: '50%', filter: 'blur(60px)', opacity: 0.15 }} />
@@ -1190,26 +1198,26 @@ const handleSubmitCombined = async () => {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 240 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: (surveyOpen || isAnyMealEditable) ? t.successText : t.textSub, boxShadow: (surveyOpen || isAnyMealEditable) ? `0 0 10px ${t.successText}` : 'none' }} />
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? 'SURVEY LIVE' : (isAnyMealEditable ? 'EDITING WINDOW' : 'SURVEY CLOSED')}</div>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: t.successText, boxShadow: `0 0 10px ${t.successText}` }} />
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>SURVEY LIVE</div>
             </div>
             <div style={{ fontSize: 24, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>Weekly Food Survey</div>
-            <div style={{ fontSize: 13, color: t.textSub, marginTop: 8, fontFamily: "'DM Sans',sans-serif" }}>{surveyOpen ? getSurveyWindowMessage(appSettings, user.id) : (isAnyMealEditable ? 'Daily edit window is live (L < 11am, D < 3:30pm).' : 'Weekly survey is closed. You can still view your responses.')}</div>
+            <div style={{ fontSize: 13, color: t.textSub, marginTop: 8, fontFamily: "'DM Sans',sans-serif" }}>{getSurveyWindowMessage(appSettings)}</div>
           </div>
 
           <button
             onClick={() => setShowSurvey(true)}
             style={{
               padding: '16px 28px', borderRadius: 16,
-              background: (surveyOpen || isAnyMealEditable) ? t.accentGrad : 'rgba(255,255,255,0.05)',
-              color: (surveyOpen || isAnyMealEditable) ? '#000' : t.textSub,
+              background: t.accentGrad,
+              color: '#000',
               fontSize: 14, fontWeight: 900, border: 'none', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 10, boxShadow: (surveyOpen || isAnyMealEditable) ? `0 10px 25px ${t.accent}40` : 'none',
+              display: 'flex', alignItems: 'center', gap: 10, boxShadow: `0 10px 25px ${t.accent}40`,
               transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
               fontFamily: "'DM Sans',sans-serif"
             }}
           >
-            <ClipboardList size={18} /> {surveyOpen ? 'Start Weekly Survey' : (isAnyMealEditable ? 'Edit Response' : 'View Responses')}
+            <ClipboardList size={18} /> Start Weekly Survey
           </button>
         </div>
       </Card>
@@ -1533,6 +1541,141 @@ function WeeklyMenuPage() {
           )
         })}
       </div>
+    </main>
+  )
+}
+
+// ══════════════════════════════════════════════════════════════
+// SURVEY PAGE (Member) — always-accessible survey tab that reflects
+// admin overrides in realtime (Survey Access Manager / user_overrides)
+// ══════════════════════════════════════════════════════════════
+function SurveyPage({ appSettings = {} }) {
+  const t = useTheme()
+  const { user } = useAuth()
+  const weeklyMenu = useWeeklyMenu(getCalendarWeekDate())
+  const currentWeekId = getWeekDate()
+  const [showSurvey, setShowSurvey] = useState(false)
+  const [surveyData, setSurveyData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  const surveyOpen = isSurveyOpen(appSettings, user.id)
+  const hasOverride = hasUserOverride(appSettings, user.id)
+
+  const isAnyMealEditable = DAYS.some(d =>
+    canEditMeal(d, currentWeekId, 'lunch', appSettings, user.id) ||
+    canEditMeal(d, currentWeekId, 'dinner', appSettings, user.id)
+  )
+
+  const loadSurvey = useCallback(async () => {
+    setLoading(true)
+    try {
+      const { data } = await supabase.from('survey_submissions_flat')
+        .select('*').eq('user_id', user.id).eq('week_id', currentWeekId).maybeSingle()
+      setSurveyData(data || null)
+    } catch { setSurveyData(null) }
+    setLoading(false)
+  }, [user.id, currentWeekId])
+
+  useEffect(() => { loadSurvey() }, [loadSurvey])
+
+  useEffect(() => {
+    const ch = supabase.channel('survey-tab-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_submissions_flat', filter: `user_id=eq.${user.id}` }, () => loadSurvey())
+      .subscribe()
+    return () => supabase.removeChannel(ch)
+  }, [user.id, loadSurvey])
+
+  const fullySubmitted = !!surveyData && DAYS.every(day => {
+    const dk = day.substring(0, 3).toLowerCase()
+    return surveyData[`${dk}_l_status`] && surveyData[`${dk}_d_status`]
+  })
+
+  const daySummary = DAYS.map(day => {
+    const dk = day.substring(0, 3).toLowerCase()
+    const l = surveyData?.[`${dk}_l_status`]
+    const d = surveyData?.[`${dk}_d_status`]
+    if (l && d) return { day, status: 'complete' }
+    if (l || d) return { day, status: 'partial' }
+    return { day, status: 'pending' }
+  })
+
+  const editable = surveyOpen || isAnyMealEditable
+  const actionLabel = hasOverride
+    ? (fullySubmitted ? 'Re-select Weekly Survey' : 'Start Weekly Survey')
+    : !fullySubmitted && editable ? 'Start Weekly Survey' : !fullySubmitted ? 'Fill Weekly Survey' : isAnyMealEditable ? 'Edit Response' : 'View Responses'
+
+  if (loading || !weeklyMenu) return <WeeklyMenuSkeleton />
+
+  return (
+    <main style={{ flex: 1, padding: '16px 16px calc(110px + env(safe-area-inset-bottom, 20px))', maxWidth: 800, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+      {/* Weekly Survey Status Card */}
+      <Card organic style={{
+        marginBottom: 20, borderRadius: 24,
+        background: editable ? t.accentBg : 'rgba(0,0,0,0.2)',
+        border: `1.5px solid ${editable ? t.accent : t.border}`,
+        position: 'relative', overflow: 'hidden', padding: '24px'
+      }}>
+        <div style={{ position: 'absolute', top: -40, right: -40, width: 120, height: 120, background: t.accentGrad, borderRadius: '50%', filter: 'blur(60px)', opacity: 0.15 }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: editable ? t.successText : t.textSub, boxShadow: editable ? `0 0 10px ${t.successText}` : 'none' }} />
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>
+                {hasOverride ? 'ADMIN OVERRIDE ACTIVE' : surveyOpen ? 'SURVEY LIVE' : (isAnyMealEditable ? 'EDITING WINDOW' : 'SURVEY CLOSED')}
+              </div>
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>Weekly Food Survey</div>
+            <div style={{ fontSize: 13, color: t.textSub, marginTop: 8, fontFamily: "'DM Sans',sans-serif" }}>
+              {hasOverride
+                ? 'The Al-Mawaid team has granted you access. Your preferences will be recorded.'
+                : surveyOpen ? getSurveyWindowMessage(appSettings, user.id) : (isAnyMealEditable ? 'Daily edit window is live (L < 11am, D < 3:30pm).' : 'Weekly survey opens Saturday 8:00 PM. You can still view your responses here.')}
+            </div>
+          </div>
+
+          <button
+            onClick={() => setShowSurvey(true)}
+            style={{
+              padding: '16px 28px', borderRadius: 16,
+              background: editable ? t.accentGrad : 'rgba(255,255,255,0.05)',
+              color: editable ? '#000' : t.textSub,
+              fontSize: 14, fontWeight: 900, border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 10, boxShadow: editable ? `0 10px 25px ${t.accent}40` : 'none',
+              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+              fontFamily: "'DM Sans',sans-serif"
+            }}
+          >
+            <ClipboardList size={18} /> {hasOverride
+              ? (fullySubmitted ? 'Re-select Weekly Survey' : 'Start Weekly Survey')
+              : (fullySubmitted ? (isAnyMealEditable ? 'Edit Response' : 'View Responses') : actionLabel)}
+          </button>
+        </div>
+      </Card>
+
+      {/* Day-by-day progress */}
+      {!fullySubmitted && (
+        <Card style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 10, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 4px 15px ${t.accentBg}` }}><ClipboardList size={16} color="#fff" /></div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif" }}>Your Weekly Progress</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {daySummary.map(({ day, status }) => (
+              <button key={day} onClick={() => setShowSurvey(true)} style={{
+                padding: '8px 14px', borderRadius: 12, cursor: 'pointer', border: 'none', fontFamily: "'DM Sans',sans-serif",
+                background: status === 'complete' ? 'rgba(76,175,80,0.12)' : status === 'partial' ? 'rgba(255,152,0,0.12)' : t.inputBg,
+                color: status === 'complete' ? '#4CAF50' : status === 'partial' ? '#FF9800' : t.textSub,
+                fontWeight: 800, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6,
+                border: `1px solid ${status === 'complete' ? 'rgba(76,175,80,0.3)' : status === 'partial' ? 'rgba(255,152,0,0.3)' : t.border}`
+              }}>
+                {day.slice(0, 3).toUpperCase()} {status === 'complete' ? '✓' : status === 'partial' ? '◐' : ''}
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {showSurvey && <SurveyModal onClose={() => { setShowSurvey(false); loadSurvey() }} appSettings={appSettings} />}
     </main>
   )
 }

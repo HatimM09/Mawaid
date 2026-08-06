@@ -86,6 +86,7 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
   const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
   const isEditable = canEditMeal(currentDay, currentWeekId, currentMeal, appSettings, user?.id)
   const surveyOpen = isSurveyOpen(appSettings, user?.id)
+  const userHasOverride = hasUserOverride(appSettings, user?.id)
   const postSubmitEditUsed = existingData?.edit_metadata?.[`${dayKey}_${mealKey}_used`] || false
   const canPostSubmitEdit = surveySubmitted && isEditable && !postSubmitEditUsed
   const editBlocked = surveySubmitted ? (!isEditable || postSubmitEditUsed) : false
@@ -94,6 +95,14 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
   const isLast = currentDayIndex === 5 && currentMeal === 'dinner'
   const dishes = menu[currentMeal] || []
   const hasDishes = dishes.length > 0
+  const allDishesAnswered = wantsFood && dishes.every(dish => {
+    const resp = responses[dish]
+    if (isRotiItem(dish)) return resp === 'yes' || resp === 'no'
+    if (isCountInput(appSettings, currentDay, currentMeal, dishes.indexOf(dish))) {
+      return resp && resp.status === 'yes' && resp.value > 0
+    }
+    return typeof resp === 'number'
+  })
 
   const dayStatusSummary = DAYS.map((day) => {
     const dk = day.substring(0, 3).toLowerCase()
@@ -139,7 +148,8 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
         const dk = day.substring(0, 3).toLowerCase()
         return existing[`${dk}_l_status`] && existing[`${dk}_d_status`]
       })
-      setSurveySubmitted(!!allDone || localSubmitted)
+      // An admin override means the user may re-select their survey — never lock it as submitted
+      setSurveySubmitted(userHasOverride ? false : (!!allDone || localSubmitted))
       if (existing && surveyOpen && !allDone && !localSubmitted) {
         for (let d = 0; d < 6; d++) {
           const day = DAYS[d]
@@ -237,19 +247,11 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
     if (justLoadedRef.current || surveySubmitted) { justLoadedRef.current = false; return }
     if (advancingRef.current) return
     if (!wantsFood) return
-    const allDishesFilled = dishes.every(dish => {
-      const resp = responses[dish]
-      if (isRotiItem(dish)) return resp === 'yes' || resp === 'no'
-      if (isCountInput(appSettings, currentDay, currentMeal, dishes.indexOf(dish))) {
-        return resp && resp.status === 'yes' && resp.value > 0
-      }
-      return typeof resp === 'number'
-    })
-    if (allDishesFilled && !isLast) {
+    if (allDishesAnswered && !isLast) {
       advancingRef.current = true
       setTimeout(async () => { await saveCurrentSlot(); goToNext(); advancingRef.current = false }, 800)
     }
-  }, [responses, currentDayIndex, currentMeal, dishes])
+  }, [responses, currentDayIndex, currentMeal, dishes, allDishesAnswered, wantsFood, isLast])
 
   const skipTimerRef = useRef(null)
   // ── Auto-skip empty menu slots ──
@@ -523,58 +525,86 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
     const resp = responses[dish]
     const isAnimating = animatingDish === dish
 
+    // ── Premium selected-state helpers ──
+    const optGrad = (color) => `linear-gradient(145deg, ${color}2e 0%, ${color}0f 55%, ${color}05 100%)`
+    const optShadow = (color) => `0 6px 20px ${color}40, inset 0 1px 0 rgba(255,255,255,0.12)`
+    const sheen = (
+      <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '52%', background: 'linear-gradient(180deg, rgba(255,255,255,0.16), transparent)', pointerEvents: 'none', borderRadius: 'inherit' }} />
+    )
+    const checkBadge = (color, size = 18) => (
+      <span style={{
+        position: 'absolute', top: 5, right: 5, width: size, height: size, borderRadius: '50%',
+        background: color, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow: `0 2px 10px ${color}70`, zIndex: 2,
+        animation: 'surveyBadgePop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)',
+      }}>
+        <span style={{ fontSize: size * 0.62, fontWeight: 900, color: '#0d0d1a', lineHeight: 1 }}>✓</span>
+      </span>
+    )
+    const statusPill = (label, color) => (
+      <span style={{
+        fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em',
+        padding: '3px 10px', borderRadius: 100, whiteSpace: 'nowrap',
+        background: `${color}1a`, color,
+        border: `1px solid ${color}55`,
+        animation: 'surveyBadgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+      }}>{label}</span>
+    )
+
     if (isRoti) {
       const sel = resp
+      const selColor = sel === 'yes' ? THEME.yesColor : sel === 'no' ? THEME.noColor : null
       return (
         <div style={{
-          marginBottom: 10,
-          padding: '12px 16px',
-          borderRadius: 14,
-          background: sel ? `linear-gradient(135deg, ${sel === 'yes' ? THEME.yesBg : THEME.noBg}, ${THEME.card})` : THEME.card,
-          border: `1.5px solid ${sel ? (sel === 'yes' ? THEME.yesColor : THEME.noColor) : THEME.border}`,
+          marginBottom: 10, padding: '14px 16px', borderRadius: 16,
+          position: 'relative', overflow: 'hidden',
+          background: sel ? `linear-gradient(145deg, ${selColor}1a, ${THEME.card})` : THEME.card,
+          border: `1.5px solid ${sel ? selColor : THEME.border}`,
+          boxShadow: sel ? `0 8px 26px ${selColor}22` : 'none',
           transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           animation: isAnimating ? 'surveyPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
         }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: THEME.text, marginBottom: 10, fontFamily: "'DM Sans',sans-serif" }}>{dish}</div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            {['yes', 'no'].map(opt => {
-              const isSelected = sel === opt
-              const isYes = opt === 'yes'
-              const color = isYes ? THEME.yesColor : THEME.noColor
-              const bg = isYes ? THEME.yesBg : THEME.noBg
-              return (
-                <button
-                  key={opt}
-                  onClick={() => handleDishResponse(dish, opt)}
-                  style={{
-                    flex: 1, padding: '12px 8px', borderRadius: 10,
-                    border: `2px solid ${isSelected ? color : THEME.border}`,
-                    background: isSelected ? bg : 'transparent',
-                    color: isSelected ? color : THEME.textSub,
-                    fontSize: 13, fontWeight: 800, cursor: 'pointer',
-                    fontFamily: "'DM Sans',sans-serif",
-                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                    transform: isSelected ? 'scale(1.03)' : 'scale(1)',
-                    boxShadow: isSelected ? `0 4px 12px ${color}30` : 'none',
-                    letterSpacing: '0.02em',
-                    position: 'relative',
-                    overflow: 'hidden',
-                  }}
-                >
-                  {isSelected && (
-                    <span style={{
-                      position: 'absolute', top: -2, right: -2, width: 16, height: 16,
-                      borderRadius: '0 10px 0 10px',
-                      background: color,
-                      animation: 'surveyBadgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                    }}>
-                      <span style={{ position: 'absolute', top: 0, right: 3, fontSize: 9, fontWeight: 900, color: '#000' }}>✓</span>
-                    </span>
-                  )}
-                  {opt === 'yes' ? '✅ Yes, please' : '❌ No, skip'}
-                </button>
-              )
-            })}
+          {sel && (
+            <div style={{ position: 'absolute', top: -24, right: -24, width: 110, height: 110, borderRadius: '50%', background: selColor, filter: 'blur(45px)', opacity: 0.15, pointerEvents: 'none' }} />
+          )}
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: THEME.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</div>
+              {sel && statusPill(sel === 'yes' ? '✅ Selected' : '❌ Skipped', selColor)}
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {['yes', 'no'].map(opt => {
+                const isSelected = sel === opt
+                const isYes = opt === 'yes'
+                const color = isYes ? THEME.yesColor : THEME.noColor
+                return (
+                  <button
+                    key={opt}
+                    onClick={() => handleDishResponse(dish, opt)}
+                    style={{
+                      flex: 1, padding: '13px 8px', borderRadius: 12,
+                      border: `1.5px solid ${isSelected ? color : THEME.border}`,
+                      background: isSelected ? optGrad(color) : 'transparent',
+                      color: isSelected ? color : THEME.textSub,
+                      fontSize: 13, fontWeight: 800, cursor: 'pointer',
+                      fontFamily: "'DM Sans',sans-serif",
+                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                      transform: isSelected ? 'scale(1.03) translateY(-1px)' : 'scale(1)',
+                      boxShadow: isSelected ? optShadow(color) : 'none',
+                      letterSpacing: '0.02em',
+                      position: 'relative',
+                      overflow: 'hidden',
+                    }}
+                    onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.background = `${color}0d`; e.currentTarget.style.borderColor = `${color}55` } }}
+                    onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = THEME.border } }}
+                  >
+                    {isSelected && sheen}
+                    {isSelected && checkBadge(color)}
+                    {opt === 'yes' ? '✅ Yes, please' : '❌ No, skip'}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         </div>
       )
@@ -587,161 +617,188 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
       const maxVal = maxCount != null ? maxCount : 99
       const atMax = value >= maxVal
       const showToggle = resp === undefined || resp === null
-      const borderColor = isYes ? THEME.yesColor : isSkipped ? THEME.noColor : THEME.border
+      const selColor = isYes ? THEME.yesColor : isSkipped ? THEME.noColor : null
       return (
         <div style={{
-          marginBottom: 10, padding: '12px 16px', borderRadius: 14,
-          background: isYes ? `linear-gradient(135deg, ${THEME.yesBg}, ${THEME.card})` :
-                     isSkipped ? `linear-gradient(135deg, ${THEME.noBg}, ${THEME.card})` : THEME.card,
-          border: `1.5px solid ${borderColor}`,
+          marginBottom: 10, padding: '14px 16px', borderRadius: 16,
+          position: 'relative', overflow: 'hidden',
+          background: selColor ? `linear-gradient(145deg, ${selColor}1a, ${THEME.card})` : THEME.card,
+          border: `1.5px solid ${selColor || THEME.border}`,
+          boxShadow: selColor ? `0 8px 26px ${selColor}22` : 'none',
           transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           animation: isAnimating ? 'surveyPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
         }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: THEME.text, marginBottom: 10, fontFamily: "'DM Sans',sans-serif", display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>{dish}</span>
-            {maxCount != null && <span style={{ fontSize: 11, color: THEME.textSub, fontWeight: 500, background: THEME.cardActive, padding: '2px 8px', borderRadius: 6 }}>Max: {maxCount}</span>}
-          </div>
-          {showToggle ? (
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => handleDishResponse(dish, { status: 'yes', value: 1 })}
-                style={{
-                  flex: 1, padding: '12px 8px', borderRadius: 10,
-                  border: `2px solid ${THEME.yesColor}`, background: THEME.yesBg, color: THEME.yesColor,
-                  fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif",
-                  transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                  boxShadow: `0 4px 12px ${THEME.yesColor}20`,
-                }}
-                onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.03)' }}
-                onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
-              >✅ Yes</button>
-              <button onClick={() => handleDishResponse(dish, 'no')}
-                style={{
-                  flex: 1, padding: '12px 8px', borderRadius: 10,
-                  border: `2px solid ${THEME.noColor}`, background: THEME.noBg, color: THEME.noColor,
-                  fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif",
-                  transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.03)' }}
-                onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
-              >❌ No</button>
-            </div>
-          ) : isSkipped ? (
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <div style={{
-                padding: '6px 14px', borderRadius: 8, background: THEME.noBg,
-                border: `1px solid ${THEME.noColor}40`, color: THEME.noColor,
-                fontSize: 13, fontWeight: 700, fontFamily: "'DM Sans',sans-serif",
-              }}>❌ Skipped</div>
-              <button onClick={() => handleDishResponse(dish, { status: 'yes', value: 1 })}
-                style={{
-                  marginLeft: 'auto', padding: '10px 20px', borderRadius: 10,
-                  border: `1.5px solid ${THEME.accent}`, background: THEME.accentBg,
-                  color: THEME.accent, fontSize: 13, fontWeight: 800,
-                  cursor: 'pointer', fontFamily: "'DM Sans',sans-serif",
-                  transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = THEME.accentGrad; e.currentTarget.style.color = '#000' }}
-                onMouseLeave={e => { e.currentTarget.style.background = THEME.accentBg; e.currentTarget.style.color = THEME.accent }}
-              >✅ Add back</button>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                background: THEME.yesBg, borderRadius: 10,
-                padding: '4px 6px', border: `1px solid ${THEME.yesColor}30`,
-              }}>
-                <button onClick={() => handleDishResponse(dish, { status: 'yes', value: Math.max(0, value - 1) })}
-                  style={{
-                    width: 36, height: 36, borderRadius: 9,
-                    border: `1px solid ${THEME.yesColor}40`, background: THEME.inputBg,
-                    color: THEME.text, cursor: 'pointer', fontSize: 18, fontWeight: 700,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    transition: 'all 0.2s',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = THEME.yesBg }}
-                  onMouseLeave={e => { e.currentTarget.style.background = THEME.inputBg }}
-                >−</button>
-                <div style={{ textAlign: 'center', minWidth: 48 }}>
-                  <div style={{ fontSize: 22, fontWeight: 900, color: THEME.yesColor, lineHeight: 1, fontFamily: "'DM Sans',sans-serif" }}>{value}</div>
-                  <div style={{ fontSize: 9, color: THEME.textSub, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>{value === 1 ? 'person' : 'persons'}</div>
-                </div>
-                <button onClick={() => { if (!atMax) handleDishResponse(dish, { status: 'yes', value: Math.min(maxVal, value + 1) }) }}
-                  style={{
-                    width: 36, height: 36, borderRadius: 9,
-                    border: `1px solid ${atMax ? THEME.noColor + '40' : THEME.yesColor + '40'}`, background: THEME.inputBg,
-                    color: atMax ? THEME.textSub : THEME.text,
-                    cursor: atMax ? 'not-allowed' : 'pointer', fontSize: 18, fontWeight: 700,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    opacity: atMax ? 0.4 : 1, transition: 'all 0.2s',
-                  }}
-                  onMouseEnter={e => { if (!atMax) e.currentTarget.style.background = THEME.yesBg }}
-                  onMouseLeave={e => { if (!atMax) e.currentTarget.style.background = THEME.inputBg }}
-                >+</button>
-              </div>
-              <button onClick={() => handleDishResponse(dish, 'no')}
-                style={{
-                  padding: '10px 18px', borderRadius: 10, border: `1.5px solid ${THEME.noColor}50`,
-                  background: 'transparent', color: THEME.noColor,
-                  fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                  fontFamily: "'DM Sans',sans-serif", transition: 'all 0.2s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = THEME.noBg }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-              >❌ Skip</button>
-            </div>
+          {selColor && (
+            <div style={{ position: 'absolute', top: -24, right: -24, width: 110, height: 110, borderRadius: '50%', background: selColor, filter: 'blur(45px)', opacity: 0.15, pointerEvents: 'none' }} />
           )}
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: THEME.text, marginBottom: 12, fontFamily: "'DM Sans',sans-serif", display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+              <span>{dish}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {isYes && statusPill(`✅ ${value} ${value === 1 ? 'person' : 'persons'}`, THEME.yesColor)}
+                {isSkipped && statusPill('❌ Skipped', THEME.noColor)}
+                {maxCount != null && <span style={{ fontSize: 10, color: THEME.textSub, fontWeight: 700, background: THEME.cardActive, padding: '2px 8px', borderRadius: 6 }}>Max: {maxCount}</span>}
+              </span>
+            </div>
+            {showToggle ? (
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => handleDishResponse(dish, { status: 'yes', value: 1 })}
+                  style={{
+                    flex: 1, padding: '12px 8px', borderRadius: 12,
+                    border: `1.5px solid ${THEME.yesColor}`, background: optGrad(THEME.yesColor), color: THEME.yesColor,
+                    fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif",
+                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                    boxShadow: `0 6px 18px ${THEME.yesColor}30`,
+                    position: 'relative', overflow: 'hidden',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.02)' }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                >
+                  {sheen}
+                  ✅ Yes
+                </button>
+                <button onClick={() => handleDishResponse(dish, 'no')}
+                  style={{
+                    flex: 1, padding: '12px 8px', borderRadius: 12,
+                    border: `1.5px solid ${THEME.noColor}`, background: optGrad(THEME.noColor), color: THEME.noColor,
+                    fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif",
+                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                    position: 'relative', overflow: 'hidden',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.02)' }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                >
+                  {sheen}
+                  ❌ No
+                </button>
+              </div>
+            ) : isSkipped ? (
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <div style={{
+                  padding: '8px 16px', borderRadius: 10, background: optGrad(THEME.noColor),
+                  border: `1px solid ${THEME.noColor}50`, color: THEME.noColor,
+                  fontSize: 13, fontWeight: 800, fontFamily: "'DM Sans',sans-serif",
+                }}>❌ Skipped</div>
+                <button onClick={() => handleDishResponse(dish, { status: 'yes', value: 1 })}
+                  style={{
+                    marginLeft: 'auto', padding: '10px 20px', borderRadius: 12,
+                    border: `1.5px solid ${THEME.accent}`, background: `linear-gradient(145deg, ${THEME.accent}22, transparent)`,
+                    color: THEME.accent, fontSize: 13, fontWeight: 800,
+                    cursor: 'pointer', fontFamily: "'DM Sans',sans-serif",
+                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                    boxShadow: `0 4px 14px ${THEME.accent}22`,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = THEME.accentGrad; e.currentTarget.style.color = '#000' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = `linear-gradient(145deg, ${THEME.accent}22, transparent)`; e.currentTarget.style.color = THEME.accent }}
+                >✅ Add back</button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  background: `linear-gradient(145deg, ${THEME.yesColor}1f, ${THEME.card})`, borderRadius: 14,
+                  padding: '6px 8px', border: `1px solid ${THEME.yesColor}40`,
+                  boxShadow: `0 4px 16px ${THEME.yesColor}18`,
+                }}>
+                  <button onClick={() => handleDishResponse(dish, { status: 'yes', value: Math.max(0, value - 1) })}
+                    style={{
+                      width: 38, height: 38, borderRadius: 10,
+                      border: `1px solid ${THEME.yesColor}50`, background: THEME.inputBg,
+                      color: THEME.text, cursor: 'pointer', fontSize: 20, fontWeight: 800,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      transition: 'all 0.2s', fontFamily: 'inherit',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = THEME.yesBg }}
+                    onMouseLeave={e => { e.currentTarget.style.background = THEME.inputBg }}
+                  >−</button>
+                  <div style={{ textAlign: 'center', minWidth: 52 }}>
+                    <div style={{ fontSize: 26, fontWeight: 900, color: THEME.yesColor, lineHeight: 1, fontFamily: "'DM Sans',sans-serif", textShadow: `0 0 14px ${THEME.yesColor}66` }}>{value}</div>
+                    <div style={{ fontSize: 9, color: THEME.textSub, fontWeight: 700, fontFamily: "'DM Sans',sans-serif" }}>{value === 1 ? 'person' : 'persons'}</div>
+                  </div>
+                  <button onClick={() => { if (!atMax) handleDishResponse(dish, { status: 'yes', value: Math.min(maxVal, value + 1) }) }}
+                    style={{
+                      width: 38, height: 38, borderRadius: 10,
+                      border: `1px solid ${atMax ? THEME.noColor + '40' : THEME.yesColor + '50'}`, background: THEME.inputBg,
+                      color: atMax ? THEME.textSub : THEME.text,
+                      cursor: atMax ? 'not-allowed' : 'pointer', fontSize: 20, fontWeight: 800,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      opacity: atMax ? 0.4 : 1, transition: 'all 0.2s', fontFamily: 'inherit',
+                    }}
+                    onMouseEnter={e => { if (!atMax) e.currentTarget.style.background = THEME.yesBg }}
+                    onMouseLeave={e => { if (!atMax) e.currentTarget.style.background = THEME.inputBg }}
+                  >+</button>
+                </div>
+                <button onClick={() => handleDishResponse(dish, 'no')}
+                  style={{
+                    padding: '10px 18px', borderRadius: 12, border: `1.5px solid ${THEME.noColor}50`,
+                    background: 'transparent', color: THEME.noColor,
+                    fontSize: 12, fontWeight: 800, cursor: 'pointer',
+                    fontFamily: "'DM Sans',sans-serif", transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = THEME.noBg }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                >❌ Skip</button>
+              </div>
+            )}
+          </div>
         </div>
       )
     }
 
     const pctColor = getPctColor(resp)
     const hasResp = resp !== undefined && resp !== null
+    const selColor = pctColor || THEME.accent
     return (
       <div style={{
-        marginBottom: 10, padding: '12px 16px', borderRadius: 14,
-        background: hasResp ? `linear-gradient(135deg, ${pctColor ? `${pctColor}10` : THEME.accentBg}, ${THEME.card})` : THEME.card,
-        border: `1.5px solid ${hasResp ? (pctColor || THEME.accent) : THEME.border}`,
+        marginBottom: 10, padding: '14px 16px', borderRadius: 16,
+        position: 'relative', overflow: 'hidden',
+        background: hasResp ? `linear-gradient(145deg, ${selColor}1a, ${THEME.card})` : THEME.card,
+        border: `1.5px solid ${hasResp ? selColor : THEME.border}`,
+        boxShadow: hasResp ? `0 8px 26px ${selColor}22` : 'none',
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         animation: isAnimating ? 'surveyPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: THEME.text, marginBottom: 10, fontFamily: "'DM Sans',sans-serif" }}>{dish}</div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {[0, 25, 50, 75, 100].map(pct => {
-            const pc = getPctColor(pct)
-            const isSelected = resp === pct
-            return (
-              <button
-                key={pct}
-                onClick={() => handleDishResponse(dish, pct)}
-                style={{
-                  flex: 1, padding: '12px 4px', borderRadius: 10,
-                  border: `2px solid ${isSelected ? (pc || THEME.accent) : THEME.border}`,
-                  background: isSelected ? (pc ? `${pc}20` : THEME.accentBg) : 'transparent',
-                  color: isSelected ? (pc || THEME.accent) : THEME.textSub,
-                  fontSize: 12, fontWeight: 800, cursor: 'pointer',
-                  fontFamily: "'DM Sans',sans-serif",
-                  transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                  transform: isSelected ? 'scale(1.05)' : 'scale(1)',
-                  boxShadow: isSelected ? `0 4px 16px ${pc ? `${pc}30` : `${THEME.accent}30`}` : 'none',
-                  letterSpacing: '0.02em',
-                  position: 'relative',
-                }}
-              >
-                {pct === 0 ? '0%' : pct + '%'}
-                {isSelected && (
-                  <span style={{
-                    position: 'absolute', top: -3, right: -3, width: 14, height: 14,
-                    borderRadius: '50%', background: pc || THEME.accent,
-                    animation: 'surveyBadgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <span style={{ fontSize: 8, fontWeight: 900, color: '#000' }}>✓</span>
-                  </span>
-                )}
-              </button>
-            )
-          })}
+        {hasResp && (
+          <div style={{ position: 'absolute', top: -24, right: -24, width: 110, height: 110, borderRadius: '50%', background: selColor, filter: 'blur(45px)', opacity: 0.15, pointerEvents: 'none' }} />
+        )}
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: THEME.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</div>
+            {hasResp && statusPill(`${resp}% selected`, selColor)}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[0, 25, 50, 75, 100].map(pct => {
+              const pc = getPctColor(pct)
+              const isSelected = resp === pct
+              const color = pc || THEME.accent
+              return (
+                <button
+                  key={pct}
+                  onClick={() => handleDishResponse(dish, pct)}
+                  style={{
+                    flex: 1, padding: '13px 4px', borderRadius: 12,
+                    border: `1.5px solid ${isSelected ? color : THEME.border}`,
+                    background: isSelected ? optGrad(color) : 'transparent',
+                    color: isSelected ? color : THEME.textSub,
+                    fontSize: 12, fontWeight: 800, cursor: 'pointer',
+                    fontFamily: "'DM Sans',sans-serif",
+                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                    transform: isSelected ? 'scale(1.06) translateY(-1px)' : 'scale(1)',
+                    boxShadow: isSelected ? optShadow(color) : 'none',
+                    letterSpacing: '0.02em',
+                    position: 'relative',
+                    overflow: 'hidden',
+                  }}
+                  onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.background = `${color}0d`; e.currentTarget.style.borderColor = `${color}55` } }}
+                  onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = THEME.border } }}
+                >
+                  {isSelected && sheen}
+                  {pct === 0 ? '0%' : pct + '%'}
+                  {isSelected && checkBadge(color, 16)}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </div>
     )
@@ -1104,6 +1161,17 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
                 <DishSelector key={idx} dish={dish} idx={idx} maxCount={snackDefaults?.[`dish_${idx + 1}`] ?? null} />
               )) : <div style={{ padding: 16, textAlign: 'center', color: THEME.textSub, fontSize: 13, fontStyle: 'italic' }}>Menu being prepared...</div>}
             </div>
+            {wantsFood && !allDishesAnswered && !editResponseMode && (
+              <div style={{
+                marginBottom: 16, padding: '11px 14px', borderRadius: 12,
+                background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)',
+                color: '#f59e0b', fontSize: 12, fontWeight: 600,
+                display: 'flex', alignItems: 'center', gap: 8, fontFamily: "'DM Sans',sans-serif"
+              }}>
+                <span style={{ fontSize: 13 }}>⚠️</span>
+                <span>Please answer all items above to continue — the survey will advance automatically once every dish is filled.</span>
+              </div>
+            )}
             {editResponseMode && (
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button onClick={saveAndLockEdit} disabled={loading} style={{
@@ -1193,20 +1261,6 @@ export default function SurveyModal({ onClose, appSettings = {} }) {
                 padding: '12px 20px', borderRadius: 12, border: `1px solid ${THEME.border}`, background: 'transparent',
                 color: THEME.textSub, cursor: 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif"
               }}><ChevronLeft size={16} /> Previous</button>
-            )}
-
-            {!isLast && wantsFood && (
-              <button onClick={async () => { await saveCurrentSlot(); goToNext() }}
-                style={{
-                  marginLeft: currentSlot > 0 ? 'auto' : 0, padding: '12px 24px', borderRadius: 12, border: 'none',
-                  background: THEME.accentGrad, color: '#000', cursor: 'pointer', fontSize: 13,
-                  fontWeight: 900, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif",
-                  boxShadow: `0 8px 20px ${THEME.accentBg}`,
-                  transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 12px 28px ${THEME.accentBg}` }}
-                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 8px 20px ${THEME.accentBg}` }}
-              >Save & Continue <ChevronRight size={16} /></button>
             )}
 
             {!isLast && wantsFood === false && (

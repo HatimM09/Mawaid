@@ -66,6 +66,33 @@ export default function QueriesAdminPage() {
     }
     setQueries(prev => prev.map(q => q.id === id ? { ...q, ...updateObj } : q))
 
+    // 🔔 Notify the specific user when their query moves to in progress
+    if (status === 'in_progress' && existing?.user_id) {
+      try {
+        const subjectLabel = existing.subject || 'Query'
+        // Insert in-app notification for real-time toast
+        await supabase.from('notifications').insert({
+          user_id: existing.user_id,
+          title: 'Al-Mawaid · Query in progress',
+          message: `Your "${subjectLabel}" query is being looked into by the administration.`,
+          url: '/post',
+          type: 'query_reply'
+        })
+        // Send push notification for when app is closed
+        await supabase.functions.invoke('send-push', {
+          body: {
+            title: 'Al-Mawaid · Query in progress',
+            body: `Your "${subjectLabel}" query is being looked into. Open the app for details.`,
+            target_type: 'specific',
+            user_id: existing.user_id,
+            url: '/post'
+          }
+        })
+      } catch (notifyErr) {
+        console.warn('[Queries] In-progress notification failed:', notifyErr)
+      }
+    }
+
     // 🔔 Notify the specific user when their query is resolved
     if (status === 'resolved' && existing?.user_id) {
       try {

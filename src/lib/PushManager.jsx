@@ -118,6 +118,10 @@ function subscribeRealtime(realtimeChannel, user, cancelledRef, retryCount = 0) 
       (payload) => {
         const { message, type, title, url, sender_name, silent } = payload.new
         if (silent) return // Skip toast for silent notifications
+        // Broadcasts are written to `notices` and surfaced by the global-notices
+        // realtime toast. The per-user `notifications` row would double the alert,
+        // so skip the toast for broadcast type.
+        if (type === 'broadcast') return
         // Dedup: skip if this notification was already shown
         const dedupKey = `toast_${payload.new.id}`
         if (sessionStorage.getItem(dedupKey)) return
@@ -211,27 +215,10 @@ export default function PushManager() {
               }
             })
             PushNotifications.addListener('pushNotificationReceived', (n) => {
-              showToast({ title: n.title, body: n.body, url: n.data?.url })
-              // Play notification sound on native
-              try {
-                const AudioContext = window.AudioContext || window.webkitAudioContext
-                if (AudioContext) {
-                  const ctx = new AudioContext()
-                  const now = ctx.currentTime
-                  const osc = ctx.createOscillator()
-                  const gain = ctx.createGain()
-                  osc.type = 'sine'
-                  osc.frequency.setValueAtTime(880, now)
-                  osc.frequency.exponentialRampToValueAtTime(660, now + 0.2)
-                  gain.gain.setValueAtTime(0.15, now)
-                  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3)
-                  osc.connect(gain)
-                  gain.connect(ctx.destination)
-                  osc.start(now)
-                  osc.stop(now + 0.3)
-                  setTimeout(() => ctx.close(), 600)
-                }
-              } catch {}
+              // Foreground native pushes are already surfaced by the in-app
+              // Supabase Realtime toasts (notices/notifications). Showing the
+              // toast here again would double the alert, so we only log.
+              console.log('[PushManager] Native push received while foregrounded:', n?.title)
             })
             // ── Deep link: user taps notification → navigate to correct in-app page ──
             PushNotifications.addListener('pushNotificationActionPerformed', (action) => {

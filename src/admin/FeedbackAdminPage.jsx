@@ -5,7 +5,7 @@ import { RefreshCw, Search, Star } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, StatCard, fmtDateTime } from './ui'
 import { AdminTableSkeleton } from '../common/Skeleton'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
-import { getWeekDate } from '../common/utils'
+import { getCalendarWeekDate } from '../common/utils'
 
 const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday']
 const TooltipStyle = {
@@ -42,7 +42,7 @@ export default function FeedbackAdminPage() {
     const [{ data: fb }, { data: us }, { data: mn }] = await Promise.all([
       supabase.from('daily_feedback').select('*').order('created_at', { ascending: false }),
       supabase.from('user_stats').select('user_id,name,email,thali_number'),
-      supabase.from('weekly_menu').select('*').eq('week_start', getWeekDate())
+      supabase.from('weekly_menu').select('*').eq('week_start', getCalendarWeekDate())
     ])
     const uMap = {}
     ;(us || []).forEach(u => { uMap[u.user_id] = u })

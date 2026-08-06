@@ -4,8 +4,7 @@ import { supabase } from '../lib/firebaseClient';
 import { getWeekDate } from './utils';
 import { queryKeys } from '../lib/queryClient';
 
-const formatMenu = (rows: any[]) => {
-  const weekId = getWeekDate();
+const formatMenu = (rows: any[], weekId: string) => {
   const filtered = rows.filter(row => {
     if (row.week_start !== weekId) return false;
     if (row.publish_at && new Date(row.publish_at).getTime() > Date.now()) return false;
@@ -24,25 +23,33 @@ const formatMenu = (rows: any[]) => {
   return formatted;
 };
 
-const fetchWeeklyMenu = async (): Promise<any> => {
-  const currentWeekId = getWeekDate();
+const fetchWeeklyMenu = async (weekStart: string): Promise<any> => {
   const { data, error } = await supabase
     .from('weekly_menu')
     .select('*')
-    .eq('week_start', currentWeekId);
+    .eq('week_start', weekStart);
   if (error) throw error;
-  return formatMenu(data || []);
+  return formatMenu(data || [], weekStart);
 };
 
-export const useWeeklyMenu = () => {
+/**
+ * Hook to load the weekly menu.
+ *
+ * @param weekStart Which week's menu to load (YYYY-MM-DD of that week's Monday).
+ *   Defaults to `getWeekDate()` (the survey week — NEXT week during the
+ *   Saturday 8PM–Monday 11AM survey window). Pass `getCalendarWeekDate()`
+ *   from menu-display surfaces (Menu page, Today's menu & feedback) so the
+ *   CURRENT week's menu keeps showing even after next week is published.
+ */
+export const useWeeklyMenu = (weekStart = getWeekDate()) => {
   const queryClient = useQueryClient();
   const instanceRef = useRef(Date.now());
 
-  const queryKey = queryKeys.weeklyMenu(getWeekDate());
+  const queryKey = queryKeys.weeklyMenu(weekStart);
 
   const { data: menu = {} } = useQuery({
     queryKey,
-    queryFn: fetchWeeklyMenu,
+    queryFn: () => fetchWeeklyMenu(weekStart),
     staleTime: 2 * 60 * 1000, // 2 minutes
     gcTime: 5 * 60 * 1000,
     retry: 2,

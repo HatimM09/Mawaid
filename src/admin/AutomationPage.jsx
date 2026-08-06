@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/firebaseClient'
+import { useNavigate } from 'react-router-dom'
 import {
   Clock, RefreshCw, BarChart3, Calendar, Send,
   Sun, Moon, Activity, CheckCircle, XCircle, AlertTriangle,
-  Zap, Timer, MessageSquare, Settings, Shield, Megaphone
+  Zap, Timer, MessageSquare, Settings, Shield
 } from 'lucide-react'
-import { T, PageWrap, PageTitle, AdminCard, Btn, StatCard, Badge, Grid, Alert, SectionHeader } from './ui'
+import { T, PageWrap, PageTitle, AdminCard, Btn, StatCard, Badge, Grid, Alert, SectionHeader, Modal } from './ui'
 import { getWeekDate } from '../common/utils'
 import SurveyAccessManager from './SurveyAccessManager'
 
@@ -81,7 +82,7 @@ function StatusBadge({ status, liveStatus }) {
   )
 }
 
-function AutomationCard({ icon, title, description, status, liveStatus, onToggle, stats, loading }) {
+function AutomationCard({ icon, title, description, status, liveStatus, onToggle, stats, loading, action }) {
   return (
     <AdminCard style={{
       display: 'flex', flexDirection: 'column', gap: 16,
@@ -116,29 +117,34 @@ function AutomationCard({ icon, title, description, status, liveStatus, onToggle
           ))}
         </div>
       )}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        {[['auto', 'AUTO', '#6366f1'], ['open', 'OPEN', '#10b981'], ['closed', 'CLOSED', '#ef4444']].map(([val, label, color]) => (
-          <button
-            key={val}
-            onClick={() => onToggle(val)}
-            disabled={loading}
-            style={{
-              flex: 1, padding: '8px 6px', borderRadius: 8, cursor: 'pointer',
-              background: status === val ? `${color}18` : 'transparent',
-              border: status === val ? `1px solid ${color}40` : '1px solid transparent',
-              color: status === val ? color : T.textSub,
-              fontSize: 10, fontWeight: 900, letterSpacing: '0.06em',
-              transition: 'all 0.2s', fontFamily: 'inherit',
-              opacity: loading ? 0.5 : 1,
-            }}
-          >{label}</button>
-        ))}
-      </div>
+      {onToggle ? (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {[['auto', 'AUTO', '#6366f1'], ['open', 'OPEN', '#10b981'], ['closed', 'CLOSED', '#ef4444']].map(([val, label, color]) => (
+            <button
+              key={val}
+              onClick={() => onToggle(val)}
+              disabled={loading}
+              style={{
+                flex: 1, padding: '8px 6px', borderRadius: 8, cursor: 'pointer',
+                background: status === val ? `${color}18` : 'transparent',
+                border: status === val ? `1px solid ${color}40` : '1px solid transparent',
+                color: status === val ? color : T.textSub,
+                fontSize: 10, fontWeight: 900, letterSpacing: '0.06em',
+                transition: 'all 0.2s', fontFamily: 'inherit',
+                opacity: loading ? 0.5 : 1,
+              }}
+            >{label}</button>
+          ))}
+        </div>
+      ) : action ? (
+        <div>{action}</div>
+      ) : null}
     </AdminCard>
   )
 }
 
 export default function AutomationPage() {
+  const navigate = useNavigate()
   const [settings, setSettings] = useState({})
   const [surveyStatus, setSurveyStatus] = useState('auto')
   const [lunchEditStatus, setLunchEditStatus] = useState('auto')
@@ -154,6 +160,11 @@ export default function AutomationPage() {
   const [quickSaving, setQuickSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [isAccessManagerOpen, setIsAccessManagerOpen] = useState(false)
+
+  const [showBroadcast, setShowBroadcast] = useState(false)
+  const [broadcastTitle, setBroadcastTitle] = useState('')
+  const [broadcastBody, setBroadcastBody] = useState('')
+  const [broadcasting, setBroadcasting] = useState(false)
 
   const [scheduledCount, setScheduledCount] = useState(0)
   const [pendingSurveyCount, setPendingSurveyCount] = useState(0)
@@ -283,6 +294,86 @@ export default function AutomationPage() {
       setMsg(`✅ Survey settings applied at ${now}`)
       setTimeout(() => setMsg(''), 3000)
     }
+  }
+
+  const sendBroadcast = async () => {
+    const title = broadcastTitle.trim()
+    const body = broadcastBody.trim()
+    if (!title || !body) {
+      setMsg('Broadcast title and message are required')
+      return
+    }
+    setBroadcasting(true)
+    setMsg('')
+    const now = new Date().toISOString()
+    try {
+      // 1. Persist the notice so it shows in the user's in-app inbox + notice history
+      const { data: noticeData, error: noticeError } = await supabase
+        .from('notices')
+        .insert([{
+          title,
+          message: body,
+          body,
+          sender_name: 'Al-Mawaid',
+          media: [],
+          scheduled_at: now,
+          target_user_id: null,
+          tone: 'var(--accent-primary)',
+          channel: 'push',
+          created_at: now,
+        }])
+        .select()
+        .single()
+      if (noticeError) throw noticeError
+
+      const { data: all } = await supabase.from('user_stats').select('user_id').limit(5000)
+      const userIds = (all || []).map(u => u.user_id).filter(Boolean)
+
+      // 2. Fire real push notifications to every subscribed device.
+      //    The notices insert above already surfaces an in-app toast + inbox entry,
+      //    so we must NOT also write `notifications` rows — that would double-deliver.
+      let sent = 0, failed = 0
+      try {
+        const { data: pushResult, error: pushError } = await supabase.functions.invoke('send-push', {
+          body: { title, body, target_type: 'all', url: '/', sender_name: 'Al-Mawaid' }
+        })
+        if (pushError) throw pushError
+        sent = pushResult?.sent || 0
+        failed = pushResult?.failed || 0
+      } catch (err) {
+        console.error('Broadcast push trigger error:', err)
+        failed = userIds.length
+      }
+
+      // 3. Log it in the broadcast schedule
+      const adminUser = (await supabase.auth.getUser()).data?.user?.id || null
+      await supabase.from('broadcast_schedule').insert([{
+        notice_id: noticeData.id,
+        title,
+        body,
+        sender_name: 'Al-Mawaid',
+        tone: 'var(--accent-primary)',
+        media_url: '',
+        target_type: 'all',
+        channel: 'push',
+        status: failed > 0 && sent === 0 ? 'failed' : 'sent',
+        scheduled_for: now,
+        total_targets: userIds.length,
+        sent_count: sent,
+        failed_count: failed,
+        created_by: adminUser,
+      }])
+
+      setMsg(`✅ Broadcast sent to ${userIds.length} member(s) · ${sent} push delivered, ${failed} failed`)
+      setShowBroadcast(false)
+      setBroadcastTitle('')
+      setBroadcastBody('')
+      setTimeout(() => setMsg(''), 5000)
+    } catch (e) {
+      console.error('Broadcast error:', e)
+      setMsg(`Broadcast failed: ${e.message}`)
+    }
+    setBroadcasting(false)
   }
 
   const autoProcesses = [
@@ -424,7 +515,11 @@ export default function AutomationPage() {
               status={p.status}
               liveStatus={p.liveStatus}
               stats={p.stats}
-              onToggle={() => {}}
+              action={
+                <Btn onClick={() => navigate('/admin/notifications')} style={{ width: '100%' }}>
+                  <Settings size={14} /> Manage Broadcasts
+                </Btn>
+              }
               loading={false}
             />
           ))}
@@ -432,64 +527,19 @@ export default function AutomationPage() {
       </div>
 
       {/* Notification Actions */}
-      <SectionHeader style={{ marginTop: 32, marginBottom: 12 }}>📢 Trigger Notifications</SectionHeader>
-      <Grid cols={2} gap={16} style={{ marginBottom: 32 }}>
-        <AdminCard>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-            <Megaphone size={20} color={T.accent} />
-            <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Test Notification</div>
-          </div>
-          <div style={{ fontSize: 12, color: T.textSub, marginBottom: 16, lineHeight: 1.4 }}>
-            Send a test push notification to all admin users to verify notification delivery.
-          </div>
-          <Btn onClick={async () => {
-            const { data: admins } = await supabase.from('user_stats').select('user_id').eq('role', 'admin')
-            if (!admins?.length) { setMsg('No admin users found'); return }
-            let sent = 0
-            for (const a of admins) {
-              const { error } = await supabase.from('notifications').insert({
-                user_id: a.user_id, title: '🔔 Al-Mawaid Test',
-                message: 'This is a test notification from the Automation dashboard.',
-                url: '/admin/automation', type: 'test'
-              })
-              if (!error) sent++
-            }
-            setMsg(`✅ Test notification sent to ${sent} admin(s)`)
-            setTimeout(() => setMsg(''), 4000)
-          }} style={{ width: '100%' }}>
-            <Megaphone size={14} /> Send Test
-          </Btn>
-        </AdminCard>
-
-        <AdminCard>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-            <Send size={20} color={T.accent} />
-            <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Broadcast Now</div>
-          </div>
-          <div style={{ fontSize: 12, color: T.textSub, marginBottom: 16, lineHeight: 1.4 }}>
-            Create and send an instant broadcast notification to all members.
-          </div>
-          <Btn onClick={async () => {
-            const title = prompt('Broadcast title:', 'Al-Mawaid Announcement')
-            if (!title) return
-            const message = prompt('Broadcast message:', '')
-            if (!message) return
-            const { data: subs } = await supabase.from('push_subscriptions').select('user_id').limit(5000)
-            const userIds = [...new Set((subs || []).map(s => s.user_id).filter(Boolean))]
-            let sent = 0
-            for (const uid of userIds) {
-              const { error } = await supabase.from('notifications').insert({
-                user_id: uid, title, message, url: '/', type: 'broadcast'
-              })
-              if (!error) sent++
-            }
-            setMsg(`✅ Broadcast sent to ${sent} member(s)`)
-            setTimeout(() => setMsg(''), 4000)
-          }} style={{ width: '100%' }}>
-            <Send size={14} /> Broadcast
-          </Btn>
-        </AdminCard>
-      </Grid>
+      <SectionHeader style={{ marginTop: 32, marginBottom: 12 }}>📢 Send Broadcast</SectionHeader>
+      <AdminCard style={{ marginBottom: 32 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <Send size={20} color={T.accent} />
+          <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Broadcast Now</div>
+        </div>
+        <div style={{ fontSize: 12, color: T.textSub, marginBottom: 16, lineHeight: 1.4 }}>
+          Create and send an instant broadcast notification to all members. Members receive a single in-app alert plus a native push when the app is closed.
+        </div>
+        <Btn onClick={() => setShowBroadcast(true)} style={{ width: '100%' }}>
+          <Send size={14} /> Broadcast
+        </Btn>
+      </AdminCard>
 
       {/* Survey Configuration */}
       <AdminCard style={{ marginTop: 32 }}>
@@ -574,6 +624,61 @@ export default function AutomationPage() {
       </AdminCard>
 
       <SurveyAccessManager isOpen={isAccessManagerOpen} onClose={() => setIsAccessManagerOpen(false)} />
+
+      {/* Instant Broadcast Modal */}
+      <Modal isOpen={showBroadcast} onClose={() => setShowBroadcast(false)} title="📢 Send Instant Broadcast" maxWidth={520}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ fontSize: 12, color: T.textSub, lineHeight: 1.5 }}>
+            Sends an instant push notification + in-app alert to every member. This cannot be undone.
+          </div>
+          <div>
+            <label htmlFor="broadcastTitle" style={{ display: 'block', fontSize: 11, fontWeight: 800, color: T.textSub, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Title
+            </label>
+            <input
+              id="broadcastTitle"
+              name="broadcastTitle"
+              value={broadcastTitle}
+              maxLength={60}
+              onChange={e => setBroadcastTitle(e.target.value)}
+              placeholder="Al-Mawaid Announcement"
+              style={{
+                width: '100%', boxSizing: 'border-box', padding: '12px 14px', borderRadius: 12,
+                background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text,
+                fontSize: 14, outline: 'none', fontFamily: 'inherit',
+              }}
+            />
+          </div>
+          <div>
+            <label htmlFor="broadcastBody" style={{ display: 'block', fontSize: 11, fontWeight: 800, color: T.textSub, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Message
+            </label>
+            <textarea
+              id="broadcastBody"
+              name="broadcastBody"
+              value={broadcastBody}
+              maxLength={500}
+              onChange={e => setBroadcastBody(e.target.value)}
+              rows={4}
+              placeholder="Type your broadcast message..."
+              style={{
+                width: '100%', boxSizing: 'border-box', resize: 'vertical',
+                padding: '12px 14px', borderRadius: 12,
+                background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text,
+                fontSize: 14, outline: 'none', fontFamily: 'inherit', lineHeight: 1.6,
+              }}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+            <Btn variant="ghost" onClick={() => setShowBroadcast(false)} disabled={broadcasting}>
+              Cancel
+            </Btn>
+            <Btn onClick={sendBroadcast} disabled={broadcasting}>
+              {broadcasting ? 'Broadcasting…' : <><Send size={14} /> Send to All</>}
+            </Btn>
+          </div>
+        </div>
+      </Modal>
     </PageWrap>
   )
 }

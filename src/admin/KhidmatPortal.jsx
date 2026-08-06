@@ -13,7 +13,7 @@ import { T as SharedT, updateSystemTheme, Modal, SurveyResponseDisplay, Btn as S
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { Scan, X } from 'lucide-react'
 import UsersPage from './UsersPage'
-import { getWeekDate } from '../common/utils'
+import { getCalendarWeekDate } from '../common/utils'
 import RequestsAdminPage from './RequestsAdminPage'
 import QueriesAdminPage from './QueriesAdminPage'
 import DailySurveyTracking from './DailySurveyTracking'
@@ -407,7 +407,7 @@ export default function KhidmatPortal({ signOut, user }) {
       let today = days[new Date().getDay()]
       if (today === 'sunday') today = 'monday'
       const dayKey = today.substring(0, 3).toLowerCase()
-      const weekId = getWeekDate()
+      const weekId = getCalendarWeekDate()
       
       const { data: row } = await supabase.from('survey_submissions_flat')
         .select('*').eq('user_id', userId).eq('week_id', weekId).maybeSingle()
@@ -416,7 +416,7 @@ export default function KhidmatPortal({ signOut, user }) {
         .from('weekly_menu')
         .select('*')
         .eq('day_name', today)
-        .eq('week_start', getWeekDate())
+        .eq('week_start', getCalendarWeekDate())
         .maybeSingle()
 
       const buildMealData = (meal) => {
@@ -526,7 +526,7 @@ export default function KhidmatPortal({ signOut, user }) {
     const [{ data: req }, { data: queries }, { data: menu }] = await Promise.all([
       supabase.from('thali_requests').select('*').order('created_at', { ascending: false }).limit(5),
       supabase.from('queries').select('*').order('created_at', { ascending: false }).limit(5),
-      supabase.from('weekly_menu').select('*').eq('week_start', getWeekDate())
+      supabase.from('weekly_menu').select('*').eq('week_start', getCalendarWeekDate())
     ])
     setRequestsList(req || []);
     setQueriesList(queries || []);

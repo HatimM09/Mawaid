@@ -17,6 +17,21 @@ export const getWeekDate = () => {
   return monday.toISOString().split('T')[0]
 }
 
+/**
+ * Returns the Monday of the CURRENT calendar week as YYYY-MM-DD.
+ * Unlike getWeekDate(), this never shifts forward during the survey
+ * window (Sat 8PM – Mon 11AM). It is used wherever the app must keep
+ * showing the CURRENT week's menu (Menu page, Today's menu & feedback)
+ * while the weekly survey form targets the NEXT week's menu.
+ */
+export const getCalendarWeekDate = () => {
+  const now = new Date()
+  const day = now.getDay()
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1)
+  const monday = new Date(now.setDate(diff))
+  return monday.toISOString().split('T')[0]
+}
+
 export const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 export const MEALS = ['lunch', 'dinner']
 

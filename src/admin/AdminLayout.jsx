@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, ClipboardList, Star, FileText,
-  MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight, Search, Bell, History, Package, Send, RefreshCw, Zap
+  MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight, Search, Bell, History, Package, Send, Zap
 } from 'lucide-react'
 import { updateSystemTheme } from './ui'
 import OfflineBanner from '../components/OfflineBanner'
@@ -13,6 +13,7 @@ import { playNotificationChime } from '../common/utils'
 const NAV = [
   { to: '/admin', label: 'Dashboard', Icon: LayoutDashboard, color: 'var(--accent-primary)', end: true, roles: ['admin', 'inventory_manager', 'khidmat_guzar', 'supervisor'] },
   { to: '/admin/users', label: 'Thali Users', Icon: Users, color: 'var(--accent-primary)', roles: ['admin'] },
+  { to: '/admin/survey-dashboard', label: 'Survey Form', Icon: ClipboardList, color: 'var(--accent-primary)', roles: ['admin'] },
   { to: '/admin/survey-tracking', label: 'Survey Tracking', Icon: History, color: 'var(--accent-primary)', roles: ['admin'] },
   { to: '/admin/requests', label: 'Thali Requests', Icon: FileText, color: 'var(--accent-primary)', roles: ['admin', 'khidmat_guzar', 'supervisor'] },
   { to: '/admin/inventory', label: 'Inventory', Icon: Package, color: 'var(--accent-primary)', roles: ['admin', 'inventory_manager'] },
@@ -34,8 +35,11 @@ export default function AdminLayout() {
   const [dragOffset, setDragOffset] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
   const [connStatus, setConnStatus] = useState('connecting')
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [navCounts, setNavCounts] = useState({})
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem('almawaid_sidebar_collapsed') !== 'expanded' } catch { return true }
+  })
+  const [mobileDrawer, setMobileDrawer] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -56,7 +60,6 @@ export default function AdminLayout() {
   }, [])
   const [showPalette, setShowPalette] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [showMore, setShowMore] = useState(false)
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -74,6 +77,25 @@ export default function AdminLayout() {
 
   useEffect(() => {
     updateSystemTheme('royal')
+  }, [])
+
+  const isMobile = () => window.innerWidth < 1025
+  const toggleSidebar = () => {
+    if (isMobile()) { setMobileDrawer(v => !v); return }
+    setCollapsed(v => {
+      const next = !v
+      try { localStorage.setItem('almawaid_sidebar_collapsed', next ? 'collapsed' : 'expanded') } catch {}
+      return next
+    })
+  }
+  const closeDrawer = () => setMobileDrawer(false)
+
+  useEffect(() => {
+    const onResize = () => {
+      if (isMobile()) { setCollapsed(true) } else { setMobileDrawer(false) }
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
   }, [])
 
   useEffect(() => {
@@ -161,13 +183,9 @@ export default function AdminLayout() {
     window.location.reload()
   }
 
-  const getActiveLabel = () => {
-    const active = NAV.find(n => location.pathname === n.to || (n.to !== '/admin' && location.pathname.startsWith(n.to)))
-    return active ? active.label : 'Dashboard'
-  }
-
   const visibleNav = NAV.filter(n => n.roles.includes(role))
   const filteredNav = visibleNav.filter(n => n.label.toLowerCase().includes(searchQuery.toLowerCase()))
+  const expanded = isMobile() ? mobileDrawer : !collapsed
 
 
 
@@ -189,77 +207,79 @@ export default function AdminLayout() {
         
         .admin-sidebar {
           position: fixed; top: 0; left: 0; bottom: 0;
-          width: 280px; background: rgba(15, 12, 8, 0.95);
+          width: 84px; background: rgba(15, 12, 8, 0.95);
           backdrop-filter: blur(40px); z-index: 2000;
           border-right: 1px solid rgba(212, 175, 55, 0.2);
           transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-          transform: translateX(-100%);
+          transform: translateX(0);
           display: flex; flex-direction: column;
-          padding: 100px 0 40px;
+          padding: 24px 0 40px;
+          overflow: hidden;
+        }
+        .admin-sidebar.expanded {
+          width: 280px;
           /* The UI Curve */
           border-radius: 0 80px 80px 0;
           box-shadow: 20px 0 50px rgba(0,0,0,0.5);
         }
-        .admin-sidebar.open { transform: translateX(0); }
-        
+
+        .sidebar-toggle {
+          display: flex; align-items: center; justify-content: center;
+          width: 42px; height: 42px; border-radius: 12px;
+          background: rgba(212, 175, 55, 0.1); border: 1px solid rgba(212, 175, 55, 0.25);
+          color: var(--accent-primary); cursor: pointer;
+          margin: 0 auto 24px; transition: all 0.3s; flex-shrink: 0;
+        }
+        .sidebar-toggle:hover { background: var(--accent-grad); color: #000; }
+
+        .admin-sidebar .sidebar-brand {
+          display: flex; align-items: center; justify-content: center; gap: 15px;
+          padding: 0 0 32px; cursor: pointer; flex-shrink: 0;
+        }
+        .admin-sidebar.expanded .sidebar-brand { justify-content: flex-start; padding: 0 30px 32px; }
+        .sidebar-brand-text { white-space: nowrap; }
+        .admin-sidebar.collapsed .sidebar-brand-text { display: none; }
+
+        .sidebar-nav-list { flex: 1; overflow-y: auto; padding-right: 10px; }
+
         .sidebar-nav-item {
-          display: flex; align-items: center; gap: 15px;
-          padding: 14px 30px; text-decoration: none;
+          display: flex; align-items: center; justify-content: center; gap: 15px;
+          padding: 14px 0; text-decoration: none;
           color: var(--text-tertiary); transition: all 0.3s;
           position: relative; margin-bottom: 5px;
           border-radius: 0 30px 30px 0;
         }
-        /* Lay icons with the UI curve */
-        .sidebar-nav-item:nth-child(1), .sidebar-nav-item:nth-child(11) { padding-left: 20px; }
-        .sidebar-nav-item:nth-child(2), .sidebar-nav-item:nth-child(10) { padding-left: 35px; }
-        .sidebar-nav-item:nth-child(3), .sidebar-nav-item:nth-child(9) { padding-left: 45px; }
-        .sidebar-nav-item:nth-child(4), .sidebar-nav-item:nth-child(8) { padding-left: 52px; }
-        .sidebar-nav-item:nth-child(5), .sidebar-nav-item:nth-child(7) { padding-left: 56px; }
-        .sidebar-nav-item:nth-child(6) { padding-left: 58px; }
+        .admin-sidebar.expanded .sidebar-nav-item { justify-content: flex-start; padding: 14px 30px; }
+        /* Lay icons with the UI curve when expanded */
+        .admin-sidebar.expanded .sidebar-nav-item:nth-child(1), .admin-sidebar.expanded .sidebar-nav-item:nth-child(11) { padding-left: 20px; }
+        .admin-sidebar.expanded .sidebar-nav-item:nth-child(2), .admin-sidebar.expanded .sidebar-nav-item:nth-child(10) { padding-left: 35px; }
+        .admin-sidebar.expanded .sidebar-nav-item:nth-child(3), .admin-sidebar.expanded .sidebar-nav-item:nth-child(9) { padding-left: 45px; }
+        .admin-sidebar.expanded .sidebar-nav-item:nth-child(4), .admin-sidebar.expanded .sidebar-nav-item:nth-child(8) { padding-left: 52px; }
+        .admin-sidebar.expanded .sidebar-nav-item:nth-child(5), .admin-sidebar.expanded .sidebar-nav-item:nth-child(7) { padding-left: 56px; }
+        .admin-sidebar.expanded .sidebar-nav-item:nth-child(6) { padding-left: 58px; }
 
-        .sidebar-nav-item:hover { background: rgba(212, 175, 55, 0.1); color: var(--text-primary); padding-left: 65px; }
-        .sidebar-nav-item.active { background: var(--accent-grad); color: #000; font-weight: 800; padding-left: 70px; box-shadow: 0 10px 25px rgba(212, 175, 55, 0.3); }
+        .admin-sidebar.expanded .sidebar-nav-item:hover { background: rgba(212, 175, 55, 0.1); color: var(--text-primary); padding-left: 65px; }
+        .admin-sidebar.expanded .sidebar-nav-item.active { background: var(--accent-grad); color: #000; font-weight: 800; padding-left: 70px; box-shadow: 0 10px 25px rgba(212, 175, 55, 0.3); }
+        .admin-sidebar.collapsed .sidebar-nav-item:hover { color: var(--text-primary); }
+        .admin-sidebar.collapsed .sidebar-nav-item.active { color: var(--accent-primary); }
 
-        .global-bottom-nav { 
-          position: fixed; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); left: 16px; right: 16px;
-          height: 84px;
-          background: rgba(15, 12, 8, 0.85); backdrop-filter: blur(30px);
-          border: 1px solid rgba(212, 175, 55, 0.25);
-          border-radius: 26px;
-          display: flex; align-items: center;
-          padding: 0; z-index: 2000;
-          box-shadow: 0 10px 40px rgba(0,0,0,0.6);
-          overflow: hidden;
-        }
-        .bottom-nav-inner {
-          display: flex; align-items: center; gap: 4px;
-          padding: 0 16px;
-          width: 100%;
-          overflow-x: auto;
-          overflow-y: hidden;
-          scrollbar-width: none;
-          -ms-overflow-style: none;
-          scroll-behavior: smooth;
-          -webkit-overflow-scrolling: touch;
-          scroll-snap-type: x mandatory;
-          mask-image: linear-gradient(90deg, transparent 0%, #000 8%, #000 92%, transparent 100%);
-          -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 8%, #000 92%, transparent 100%);
-        }
-        .bottom-nav-inner::-webkit-scrollbar { display: none; }
+        .sidebar-nav-label { font-size: 14px; font-weight: 600; white-space: nowrap; }
+        .admin-sidebar.collapsed .sidebar-nav-label,
+        .admin-sidebar.collapsed .sidebar-nav-count { display: none; }
 
-        .nav-item {
-          display: flex; flex-direction: column; align-items: center; gap: 5px;
-          text-decoration: none; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-          color: var(--text-tertiary); padding: 10px 14px; border-radius: 20px;
-          min-width: 68px; flex-shrink: 0;
-          scroll-snap-align: center;
+        .sidebar-logout-wrap {
+          padding: 20px 0; border-top: 1px solid rgba(255,255,255,0.05);
+          display: flex; justify-content: center; flex-shrink: 0;
         }
-        .nav-item.active { 
-          color: var(--accent-primary); 
-          background: rgba(212, 175, 55, 0.1); 
-          box-shadow: inset 0 0 10px rgba(212, 175, 55, 0.05);
+        .admin-sidebar.expanded .sidebar-logout-wrap { padding: 20px 30px; }
+        .sidebar-logout-btn {
+          width: 44px; height: 44px; border-radius: 14px;
+          background: rgba(255,92,92,0.1); border: 1.5px solid rgba(255,92,92,0.3);
+          color: #ff5c5c; cursor: pointer;
+          display: flex; align-items: center; justify-content: center; gap: 12;
+          font-weight: 800; transition: all 0.3s;
         }
-        .nav-item:hover { color: var(--text-primary); background: rgba(255,255,255,0.05); transform: translateY(-2px); }
+        .admin-sidebar.expanded .sidebar-logout-btn { width: 100%; padding: 14px; }
 
         /* Sidebar overlay backdrop on mobile */
         .sidebar-backdrop {
@@ -299,67 +319,17 @@ export default function AdminLayout() {
         @keyframes skeletonPulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
 
         @media (min-width: 1025px) {
-          .global-bottom-nav { display: none !important; }
           .sidebar-backdrop { display: none !important; }
-          .admin-sidebar { transform: translateX(-100%); border-radius: 0; padding-top: 100px; width: 280px; transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
-          .admin-sidebar.open { transform: translateX(0); }
-          .admin-main { margin-left: 0; transition: margin-left 0.5s cubic-bezier(0.4, 0, 0.2, 1); min-height: 100dvh; cursor: default; }
-          .admin-main.sidebar-open { margin-left: 280px; }
-          .admin-header { left: 0; transition: left 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
-          .admin-main.sidebar-open .admin-header { left: 280px; width: calc(100% - 280px); }
+          .admin-main { margin-left: 84px; transition: margin-left 0.5s cubic-bezier(0.4, 0, 0.2, 1); min-height: 100dvh; cursor: default; }
+          .admin-main.sidebar-expanded { margin-left: 280px; }
         }
 
         @media (max-width: 1024px) {
-          .admin-sidebar { width: 280px; border-radius: 0 40px 40px 0; padding-top: 80px; z-index: 5000; }
-          .admin-sidebar.open { transform: translateX(0); }
+          .admin-sidebar { width: 72px; border-radius: 0 40px 40px 0; padding-top: 16px; z-index: 5000; }
+          .admin-sidebar.expanded { width: 280px; transform: translateX(0) !important; }
           .admin-right-sidebar { display: none; }
-          .global-bottom-nav { 
-            display: flex !important; 
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: min(450px, calc(100% - 40px));
-            height: 74px;
-            background: rgba(15, 12, 8, 0.95);
-            backdrop-filter: blur(30px);
-            border: 1.5px solid var(--accent-primary);
-            border-radius: 30px;
-            z-index: 9000;
-            padding: 0 12px;
-            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7), inset 0 1px 1px rgba(255,255,255,0.1);
-            align-items: center;
-            justify-content: space-around;
-          }
-          .global-bottom-nav button {
-            flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-            background: none; border: none; cursor: pointer; color: var(--text-tertiary);
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            height: 100%;
-            position: relative;
-          }
-          .global-bottom-nav button.active { color: var(--accent-primary); }
-          .global-bottom-nav button .icon-box {
-            width: 44px; height: 44px; border-radius: 16px;
-            display: flex; align-items: center; justify-content: center;
-            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-          }
-          .global-bottom-nav button.active .icon-box {
-            background: var(--accent-grad);
-            color: #000;
-            box-shadow: 0 10px 25px rgba(212, 175, 55, 0.4);
-            transform: translateY(-22px) scale(1.15) rotate(5deg);
-            border-radius: 18px;
-          }
-          .global-bottom-nav button span {
-            font-size: 9px; font-weight: 900; text-transform: uppercase;
-            margin-top: 4px; opacity: 0.7; letter-spacing: 0.05em;
-            transition: all 0.3s;
-          }
-          .global-bottom-nav button.active span {
-            transform: translateY(-10px);
-            opacity: 1;
-          }
-          .admin-main { padding-bottom: 110px !important; }
+          .admin-main { margin-left: 72px; transition: margin-left 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+          .admin-main.sidebar-expanded { margin-left: 0; }
         }
 
         @media (max-width: 768px) {
@@ -393,103 +363,37 @@ export default function AdminLayout() {
       `}</style>
 
       {/* Main Content Area */}
-      <div 
-        className={`admin-main ${isSidebarOpen && window.innerWidth > 1024 ? 'sidebar-open' : ''}`}
-        onClick={() => { if(isSidebarOpen) setIsSidebarOpen(false) }}
-      >
-        {/* Top Navbar */}
-        <header className="admin-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <button 
-              onClick={(e) => { e.stopPropagation(); setIsSidebarOpen(!isSidebarOpen); }}
-              style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}
-            >
-              <Menu size={24} />
-            </button>
-            <div 
-              onClick={() => navigate('/admin')}
-              style={{
-                width: 32, height: 32, borderRadius: '50%', background: 'var(--accent-grad)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: '0 0 15px rgba(184, 134, 11, 0.4)',
-                border: '1px solid rgba(212, 175, 55, 0.3)',
-                cursor: 'pointer'
-              }}
-            >
-              <img src="/al-mawaid.png" alt="" style={{ width: 20, height: 20, objectFit: 'contain' }} />
-            </div>
-            <div className="admin-nav-breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'rgba(255, 248, 225, 0.6)', fontSize: 13, fontWeight: 600 }}>
-              <span className="glow-text" style={{ letterSpacing: '0.05em' }}>AL-MAWAID</span>
-              <ChevronRight size={14} />
-              <span style={{ color: 'var(--text-primary)' }}>{getActiveLabel()}</span>
-            </div>
-          </div>
+      <div className={`admin-main ${expanded ? 'sidebar-expanded' : ''}`}>
 
-          <div style={{ flex: 1 }} />
-
-          {/* Glowing Search */}
-          <div className="admin-search" style={{
-            position: 'relative', width: 300,
-            background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(212, 175, 55, 0.2)',
-            borderRadius: 14, display: 'flex', alignItems: 'center', padding: '0 12px',
-            height: 40, marginRight: 20
-          }}>
-            <Search size={16} color="var(--text-tertiary)" />
-            <input
-              name="commandPalette"
-              readOnly
-              onClick={() => setShowPalette(true)}
-              placeholder="Search command (CMD+K)"
-              style={{ background: 'var(--accent-bg)', border: 'none', color: 'var(--text-primary)', outline: 'none', paddingLeft: 10, fontSize: 13, flex: 1, fontWeight: 600 }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '4px 4px 4px 12px', background: 'rgba(25, 20, 10, 0.6)', borderRadius: 18, border: '1px solid rgba(212, 175, 55, 0.25)' }}>
-              <div className="desktop-only" style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 11, color: 'rgba(212, 175, 55, 0.7)', fontWeight: 600 }}>{adminName.toLowerCase()}</div>
-              </div>
-              <div style={{ width: 36, height: 36, borderRadius: 14, background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-primary)', fontWeight: 800, fontSize: 13, border: '1px solid rgba(212, 175, 55, 0.3)' }}>
-                {adminName.charAt(0).toUpperCase()}
-              </div>
-            </div>
-            <button 
-              onClick={() => window.location.reload()} 
-              aria-label="Refresh page"
-              style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >
-              <RefreshCw size={18} />
-            </button>
-            <button onClick={handleLogout} aria-label="Log out" style={{ background: 'none', border: 'none', color: '#ff5c5c', cursor: 'pointer' }}><LogOut size={20} /></button>
-          </div>
-        </header>
-
-        {/* Sidebar backdrop overlay for mobile */}
-        <div className={`sidebar-backdrop ${isSidebarOpen ? 'visible' : ''}`} onClick={() => setIsSidebarOpen(false)} />
+        {/* Sidebar backdrop overlay on mobile */}
+        <div className={`sidebar-backdrop ${mobileDrawer ? 'visible' : ''}`} onClick={closeDrawer} />
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden', position: 'relative' }}>
           {/* Left Sidebar */}
-          <aside className={`admin-sidebar ${isSidebarOpen ? 'open' : ''}`}>
+          <aside className={`admin-sidebar ${expanded ? 'expanded' : 'collapsed'}`}>
+            <button onClick={toggleSidebar} className="sidebar-toggle" aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}>
+              {expanded ? <X size={20} /> : <Menu size={20} />}
+            </button>
             <div 
-              onClick={() => { navigate('/admin'); if (window.innerWidth < 1025) setIsSidebarOpen(false) }}
-              style={{ padding: '0 30px 40px', display: 'flex', alignItems: 'center', gap: 15, cursor: 'pointer' }}
+              onClick={() => { navigate('/admin'); if (isMobile()) closeDrawer() }}
+              className="sidebar-brand"
+              title="AL-MAWAID"
             >
               <div style={{ width: 42, height: 42, borderRadius: 14, background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <img src="/al-mawaid.png" alt="" style={{ width: 28, height: 28 }} />
               </div>
-              <div>
+              <div className="sidebar-brand-text">
                 <div style={{ fontSize: 16, fontWeight: 900, color: 'var(--accent-primary)', letterSpacing: '0.05em' }}>AL-MAWAID</div>
                 <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase' }}>Management Portal</div>
               </div>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', paddingRight: 10 }}>
+            <div className="sidebar-nav-list">
               {visibleNav.map(({ to, label, Icon, end }) => (
-                <NavLink key={to} to={to} end={end} className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`} onClick={() => window.innerWidth < 1025 && setIsSidebarOpen(false)} onKeyDown={e => { if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Space') { e.preventDefault(); navigate(to) } }}>
+                <NavLink key={to} to={to} end={end} title={label} className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`} onClick={() => isMobile() && closeDrawer()} onKeyDown={e => { if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Space') { e.preventDefault(); navigate(to) } }}>
                   <Icon size={20} />
-                  <span style={{ fontSize: 14, fontWeight: 600 }}>{label}</span>
+                  <span className="sidebar-nav-label">{label}</span>
                   {navCounts[label] > 0 && (
-                    <div style={{
+                    <div className="sidebar-nav-count" style={{
                       marginLeft: 'auto', minWidth: 22, height: 22,
                       borderRadius: 11, background: 'var(--accent-grad)',
                       color: '#000', fontSize: 10, fontWeight: 900,
@@ -502,28 +406,25 @@ export default function AdminLayout() {
                 </NavLink>
               ))}
             </div>
-            <div style={{ padding: '20px 30px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="sidebar-logout-wrap">
               <button 
                 onClick={handleLogout} 
+                title="Logout"
                 style={{ 
-                  width: '100%', padding: '16px', borderRadius: 16, 
-                  background: 'var(--accent-grad)', 
-                  color: '#ff5c5c', border: '1.5px solid rgba(255,92,92,0.3)', 
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', 
-                  justifyContent: 'center', gap: 12, fontWeight: 800,
-                  transition: 'all 0.3s',
+                  background: 'var(--accent-grad)',
                   boxShadow: '0 4px 15px rgba(255, 92, 92, 0.1)'
                 }}
+                className="sidebar-logout-btn"
                 onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,92,92,0.2)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,92,92,0.1)'; e.currentTarget.style.transform = 'translateY(0)' }}
               >
-                <LogOut size={18} strokeWidth={2.5} /> Logout
+                <LogOut size={18} strokeWidth={2.5} /> <span className="sidebar-nav-label">Logout</span>
               </button>
             </div>
           </aside>
 
           {/* Dynamic content */}
-          <main key={location.pathname} className="smooth-appear scroll-container" style={{ flex: 1, padding: 'clamp(12px, 3vw, 24px)', paddingBottom: 120, overflowY: 'auto', overflowX: 'hidden' }}>
+          <main key={location.pathname} className="smooth-appear scroll-container" style={{ flex: 1, padding: 'clamp(12px, 3vw, 24px)', paddingBottom: 40, overflowY: 'auto', overflowX: 'hidden' }}>
             <div style={{ position: 'sticky', top: 0, zIndex: 100, marginBottom: 8, display: 'flex', justifyContent: 'flex-end' }}>
               <div style={{
                 display: 'inline-flex', alignItems: 'center', gap: 5,
@@ -539,40 +440,6 @@ export default function AdminLayout() {
             <Outlet context={{ role }} />
           </main>
         </div>
-
-        {/* Global Floating Bottom Nav */}
-        <nav className="global-bottom-nav">
-          <div className="bottom-nav-inner" ref={el => {
-            if (el) {
-              const active = el.querySelector('.nav-item.active')
-              if (active) active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
-            }
-          }}>
-            {visibleNav.map(({ to, label, Icon, end }) => (
-              <NavLink key={to} to={to} end={end} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} onKeyDown={e => { if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Space') { e.preventDefault(); navigate(to) } }}>
-                <div className="icon-box" style={{ position: 'relative' }}>
-                  <Icon size={20} strokeWidth={2.5} />
-                  {navCounts[label] > 0 && (
-                    <div style={{
-                      position: 'absolute', top: -4, right: -6,
-                      minWidth: 18, height: 18,
-                      borderRadius: 9, background: '#f43f5e',
-                      color: '#fff', fontSize: 9, fontWeight: 900,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      padding: '0 4px',
-                      boxShadow: '0 2px 8px rgba(244,63,94,0.5)'
-                    }}>
-                      {navCounts[label] > 99 ? '99+' : navCounts[label]}
-                    </div>
-                  )}
-                </div>
-                <span>{label}</span>
-              </NavLink>
-            ))}
-          </div>
-        </nav>
-
-
 
         {/* ── Toast Notification Popup ── */}
         {toastNotice && (
