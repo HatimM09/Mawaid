@@ -131,11 +131,17 @@ export default function NotificationsAdminPage() {
       setRealPushSubs(uniqueUsersWithValidSubs)
 
       const scheduleData = sRes.data || []
+      // Real delivery aggregates (last 24h) from the actual sent/failed counters
+      // recorded per broadcast — not just status counts.
+      const dayAgo = Date.now() - 24 * 3600 * 1000
+      const recentSends = scheduleData.filter(s => s.sent_at && new Date(s.sent_at).getTime() >= dayAgo)
+      const delivered24 = recentSends.reduce((n, s) => n + (s.sent_count || 0), 0)
+      const failed24 = recentSends.reduce((n, s) => n + (s.failed_count || 0), 0)
       setStats({
         total: nRes.data?.length || 0,
-        sent: scheduleData.filter(s => s.status === 'sent').length,
+        sent: delivered24,
         pending: scheduleData.filter(s => s.status === 'scheduled' || s.status === 'processing').length,
-        failed: scheduleData.filter(s => s.status === 'failed').length,
+        failed: failed24,
         scheduled: scheduleData.filter(s => s.status === 'scheduled').length,
         templates: tRes.data?.length || 0,
       })
@@ -1331,9 +1337,9 @@ export default function NotificationsAdminPage() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 {[
-                  { label: 'Sent Today', value: stats.sent, color: '#34d399' },
+                  { label: 'Delivered 24h', value: stats.sent, color: '#34d399' },
                   { label: 'Scheduled', value: stats.scheduled, color: '#a78bfa' },
-                  { label: 'Templates', value: stats.templates, color: T.accent },
+                  { label: 'Failed 24h', value: stats.failed, color: '#ef4444' },
                   { label: 'Subscribers', value: pushSubs, color: '#60a5fa' },
                 ].map((item, i) => (
                   <div key={i} style={{
@@ -1442,6 +1448,31 @@ export default function NotificationsAdminPage() {
                             {timeAgo(notice.created_at)}
                             {entry?.total_targets ? ` • ${entry.total_targets} recipients` : ''}
                           </div>
+                          {entry && (entry.sent_count > 0 || entry.failed_count > 0) && (
+                            <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{
+                                flex: 1, maxWidth: 140, height: 4, borderRadius: 2, overflow: 'hidden',
+                                background: 'rgba(255,255,255,0.06)'
+                              }}>
+                                <div style={{
+                                  width: `${Math.min(100, Math.round(((entry.sent_count || 0) / (entry.total_targets || 1)) * 100))}%`,
+                                  height: '100%', borderRadius: 2,
+                                  background: entry.failed_count > 0
+                                    ? 'linear-gradient(90deg,#f59e0b,#34d399)'
+                                    : 'linear-gradient(90deg,#34d399,#10b981)',
+                                  transition: 'width 0.4s ease'
+                                }} />
+                              </div>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: '#34d399' }}>
+                                {entry.sent_count || 0}/{entry.total_targets || 0}
+                              </span>
+                              {entry.failed_count > 0 && (
+                                <span style={{ fontSize: 10, fontWeight: 700, color: '#ef4444' }}>
+                                  {entry.failed_count} failed
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         {/* Status badge */}

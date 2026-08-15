@@ -7,6 +7,7 @@ import { RefreshCw, Search, Filter, Utensils, Download, User as UserIcon, Calend
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Grid, Modal, SectionHeader, SurveyResponseDisplay, PackingTVView, fmtDate, fmtDateTime, ErrorBanner } from './ui'
 import { getWeekDate, DAYS, MEALS } from '../common/utils'
+import { getSlotDishes } from '../hooks/useSurvey'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
 } from 'recharts'
@@ -30,6 +31,8 @@ export default function SurveysPage() {
   const [focusedUserId, setFocusedUserId] = useState(urlUserId)
   
   const [dayFilter, setDayFilter] = useState('all')
+  const [surveyOpenHour, setSurveyOpenHour] = useState(20)
+  const surveyWeekId = () => getWeekDate(surveyOpenHour)
   const [mealFilter, setMealFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [chartData, setChartData] = useState([])
@@ -100,7 +103,10 @@ export default function SurveysPage() {
     }
   }
 
-  const buildAllDishes = (dishList, row, dk, mk) => {
+  const buildAllDishes = (row, dayName, mealName, fallbackList) => {
+    const dk = dayName.substring(0, 3).toLowerCase()
+    const mk = mealName === 'lunch' ? 'l' : 'd'
+    const dishList = getSlotDishes(row, dayName, mealName, fallbackList)
     const res = {}
     res._status = row ? row[`${dk}_${mk}_status`] : 'Not Submitted'
     dishList.forEach((d, i) => {
@@ -122,17 +128,14 @@ export default function SurveysPage() {
       
       const dayKey = dayFilter.substring(0, 3).toLowerCase()
       const mealKey = mealFilter === 'lunch' ? 'l' : 'd'
-      const weekId = getWeekDate()
+      const weekId = surveyWeekId()
       
       const { data: row } = await supabase.from('survey_submissions_flat')
         .select('*').eq('user_id', userId).eq('week_id', weekId).maybeSingle()
       
-      const curMealDishes = weeklyMenu[dayFilter]?.[mealFilter] || []
-      const lunchDishes = weeklyMenu[dayFilter]?.lunch || []
-      const dinnerDishes = weeklyMenu[dayFilter]?.dinner || []
-      const buildCur = buildAllDishes(curMealDishes, row, dayKey, mealKey)
-      const buildLunch = buildAllDishes(lunchDishes, row, dayKey, 'l')
-      const buildDinner = buildAllDishes(dinnerDishes, row, dayKey, 'd')
+      const buildCur = buildAllDishes(row, dayFilter, mealFilter, weeklyMenu[dayFilter]?.[mealFilter] || [])
+      const buildLunch = buildAllDishes(row, dayFilter, 'lunch', weeklyMenu[dayFilter]?.lunch || [])
+      const buildDinner = buildAllDishes(row, dayFilter, 'dinner', weeklyMenu[dayFilter]?.dinner || [])
 
       setSelectedUser({
         ...u,
@@ -184,7 +187,7 @@ export default function SurveysPage() {
     try {
       // Auto-cleanup: delete submissions older than 1 week (keep current + 1 previous)
       try {
-        const currentWeek = getWeekDate()
+        const currentWeek = surveyWeekId()
         const prevWeek = new Date(currentWeek)
         prevWeek.setDate(prevWeek.getDate() - 7)
         const cutoff = prevWeek.toISOString().split('T')[0]
@@ -203,6 +206,13 @@ export default function SurveysPage() {
       const { data: configData } = await supabase.from('app_settings').select('value').eq('key', 'dish_input_config').maybeSingle()
       if (configData) {
         try { setDishInputConfig(JSON.parse(configData.value)) } catch {}
+      }
+
+      // Read configured survey open hour so the tracked week matches the survey window
+      const { data: openHourRow } = await supabase.from('app_settings').select('value').eq('key', 'survey_open_hour').maybeSingle()
+      if (openHourRow) {
+        const h = parseInt(openHourRow.value, 10)
+        if (!isNaN(h)) setSurveyOpenHour(h)
       }
 
       let query = supabase
@@ -246,7 +256,7 @@ export default function SurveysPage() {
             const status = row[`${dayKey}_${mealKey}_status`]
             if (status) {
               const dishResponses = {}
-              const dishes = weeklyMenu[day]?.[meal] || []
+              const dishes = getSlotDishes(row, day, meal, weeklyMenu[day]?.[meal] || [])
               dishes.forEach((d, i) => {
                 const val = row[`${dayKey}_${mealKey}_dish_${i + 1}`]
                 if (val !== undefined && val !== null) {
@@ -339,7 +349,7 @@ export default function SurveysPage() {
       Object.entries(q).forEach(([dish, val]) => {
         if (!counts[dish]) {
           counts[dish] = 0
-          isCountDish[dish] = typeof val === 'string' && !val.endsWith('%') && val !== 'yes' && val !== 'no'
+          isCountDish[dish] = (typeof val === 'number') || (typeof val === 'string' && !val.endsWith('%') && String(val).toLowerCase() !== 'yes' && String(val).toLowerCase() !== 'no')
           isPctDish[dish] = typeof val === 'string' && val.endsWith('%')
         }
         if (isCountDish[dish]) {
@@ -377,12 +387,13 @@ export default function SurveysPage() {
           <span style={{ color: T.danger, fontSize: 11, fontWeight: 700 }}>OPTED OUT (SKIP)</span>
         ) : Object.entries(qtys).map(([d, p]) => {
           const isRoti = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri'].some(k => d.toLowerCase().includes(k))
-          const isCount = typeof p === 'string' && !p.endsWith('%') && p !== 'yes' && p !== 'no'
+          const isCount = (typeof p === 'number') || (typeof p === 'string' && !p.endsWith('%') && String(p).toLowerCase() !== 'yes' && String(p).toLowerCase() !== 'no')
           const numVal = parseInt(p) || 0
           if (isRoti) {
+            const yes = String(p).toLowerCase() === 'yes'
             return (
-              <span key={d} style={{ fontSize: 11, background: p === 'yes' ? 'rgba(197,160,89,0.1)' : 'rgba(239,68,68,0.05)', padding: '2px 8px', borderRadius: 6, border: `1px solid ${p === 'yes' ? T.accentBorder : 'rgba(239,68,68,0.15)'}`, fontWeight: 700, color: p === 'yes' ? T.accent : T.danger }}>
-                {d}: {p === 'yes' ? 'YES' : 'NO'}
+              <span key={d} style={{ fontSize: 11, background: yes ? 'rgba(197,160,89,0.1)' : 'rgba(239,68,68,0.05)', padding: '2px 8px', borderRadius: 6, border: `1px solid ${yes ? T.accentBorder : 'rgba(239,68,68,0.15)'}`, fontWeight: 700, color: yes ? T.accent : T.danger }}>
+                {d}: {yes ? 'YES' : 'NO'}
               </span>
             )
           }
@@ -407,14 +418,15 @@ export default function SurveysPage() {
     const dishCells = dailyDishes.map(dish => {
       const val = qtys[dish];
       if (r.wants_food === false) return <span style={{ color: T.danger, opacity: 0.5 }}>SKIPPED</span>
-      if (val === undefined) return <span style={{ color: T.textSub, opacity: 0.3 }}>N/A</span>
+      if (val === undefined || val === null) return <span style={{ color: T.textSub, opacity: 0.3 }}>N/A</span>
 
       const isRoti = dish.toLowerCase().includes('roti') || dish.toLowerCase().includes('naan');
       if (isRoti) {
-        return <Badge color={val === 'yes' ? T.accent : T.danger} variant={val === 'yes' ? 'solid' : 'outline'}>{val.toUpperCase()}</Badge>
+        const yes = String(val).toLowerCase() === 'yes'
+        return <Badge color={yes ? T.accent : T.danger} variant={yes ? 'solid' : 'outline'}>{yes ? 'YES' : 'NO'}</Badge>
       }
 
-      const isCount = typeof val === 'string' && !val.endsWith('%') && val !== 'yes' && val !== 'no'
+      const isCount = (typeof val === 'string' && !val.endsWith('%') && String(val).toLowerCase() !== 'yes' && String(val).toLowerCase() !== 'no') || typeof val === 'number'
       const numVal = parseInt(val) || 0
 
       if (isCount) {

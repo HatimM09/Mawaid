@@ -195,7 +195,7 @@ export default function SurveyEditModal({
               Edit Survey Responses
             </h2>
             <p style={{
-              margin: 8 0 0 0,
+              margin: '8px 0 0 0',
               fontSize: 14,
               color: t.textSub,
               fontFamily: "'DM Sans',sans-serif'"
@@ -284,6 +284,7 @@ export default function SurveyEditModal({
               dayName={editingResponses.dayName || ''}
               meal={editingResponses.meal || 'lunch'}
               dishIndex={index}
+              maxCount={editingResponses.snackDefaults?.[`dish_${index + 1}`] ?? null}
             />
           ))}
         </div>
@@ -297,7 +298,7 @@ export default function SurveyEditModal({
           marginBottom: 24
         }}>
           <h3 style={{
-            margin: 0 0 12 0,
+            margin: '0 0 12px 0',
             fontSize: 16,
             fontWeight: 700,
             color: t.text,

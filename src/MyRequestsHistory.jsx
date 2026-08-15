@@ -269,7 +269,7 @@ export default function MyRequestsHistory() {
                           {r.details && <div style={{ fontSize: 12, color: t.textBody, marginTop: 4 }}>{r.details}</div>}
                           {r.extra_items && (
                             <div style={{ fontSize: 11, color: t.textSub, marginTop: 4 }}>
-                              {r.extra_items.map(i => `${i.name} x${i.qty}`).join(', ')}
+                              {r.extra_mode === 'deduction' ? '➖ Deduction: ' : '➕ Addition: '}{r.extra_items.map(i => `${i.name} x${i.qty}`).join(', ')}
                             </div>
                           )}
                         </div>

@@ -14,6 +14,7 @@ import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { Scan, X } from 'lucide-react'
 import UsersPage from './UsersPage'
 import { getCalendarWeekDate } from '../common/utils'
+import { getSlotDishes } from '../hooks/useSurvey'
 import RequestsAdminPage from './RequestsAdminPage'
 import QueriesAdminPage from './QueriesAdminPage'
 import DailySurveyTracking from './DailySurveyTracking'
@@ -424,17 +425,16 @@ export default function KhidmatPortal({ signOut, user }) {
         const statusKey = `${dayKey}_${mealKey}_status`
         const status = row ? row[statusKey] : null
         const dishes = {}
-        if (menuRow) {
-          const dishList = (menuRow[meal] || '').split(',').map(s => s.trim()).filter(Boolean)
-          dishList.forEach((dish, idx) => {
-            const val = row ? row[`${dayKey}_${mealKey}_dish_${idx + 1}`] : null
-            if (val !== undefined && val !== null && val !== '') {
-              dishes[dish] = val === 'Yes' ? 'yes' : (val === 'No' ? 'no' : val)
-            } else {
-              dishes[dish] = null
-            }
-          })
-        }
+        const currentList = (menuRow?.[meal] || '').split(',').map(s => s.trim()).filter(Boolean)
+        const dishList = getSlotDishes(row, today, meal, currentList)
+        dishList.forEach((dish, idx) => {
+          const val = row ? row[`${dayKey}_${mealKey}_dish_${idx + 1}`] : null
+          if (val !== undefined && val !== null && val !== '') {
+            dishes[dish] = val === 'Yes' ? 'yes' : (val === 'No' ? 'no' : val)
+          } else {
+            dishes[dish] = null
+          }
+        })
         return { status: status || 'Not Submitted', dishes }
       }
 

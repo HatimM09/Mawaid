@@ -1,8 +1,8 @@
 // src/admin/SettingsPage.jsx
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/firebaseClient'
 import { Save, RefreshCw, Calendar, Send, Clock, Trash2, Upload, Download, FileSpreadsheet } from 'lucide-react'
-import { T, PageWrap, PageTitle, AdminCard, Btn, Alert, Input, Select, SectionHeader } from './ui'
+import { T, PageWrap, PageTitle, AdminCard, Btn, Alert, Input, SectionHeader } from './ui'
 import { getWeekDate, getCalendarWeekDate, addWeeks } from '../common/utils'
 
 const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday']
@@ -23,126 +23,16 @@ const DEFAULT_MENU = {
   saturday:  { lunch: 'Chana Bateta, Dal Makhni, Chawal', dinner: 'Roti, Chicken Tarkari, Veg Coconut Rice, Kung Pao Gravy' },
 }
 
-const StatusToggle = ({ label, value, onChange, liveStatus }) => {
-  const options = [
-    { id: 'closed', label: '🔒 CLOSED', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)', border: 'rgba(239, 68, 68, 0.3)' },
-    { id: 'auto', label: '📅 AUTO', color: '#6366f1', bg: 'rgba(99, 102, 241, 0.1)', border: 'rgba(99, 102, 241, 0.3)' },
-    { id: 'open', label: '✅ OPEN', color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)', border: 'rgba(16, 185, 129, 0.3)' }
-  ]
-
-  // When in AUTO mode, show live OPEN/CLOSED status based on current time
-  const isLiveOpen = value === 'auto' && liveStatus === 'open'
-  const isLiveClosed = value === 'auto' && liveStatus === 'closed'
-  const showLiveBadge = value === 'auto' && liveStatus
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ color: T.textSub, fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase' }}>{label}</span>
-        {showLiveBadge && (
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '2px 8px', borderRadius: 10, fontSize: 9, fontWeight: 900,
-            background: isLiveOpen ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)',
-            color: isLiveOpen ? '#10b981' : '#ef4444',
-            border: `1px solid ${isLiveOpen ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
-            letterSpacing: '0.05em',
-            textTransform: 'uppercase',
-          }}>
-            <div style={{
-              width: 5, height: 5, borderRadius: '50%',
-              background: isLiveOpen ? '#10b981' : '#ef4444',
-              animation: isLiveOpen ? 'pulse 2s infinite' : 'none'
-            }} />
-            {isLiveOpen ? 'OPEN' : 'CLOSED'}
-          </div>
-        )}
-      </div>
-      <div style={{ 
-        display: 'flex', 
-        background: T.inputBg, 
-        padding: 4, 
-        borderRadius: 14, 
-        border: `1px solid ${T.inputBorder}`, 
-        gap: 6,
-        boxSizing: 'border-box'
-      }}>
-        {options.map(opt => {
-          const active = value === opt.id
-          return (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => onChange(opt.id)}
-              style={{
-                flex: 1,
-                padding: '12px 14px',
-                borderRadius: 10,
-                border: active ? `1px solid ${opt.color}` : '1px solid transparent',
-                background: active ? opt.bg : 'transparent',
-                color: active ? opt.color : T.textSub,
-                fontSize: 13,
-                fontWeight: active ? 900 : 700,
-                cursor: 'pointer',
-                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                outline: 'none',
-                fontFamily: 'inherit'
-              }}
-            >
-              {opt.label}
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-// ── Helper to check if a timing window is currently open based on configured auto-timings ──
-const isTimingOpen = (type, appSettings) => {
-  const now = new Date()
-  const day = now.getDay()
-  const minute = now.getHours() * 60 + now.getMinutes()
-
-  if (type === 'lunch') {
-    const openParts = (appSettings.lunch_edit_open || '20:00').split(':').map(Number)
-    const closeParts = (appSettings.lunch_edit_close || '11:00').split(':').map(Number)
-    const openMin = ((openParts[0] || 20) * 60 + (openParts[1] || 0))
-    const closeMin = ((closeParts[0] || 11) * 60 + (closeParts[1] || 0))
-    // If openMin > closeMin: prev-night window (e.g., 20:00 prev night to 11:00 same day)
-    // If openMin <= closeMin: same-day window (e.g., 06:00 to 11:00)
-    if (openMin > closeMin) {
-      if (minute < closeMin) return true
-      if (minute >= openMin) return true
-    } else {
-      if (minute >= openMin && minute < closeMin) return true
-    }
-    return false
-  }
-
-  if (type === 'dinner') {
-    const openParts = (appSettings.dinner_edit_open || '12:00').split(':').map(Number)
-    const closeParts = (appSettings.dinner_edit_close || '15:30').split(':').map(Number)
-    const openMin = ((openParts[0] || 12) * 60 + (openParts[1] || 0))
-    const closeMin = ((closeParts[0] || 15) * 60 + (closeParts[1] || 30))
-    return minute >= openMin && minute < closeMin
-  }
-
-  return false
-}
-
-// ── Survey window (auto mode): Sat 8PM – Mon 11AM ──
-const surveyTimingOpenNow = () => {
+// ── Survey window (auto mode): Sat openHour – Mon closeHour from app_settings ──
+const surveyTimingOpenNow = (cfg = {}) => {
   const now = new Date()
   const day = now.getDay()
   const hour = now.getHours()
-  if (day === 6 && hour >= 20) return true
+  const open = parseInt(cfg.survey_open_hour, 10)
+  const close = parseInt(cfg.survey_close_hour, 10)
+  if (day === 6 && hour >= (isNaN(open) ? 20 : open)) return true
   if (day === 0) return true
-  if (day === 1 && hour < 11) return true
+  if (day === 1 && hour < (isNaN(close) ? 11 : close)) return true
   return false
 }
 
@@ -243,13 +133,7 @@ const buildMenuCSVTemplate = (seed = DEFAULT_MENU) => {
 
 export default function SettingsPage() {
   const [menu, setMenu]         = useState(DEFAULT_MENU)
-  const [lunchEditStatus, setLunchEditStatus] = useState('auto')
-  const [dinnerEditStatus, setDinnerEditStatus] = useState('auto')
   const [helpline, setHelpline] = useState('')
-  const [lunchEditOpen, setLunchEditOpen] = useState('20:00')
-  const [lunchEditClose, setLunchEditClose] = useState('11:00')
-  const [dinnerEditOpen, setDinnerEditOpen] = useState('12:00')
-  const [dinnerEditClose, setDinnerEditClose] = useState('15:30')
   const [loading, setLoading]   = useState(true)
   const [saving, setSaving]     = useState(false)
   const [msg, setMsg]           = useState({ text: '', type: 'success' })
@@ -268,6 +152,77 @@ export default function SettingsPage() {
   const [clearing, setClearing] = useState(false)
   const [hasDraft, setHasDraft] = useState(false)
   const [switchingWeek, setSwitchingWeek] = useState(false)
+
+  // ── Weekly survey submission tracking + reminders ──
+  const [weeklyTrack, setWeeklyTrack] = useState({ loading: false, submitted: [], pending: [], weekStart: '' })
+  const [reminding, setReminding] = useState(false)
+
+  const loadWeeklyTracking = useCallback(async () => {
+    let openHour = 20
+    let hourRow
+    try {
+      hourRow = await supabase.from('app_settings').select('value').eq('key', 'survey_open_hour').maybeSingle()
+    } catch {
+      hourRow = { data: null }
+    }
+    const parsed = parseInt(hourRow?.value, 10)
+    if (!isNaN(parsed)) openHour = parsed
+    const weekStart = getWeekDate(openHour)
+    setWeeklyTrack(p => ({ ...p, loading: true, weekStart }))
+    try {
+      const [{ data: users }, { data: subs }] = await Promise.all([
+        supabase.from('user_stats').select('user_id, name, thali_number, email'),
+        supabase.from('survey_submissions_flat').select('user_id, week_id').eq('week_id', weekStart),
+      ])
+      const submittedIds = new Set((subs || []).map(s => s.user_id))
+      const allUsers = (users || []).filter(u => u.user_id)
+      setWeeklyTrack({
+        loading: false,
+        weekStart,
+        submitted: allUsers.filter(u => submittedIds.has(u.user_id)),
+        pending: allUsers.filter(u => !submittedIds.has(u.user_id)),
+      })
+    } catch (e) {
+      console.error('Weekly tracking load error:', e)
+      setWeeklyTrack(p => ({ ...p, loading: false }))
+    }
+  }, [])
+
+  useEffect(() => { loadWeeklyTracking() }, [loadWeeklyTracking])
+
+  const sendReminders = async () => {
+    if (!weeklyTrack.pending.length) return
+    setReminding(true)
+    try {
+      let notified = 0
+      for (const u of weeklyTrack.pending) {
+        try {
+          await supabase.from('notifications').insert({
+            user_id: u.user_id,
+            title: '📋 Weekly Food Survey Reminder',
+            message: 'You haven’t submitted your weekly food survey yet. Please fill it before the window closes (Mon 11 AM).',
+            url: '/',
+            type: 'survey_reminder',
+            sender_name: 'Al-Mawaid'
+          })
+          await supabase.functions.invoke('send-push', {
+            body: {
+              title: 'Al-Mawaid · Weekly Survey Reminder',
+              body: 'Your weekly menu selections are still pending. Submit before Monday 11:00 AM.',
+              target_type: 'specific',
+              user_id: u.user_id,
+              url: '/'
+            }
+          })
+          notified++
+        } catch (e) { console.warn('Reminder failed for', u.user_id, e) }
+      }
+      setMsg({ text: `✅ Reminder sent to ${notified} member${notified === 1 ? '' : 's'} (${weeklyTrack.pending.length} pending in total).`, type: 'success' })
+    } catch (e) {
+      setMsg({ text: `Reminder failed: ${e.message}`, type: 'error' })
+    }
+    setReminding(false)
+  }
 
   // Auto-save (debounced draft writer) + CSV import state
   const dirtyRef = useRef(false)
@@ -292,13 +247,7 @@ export default function SettingsPage() {
 
       if (draftRow && draftRow.value) {
         const draft = JSON.parse(draftRow.value)
-        setLunchEditStatus(draft.lunch_edit_status || 'auto')
-        setDinnerEditStatus(draft.dinner_edit_status || 'auto')
         setHelpline(draft.helpline_number || '')
-        setLunchEditOpen(draft.lunch_edit_open || '20:00')
-        setLunchEditClose(draft.lunch_edit_close || '11:00')
-        setDinnerEditOpen(draft.dinner_edit_open || '12:00')
-        setDinnerEditClose(draft.dinner_edit_close || '15:30')
         if (draft.dish_input_config) setDishInputConfig(draft.dish_input_config)
         if (draft.menu) setMenu(draft.menu)
         if (draft.publishAt) setPublishAt(draft.publishAt)
@@ -308,13 +257,7 @@ export default function SettingsPage() {
         const { data: settings } = await supabase.from('app_settings').select('*')
         if (settings) {
           settings.forEach(row => {
-            if (row.key === 'lunch_edit_status') setLunchEditStatus(row.value)
-            if (row.key === 'dinner_edit_status') setDinnerEditStatus(row.value)
             if (row.key === 'helpline_number') setHelpline(row.value)
-            if (row.key === 'lunch_edit_open') setLunchEditOpen(row.value)
-            if (row.key === 'lunch_edit_close') setLunchEditClose(row.value)
-            if (row.key === 'dinner_edit_open') setDinnerEditOpen(row.value)
-            if (row.key === 'dinner_edit_close') setDinnerEditClose(row.value)
             if (row.key === 'dish_input_config') { try { setDishInputConfig(JSON.parse(row.value)) } catch(e) { setDishInputConfig({}) } }
           })
         }
@@ -404,13 +347,7 @@ export default function SettingsPage() {
       dirtyRef.current = false
       setAutoSaving(true)
       const draft = {
-        lunch_edit_status: lunchEditStatus,
-        dinner_edit_status: dinnerEditStatus,
         helpline_number: helpline,
-        lunch_edit_open: lunchEditOpen,
-        lunch_edit_close: lunchEditClose,
-        dinner_edit_open: dinnerEditOpen,
-        dinner_edit_close: dinnerEditClose,
         dish_input_config: dishInputConfig,
         menu: menu,
         publishAt: publishAt,
@@ -427,7 +364,7 @@ export default function SettingsPage() {
     }, 900)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menu, lunchEditStatus, dinnerEditStatus, helpline, lunchEditOpen, lunchEditClose, dinnerEditOpen, dinnerEditClose, dishInputConfig, publishAt])
+  }, [menu, helpline, dishInputConfig, publishAt])
 
   const save = async (e) => {
     e.preventDefault()
@@ -435,13 +372,7 @@ export default function SettingsPage() {
     setMsg({ text: '', type: 'success' })
 
     const draft = {
-      lunch_edit_status: lunchEditStatus,
-      dinner_edit_status: dinnerEditStatus,
       helpline_number: helpline,
-      lunch_edit_open: lunchEditOpen,
-      lunch_edit_close: lunchEditClose,
-      dinner_edit_open: dinnerEditOpen,
-      dinner_edit_close: dinnerEditClose,
       dish_input_config: dishInputConfig,
       menu: menu,
       publishAt: publishAt,
@@ -581,87 +512,6 @@ export default function SettingsPage() {
             />
             <p style={{ fontSize: 11, color: T.textSub, marginTop: 8 }}>
               This number will be shown on the Khidmat team page for users to contact.
-            </p>
-          </div>
-        </AdminCard>
-
-        {/* Meal Edit Controls */}
-        <AdminCard>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap', gap: 10 }}>
-            <SectionHeader style={{ marginBottom: 0 }}>✏️ Meal Edit Controls</SectionHeader>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginTop: 16 }}>
-            <StatusToggle label="Lunch Edits" value={lunchEditStatus} onChange={(v) => { markDirty(); setLunchEditStatus(v) }}
-              liveStatus={lunchEditStatus === 'auto' ? (isTimingOpen('lunch', { lunch_edit_open: lunchEditOpen, lunch_edit_close: lunchEditClose }) ? 'open' : 'closed') : undefined} />
-            <StatusToggle label="Dinner Edits" value={dinnerEditStatus} onChange={(v) => { markDirty(); setDinnerEditStatus(v) }}
-              liveStatus={dinnerEditStatus === 'auto' ? (isTimingOpen('dinner', { dinner_edit_open: dinnerEditOpen, dinner_edit_close: dinnerEditClose }) ? 'open' : 'closed') : undefined} />
-          </div>
-          <div style={{
-            marginTop: 16, padding: 16, borderRadius: 12,
-            background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.15)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
-              <Clock size={14} color="#6366f1" />
-              <span style={{ fontSize: 12, fontWeight: 800, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Auto Timing Configuration</span>
-              <span style={{ fontSize: 10, color: T.textSub, marginLeft: 'auto', opacity: 0.6 }}>Used when status is 📅 AUTO</span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{
-                padding: '14px 16px', borderRadius: 10,
-                background: T.inputBg, border: `1px solid ${T.inputBorder}`,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                  <span style={{ fontSize: 16 }}>☀️</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Lunch Edit Window</span>
-                  <span style={{ fontSize: 10, color: T.textSub, opacity: 0.6 }}>prev night → same day</span>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 8, alignItems: 'center' }}>
-                  <div>
-                    <label htmlFor="lunchEditOpen" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Opens (prev night)</label>
-                    <input type="time" id="lunchEditOpen" name="lunchEditOpen" value={lunchEditOpen} onChange={e => { markDirty(); setLunchEditOpen(e.target.value) }}
-                      style={{ width: '100%', padding: '8px 10px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }}
-                    />
-                  </div>
-                  <div style={{ fontSize: 16, color: T.accent, padding: '0 4px' }}>→</div>
-                  <div>
-                    <label htmlFor="lunchEditClose" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Closes (same day)</label>
-                    <input type="time" id="lunchEditClose" name="lunchEditClose" value={lunchEditClose} onChange={e => { markDirty(); setLunchEditClose(e.target.value) }}
-                      style={{ width: '100%', padding: '8px 10px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div style={{
-                padding: '14px 16px', borderRadius: 10,
-                background: T.inputBg, border: `1px solid ${T.inputBorder}`,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                  <span style={{ fontSize: 16 }}>🌙</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Dinner Edit Window</span>
-                  <span style={{ fontSize: 10, color: T.textSub, opacity: 0.6 }}>same day</span>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 8, alignItems: 'center' }}>
-                  <div>
-                    <label htmlFor="dinnerEditOpen" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Opens (same day)</label>
-                    <input type="time" id="dinnerEditOpen" name="dinnerEditOpen" value={dinnerEditOpen} onChange={e => { markDirty(); setDinnerEditOpen(e.target.value) }}
-                      style={{ width: '100%', padding: '8px 10px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }}
-                    />
-                  </div>
-                  <div style={{ fontSize: 16, color: T.accent, padding: '0 4px' }}>→</div>
-                  <div>
-                    <label htmlFor="dinnerEditClose" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Closes (same day)</label>
-                    <input type="time" id="dinnerEditClose" name="dinnerEditClose" value={dinnerEditClose} onChange={e => { markDirty(); setDinnerEditClose(e.target.value) }}
-                      style={{ width: '100%', padding: '8px 10px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <p style={{ fontSize: 10, color: T.textSub, marginTop: 12, opacity: 0.7, lineHeight: 1.65 }}>
-              💡 When a meal's edit window closes <strong>the UI automatically shifts to the next meal</strong>. These timings are used when the corresponding toggle above is set to <strong>📅 AUTO</strong>. Changes take effect immediately via Realtime.
             </p>
           </div>
         </AdminCard>
@@ -904,6 +754,68 @@ export default function SettingsPage() {
           </div>
         </AdminCard>
 
+        {/* Weekly Survey Submission Tracker */}
+        <AdminCard>
+          <SectionHeader>📋 Weekly Survey Submission</SectionHeader>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
+            <div style={{ flex: '1 1 180px', padding: '14px 16px', borderRadius: 12, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)' }}>
+              <div style={{ fontSize: 26, fontWeight: 900, color: '#34d399' }}>{weeklyTrack.loading ? '…' : weeklyTrack.submitted.length}</div>
+              <div style={{ fontSize: 11, color: T.textSub, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 2 }}>Submitted</div>
+            </div>
+            <div style={{ flex: '1 1 180px', padding: '14px 16px', borderRadius: 12, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)' }}>
+              <div style={{ fontSize: 26, fontWeight: 900, color: '#f87171' }}>{weeklyTrack.loading ? '…' : weeklyTrack.pending.length}</div>
+              <div style={{ fontSize: 11, color: T.textSub, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 2 }}>Pending</div>
+            </div>
+            <div style={{ flex: '1 1 220px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 8 }}>
+              <div style={{ fontSize: 12, color: T.textSub, lineHeight: 1.5 }}>
+                Survey week: <strong style={{ color: T.accent }}>{weeklyTrack.weekStart ? new Date(weeklyTrack.weekStart + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</strong>
+              </div>
+              <Btn type="button" disabled={reminding || !weeklyTrack.pending.length || weeklyTrack.loading} onClick={sendReminders} style={{ padding: '10px 16px', fontSize: 13 }}>
+                <Send size={14} /> {reminding ? 'Sending reminders…' : `Send Reminder to ${weeklyTrack.pending.length} pending`}
+              </Btn>
+            </div>
+          </div>
+
+          {weeklyTrack.loading ? (
+            <div style={{ color: T.textSub, padding: '16px 0', textAlign: 'center' }}>Loading submissions…</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+              {/* Submitted */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#34d399', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>✅ Submitted</div>
+                {weeklyTrack.submitted.length === 0 ? (
+                  <div style={{ padding: '14px', borderRadius: 10, background: T.inputBg, color: T.textSub, fontSize: 12, textAlign: 'center' }}>No submissions yet.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
+                    {weeklyTrack.submitted.map(u => (
+                      <div key={u.user_id} style={{ padding: '8px 12px', borderRadius: 10, background: T.inputBg, border: '1px solid rgba(16,185,129,0.25)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: T.text, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name || 'Unknown'}</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#34d399', background: 'rgba(16,185,129,0.15)', padding: '2px 8px', borderRadius: 20 }}>#{u.thali_number || '—'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* Pending */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#f87171', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>⏳ Pending</div>
+                {weeklyTrack.pending.length === 0 ? (
+                  <div style={{ padding: '14px', borderRadius: 10, background: T.inputBg, color: T.textSub, fontSize: 12, textAlign: 'center' }}>All members have submitted. 🎉</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
+                    {weeklyTrack.pending.map(u => (
+                      <div key={u.user_id} style={{ padding: '8px 12px', borderRadius: 10, background: T.inputBg, border: '1px solid rgba(239,68,68,0.25)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: T.text, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name || 'Unknown'}</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#f87171', background: 'rgba(239,68,68,0.15)', padding: '2px 8px', borderRadius: 20 }}>#{u.thali_number || '—'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </AdminCard>
+
         {/* Publish Controls */}
         <AdminCard>
           <SectionHeader>📢 Publish Schedule</SectionHeader>
@@ -952,13 +864,7 @@ export default function SettingsPage() {
                     const publishTimestamp = isFuture ? new Date(publishAt).toISOString() : new Date().toISOString()
 
                     const settingsDefaults = [
-                      { key: 'lunch_edit_status', value: lunchEditStatus },
-                      { key: 'dinner_edit_status', value: dinnerEditStatus },
                       { key: 'helpline_number', value: helpline || '+91 98765 43210' },
-                      { key: 'lunch_edit_open', value: lunchEditOpen },
-                      { key: 'lunch_edit_close', value: lunchEditClose },
-                      { key: 'dinner_edit_open', value: dinnerEditOpen },
-                      { key: 'dinner_edit_close', value: dinnerEditClose },
                       { key: 'dish_input_config', value: JSON.stringify(dishInputConfig) },
                     ]
 
@@ -1029,7 +935,7 @@ export default function SettingsPage() {
                             const surveyCfg = {}
                             ;(surveyRows || []).forEach(r => { surveyCfg[r.key] = r.value })
                             const surveyOpen = surveyCfg.survey_status === 'open'
-                              || (!surveyCfg.survey_status && surveyTimingOpenNow())
+                              || (surveyCfg.survey_status !== 'closed' && surveyTimingOpenNow(surveyCfg))
                             if (surveyOpen) {
                               const { data: markerRow } = await supabase
                                 .from('app_settings').select('value').eq('key', 'survey_notified_week').maybeSingle()

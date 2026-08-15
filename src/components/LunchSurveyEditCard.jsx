@@ -62,7 +62,7 @@ export default function LunchSurveyEditCard({
   const isRoti = activeInputType === 'roti'
 
   // Get dish number for default values (dish_1, dish_2, etc.)
-  const dishNumber = parseInt(dish.split('_')[1]) || 1
+  const dishNumber = dishIndex + 1
   const defaultCount = snackDefaults[`dish_${dishNumber}`] || 0
   const maxCount = defaultCount
 

@@ -60,7 +60,7 @@ export default function SurveyEditExample() {
     }}>
       <div style={{
         maxWidth: 1200,
-        margin: 0 auto,
+        margin: '0 auto',
         padding: '40px 20px'
       }}>
         {/* Header */}
@@ -100,7 +100,7 @@ export default function SurveyEditExample() {
             value={theme}
             onChange={(e) => setTheme(e.target.value)}
             style={{
-              padding: 8 12,
+              padding: '8px 12px',
               borderRadius: 8,
               border: `1px solid ${theme === 'dark' ? 'rgba(224,160,60,0.3)' : '#e8ddc5'}`,
               background: theme === 'dark' ? 'rgba(74,58,44,0.5)' : '#fff',

@@ -234,6 +234,9 @@ CREATE TABLE IF NOT EXISTS notifications (
 -- Add sender_name column if missing
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS sender_name TEXT;
 
+-- Add extra_mode column if missing (Addition / Deduction extra food requests)
+ALTER TABLE thali_requests ADD COLUMN IF NOT EXISTS extra_mode TEXT DEFAULT 'addition' CHECK (extra_mode IN ('addition', 'deduction'));
+
 CREATE TABLE IF NOT EXISTS broadcast_templates (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,

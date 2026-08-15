@@ -13,8 +13,46 @@ import {
   SectionHeader, Modal, PackingTVView, fmtDate, ErrorBanner
 } from './ui'
 
-import { getWeekDate, DAYS } from '../common/utils'
-import { getPctColor } from '../hooks/useSurvey'
+import { getWeekDate, DAYS, toLocalDateStr } from '../common/utils'
+import { getPctColor, getSlotDishes } from '../hooks/useSurvey'
+
+// Decide whether a member's thali is stopped on the given date for the given meal,
+// based on their pending/approved stop & resume requests (sorted by created_at, so
+// the most recent request that affects the day wins).
+// A stop WITH a to_date is strictly bounded: the member is "No Thali" only inside
+// [from_date, to_date] and is treated as eating again right after to_date (so the
+// tracker shows their real survey response once the stop period ends). A stop
+// without a to_date stays active until a newer resume/stop request overrides it.
+const isStoppedOnDay = (reqs, selDateStr, meal) => {
+  let stopped = false
+  ;(reqs || [])
+    .slice()
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    .forEach(sr => {
+      const coversMeal = !sr.meal_type || sr.meal_type === 'both' || sr.meal_type === meal
+      if (!coversMeal) return
+      const from = sr.from_date ? String(sr.from_date) : null
+      const to = sr.to_date ? String(sr.to_date) : null
+      if (from && selDateStr < from) return // request not active yet
+      if (sr.kind === 'resume') {
+        stopped = false // resumed eating from this request's from_date onward
+      } else if (sr.kind === 'stop') {
+        stopped = to ? selDateStr <= to : true // within range -> stopped; after to_date -> eating again
+      }
+    })
+  return stopped
+}
+
+// Pick the stop request whose dates best describe the current stopped period
+// (prefer the newest stop that actually covers the day, else the newest stop).
+const pickStopInfo = (reqs, selDateStr, meal) => {
+  const stops = (reqs || []).filter(r => r.kind === 'stop')
+  const covering = stops
+    .filter(r => isStoppedOnDay([r], selDateStr, meal))
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0]
+  const newest = stops.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0]
+  return (covering || newest) || null
+}
 
 export default function DailySurveyTracking() {
   const weeklyMenu = useWeeklyMenu() || {}
@@ -45,6 +83,10 @@ export default function DailySurveyTracking() {
   const [weekFilter, setWeekFilter] = useState('all')
   const [availableWeeks, setAvailableWeeks] = useState([])
   const [dishInputConfig, setDishInputConfig] = useState({})
+  const [surveyOpenHour, setSurveyOpenHour] = useState(20)
+
+  // Survey target week based on the configured open hour (default Sat 8PM)
+  const surveyWeekId = () => getWeekDate(surveyOpenHour)
 
   // Helper to check if a dish at a given index is count or percentage
   const getInputType = (d, m, idx) => {
@@ -65,12 +107,46 @@ export default function DailySurveyTracking() {
       
       const dayKey = day.substring(0, 3).toLowerCase()
       const mealKey = meal === 'lunch' ? 'l' : 'd'
-      const weekId = getWeekDate()
+      const weekId = surveyWeekId()
       
       const { data: row } = await supabase.from('survey_submissions_flat')
         .select('*').eq('user_id', userId).eq('week_id', weekId).maybeSingle()
+
+      // Check for an active stop-thali request covering this day+meal
+      const dayIdx = DAYS.indexOf(day)
+      const trackingWeek = new Date(surveyWeekId() + 'T00:00:00')
+      const selDate = new Date(trackingWeek)
+      selDate.setDate(trackingWeek.getDate() + (dayIdx === -1 ? 0 : dayIdx))
+      const selDateStr = toLocalDateStr(selDate)
+      let isStopped = false
+      let stopInfo = null
+      try {
+        const { data: stopReqs } = await supabase
+          .from('thali_requests')
+          .select('request_type, status, from_date, to_date, meal_type, created_at')
+          .eq('user_id', userId)
+          .in('request_type', ['stop'])
+          .in('status', ['pending', 'approved'])
+        const { data: resumeReqs } = await supabase
+          .from('thali_requests')
+          .select('request_type, status, from_date, to_date, meal_type, created_at')
+          .eq('user_id', userId)
+          .in('request_type', ['resume'])
+          .in('status', ['pending', 'approved'])
+        const allReqs = [
+          ...(stopReqs || []).map(r => ({ ...r, kind: 'stop' })),
+          ...(resumeReqs || []).map(r => ({ ...r, kind: 'resume' })),
+        ]
+        if (isStoppedOnDay(allReqs, selDateStr, meal)) {
+          isStopped = true
+          const info = pickStopInfo(allReqs, selDateStr, meal)
+          stopInfo = { from_date: info?.from_date, to_date: info?.to_date, meal_type: info?.meal_type }
+        }
+      } catch (e) { console.warn(e) }
       
-      const buildDishMap = (dishList, mk) => {
+      const buildDishMap = (dayName, mealName, fallbackList) => {
+        const mk = mealName === 'lunch' ? 'l' : 'd'
+        const dishList = getSlotDishes(row, dayName, mealName, fallbackList)
         const result = {}
         result._status = row ? row[`${dayKey}_${mk}_status`] : null
         dishList.forEach((d, i) => {
@@ -90,17 +166,17 @@ export default function DailySurveyTracking() {
         return result
       }
 
-      const lunchDishes = weeklyMenu[day]?.lunch || []
-      const dinnerDishes = weeklyMenu[day]?.dinner || []
-      const lunchMap = buildDishMap(lunchDishes, 'l')
-      const dinnerMap = buildDishMap(dinnerDishes, 'd')
+      const lunchMap = buildDishMap(day, 'lunch', weeklyMenu[day]?.lunch || [])
+      const dinnerMap = buildDishMap(day, 'dinner', weeklyMenu[day]?.dinner || [])
 
       setSelectedUser({
         ...u,
-        status: lunchMap._status,
-        dishResponses: buildDishMap(weeklyMenu[day]?.[meal] || [], mealKey),
-        lunch: { status: lunchMap._status, dishes: lunchMap },
-        dinner: { status: dinnerMap._status, dishes: dinnerMap },
+        stopped: isStopped,
+        stopInfo,
+        status: isStopped ? 'Skipped' : lunchMap._status,
+        dishResponses: buildDishMap(day, meal, weeklyMenu[day]?.[meal] || []),
+        lunch: { status: isStopped ? 'Skipped' : lunchMap._status, dishes: lunchMap },
+        dinner: { status: isStopped ? 'Skipped' : dinnerMap._status, dishes: dinnerMap },
         currentDay: day,
         currentMeal: meal
       })
@@ -173,7 +249,7 @@ export default function DailySurveyTracking() {
     try {
       // Auto-cleanup: delete submissions older than 1 week
       try {
-        const currentWeek = getWeekDate()
+        const currentWeek = surveyWeekId()
         const prevWeek = new Date(currentWeek)
         prevWeek.setDate(prevWeek.getDate() - 7)
         const cutoff = prevWeek.toISOString().split('T')[0]
@@ -194,6 +270,13 @@ export default function DailySurveyTracking() {
         try { setDishInputConfig(JSON.parse(settingsData.value)) } catch {}
       }
 
+      // Load configured survey open hour so the tracked week matches the survey window
+      const { data: openHourRow } = await supabase.from('app_settings').select('value').eq('key', 'survey_open_hour').maybeSingle()
+      if (openHourRow) {
+        const h = parseInt(openHourRow.value, 10)
+        if (!isNaN(h)) setSurveyOpenHour(h)
+      }
+
       const { data: users, error: usersError } = await supabase
         .from('user_stats')
         .select('user_id, name, thali_number, email, avatar_url')
@@ -203,6 +286,60 @@ export default function DailySurveyTracking() {
         .from('survey_submissions_flat')
         .select('*')
       if (subsError) throw subsError
+
+      // Thali stop/stop requests — used to mark a member as "no thali" (stopped)
+      const { data: stopRequests } = await supabase
+        .from('thali_requests')
+        .select('user_id, request_type, status, from_date, to_date, meal_type, created_at')
+        .in('request_type', ['stop'])
+        .in('status', ['pending', 'approved'])
+
+      // Resume requests must override stops: if the member stopped but then
+      // resumed within the same week, they should show as eating again.
+      const { data: resumeRequests } = await supabase
+        .from('thali_requests')
+        .select('user_id, request_type, status, from_date, to_date, meal_type, created_at')
+        .in('request_type', ['resume'])
+        .in('status', ['pending', 'approved'])
+
+      const dayIdx = DAYS.indexOf(day)
+      const trackingWeek = new Date(surveyWeekId() + 'T00:00:00')
+      const selDate = new Date(trackingWeek)
+      selDate.setDate(trackingWeek.getDate() + (dayIdx === -1 ? 0 : dayIdx))
+      const selDateStr = toLocalDateStr(selDate)
+
+      // Per-user effective stop status covering the selected day+meal.
+      // Combine stops and resumes into a per-user timeline ordered by created_at;
+      // the MOST RECENT request that affects the day wins, and a dated stop only
+      // stops the member inside [from_date, to_date] — after to_date the member
+      // shows their real survey response again.
+      const stoppedMap = {}
+      const stoppedLunchMap = {}
+      const stoppedDinnerMap = {}
+      const allReqs = [
+        ...(stopRequests || []).map(r => ({ ...r, kind: 'stop' })),
+        ...(resumeRequests || []).map(r => ({ ...r, kind: 'resume' })),
+      ]
+      const reqByUser = {}
+      ;(allReqs || []).forEach(sr => {
+        if (!reqByUser[sr.user_id]) reqByUser[sr.user_id] = []
+        reqByUser[sr.user_id].push(sr)
+      })
+      Object.entries(reqByUser || {}).forEach(([userId, reqs]) => {
+        if (isStoppedOnDay(reqs, selDateStr, meal)) {
+          const info = pickStopInfo(reqs, selDateStr, meal)
+          stoppedMap[userId] = {
+            stopped: true,
+            meal_type: info?.meal_type,
+            from_date: info?.from_date,
+            to_date: info?.to_date,
+          }
+        }
+        // Per-meal precision: track lunch/dinner stops separately so a lunch-only
+        // stop never marks the member as skipped for dinner (and vice versa).
+        if (isStoppedOnDay(reqs, selDateStr, 'lunch')) stoppedLunchMap[userId] = true
+        if (isStoppedOnDay(reqs, selDateStr, 'dinner')) stoppedDinnerMap[userId] = true
+      })
 
       setLoadError(null)
 
@@ -225,7 +362,9 @@ export default function DailySurveyTracking() {
       const mealKey = meal === 'lunch' ? 'l' : 'd'
       const statusKey = `${dayKey}_${mealKey}_status`
       
-      const buildDishMap = (dishList, mk, r) => {
+      const buildDishMap = (r, dayName, mealName, fallbackList) => {
+        const mk = mealName === 'lunch' ? 'l' : 'd'
+        const dishList = getSlotDishes(r, dayName, mealName, fallbackList)
         const result = {}
         result._status = r ? r[`${dayKey}_${mk}_status`] : null
         dishList.forEach((d, i) => {
@@ -253,17 +392,20 @@ export default function DailySurveyTracking() {
         } else {
           resp = submissionData.find(r => r.week_id === weekFilter)
         }
-        const lunchDishes = weeklyMenu[day]?.lunch || []
-        const dinnerDishes = weeklyMenu[day]?.dinner || []
-        const buildCurMeal = buildDishMap(weeklyMenu[day]?.[meal] || [], mealKey, resp)
-        const buildLunch = buildDishMap(lunchDishes, 'l', resp)
-        const buildDinner = buildDishMap(dinnerDishes, 'd', resp)
+        const buildCurMeal = buildDishMap(resp, day, meal, weeklyMenu[day]?.[meal] || [])
+        const buildLunch = buildDishMap(resp, day, 'lunch', weeklyMenu[day]?.lunch || [])
+        const buildDinner = buildDishMap(resp, day, 'dinner', weeklyMenu[day]?.dinner || [])
+        const stoppedInfo = stoppedMap[u.user_id]
+        const isStopped = !!stoppedInfo
+        const baseStatus = buildCurMeal._status
         return { 
           ...u, 
-          status: buildCurMeal._status,
+          stopped: isStopped,
+          stopInfo: stoppedInfo || null,
+          status: isStopped ? 'Skipped' : baseStatus,
           dishResponses: buildCurMeal,
-          lunch: { status: buildLunch._status, dishes: buildLunch },
-          dinner: { status: buildDinner._status, dishes: buildDinner },
+          lunch: { status: stoppedLunchMap[u.user_id] ? 'Skipped' : buildLunch._status, dishes: buildLunch },
+          dinner: { status: stoppedDinnerMap[u.user_id] ? 'Skipped' : buildDinner._status, dishes: buildDinner },
           currentDay: day,
           currentMeal: meal,
           week_id: resp ? resp.week_id : null,
@@ -700,8 +842,8 @@ function MemberRow({ user, onClick }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         <div style={{
           width: 24, height: 24, borderRadius: 8,
-          background: 'rgba(212,175,55,0.1)',
-          border: '1px solid rgba(212,175,55,0.35)',
+          background: user.stopped ? 'rgba(239,68,68,0.15)' : 'rgba(212,175,55,0.1)',
+          border: `1px solid ${user.stopped ? 'rgba(239,68,68,0.45)' : 'rgba(212,175,55,0.35)'}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 10, fontWeight: 900, color: '#ffffff',
           textShadow: '0 0 8px rgba(212,175,55,0.3)'
@@ -710,7 +852,11 @@ function MemberRow({ user, onClick }) {
         </div>
         <div>
           <div style={{ fontSize: 16, fontWeight: 600, color: '#ffffff', textShadow: '0 0 6px rgba(255,255,255,0.08)' }}>{user.name}</div>
-          {user.updated_at && (
+          {user.stopped ? (
+            <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 800, marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              ⏹️ STOP THALI{user.stopInfo?.from_date ? ` · ${user.stopInfo.from_date}` + (user.stopInfo.to_date && user.stopInfo.to_date !== user.stopInfo.from_date ? ` → ${user.stopInfo.to_date}` : '') : ''}
+            </div>
+          ) : user.updated_at && (
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: 500, marginTop: 2, opacity: 0.7 }}>
               📅 {new Date(user.updated_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
             </div>

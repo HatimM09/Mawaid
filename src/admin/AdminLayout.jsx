@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, ClipboardList, Star, FileText,
-  MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight, Search, Bell, History, Package, Send, Zap
+  MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight, Search, Bell, History, Package, Send, Zap, FileWarning, Target
 } from 'lucide-react'
 import { updateSystemTheme } from './ui'
 import OfflineBanner from '../components/OfflineBanner'
@@ -15,6 +15,8 @@ const NAV = [
   { to: '/admin/users', label: 'Thali Users', Icon: Users, color: 'var(--accent-primary)', roles: ['admin'] },
   { to: '/admin/survey-dashboard', label: 'Survey Form', Icon: ClipboardList, color: 'var(--accent-primary)', roles: ['admin'] },
   { to: '/admin/survey-tracking', label: 'Survey Tracking', Icon: History, color: 'var(--accent-primary)', roles: ['admin'] },
+  { to: '/admin/survey-write-log', label: 'Write Log', Icon: FileWarning, color: 'var(--accent-primary)', roles: ['admin'] },
+  { to: '/admin/survey-accuracy', label: 'Accuracy', Icon: Target, color: 'var(--accent-primary)', roles: ['admin'] },
   { to: '/admin/requests', label: 'Thali Requests', Icon: FileText, color: 'var(--accent-primary)', roles: ['admin', 'khidmat_guzar', 'supervisor'] },
   { to: '/admin/inventory', label: 'Inventory', Icon: Package, color: 'var(--accent-primary)', roles: ['admin', 'inventory_manager'] },
   { to: '/admin/queries', label: 'Queries', Icon: MessageSquare, color: 'var(--accent-primary)', roles: ['admin', 'khidmat_guzar', 'supervisor'] },
@@ -202,6 +204,8 @@ export default function AdminLayout() {
       }} />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=DM+Sans:wght@400;500;700;900&display=swap');
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-24px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes toastCountdown { from { width: 100%; } to { width: 0%; } }
         .admin-main { flex: 1; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; padding: 0; position: relative; z-index: 1; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
         .admin-header { height: 70px; display: flex; align-items: center; padding: 0 30px; background: var(--bg-card); backdrop-filter: blur(20px); border-bottom: 1px solid var(--border-glass); z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
         

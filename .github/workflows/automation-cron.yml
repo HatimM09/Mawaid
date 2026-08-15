@@ -1,0 +1,39 @@
+name: Automation Fallback Cron
+
+# Safety-net scheduler for Al-Mawaid automations.
+# Primary scheduler: pg_cron inside Supabase (migration 027_enable_cron.sql)
+# runs `process-scheduled` every minute. GitHub Actions scheduled workflows
+# can only run every 5 minutes, so this is a backup that kicks the same
+# idempotent edge function in case pg_cron is ever disabled.
+#
+# Only `process-scheduled` is called here on purpose: it uses an atomic
+# status lock (scheduled -> processing) so overlapping runs can never send a
+# broadcast twice. Survey reminders/digests are excluded to avoid duplicate
+# notifications when both schedulers are active.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  process-scheduled:
+    name: Kick scheduled automations
+    runs-on: ubuntu-latest
+    steps:
+      - name: Invoke process-scheduled edge function
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          URL="${SUPABASE_URL:-https://pquusffhuholbnlmuyen.supabase.co}"
+          KEY="${SUPABASE_ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBxdXVzZmZodWhvbGJubG11eWVuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NzEzOTAsImV4cCI6MjA5OTM0NzM5MH0.lp8jDk4UalHg5dJHIxTinhqaCJ-OA1RVwcDjM3KxcTo}"
+          curl -sS -o /dev/null -w "process-scheduled -> HTTP %{http_code}\n" \
+            -X POST "$URL/functions/v1/process-scheduled" \
+            -H "Content-Type: application/json" \
+            -H "apikey: $KEY" \
+            -H "Authorization: Bearer $KEY" \
+            -d '{}' || echo "process-scheduled kick failed (non-fatal)"

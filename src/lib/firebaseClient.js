@@ -106,12 +106,13 @@ export async function rpcUpdateUser(payload) {
 
   // Fallback: self-update only
   try {
+    const { data: { session: fallbackSession } } = await supabaseClient.auth.getSession()
     const updates = {}
-    if (p_email && session?.user?.id === p_user_id) {
+    if (p_email && fallbackSession?.user?.id === p_user_id) {
       const { error: emailErr } = await supabaseClient.auth.updateUser({ email: p_email })
       if (!emailErr) updates.email = true
     }
-    if (p_password && session?.user?.id === p_user_id) {
+    if (p_password && fallbackSession?.user?.id === p_user_id) {
       const { error: passErr } = await supabaseClient.auth.updateUser({ password: p_password })
       if (!passErr) updates.password = true
     }

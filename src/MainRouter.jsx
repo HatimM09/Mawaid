@@ -18,6 +18,8 @@ const StaffPage = lazy(() => import('./admin/StaffPage'))
 const SettingsPage = lazy(() => import('./admin/SettingsPage'))
 const InventoryPage = lazy(() => import('./admin/InventoryPage'))
 const NotificationsAdminPage = lazy(() => import('./admin/NotificationsAdminPage'))
+const SurveyWriteLogPage = lazy(() => import('./admin/SurveyWriteLogPage'))
+const SurveyAccuracyPage = lazy(() => import('./admin/SurveyAccuracyPage'))
 const KhidmatPortal = lazy(() => import('./admin/KhidmatPortal'))
 const InventoryManagerPortal = lazy(() => import('./admin/InventoryManagerPortal'))
 const AutomationPage = lazy(() => import('./admin/AutomationPage'))
@@ -55,6 +57,8 @@ export default function MainRouter() {
               <Route path="users" element={<RequireRole roles={['admin']}><UsersPage /></RequireRole>} />
               <Route path="survey-dashboard" element={<RequireRole roles={['admin']}><SurveyDashboard /></RequireRole>} />
               <Route path="survey-tracking" element={<RequireRole roles={['admin']}><DailySurveyTracking /></RequireRole>} />
+              <Route path="survey-write-log" element={<RequireRole roles={['admin']}><SurveyWriteLogPage /></RequireRole>} />
+              <Route path="survey-accuracy" element={<RequireRole roles={['admin']}><SurveyAccuracyPage /></RequireRole>} />
               <Route path="inventory" element={<RequireRole roles={['admin', 'inventory_manager']}><InventoryPage /></RequireRole>} />
               <Route path="feedback" element={<RequireRole roles={['admin', 'khidmat_guzar', 'supervisor']}><FeedbackAdminPage /></RequireRole>} />
               <Route path="requests" element={<RequireRole roles={['admin', 'khidmat_guzar', 'supervisor']}><RequestsAdminPage /></RequireRole>} />

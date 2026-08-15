@@ -16,6 +16,14 @@ const STATUS_COLORS = {
   closed: { color: '#ef4444', bg: 'rgba(239,68,68,0.12)', label: 'CLOSED', border: 'rgba(239,68,68,0.3)' },
 }
 
+// Resolve the effective survey live state: explicit open/closed wins over the
+// auto-schedule window.
+const resolveSurveyLive = (status, settings = {}) => {
+  if (status === 'open') return true
+  if (status === 'closed') return false
+  return isTimingOpen('survey', settings)
+}
+
 const isTimingOpen = (type, settings) => {
   const now = new Date()
   const day = now.getDay()
@@ -23,7 +31,7 @@ const isTimingOpen = (type, settings) => {
 
   if (type === 'survey') {
     const openH = parseInt(settings.survey_open_hour) || 20
-    const closeH = parseInt(settings.survey_close_hour) || 10
+    const closeH = parseInt(settings.survey_close_hour) || 11
     if (day === 6 && now.getHours() >= openH) return true
     if (day === 0) return true
     if (day === 1 && now.getHours() < closeH) return true
@@ -152,6 +160,10 @@ export default function AutomationPage() {
   const [surveyMsg, setSurveyMsg] = useState('')
   const [surveyOpenHour, setSurveyOpenHour] = useState(20)
   const [surveyCloseHour, setSurveyCloseHour] = useState(10)
+  const [lunchEditOpen, setLunchEditOpen] = useState('20:00')
+  const [lunchEditClose, setLunchEditClose] = useState('11:00')
+  const [dinnerEditOpen, setDinnerEditOpen] = useState('12:00')
+  const [dinnerEditClose, setDinnerEditClose] = useState('15:30')
   const [liveSurveyStatus, setLiveSurveyStatus] = useState(null)
   const [liveLunchStatus, setLiveLunchStatus] = useState(null)
   const [liveDinnerStatus, setLiveDinnerStatus] = useState(null)
@@ -170,6 +182,8 @@ export default function AutomationPage() {
   const [pendingSurveyCount, setPendingSurveyCount] = useState(0)
   const [todayApplied, setTodayApplied] = useState(0)
   const [totalMembers, setTotalMembers] = useState(0)
+  const [delivered24h, setDelivered24h] = useState(0)
+  const [failed24h, setFailed24h] = useState(0)
 
   const loadRef = useRef(null)
 
@@ -185,9 +199,13 @@ export default function AutomationPage() {
         setDinnerEditStatus(s.dinner_edit_status || 'auto')
         setSurveyMsg(s.survey_msg || '')
         setSurveyOpenHour(parseInt(s.survey_open_hour) || 20)
-        setSurveyCloseHour(parseInt(s.survey_close_hour) || 10)
+        setSurveyCloseHour(parseInt(s.survey_close_hour) || 11)
+        setLunchEditOpen(s.lunch_edit_open || '20:00')
+        setLunchEditClose(s.lunch_edit_close || '11:00')
+        setDinnerEditOpen(s.dinner_edit_open || '12:00')
+        setDinnerEditClose(s.dinner_edit_close || '15:30')
       }
-      setLiveSurveyStatus(isTimingOpen('survey', s) ? 'open' : 'closed')
+      setLiveSurveyStatus(resolveSurveyLive(s.survey_status) ? 'open' : 'closed')
       setLiveLunchStatus(isTimingOpen('lunch', s) ? 'open' : 'closed')
       setLiveDinnerStatus(isTimingOpen('dinner', s) ? 'open' : 'closed')
 
@@ -199,7 +217,7 @@ export default function AutomationPage() {
       const statusField = `${dayKey}_${mealKey}_status`
       const isSunday = day === 0
 
-      const weekId = getWeekDate()
+      const weekId = getWeekDate(parseInt(s.survey_open_hour) || 20)
 
       const [
         { count: sc },
@@ -221,6 +239,16 @@ export default function AutomationPage() {
       setPendingSurveyCount(ps)
       setTodayApplied(ta)
       setTotalMembers(tm)
+
+      // Real delivery coverage for the last 24h (from per-broadcast counters)
+      const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+      const { data: recentBc } = await supabase
+        .from('broadcast_schedule')
+        .select('sent_count, failed_count')
+        .gte('sent_at', since)
+        .limit(200)
+      setDelivered24h((recentBc || []).reduce((n, s) => n + (s.sent_count || 0), 0))
+      setFailed24h((recentBc || []).reduce((n, s) => n + (s.failed_count || 0), 0))
     } catch (e) {
       console.error('Automation load error:', e)
     }
@@ -244,7 +272,7 @@ export default function AutomationPage() {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setLiveSurveyStatus(isTimingOpen('survey', settings) ? 'open' : 'closed')
+      setLiveSurveyStatus(resolveSurveyLive(settings.survey_status) ? 'open' : 'closed')
       setLiveLunchStatus(isTimingOpen('lunch', settings) ? 'open' : 'closed')
       setLiveDinnerStatus(isTimingOpen('dinner', settings) ? 'open' : 'closed')
     }, 30000)
@@ -279,6 +307,12 @@ export default function AutomationPage() {
       { key: 'survey_msg', value: surveyMsg || 'Survey opens Saturday at 8:00 PM and closes Monday at 11:00 AM.' },
       { key: 'survey_open_hour', value: surveyOpenHour.toString() },
       { key: 'survey_close_hour', value: surveyCloseHour.toString() },
+      { key: 'lunch_edit_status', value: lunchEditStatus },
+      { key: 'lunch_edit_open', value: lunchEditOpen },
+      { key: 'lunch_edit_close', value: lunchEditClose },
+      { key: 'dinner_edit_status', value: dinnerEditStatus },
+      { key: 'dinner_edit_open', value: dinnerEditOpen },
+      { key: 'dinner_edit_close', value: dinnerEditClose },
     ]
     let err = null
     for (const row of toSave) {
@@ -425,7 +459,8 @@ export default function AutomationPage() {
       liveStatus: null,
       stats: [
         { label: 'Scheduled', value: scheduledCount, color: '#6366f1' },
-        { label: 'Auto-publish', value: settings.publish_at ? 'Set' : 'Not Set', color: settings.publish_at ? '#10b981' : T.textSub },
+        { label: 'Delivered 24h', value: delivered24h, color: '#10b981' },
+        { label: 'Failed 24h', value: failed24h, color: '#ef4444' },
       ],
     },
   ]
@@ -474,7 +509,7 @@ export default function AutomationPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 32 }}>
         <StatCard icon={<Activity size={20} />} label="Live Window Status" value={liveSurveyStatus === 'open' ? 'SURVEY OPEN' : 'SURVEY CLOSED'} color={liveSurveyStatus === 'open' ? '#10b981' : '#ef4444'} sub={liveSurveyStatus === 'open' ? 'Members can submit' : 'Opens Saturday 8PM'} />
         <StatCard icon={<BarChart3 size={20} />} label="Today's Applied" value={todayApplied} color="#6366f1" sub={`Out of ${totalMembers} members`} />
-        <StatCard icon={<Timer size={20} />} label="Scheduled Broadcasts" value={scheduledCount} color="#f59e0b" sub="Awaiting delivery" />
+        <StatCard icon={<Timer size={20} />} label="Scheduled Broadcasts" value={scheduledCount} color="#f59e0b" sub={`${delivered24h} delivered in last 24h`} />
 
       </div>
 
@@ -620,6 +655,70 @@ export default function AutomationPage() {
               }}
             />
           </div>
+        </div>
+
+        <div style={{
+          marginTop: 20, paddingTop: 20, borderTop: `1px solid ${T.border}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
+            <Clock size={14} color="#6366f1" />
+            <span style={{ fontSize: 12, fontWeight: 800, color: T.text, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Meal Edit Window Timing
+            </span>
+            <span style={{ fontSize: 10, color: T.textSub, marginLeft: 'auto', opacity: 0.7 }}>
+              Used when status is AUTO — apply with ⚡ Apply Now
+            </span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div style={{ padding: '14px 16px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.inputBorder}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 15 }}>☀️</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Lunch Edit Window</span>
+                <span style={{ fontSize: 10, color: T.textSub, opacity: 0.6 }}>prev night → same day</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 8, alignItems: 'center' }}>
+                <div>
+                  <label htmlFor="lunchEditOpen" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Opens (prev night)</label>
+                  <input type="time" id="lunchEditOpen" value={lunchEditOpen} onChange={e => setLunchEditOpen(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }}
+                  />
+                </div>
+                <div style={{ fontSize: 16, color: T.accent, padding: '0 4px' }}>→</div>
+                <div>
+                  <label htmlFor="lunchEditClose" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Closes (same day)</label>
+                  <input type="time" id="lunchEditClose" value={lunchEditClose} onChange={e => setLunchEditClose(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }}
+                  />
+                </div>
+              </div>
+            </div>
+            <div style={{ padding: '14px 16px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.inputBorder}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 15 }}>🌙</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Dinner Edit Window</span>
+                <span style={{ fontSize: 10, color: T.textSub, opacity: 0.6 }}>same day</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 8, alignItems: 'center' }}>
+                <div>
+                  <label htmlFor="dinnerEditOpen" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Opens (same day)</label>
+                  <input type="time" id="dinnerEditOpen" value={dinnerEditOpen} onChange={e => setDinnerEditOpen(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }}
+                  />
+                </div>
+                <div style={{ fontSize: 16, color: T.accent, padding: '0 4px' }}>→</div>
+                <div>
+                  <label htmlFor="dinnerEditClose" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Closes (same day)</label>
+                  <input type="time" id="dinnerEditClose" value={dinnerEditClose} onChange={e => setDinnerEditClose(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          <p style={{ fontSize: 10, color: T.textSub, marginTop: 12, opacity: 0.7, lineHeight: 1.65 }}>
+            💡 These timings apply when the Lunch/Dinner Edit Window status above is set to <strong>AUTO</strong>.
+            Changes take effect immediately via Realtime.
+          </p>
         </div>
       </AdminCard>
 

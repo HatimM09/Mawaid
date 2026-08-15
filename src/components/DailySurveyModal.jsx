@@ -4,7 +4,8 @@ import { supabase } from '../lib/firebaseClient'
 import { useAuth } from '../admin/context'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { getWeekDate } from '../common/utils'
-import { isRotiItem, isCountInput, normalizeDishValue, denormalizeDishValue, useSurveyAutoSave, getPctColor } from '../hooks/useSurvey'
+import { isRotiItem, isCountInput, normalizeDishValue, denormalizeDishValue, useSurveyAutoSave, getPctColor, mergeDishSnapshot } from '../hooks/useSurvey'
+import { submitSurveyRow } from '../lib/submitSurvey'
 
 const THEME = {
   bg: '#0d0d1a', card: 'rgba(255,255,255,0.03)', cardActive: 'rgba(255,255,255,0.06)',
@@ -31,6 +32,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
   const { autoSaveStatus, scheduleSave, setAutoSaveStatus } = useSurveyAutoSave()
   const saveTimerRef = useRef(null)
   const [userData, setUserData] = useState({ thali_no: '', email: user?.email })
+  const [snackDefaults, setSnackDefaults] = useState(null)
   const [existingLoaded, setExistingLoaded] = useState(false)
   const initialLoadRef = useRef(true)
 
@@ -58,14 +60,18 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
     saveTimerRef.current = setTimeout(async () => {
       setAutoSaveStatus('saving')
       try {
-        const currentWeekId = getWeekDate()
+        const currentWeekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
         const { data: existing } = await supabase.from('survey_submissions_flat')
           .select('*').eq('user_id', user?.id).eq('week_id', currentWeekId).maybeSingle()
         const updateObj = {
           user_id: user?.id, week_id: currentWeekId,
-          thali_number: userData.thali_no, email: userData.email,
+          thali_number: userData.thali_no, email: userData.email || '',
           updated_at: new Date().toISOString()
         }
+        updateObj.dish_snapshot = mergeDishSnapshot(
+          { dish_snapshot: mergeDishSnapshot(existing, today, 'lunch', allLunchDishes) },
+          today, 'dinner', allDinnerDishes
+        )
         // Build lunch responses
         allLunchDishes.forEach((dish, idx) => {
           const col = `${dayKey}_l_dish_${idx + 1}`
@@ -86,8 +92,8 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
             updateObj[col] = existing[col]
           }
         })
-        await supabase.from('survey_submissions_flat')
-          .upsert([updateObj], { onConflict: 'user_id,week_id' })
+        const { error: autoErr } = await submitSurveyRow(updateObj)
+        if (autoErr) throw autoErr
         setAutoSaveStatus('saved')
         setTimeout(() => setAutoSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 2000)
       } catch { setAutoSaveStatus('idle') }
@@ -99,7 +105,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
   useEffect(() => {
     if (Object.keys(responses).length === 0) return
     if (initialLoadRef.current) return
-    const currentWeekId = getWeekDate()
+    const currentWeekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
     const draftKey = `survey_draft_${currentWeekId}_${user?.id}`
     const timer = setTimeout(() => {
       try { localStorage.setItem(draftKey, JSON.stringify({ responses, updatedAt: new Date().toISOString() })) } catch {}
@@ -109,14 +115,14 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
 
   // Load user data
   useEffect(() => {
-    supabase.from('user_stats').select('thali_number, email').eq('user_id', user?.id).single()
-      .then(({ data }) => { if (data) setUserData({ thali_no: data.thali_number || '', email: data.email || user?.email }) })
+    supabase.from('user_stats').select('thali_number, email, snack_defaults').eq('user_id', user?.id).single()
+      .then(({ data }) => { if (data) { setUserData({ thali_no: data.thali_number || '', email: data.email || user?.email }); setSnackDefaults(data.snack_defaults || null) } })
   }, [user?.id])
 
   // Load existing submission
   useEffect(() => {
     const loadExisting = async () => {
-      const currentWeekId = getWeekDate()
+      const currentWeekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
       const { data: existing } = await supabase.from('survey_submissions_flat')
         .select('*').eq('user_id', user?.id).eq('week_id', currentWeekId).maybeSingle()
       if (existing) {
@@ -151,12 +157,16 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
   const submitSurvey = async () => {
     setLoading(true)
     try {
-      const currentWeekId = getWeekDate()
+      const currentWeekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
       const updateObj = {
         user_id: user?.id, week_id: currentWeekId,
-        thali_number: userData.thali_no, email: userData.email,
+        thali_number: userData.thali_no, email: userData.email || '',
         updated_at: new Date().toISOString()
       }
+      updateObj.dish_snapshot = mergeDishSnapshot(
+        { dish_snapshot: mergeDishSnapshot(null, today, 'lunch', allLunchDishes) },
+        today, 'dinner', allDinnerDishes
+      )
       // Set lunch status and responses
       if (lunchStatus) {
         updateObj[`${dayKey}_l_status`] = 'Applied'
@@ -181,8 +191,8 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
       } else if (dinnerStatus === false) {
         updateObj[`${dayKey}_d_status`] = 'Skipped'
       }
-      await supabase.from('survey_submissions_flat')
-        .upsert([updateObj], { onConflict: 'user_id,week_id' })
+      const { error: submitErr } = await submitSurveyRow(updateObj)
+      if (submitErr) throw submitErr
       try {
         await supabase.functions.invoke('send-push', {
           body: {
@@ -249,7 +259,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
         ? allLunchDishes.indexOf(name)
         : allDinnerDishes.indexOf(name)
       if (isCountInput(appSettings, today, meal, mealIdx)) {
-        newResponses[name] = { status: 'yes', value: 1 }
+        newResponses[name] = { status: 'yes', value: Math.min(snackDefaults?.[`dish_${mealIdx + 1}`] ?? 1, 1) }
       } else {
         newResponses[name] = 'yes'
       }
@@ -343,7 +353,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
                   {allLunchDishes.map((dish, idx) => (
-                    <DishToggle key={idx} dish={dish} meal="lunch" idx={idx} responses={responses} toggleDish={toggleDish} setResponses={setResponses} appSettings={appSettings} today={today} />
+                    <DishToggle key={idx} dish={dish} meal="lunch" idx={idx} responses={responses} toggleDish={toggleDish} setResponses={setResponses} appSettings={appSettings} today={today} maxCount={snackDefaults?.[`dish_${idx + 1}`] ?? null} />
                   ))}
                 </div>
               </div>
@@ -359,7 +369,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
                   {allDinnerDishes.map((dish, idx) => (
-                    <DishToggle key={idx} dish={dish} meal="dinner" idx={idx} responses={responses} toggleDish={toggleDish} setResponses={setResponses} appSettings={appSettings} today={today} />
+                    <DishToggle key={idx} dish={dish} meal="dinner" idx={idx} responses={responses} toggleDish={toggleDish} setResponses={setResponses} appSettings={appSettings} today={today} maxCount={snackDefaults?.[`dish_${idx + 1}`] ?? null} />
                   ))}
                 </div>
               </div>
@@ -426,7 +436,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
                   {allDinnerDishes.map((dish, idx) => (
-                    <DishToggle key={idx} dish={dish} meal="dinner" idx={idx} responses={responses} toggleDish={toggleDish} setResponses={setResponses} appSettings={appSettings} today={today} />
+                    <DishToggle key={idx} dish={dish} meal="dinner" idx={idx} responses={responses} toggleDish={toggleDish} setResponses={setResponses} appSettings={appSettings} today={today} maxCount={snackDefaults?.[`dish_${idx + 1}`] ?? null} />
                   ))}
                 </div>
               </div>
@@ -512,7 +522,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
 }
 
 // Individual dish toggle component with yes/no + count support
-function DishToggle({ dish, meal, idx, responses, toggleDish, setResponses, appSettings, today }) {
+function DishToggle({ dish, meal, idx, responses, toggleDish, setResponses, appSettings, today, maxCount = null }) {
   const val = responses[dish]
   const isCount = isCountInput(appSettings, today, meal, idx)
   const isRoti = isRotiItem(dish)
@@ -533,7 +543,7 @@ function DishToggle({ dish, meal, idx, responses, toggleDish, setResponses, appS
   const handleYes = (e) => {
     e.stopPropagation()
     if (isCount) {
-      setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: prev[dish]?.value || 1 } }))
+      setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: Math.min(maxCount ?? 99, prev[dish]?.value || 1) } }))
     } else if (isRoti) {
       setResponses(prev => ({ ...prev, [dish]: 'yes' }))
     } else {
@@ -554,14 +564,14 @@ function DishToggle({ dish, meal, idx, responses, toggleDish, setResponses, appS
 
   const handleCountChange = (e, delta) => {
     e.stopPropagation()
-    const newVal = Math.max(1, Math.min(99, countValue + delta))
+    const newVal = Math.max(1, Math.min(maxCount ?? 99, countValue + delta))
     setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: newVal } }))
   }
 
   const handleCountInput = (e, val) => {
     e.stopPropagation()
     const num = parseInt(val) || 0
-    setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: Math.max(1, Math.min(99, num)) } }))
+    setResponses(prev => ({ ...prev, [dish]: { status: 'yes', value: Math.max(1, Math.min(maxCount ?? 99, num)) } }))
   }
 
   return (
@@ -616,33 +626,39 @@ function DishToggle({ dish, meal, idx, responses, toggleDish, setResponses, appS
           }}
         >
           <button onClick={(e) => handleCountChange(e, -1)} style={{
-            width: 34, height: 34, borderRadius: 8,
+            width: 40, height: 40, borderRadius: 10,
             border: `1px solid ${THEME.border}`, background: THEME.inputBg,
-            color: THEME.text, cursor: 'pointer', fontSize: 18, fontWeight: 700,
-            display: 'flex', alignItems: 'center', justifyContent: 'center'
+            color: THEME.text, cursor: 'pointer', fontSize: 20, fontWeight: 700,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent'
           }}>−</button>
           <input
             type="number"
             min={1}
-            max={99}
+            max={maxCount ?? 99}
             value={countValue}
             onChange={(e) => handleCountInput(e, e.target.value)}
             style={{
-              width: 48, height: 34, borderRadius: 8,
+              width: 52, height: 40, borderRadius: 10,
               border: `1px solid ${THEME.accent}`, background: THEME.inputBg,
-              color: THEME.accent, fontSize: 18, fontWeight: 800,
+              color: THEME.accent, fontSize: 20, fontWeight: 800,
               textAlign: 'center', outline: 'none', fontFamily: 'inherit',
               MozAppearance: 'textfield',
               WebkitAppearance: 'textfield'
             }}
           />
           <button onClick={(e) => handleCountChange(e, 1)} style={{
-            width: 34, height: 34, borderRadius: 8,
+            width: 40, height: 40, borderRadius: 10,
             border: `1px solid ${THEME.border}`, background: THEME.inputBg,
-            color: THEME.text, cursor: 'pointer', fontSize: 18, fontWeight: 700,
-            display: 'flex', alignItems: 'center', justifyContent: 'center'
+            color: (maxCount != null && countValue >= maxCount) ? THEME.textSub : THEME.text,
+            cursor: (maxCount != null && countValue >= maxCount) ? 'not-allowed' : 'pointer',
+            fontSize: 20, fontWeight: 700,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            opacity: (maxCount != null && countValue >= maxCount) ? 0.4 : 1,
+            touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent'
           }}>+</button>
           <span style={{ fontSize: 10, fontWeight: 600, color: THEME.textSub, marginLeft: 4 }}>person{countValue === 1 ? '' : 's'}</span>
+          {maxCount != null && <span style={{ fontSize: 9, fontWeight: 700, color: THEME.textSub, background: THEME.cardActive, padding: '2px 6px', borderRadius: 6 }}>Max {maxCount}</span>}
         </div>
       )}
     </div>

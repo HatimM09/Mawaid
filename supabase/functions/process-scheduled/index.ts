@@ -47,6 +47,10 @@ serve(async (req) => {
       for (const broadcast of dueBroadcasts) {
         try {
           let targets: string[] = []
+          // Real push delivery counters — scoped at the loop body so both the
+          // push block and the final status update can read them.
+          let pushSent = 0
+          let pushFailed = 0
           if (broadcast.target_type === 'specific' && broadcast.target_user_id) {
             targets = [broadcast.target_user_id]
           } else if (broadcast.target_type === 'admins') {
@@ -94,7 +98,9 @@ serve(async (req) => {
             const { error: notifErr } = await supabase.from('notifications').insert(notifications)
             if (notifErr) throw notifErr
 
-            // Send push: Firebase CF (AAB FCM + web) with edge fallback
+            // Send push: Firebase CF (AAB FCM + web) with edge fallback.
+            // Capture the REAL delivery counts so admin dashboards show actual
+            // device coverage (delivered vs failed), not just member counts.
             if (broadcast.channel === 'push' || !broadcast.channel) {
               const pushBody = {
                 title: broadcast.title || 'Al-Mawaid',
@@ -109,6 +115,21 @@ serve(async (req) => {
                 style: broadcast.style || undefined,
                 collapse_key: broadcast.collapse_key || undefined,
               }
+              const record = (json: any) => {
+                pushSent = Number(json?.sent) || 0
+                pushFailed = Number(json?.failed) || 0
+              }
+              const invokeEdge = async () => {
+                const res = await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
+                  },
+                  body: JSON.stringify(pushBody),
+                })
+                record(await res.json().catch(() => ({})))
+              }
               try {
                 const fbRes = await fetch('https://us-central1-al-mawaid-8ffef.cloudfunctions.net/sendPush', {
                   method: 'POST',
@@ -116,34 +137,24 @@ serve(async (req) => {
                   body: JSON.stringify(pushBody),
                 })
                 const fbJson = await fbRes.json().catch(() => ({}))
-                if (!fbRes.ok || !(fbJson.sent > 0)) {
-                  await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
-                    },
-                    body: JSON.stringify(pushBody),
-                  })
+                if (fbRes.ok && Number(fbJson.sent) > 0) {
+                  record(fbJson)
+                } else {
+                  await invokeEdge()
                 }
               } catch (pushErr) {
                 console.error(`[process-scheduled] Push send failed for broadcast ${broadcast.id}:`, pushErr.message)
-                try {
-                  await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
-                    },
-                    body: JSON.stringify(pushBody),
-                  })
-                } catch (_) { /* already logged */ }
+                try { await invokeEdge() } catch (_) { /* already logged */ }
               }
             }
           }
 
+          const isPush = broadcast.channel === 'push' || !broadcast.channel
           await supabase.from('broadcast_schedule').update({
-            status: 'sent', sent_count: targets.length, sent_at: now,
+            status: isPush && pushFailed > 0 && pushSent === 0 ? 'failed' : 'sent',
+            sent_count: isPush ? pushSent : targets.length,
+            failed_count: isPush ? pushFailed : 0,
+            sent_at: now,
           }).eq('id', broadcast.id)
 
           totalProcessed++

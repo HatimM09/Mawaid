@@ -562,6 +562,8 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
 
   const status = mealData?.status || 'Not Submitted'
 
+  const isStopped = !!user.stopped
+
   const mealLabels = { lunch: 'LUNCH', dinner: 'DINNER' }
   const mealIcons = { lunch: '☀️', dinner: '🌙' }
 
@@ -711,14 +713,16 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
           <span style={{
             fontSize: 'clamp(11px, 1.2vw, 16px)', fontWeight: 800,
             color: '#ffffff',
-            textShadow: status === 'Applied'
-              ? '0 0 16px rgba(16,185,129,0.5)'
-              : status === 'Skipped'
-                ? '0 0 16px rgba(239,68,68,0.5)'
-                : '0 0 16px rgba(245,158,11,0.5)',
+            textShadow: isStopped
+              ? '0 0 16px rgba(244,63,94,0.6)'
+              : status === 'Applied'
+                ? '0 0 16px rgba(16,185,129,0.5)'
+                : status === 'Skipped'
+                  ? '0 0 16px rgba(239,68,68,0.5)'
+                  : '0 0 16px rgba(245,158,11,0.5)',
             textTransform: 'uppercase', letterSpacing: '0.1em'
           }}>
-            {status === 'Applied' ? '✅ PROCEED' : status === 'Skipped' ? '❌ SKIPPED' : '⏳ NO RESPONSE'}
+            {isStopped ? '⏹️ STOP THALI' : status === 'Applied' ? '✅ PROCEED' : status === 'Skipped' ? '❌ SKIPPED' : '⏳ NO RESPONSE'}
           </span>
         </div>
       </div>
@@ -730,7 +734,29 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
         padding: 'clamp(6px, 1.5vh, 16px) clamp(8px, 2vw, 32px) clamp(8px, 1.5vh, 16px)',
         overflow: 'hidden'
       }}>
-        {dishEntries.length > 0 ? (
+        {isStopped ? (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 'clamp(72px, 12vw, 140px)', marginBottom: 'clamp(8px, 1.5vh, 20px)', opacity: 0.25 }}>⏹️</div>
+            <div style={{
+              fontSize: 'clamp(40px, 7vw, 88px)',
+              fontWeight: 900,
+              color: '#f43f5e',
+              textShadow: '0 0 40px rgba(244,63,94,0.5), 0 0 80px rgba(244,63,94,0.2)',
+              textTransform: 'uppercase', letterSpacing: '0.06em'
+            }}>No Thali</div>
+            <div style={{
+              fontSize: 'clamp(20px, 2.6vw, 32px)',
+              color: 'rgba(255,255,255,0.85)',
+              fontWeight: 600,
+              marginTop: 'clamp(8px, 1.5vh, 16px)'
+            }}>
+              {user.stopInfo?.from_date
+                ? `Thali stopped ${new Date(user.stopInfo.from_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}\u00A0${user.stopInfo.to_date && user.stopInfo.to_date !== user.stopInfo.from_date ? `→ ${new Date(user.stopInfo.to_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}`
+                : 'This member has stopped their thali.'}
+            </div>
+            <div style={{ fontSize: 'clamp(14px, 1.8vw, 20px)', color: 'rgba(244,63,94,0.7)', marginTop: 'clamp(6px, 1vh, 12px)' }}>⏹️ STOP THALI — NO DISPATCH</div>
+          </div>
+        ) : dishEntries.length > 0 ? (
           <div style={{
             display: 'grid',
             gridTemplateColumns: total === 1 ? 'minmax(300px, 600px)' : total === 5 ? 'repeat(3, 1fr)' : `repeat(auto-fit, minmax(min(${total <= 2 ? '45vw' : total <= 4 ? '32vw' : '22vw'}, 100%), 1fr))`,

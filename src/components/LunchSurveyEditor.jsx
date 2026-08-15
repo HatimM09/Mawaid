@@ -56,7 +56,7 @@ export default function LunchSurveyEditor({
       }
 
       // Load current week's survey
-      const currentWeekId = getWeekDate()
+      const currentWeekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
       const { data: surveyData } = await supabase
         .from('survey_submissions_flat')
         .select('*')
@@ -135,7 +135,7 @@ export default function LunchSurveyEditor({
   const saveSurveyResponse = async (dish, response) => {
     try {
       const { user } = await supabase.auth.getUser()
-      const currentWeekId = getWeekDate()
+      const currentWeekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
       const today = new Date().toISOString().split('T')[0].toLowerCase().slice(0, 3)
       const mealKey = 'l'
       
@@ -179,7 +179,7 @@ export default function LunchSurveyEditor({
 
     try {
       const { user } = await supabase.auth.getUser()
-      const currentWeekId = getWeekDate()
+      const currentWeekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
       const today = new Date().toISOString().split('T')[0].toLowerCase().slice(0, 3)
       const mealKey = 'l'
 

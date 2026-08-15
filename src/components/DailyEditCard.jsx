@@ -5,8 +5,9 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Sun, Moon } from 'lucide-react'
 import { useTheme, useAuth } from '../admin/context'
 import { supabase } from '../lib/firebaseClient'
-import { getCalendarWeekDate, DAYS } from '../common/utils'
-import { isRotiItem, isCountInput } from '../hooks/useSurvey'
+import { getWeekDate, DAYS } from '../common/utils'
+import { submitSurveyRow } from '../lib/submitSurvey'
+import { isRotiItem, isCountInput, mergeDishSnapshot } from '../hooks/useSurvey'
 
 // ── Skeleton Placeholder ──
 const SkeletonDish = ({ t }) => (
@@ -121,15 +122,29 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
   const [dataLoading, setDataLoading] = useState(true)
   const onCompleteRef = useRef(onComplete)
   onCompleteRef.current = onComplete
+  // Cache the last valid meal target so the modal doesn't vanish if the
+  // clock crosses an edit-window boundary while the user is mid-edit.
+  const [mealTarget, setMealTarget] = useState(null)
+  // Only re-fetch when the target meal actually changes — otherwise the
+  // modal re-blinks its skeleton on every app-settings refresh while the
+  // user is mid-edit.
+  const lastLoadedKeyRef = useRef('')
 
   // Load user's saved survey responses
   useEffect(() => {
     if (!user || !weeklyMenu || !isOpen) return
+    const mi = getCardMealInfo(weeklyMenu, appSettings)
+    const key = mi ? `${mi.day}_${mi.meal}` : ''
+    // Already loaded this exact meal — skip so the card never blinks.
+    if (key && key === lastLoadedKeyRef.current) return
+    if (key && mi) setMealTarget(mi)
+    if (!key) return
     setDataLoading(true)
     const loadData = async () => {
-      const weekId = getCalendarWeekDate()
-      const mi = getCardMealInfo(weeklyMenu, appSettings)
-      if (!mi) return
+      // The daily card edits a meal that belongs to the SURVEY target week
+      // (same week the tracker + weekly survey read) — not the calendar week.
+      // On Sat evening → Mon lunch, and across week boundaries, these differ.
+      const weekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
       const dayKey = mi.day.substring(0, 3).toLowerCase()
       const mealKey = mi.meal === 'lunch' ? 'l' : 'd'
       const { data } = await supabase
@@ -158,16 +173,21 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
       })
       setUserResponses(respMap)
     }
-    loadData().finally(() => setDataLoading(false))
+    loadData().finally(() => { lastLoadedKeyRef.current = key; setDataLoading(false) })
   }, [user, weeklyMenu, isOpen, appSettings])
 
   const saveAllResponses = async () => {
     if (!user || saving) return
     setSaving(true)
     try {
-      const mi = getCardMealInfo(weeklyMenu, appSettings)
+      // Save against the meal the card was opened for — even if the live
+      // clock has rolled past the edit-window boundary by submit time.
+      const mi = (weeklyMenu ? getCardMealInfo(weeklyMenu, appSettings) : null) || mealTarget
       if (!mi) return
-      const weekId = getCalendarWeekDate()
+      // Survey target week — keep the daily quick-edit in the same row the
+      // tracker and weekly survey read (getWeekDate shifts to next week during
+      // the Sat-evening → Mon survey window; the calendar week does not).
+      const weekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
       const dayKey = mi.day.substring(0, 3).toLowerCase()
       const mealKey = mi.meal === 'lunch' ? 'l' : 'd'
       const statusKey = dayKey + '_' + mealKey + '_status'
@@ -177,7 +197,8 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
         user_id: user.id,
         week_id: weekId,
         [statusKey]: 'Applied',
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        dish_snapshot: mergeDishSnapshot(existing, mi.day, mi.meal, mi.dishes)
       }
       mi.dishes.forEach((d, idx) => {
         const colName = dayKey + '_' + mealKey + '_dish_' + (idx + 1)
@@ -195,9 +216,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
           upsertObj[colName] = existing[colName]
         }
       })
-      const { error } = await supabase
-        .from('survey_submissions_flat')
-        .upsert([upsertObj], { onConflict: 'user_id,week_id' })
+      const { error } = await submitSurveyRow(upsertObj)
       if (error) throw error
       onCompleteRef.current()
     } catch (err) {
@@ -211,7 +230,9 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
     setUserResponses(prev => ({ ...prev, [dish]: value }))
   }
 
-  const mealInfo = weeklyMenu ? getCardMealInfo(weeklyMenu, appSettings) : null
+  // Use the live meal if available, otherwise fall back to the cached target
+  // so the card stays open (and editable) even right at a window boundary.
+  const mealInfo = (weeklyMenu ? getCardMealInfo(weeklyMenu, appSettings) : null) || mealTarget
 
   // ── Premium selected-state helpers ──
   const YC = '#4CAF50'
@@ -219,7 +240,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
   const optGrad = (c) => `linear-gradient(145deg, ${c}2e 0%, ${c}0f 55%, ${c}05 100%)`
   const optShadow = (c) => `0 6px 18px ${c}40, inset 0 1px 0 rgba(255,255,255,0.12)`
   const pctColor = (p) => (p === 0 ? NC : p === 25 ? '#FFC107' : p === 50 ? '#2196F3' : p === 75 ? '#9E9E9E' : YC)
-  const sheen = (color) => (
+  const sheen = () => (
     <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg, rgba(255,255,255,0.16), transparent)', pointerEvents: 'none' }} />
   )
   const checkBadge = (color) => (
@@ -330,7 +351,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
                               onMouseEnter={e => { if (!isSel) { e.currentTarget.style.background = `${color}0d`; e.currentTarget.style.borderColor = `${color}55` } }}
                               onMouseLeave={e => { if (!isSel) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = t.border } }}
                             >
-                              {isSel && sheen(color)}
+                              {isSel && sheen()}
                               {isSel && checkBadge(color)}
                               {label}
                             </button>
@@ -392,7 +413,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
                               onMouseEnter={e => { if (!isSel) { e.currentTarget.style.background = `${pc}0d`; e.currentTarget.style.borderColor = `${pc}55` } }}
                               onMouseLeave={e => { if (!isSel) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = t.border } }}
                             >
-                              {isSel && sheen(pc)}
+                              {isSel && sheen()}
                               {pct === 0 ? '0%' : pct + '%'}
                             </button>
                           )

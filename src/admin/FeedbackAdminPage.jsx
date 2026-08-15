@@ -1,17 +1,14 @@
 // src/admin/FeedbackAdminPage.jsx
 import React, { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/firebaseClient'
-import { RefreshCw, Search, Star } from 'lucide-react'
+import { RefreshCw, Search, Star, Download } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, StatCard, fmtDateTime } from './ui'
 import { AdminTableSkeleton } from '../common/Skeleton'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 import { getCalendarWeekDate } from '../common/utils'
+import { downloadWeeklyFeedbackPdf, getFeedbackWeekId } from './feedbackReportPdf'
+import toast from 'react-hot-toast'
 
 const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday']
-const TooltipStyle = {
-  contentStyle: { background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, color: T.text, fontSize: 13 },
-  cursor: { fill: 'rgba(196,156,90,0.06)' },
-}
 
 const Stars = ({ n }) => (
   <div style={{ display: 'flex', gap: 2, whiteSpace: 'nowrap', flexShrink: 0 }}>
@@ -30,7 +27,7 @@ export default function FeedbackAdminPage() {
   const [dayFilter, setDayFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [showAll, setShowAll] = useState(false)
-  const [avgData, setAvgData] = useState([])
+  const [weekFilter, setWeekFilter] = useState('latest')
   const [menu, setMenu] = useState({})
   const [totals, setTotals] = useState({ count: 0, recentCount: 0, avgLunch: 0, avgDinner: 0 })
 
@@ -76,19 +73,7 @@ export default function FeedbackAdminPage() {
   }, [load])
 
   const buildStats = (data) => {
-    // Avg per day
-    const map = {}
-    data.forEach(r => {
-      if (!map[r.day]) map[r.day] = { lunch: [], dinner: [] }
-      if (r.lunch_stars)  map[r.day].lunch.push(r.lunch_stars)
-      if (r.dinner_stars) map[r.day].dinner.push(r.dinner_stars)
-    })
     const avg = arr => arr.length ? +(arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(2) : 0
-    setAvgData(DAYS.map(d => {
-      const e = map[d] || { lunch: [], dinner: [] }
-      return { day: d.slice(0,2).toUpperCase(), lunch: avg(e.lunch), dinner: avg(e.dinner) }
-    }))
-    // Overall
     const allLunch  = data.filter(r => r.lunch_stars).map(r => r.lunch_stars)
     const allDinner = data.filter(r => r.dinner_stars).map(r => r.dinner_stars)
     setTotals({
@@ -100,6 +85,17 @@ export default function FeedbackAdminPage() {
 
   const now = new Date()
   const recentCount = allFeedbacks.filter(r => (now - new Date(r.created_at)) / (1000 * 60 * 60) < 24).length
+
+  // ── Weekly PDF report ──
+  const weeks = [...new Set(allFeedbacks.map(r => getFeedbackWeekId(r.created_at)).filter(Boolean))].sort().reverse()
+  const selectedWeek = weekFilter === 'latest' ? (weeks[0] || null) : weekFilter
+  const weekCount = selectedWeek ? allFeedbacks.filter(r => getFeedbackWeekId(r.created_at) === selectedWeek).length : 0
+
+  const handleDownloadPdf = () => {
+    if (!selectedWeek) return
+    downloadWeeklyFeedbackPdf({ weekId: selectedWeek, feedbacks: allFeedbacks, users })
+    toast.success(`Weekly feedback PDF downloaded (${weekCount} response${weekCount === 1 ? '' : 's'})`)
+  }
 
   const filtered = feedbacks.filter(r => {
     const u = users[r.user_id] || {}
@@ -154,20 +150,31 @@ export default function FeedbackAdminPage() {
         <StatCard icon="🌙" label="Avg Dinner" value={`${totals.avgDinner}★`} color="#5e9ce0" />
       </div>
 
-      {/* Chart */}
-      <AdminCard style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 18 }}>Avg Rating by Day</div>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={avgData} margin={{ left: -20 }}>
-            <CartesianGrid stroke={T.border} vertical={false} />
-            <XAxis dataKey="day" tick={{ fill: T.textSub, fontSize: 12 }} axisLine={false} tickLine={false} />
-            <YAxis domain={[0,5]} tick={{ fill: T.textSub, fontSize: 11 }} axisLine={false} tickLine={false} />
-            <Tooltip {...TooltipStyle} />
-            <Legend wrapperStyle={{ fontSize: 12, color: T.textSub }} />
-            <Bar dataKey="lunch"  fill="#c49c5a" radius={[5,5,0,0]} name="Lunch"  />
-            <Bar dataKey="dinner" fill="#5e9ce0" radius={[5,5,0,0]} name="Dinner" />
-          </BarChart>
-        </ResponsiveContainer>
+      {/* Weekly PDF Report */}
+      <AdminCard style={{ marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>📄 Weekly Report</div>
+          <div style={{ fontSize: 12, color: T.textSub, marginTop: 4 }}>
+            {selectedWeek
+              ? `${weekCount} response${weekCount === 1 ? '' : 's'} for the week of ${new Date(selectedWeek + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+              : 'No feedback recorded yet'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <select value={weekFilter} onChange={e => setWeekFilter(e.target.value)}
+            style={{ padding: '11px 14px', borderRadius: 10, background: T.card, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit' }}>
+            {weeks.length > 0 && <option value="latest">Latest Week</option>}
+            {weeks.length === 0 && <option value="latest">No weeks</option>}
+            {weeks.map(w => (
+              <option key={w} value={w}>
+                Week of {new Date(w + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </option>
+            ))}
+          </select>
+          <Btn onClick={handleDownloadPdf} disabled={!selectedWeek}>
+            <Download size={15} /> Download PDF
+          </Btn>
+        </div>
       </AdminCard>
 
       {/* Filters */}

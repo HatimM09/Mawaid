@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/firebaseClient'
 import { useAuth } from '../admin/context'
-import { getWeekDate, DAYS } from '../common/utils'
+import { getSurveyTargetWeek, DAYS } from '../common/utils'
 
 export const isRotiItem = (dish) => {
   const rotiKeywords = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
@@ -51,9 +51,13 @@ export const isSurveyOpen = (appSettings = {}, userId = null) => {
   const now = new Date()
   const day = now.getDay()
   const hour = now.getHours()
-  if (day === 6 && hour >= 20) return true
+  const openHour = parseInt(appSettings.survey_open_hour, 10)
+  const closeHour = parseInt(appSettings.survey_close_hour, 10)
+  const open = isNaN(openHour) ? 20 : openHour
+  const close = isNaN(closeHour) ? 11 : closeHour
+  if (day === 6 && hour >= open) return true
   if (day === 0) return true
-  if (day === 1 && hour < 11) return true
+  if (day === 1 && hour < close) return true
   return false
 }
 
@@ -134,11 +138,54 @@ export const denormalizeDishValue = (val, dish, isCount) => {
   return 'No'
 }
 
+// ── Dish-snapshot helpers ──
+// Responses are stored positionally (mon_l_dish_1…6) with NO dish identity.
+// To keep responses correctly labelled even when the admin later edits the
+// menu, every writer stores the dish list it saved against in `dish_snapshot`
+// (keyed by slot, e.g. { "mon_l": ["Dish A", …] }) and every reader resolves
+// dish names from that snapshot, falling back to the current menu.
+
+export const getSlotKey = (day, meal) =>
+  `${day.substring(0, 3).toLowerCase()}_${meal === 'lunch' ? 'l' : 'd'}`
+
+export const getDishSnapshot = (row, day, meal) => {
+  try {
+    const snap = row?.dish_snapshot
+    if (!snap) return null
+    const obj = typeof snap === 'string' ? JSON.parse(snap) : snap
+    const list = obj?.[getSlotKey(day, meal)]
+    return Array.isArray(list) && list.length ? list : null
+  } catch {
+    return null
+  }
+}
+
+// Dish names to use for a slot: the saved snapshot if present, else the menu.
+export const getSlotDishes = (row, day, meal, fallbackDishes = []) =>
+  getDishSnapshot(row, day, meal) || (Array.isArray(fallbackDishes) ? fallbackDishes : [])
+
+// Merge the dish list being saved into the row's snapshot (keeps all slots).
+export const mergeDishSnapshot = (existing, day, meal, dishes) => {
+  if (!Array.isArray(dishes) || dishes.length === 0) {
+    return existing?.dish_snapshot || {}
+  }
+  const prev = existing?.dish_snapshot
+  let obj = {}
+  try {
+    obj = typeof prev === 'string' ? JSON.parse(prev) : (prev && typeof prev === 'object' ? { ...prev } : {})
+  } catch {
+    obj = {}
+  }
+  obj[getSlotKey(day, meal)] = dishes
+  return obj
+}
+
 export function useSurveyData(weeklyMenu, appSettings = {}) {
   const { user } = useAuth()
   const [surveyData, setSurveyData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const currentWeekId = getWeekDate()
+  const openHour = parseInt(appSettings.survey_open_hour, 10)
+  const currentWeekId = getSurveyTargetWeek(isNaN(openHour) ? 20 : openHour, appSettings.survey_status === 'open')
 
   const loadSurvey = useCallback(async () => {
     if (!user) { setLoading(false); return }
@@ -235,7 +282,8 @@ export function useSurveyAutoSave() {
 export function useSurveyWindow(appSettings = {}) {
   const { user } = useAuth()
   const surveyOpen = isSurveyOpen(appSettings, user?.id)
-  const currentWeekId = getWeekDate()
+  const openHour = parseInt(appSettings.survey_open_hour, 10)
+  const currentWeekId = getSurveyTargetWeek(isNaN(openHour) ? 20 : openHour, appSettings.survey_status === 'open')
 
   const isAnyMealEditable = DAYS.some(d =>
     canEditMeal(d, currentWeekId, 'lunch', appSettings, user?.id) ||
@@ -243,9 +291,17 @@ export function useSurveyWindow(appSettings = {}) {
   )
 
   const getSurveyWindowMessage = () => {
+    const openHour = parseInt(appSettings.survey_open_hour, 10)
+    const closeHour = parseInt(appSettings.survey_close_hour, 10)
+    const open = isNaN(openHour) ? 20 : openHour
+    const close = isNaN(closeHour) ? 11 : closeHour
+    const fmt = h => {
+      const hh = h % 12 === 0 ? 12 : h % 12
+      return `${hh}:00 ${h >= 12 ? 'PM' : 'AM'}`
+    }
     if (appSettings.survey_status === 'open') return 'Survey window is open (Admin Override)!'
-    if (surveyOpen) return 'Survey window is open! (Sat 8PM – Mon 11AM)'
-    return 'Survey window opens Saturday 8:00 PM and closes Monday 11:00 AM.'
+    if (surveyOpen) return `Survey window is open! (Sat ${fmt(open)} – Mon ${fmt(close)})`
+    return `Survey window opens Saturday ${fmt(open)} and closes Monday ${fmt(close)}.`
   }
 
   return { surveyOpen, isAnyMealEditable, currentWeekId, getSurveyWindowMessage }

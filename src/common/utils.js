@@ -2,15 +2,44 @@
 
 /**
  * Returns the Monday of the target survey week as YYYY-MM-DD.
- * During the survey window (Saturday 8PM through Sunday), it advances
- * to the NEXT Monday since users are filling for the upcoming week.
+ * During the survey window (Saturday from surveyOpenHour through Sunday),
+ * it advances to the NEXT Monday since users are filling for the upcoming week.
+ * The open/close hour come from app_settings.survey_open_hour (default 20 = 8PM).
  */
-export const getWeekDate = () => {
+export const getWeekDate = (surveyOpenHour = 20) => {
   const now = new Date()
   const day = now.getDay()
   const hour = now.getHours()
+  const openHour = parseInt(surveyOpenHour, 10)
+  const open = isNaN(openHour) ? 20 : openHour
   let diff = now.getDate() - day + (day === 0 ? -6 : 1)
-  if (day === 0 || (day === 6 && hour >= 20)) {
+  if (day === 0 || (day === 6 && hour >= open)) {
+    diff += 7
+  }
+  const monday = new Date(now.setDate(diff))
+  return monday.toISOString().split('T')[0]
+}
+
+/**
+ * Returns the Monday of the survey target week (YYYY-MM-DD) — the week the
+ * weekly survey is planning and the tracker displays.
+ *
+ * Identical to getWeekDate() EXCEPT when the survey is force-opened
+ * (app_settings.survey_status = 'open'): members can then fill the weekly
+ * survey at ANY hour, so Saturday shifts to the NEXT Monday all day instead of
+ * only after the open hour. Without this, a Saturday-morning fill lands in the
+ * PREVIOUS week's row — invisible in the current-week tracker view and later
+ * deleted by its auto-cleanup. Daily-edit flows keep using getWeekDate().
+ */
+export const getSurveyTargetWeek = (surveyOpenHour = 20, forceOpen = false) => {
+  const now = new Date()
+  const day = now.getDay()
+  const hour = now.getHours()
+  const open = parseInt(surveyOpenHour, 10)
+  const openHour = isNaN(open) ? 20 : open
+  let diff = now.getDate() - day + (day === 0 ? -6 : 1)
+  const satShift = day === 6 && (forceOpen || hour >= openHour)
+  if (day === 0 || satShift) {
     diff += 7
   }
   const monday = new Date(now.setDate(diff))
@@ -34,6 +63,20 @@ export const getCalendarWeekDate = () => {
 
 export const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 export const MEALS = ['lunch', 'dinner']
+
+/**
+ * Format a Date as the local calendar date YYYY-MM-DD.
+ * Unlike date.toISOString().split('T')[0] this never shifts the date when the
+ * device is in a positive-UTC-offset timezone (local midnight becomes the
+ * previous day in UTC), which caused stop-thali date ranges to be compared
+ * against the wrong day.
+ */
+export const toLocalDateStr = (d) => {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 
 export const getDayKey = (day) => day.substring(0, 3).toLowerCase()
 export const getMealKey = (meal) => meal === 'lunch' ? 'l' : 'd'

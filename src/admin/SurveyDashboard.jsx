@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/firebaseClient'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import {
@@ -6,14 +7,16 @@ import {
   Check, X, ChevronDown, ChevronUp, Bell, Settings, BarChart3, Download
 } from 'lucide-react'
 import {
-  T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner, Grid, Modal,
+  T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner, Modal,
   SectionHeader, SurveyResponseDisplay, PackingTVView, fmtDate, ErrorBanner
 } from './ui'
 import { getWeekDate, DAYS, MEALS, getDayKey, getMealKey } from '../common/utils'
+import { getSlotDishes } from '../hooks/useSurvey'
 
 const TABS = ['overview', 'tracking', 'automation']
 
 export default function SurveyDashboard() {
+  const navigate = useNavigate()
   const weeklyMenu = useWeeklyMenu() || {}
   const [activeTab, setActiveTab] = useState('overview')
   const [loading, setLoading] = useState(true)
@@ -36,7 +39,7 @@ export default function SurveyDashboard() {
   const [availableWeeks, setAvailableWeeks] = useState([])
   const [selectedUser, setSelectedUser] = useState(null)
 
-  // Automation state
+  // Automation state (read-only here — settings are managed on the Automation page)
   const [autoSettings, setAutoSettings] = useState({
     survey_status: 'auto',
     lunch_edit_status: 'auto',
@@ -46,11 +49,7 @@ export default function SurveyDashboard() {
     lunch_edit_close: '11:00',
     dinner_edit_open: '12:00',
     dinner_edit_close: '15:30',
-    reminders_enabled: true,
-    digest_enabled: true,
   })
-  const [autoSaving, setAutoSaving] = useState(false)
-  const [autoSaved, setAutoSaved] = useState(false)
 
   const loadAvailableWeeks = useCallback(async () => {
     const { data } = await supabase.from('survey_submissions_flat').select('week_id', { count: true, distinct: true })
@@ -63,7 +62,7 @@ export default function SurveyDashboard() {
   const loadOverviewStats = useCallback(async () => {
     setStatsLoading(true)
     try {
-      const currentWeekId = getWeekDate()
+      const currentWeekId = getWeekDate(parseInt(autoSettings.survey_open_hour) || 20)
       const allDays = DAYS.map(d => getDayKey(d))
       const mealKeys = ['l', 'd']
       const cols = allDays.flatMap(dk => mealKeys.map(mk => `${dk}_${mk}_status`))
@@ -116,48 +115,35 @@ export default function SurveyDashboard() {
   const loadTrackData = useCallback(async () => {
     setLoading(true)
     try {
-      const currentWeekId = getWeekDate()
+      const currentWeekId = getWeekDate(parseInt(autoSettings.survey_open_hour) || 20)
       const weekId = trackWeekFilter !== 'all' ? trackWeekFilter : currentWeekId
       const dk = getDayKey(trackDay)
       const mk = getMealKey(trackMeal)
       const statusCol = `${dk}_${mk}_status`
+      const menu = weeklyMenu[trackDay]?.[trackMeal] || []
 
       const { data: allUsers } = await supabase.from('user_stats').select('*')
+      // Fetch all dish columns (max 6 per slot) + the dish-name snapshot so
+      // responses stay correctly labelled even if the menu changed since save.
+      const dishCols = Array.from({ length: 6 }, (_, i) => `${dk}_${mk}_dish_${i + 1}`)
       const { data: submissions } = await supabase.from('survey_submissions_flat')
-        .select(`user_id, ${statusCol}, updated_at`)
+        .select(`user_id, ${statusCol}, updated_at, dish_snapshot, ${dishCols.join(',')}`)
         .eq('week_id', weekId)
 
       const subMap = {}
       const subTimeMap = {}
-      if (submissions) {
-        submissions.forEach(sub => {
-          subMap[sub.user_id] = sub[statusCol]
-          subTimeMap[sub.user_id] = sub.updated_at
-        })
-      }
-
-      const dishCols = []
-      const menu = weeklyMenu[trackDay]?.[trackMeal] || []
-      menu.forEach((_, idx) => { dishCols.push(`${dk}_${mk}_dish_${idx + 1}`) })
-
-      const detailedSubs = dishCols.length > 0
-        ? await supabase.from('survey_submissions_flat')
-          .select(`user_id, ${dishCols.join(',')}`)
-          .eq('week_id', weekId)
-        : null
-
       const dishMap = {}
-      if (detailedSubs?.data) {
-        detailedSubs.data.forEach(sub => {
-          if (subMap[sub.user_id] === 'Applied') {
-            dishMap[sub.user_id] = {}
-            menu.forEach((dish, idx) => {
-              const val = sub[`${dk}_${mk}_dish_${idx + 1}`]
-              if (val !== undefined && val !== null) dishMap[sub.user_id][dish] = val
-            })
-          }
-        })
-      }
+      ;(submissions || []).forEach(sub => {
+        subMap[sub.user_id] = sub[statusCol]
+        subTimeMap[sub.user_id] = sub.updated_at
+        if (sub[statusCol] === 'Applied') {
+          dishMap[sub.user_id] = {}
+          getSlotDishes(sub, trackDay, trackMeal, menu).forEach((dish, idx) => {
+            const val = sub[`${dk}_${mk}_dish_${idx + 1}`]
+            if (val !== undefined && val !== null) dishMap[sub.user_id][dish] = val
+          })
+        }
+      })
 
       const list = (allUsers || [])
         .filter(u => u.role === 'member')
@@ -217,27 +203,9 @@ export default function SurveyDashboard() {
     return () => clearInterval(interval)
   }, [activeTab])
 
-  const saveAutoSettings = async () => {
-    setAutoSaving(true)
-    try {
-      const entries = Object.entries(autoSettings)
-      for (const [key, value] of entries) {
-        await supabase.from('app_settings').upsert(
-          { key, value: String(value) },
-          { onConflict: 'key' }
-        )
-      }
-      setAutoSaved(true)
-      setTimeout(() => setAutoSaved(false), 3000)
-    } catch (err) {
-      console.error('Error saving automation settings:', err)
-    }
-    setAutoSaving(false)
-  }
-
   const sendReminderNow = async () => {
     try {
-      const currentWeekId = getWeekDate()
+      const currentWeekId = getWeekDate(parseInt(autoSettings.survey_open_hour) || 20)
       const dk = getDayKey(trackDay)
       const mk = getMealKey(trackMeal)
       const statusCol = `${dk}_${mk}_status`
@@ -432,7 +400,7 @@ export default function SurveyDashboard() {
                     <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${T.border}`, fontSize: 13 }}>
                       <span>{dish}</span>
                       <span style={{ fontWeight: 700, color: T.accent }}>
-                        {val === 'Yes' ? '✅' : val === 'No' ? '❌' : typeof val === 'string' && val.endsWith('%') ? val : val}
+                        {val === 'Yes' || val === 'yes' ? '✅ Yes' : val === 'No' || val === 'no' ? '❌ No' : val == null ? '—' : (typeof val === 'string' && val.endsWith('%') ? `${parseInt(val) || 0}%` : `${parseInt(val) || 0} person${(parseInt(val) || 0) === 1 ? '' : 's'}`)}
                       </span>
                     </div>
                   ))}
@@ -446,89 +414,18 @@ export default function SurveyDashboard() {
   }
 
   const AutomationTab = () => {
-    const update = (key, val) => setAutoSettings(prev => ({ ...prev, [key]: val }))
-
     return (
       <div style={{ maxWidth: 600 }}>
-        <AdminCard style={{ marginBottom: 20 }}>
-          <SectionHeader>Survey Window</SectionHeader>
-          <div style={{ marginBottom: 12 }}>
-            <label htmlFor="autoSurveyStatus" style={labelStyle}>Status</label>
-            <select id="autoSurveyStatus" value={autoSettings.survey_status} onChange={e => update('survey_status', e.target.value)} style={selectStyle}>
-              <option value="auto">Auto (Sat 8PM – Mon 11AM)</option>
-              <option value="open">Open (Override)</option>
-              <option value="closed">Closed (Override)</option>
-            </select>
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <label htmlFor="autoSurveyOpenHour" style={labelStyle}>Survey Open Hour</label>
-            <select id="autoSurveyOpenHour" value={autoSettings.survey_open_hour} onChange={e => update('survey_open_hour', e.target.value)} style={selectStyle}>
-              {[18, 19, 20, 21, 22].map(h => <option key={h} value={h}>{h}:00</option>)}
-            </select>
-          </div>
+        <AdminCard>
+          <SectionHeader>Automation</SectionHeader>
+          <p style={{ fontSize: 13, color: T.textSub, lineHeight: 1.6, marginBottom: 18 }}>
+            All access controls and timing settings (survey window, lunch &amp; dinner edit
+            windows, user overrides) are now managed from the <strong style={{ color: T.text }}>Automation</strong> page.
+          </p>
+          <Btn onClick={() => navigate('/admin/automation')} style={{ width: '100%', padding: 14, fontSize: 15 }}>
+            <Settings size={16} /> Open Automation Settings
+          </Btn>
         </AdminCard>
-
-        <AdminCard style={{ marginBottom: 20 }}>
-          <SectionHeader>Daily Edit Windows</SectionHeader>
-          <div style={{ marginBottom: 12 }}>
-            <label htmlFor="autoLunchEditStatus" style={labelStyle}>Lunch Edit</label>
-            <select id="autoLunchEditStatus" value={autoSettings.lunch_edit_status} onChange={e => update('lunch_edit_status', e.target.value)} style={selectStyle}>
-              <option value="auto">Auto</option>
-              <option value="open">Open</option>
-              <option value="closed">Closed</option>
-            </select>
-          </div>
-          <Grid cols={2}>
-            <div>
-              <label htmlFor="autoLunchEditOpen" style={labelStyle}>Opens at</label>
-              <input id="autoLunchEditOpen" type="time" value={autoSettings.lunch_edit_open} onChange={e => update('lunch_edit_open', e.target.value)} style={inputStyle} />
-            </div>
-            <div>
-              <label htmlFor="autoLunchEditClose" style={labelStyle}>Closes at</label>
-              <input id="autoLunchEditClose" type="time" value={autoSettings.lunch_edit_close} onChange={e => update('lunch_edit_close', e.target.value)} style={inputStyle} />
-            </div>
-          </Grid>
-          <div style={{ margin: '12px 0' }}>
-            <label htmlFor="autoDinnerEditStatus" style={labelStyle}>Dinner Edit</label>
-            <select id="autoDinnerEditStatus" value={autoSettings.dinner_edit_status} onChange={e => update('dinner_edit_status', e.target.value)} style={selectStyle}>
-              <option value="auto">Auto</option>
-              <option value="open">Open</option>
-              <option value="closed">Closed</option>
-            </select>
-          </div>
-          <Grid cols={2}>
-            <div>
-              <label htmlFor="autoDinnerEditOpen" style={labelStyle}>Opens at</label>
-              <input id="autoDinnerEditOpen" type="time" value={autoSettings.dinner_edit_open} onChange={e => update('dinner_edit_open', e.target.value)} style={inputStyle} />
-            </div>
-            <div>
-              <label htmlFor="autoDinnerEditClose" style={labelStyle}>Closes at</label>
-              <input id="autoDinnerEditClose" type="time" value={autoSettings.dinner_edit_close} onChange={e => update('dinner_edit_close', e.target.value)} style={inputStyle} />
-            </div>
-          </Grid>
-        </AdminCard>
-
-        <AdminCard style={{ marginBottom: 20 }}>
-          <SectionHeader>Automated Notifications</SectionHeader>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-              <input type="checkbox" checked={autoSettings.reminders_enabled === true || autoSettings.reminders_enabled === 'true'}
-                onChange={e => update('reminders_enabled', e.target.checked)} style={{ width: 18, height: 18 }} />
-              Send reminders for pending surveys (every 30 min)
-            </label>
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-              <input type="checkbox" checked={autoSettings.digest_enabled === true || autoSettings.digest_enabled === 'true'}
-                onChange={e => update('digest_enabled', e.target.checked)} style={{ width: 18, height: 18 }} />
-              Send daily digest to admins (6PM)
-            </label>
-          </div>
-        </AdminCard>
-
-        <Btn onClick={saveAutoSettings} disabled={autoSaving} style={{ width: '100%', padding: 14, fontSize: 15 }}>
-          {autoSaving ? 'Saving...' : autoSaved ? '✓ Settings Saved' : 'Save Automation Settings'}
-        </Btn>
       </div>
     )
   }
@@ -566,16 +463,4 @@ const selectStyle = {
   padding: '8px 12px', borderRadius: 8, border: `1px solid ${T.border}`,
   background: T.inputBg, color: T.text, fontSize: 13, outline: 'none',
   fontFamily: "'DM Sans',sans-serif", cursor: 'pointer'
-}
-
-const inputStyle = {
-  padding: '8px 12px', borderRadius: 8, border: `1px solid ${T.border}`,
-  background: T.inputBg, color: T.text, fontSize: 13, outline: 'none',
-  width: '100%', boxSizing: 'border-box', fontFamily: "'DM Sans',sans-serif"
-}
-
-const labelStyle = {
-  display: 'block', fontSize: 11, fontWeight: 700, color: T.textSub,
-  textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6,
-  fontFamily: "'DM Sans',sans-serif"
 }

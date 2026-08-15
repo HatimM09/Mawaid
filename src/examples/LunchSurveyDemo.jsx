@@ -22,7 +22,7 @@ export default function LunchSurveyDemo() {
     }}>
       <div style={{
         maxWidth: 1200,
-        margin: 0 auto,
+        margin: '0 auto',
         padding: '40px 20px'
       }}>
         {/* Header */}
@@ -63,7 +63,7 @@ export default function LunchSurveyDemo() {
                   value={theme}
                   onChange={(e) => handleThemeChange(e.target.value)}
                   style={{
-                    padding: 8 12,
+                    padding: '8px 12px',
                     borderRadius: 8,
                     border: `1px solid ${theme === 'dark' ? 'rgba(224,160,60,0.3)' : '#e8ddc5'}`,
                     background: theme === 'dark' ? 'rgba(74,58,44,0.5)' : '#fff',
@@ -93,7 +93,7 @@ export default function LunchSurveyDemo() {
                   value={userId}
                   onChange={(e) => setUserId(e.target.value)}
                   style={{
-                    padding: 8 12,
+                    padding: '8px 12px',
                     borderRadius: 8,
                     border: `1px solid ${theme === 'dark' ? 'rgba(224,160,60,0.3)' : '#e8ddc5'}`,
                     background: theme === 'dark' ? 'rgba(74,58,44,0.5)' : '#fff',

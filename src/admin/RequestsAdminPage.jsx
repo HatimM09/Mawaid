@@ -20,6 +20,7 @@ export default function RequestsAdminPage() {
   const [typeFilter, setTypeFilter]     = useState('all')
   const [search, setSearch]             = useState('')
   const [showAll, setShowAll]           = useState(false)
+  const [modeFilter, setModeFilter]     = useState('all')
   const [types, setTypes]               = useState([])
 
   const load = useCallback(async () => {
@@ -76,10 +77,13 @@ export default function RequestsAdminPage() {
             await supabase.from('user_stats').update({ thali_number: newThaliNum }).eq('user_id', reqObj.user_id)
           }
         } else if (reqObj.request_type === 'stop') {
+          // Date-bounded stops (e.g. "stop 11–12 Aug") must NOT remove the member's
+          // thali number from their profile — it is their identity (QR, stickers,
+          // packing). Only remember it in the request details so a later resume can
+          // restore it for members whose number was wiped by older builds.
           if (userThali) {
             await supabase.from('thali_requests').update({ details: `Thali: ${userThali} (Paused)` }).eq('id', id)
           }
-          await supabase.from('user_stats').update({ thali_number: null }).eq('user_id', reqObj.user_id)
         } else if (reqObj.request_type === 'resume') {
           const { data: lastStopReq } = await supabase
             .from('thali_requests')
@@ -162,11 +166,16 @@ export default function RequestsAdminPage() {
     const matchSearch = !q || (u.name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q) || String(u.thali_number||'').includes(q)
     const matchStatus = statusFilter === 'all' || (r.status || 'pending') === statusFilter
     const matchType   = typeFilter   === 'all' || r.request_type === typeFilter
-    // Auto-hide non-pending requests older than 24h, unless showAll is toggled
+    const matchMode   = modeFilter   === 'all' || (r.extra_mode || 'addition') === modeFilter
+    // Auto-hide non-pending requests older than 24h, unless showAll is toggled.
+    // Approved stop/resume requests that carry dates stay visible until the last
+    // covered date (to_date, or from_date for resumes) has passed.
     const isPending = !r.status || r.status === 'pending'
     const within24h = (now - new Date(r.updated_at || r.created_at)) / (1000 * 60 * 60) < 24
-    const matchTime = showAll || isPending || within24h
-    return matchSearch && matchStatus && matchType && matchTime
+    const activeUntil = r.to_date || r.from_date
+    const stillActive = r.status !== 'rejected' && !!activeUntil && new Date(activeUntil + 'T23:59:59') >= now
+    const matchTime = showAll || isPending || within24h || stillActive
+    return matchSearch && matchStatus && matchType && matchMode && matchTime
   })
 
   const rows = filtered.map(r => {
@@ -181,9 +190,14 @@ export default function RequestsAdminPage() {
       <div style={{ fontSize: 13, color: T.textSub, maxWidth: 220, lineHeight: 1.65 }}>
         {r.request_type === 'extra' && r.extra_items ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {r.extra_mode === 'deduction'
+              ? <Badge color="#e05555" style={{ marginBottom: 2, alignSelf: 'flex-start' }}>➖ Deduction</Badge>
+              : <Badge color="#5eba82" style={{ marginBottom: 2, alignSelf: 'flex-start' }}>➕ Addition</Badge>}
             {r.extra_items.map((item, i) => (
               <div key={i} style={{ background: 'rgba(255,255,255,0.03)', padding: '2px 6px', borderRadius: 6, fontSize: 11 }}>
-                <span style={{ color: T.accent, fontWeight: 700 }}>{item.qty}x</span> {item.name}
+                <span style={{ color: r.extra_mode === 'deduction' ? '#e05555' : T.accent, fontWeight: 700 }}>
+                  {r.extra_mode === 'deduction' ? `Deduct ${item.qty}x` : `${item.qty}x`}
+                </span> {item.name}
               </div>
             ))}
           </div>
@@ -219,12 +233,12 @@ export default function RequestsAdminPage() {
       <div style={{ display: 'flex', gap: 6 }}>
         {isAdmin ? (
           <>
-            {status !== 'approved' && (
+            {status === 'pending' && (
               <Btn size="sm" variant="outline" onClick={() => updateStatus(r.id, 'approved')}>
                 Approve
               </Btn>
             )}
-            {status !== 'rejected' && (
+            {status === 'pending' && (
               <Btn size="sm" variant="danger" onClick={() => updateStatus(r.id, 'rejected')}>
                 Reject
               </Btn>
@@ -302,6 +316,17 @@ export default function RequestsAdminPage() {
             {types.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         )}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {[{ id: 'addition', label: '➕ Addition', color: '#5eba82' }, { id: 'deduction', label: '➖ Deduction', color: '#e05555' }].map(m => {
+            const active = modeFilter === m.id
+            return (
+              <button key={m.id} name={`modeFilter_${m.id}`} onClick={() => setModeFilter(active ? 'all' : m.id)}
+                style={{ padding: '9px 14px', borderRadius: 10, border: `1px solid ${active ? m.color : T.inputBorder}`, background: active ? `${m.color}1a` : T.card, color: active ? m.color : T.textSub, fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.2s', whiteSpace: 'nowrap' }}>
+                {m.label}
+              </button>
+            )
+          })}
+        </div>
         <Btn variant={showAll ? 'solid' : 'outline'} size="sm" onClick={() => setShowAll(!showAll)}>
           {showAll ? `All (${allCount})` : `Pending (${pendingCount})`}
         </Btn>

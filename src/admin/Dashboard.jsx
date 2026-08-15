@@ -325,7 +325,15 @@ export default function Dashboard() {
   }, [loadAll])
 
   const loadStats = useCallback(async () => {
-    const currentWeekId = getWeekDate()
+    let hourRow
+    try {
+      hourRow = await supabase.from('app_settings').select('value').eq('key', 'survey_open_hour').maybeSingle()
+    } catch {
+      hourRow = { data: null }
+    }
+    hourRow = hourRow ?? { data: null }
+    const parsed = parseInt(hourRow?.value, 10)
+    const currentWeekId = getWeekDate(isNaN(parsed) ? 20 : parsed)
     const [u, s, f, r, q, allUsers, allSubmissions, allInventory] = await Promise.all([
       supabase.from('user_stats').select('user_id', { count: 'exact', head: true }),
       supabase.from('survey_submissions_flat').select('user_id', { count: 'exact', head: true }).eq('week_id', currentWeekId),

@@ -539,6 +539,10 @@ export default function NotificationsPage() {
       {/* Detail Modal */}
       {detailItem && (
         <Modal isOpen onClose={() => setDetailItem(null)} size="md">
+          {(() => {
+            const cfg = getTypeConfig(detailItem.type)
+            const Icon = cfg.icon
+            return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{
@@ -588,6 +592,8 @@ export default function NotificationsPage() {
               </Btn>
             </div>
           </div>
+            )
+          })()}
         </Modal>
       )}
     </PageWrap>

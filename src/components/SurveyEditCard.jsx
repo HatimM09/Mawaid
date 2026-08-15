@@ -19,7 +19,8 @@ export default function SurveyEditCard({
   appSettings = {},
   dayName = '',
   meal = 'lunch',
-  dishIndex = 0
+  dishIndex = 0,
+  maxCount = null
 }) {
   const themes = {
     dark: {
@@ -165,7 +166,7 @@ export default function SurveyEditCard({
                 </p>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button
-                    onClick={() => setCurrentResponse({ status: 'yes', value: typeof response === 'number' ? response : (response?.value || 0) })}
+                    onClick={() => setCurrentResponse({ status: 'yes', value: typeof response === 'number' ? Math.min(maxCount ?? 99, response) : Math.min(maxCount ?? 99, (response?.value || 1)) })}
                     style={{
                       flex: 1,
                       padding: '12px',
@@ -226,11 +227,12 @@ export default function SurveyEditCard({
                     <input
                       type="number"
                       min="0"
+                      max={maxCount ?? 99}
                       name="portionCount"
                       value={currentResponse.value}
                       onChange={(e) => {
                         const val = parseInt(e.target.value, 10) || 0
-                        setCurrentResponse(prev => ({ ...prev, value: val }))
+                        setCurrentResponse(prev => ({ ...prev, value: Math.min(maxCount ?? 99, val) }))
                       }}
                       style={{
                         width: 60,
@@ -248,14 +250,21 @@ export default function SurveyEditCard({
                       aria-label="Portion count"
                     />
                     <button
-                      onClick={() => setCurrentResponse(prev => ({ ...prev, value: Math.min(99, (prev.value || 0) + 1) }))}
+                      onClick={() => setCurrentResponse(prev => ({ ...prev, value: Math.min(maxCount ?? 99, (prev.value || 0) + 1) }))}
                       style={{
                         width: 36, height: 36, borderRadius: 8,
                         border: `1px solid ${t.border}`, background: t.inputBg,
-                        color: t.text, cursor: 'pointer', fontSize: 18, fontWeight: 700,
+                        color: (maxCount != null && (currentResponse.value || 0) >= maxCount) ? t.textSub : t.text,
+                        cursor: (maxCount != null && (currentResponse.value || 0) >= maxCount) ? 'not-allowed' : 'pointer',
+                        fontSize: 18, fontWeight: 700,
                         display: 'flex', alignItems: 'center', justifyContent: 'center'
                       }}
                     >+</button>
+                    {maxCount != null && (
+                      <span style={{ fontSize: 11, color: t.textSub, fontWeight: 600, whiteSpace: 'nowrap', fontFamily: "'DM Sans',sans-serif" }}>
+                        Max: {maxCount}
+                      </span>
+                    )}
                   </div>
                 )}
               </>
