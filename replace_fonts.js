@@ -1,4 +1,4 @@
-const fs = require('fs');
+import fs from 'fs';
 
 const filePath = 'c:\\Users\\Hatim Mithai\\Desktop\\al-mawaid\\al-mawaid-fixed\\src\\App.jsx';
 let content = fs.readFileSync(filePath, 'utf8');

@@ -11,10 +11,11 @@ import { supabase } from '../lib/firebaseClient'
 import { AuthCtx, ThemeCtx, useAuth, useTheme } from './context'
 import { T as SharedT, updateSystemTheme, Modal, SurveyResponseDisplay, Btn as SharedBtn, PackingTVView } from './ui'
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
-import { Scan, X } from 'lucide-react'
+import { Scan, X, RefreshCw } from 'lucide-react'
 import UsersPage from './UsersPage'
 import { getCalendarWeekDate } from '../common/utils'
 import { getSlotDishes } from '../hooks/useSurvey'
+import { fetchUserSurveyRow, fetchAllUserRows } from '../lib/surveyRows'
 import RequestsAdminPage from './RequestsAdminPage'
 import QueriesAdminPage from './QueriesAdminPage'
 import DailySurveyTracking from './DailySurveyTracking'
@@ -331,7 +332,6 @@ function ScanHeaderCard({ staffInfo, onScan, onNotices, currentMeal, mealOverrid
 }
 
 // Need to import RefreshCw
-import { RefreshCw } from 'lucide-react'
 
 export default function KhidmatPortal({ signOut, user }) {
   const [activeTab, setActiveTab] = useState('home')
@@ -410,8 +410,7 @@ export default function KhidmatPortal({ signOut, user }) {
       const dayKey = today.substring(0, 3).toLowerCase()
       const weekId = getCalendarWeekDate()
       
-      const { data: row } = await supabase.from('survey_submissions_flat')
-        .select('*').eq('user_id', userId).eq('week_id', weekId).maybeSingle()
+      const { data: row } = await fetchUserSurveyRow(userId, weekId)
 
       const { data: menuRow } = await supabase
         .from('weekly_menu')
@@ -443,6 +442,7 @@ export default function KhidmatPortal({ signOut, user }) {
       
       setScannedUser({
         ...u,
+        week_id: weekId,
         currentDay: today,
         currentMeal: mealToShow,
         lunch: buildMealData('lunch'),
@@ -856,12 +856,10 @@ function NoThaliTracker() {
       const mealKey = meal === 'lunch' ? 'l' : 'd'
       const statusCol = `${dayKey}_${mealKey}_status`
 
-      const { data, error } = await supabase
-        .from('survey_submissions_flat')
-        .select('user_id, thali_number, email')
-        .eq(statusCol, 'Skipped')
+      const { data: allRows } = await fetchAllUserRows()
+      const data = (allRows || []).filter(r => r[statusCol] === 'Skipped')
 
-      if (error) throw error
+      if (!data) return
 
       // Get names from user_stats
       if (data?.length > 0) {

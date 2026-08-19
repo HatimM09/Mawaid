@@ -1,7 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { supabase } from '../lib/firebaseClient'
-import { useAuth } from '../admin/context'
-import { getSurveyTargetWeek, DAYS } from '../common/utils'
+import { DAYS, parseHm } from '../common/utils'
 
 export const isRotiItem = (dish) => {
   const rotiKeywords = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
@@ -15,11 +13,6 @@ export const getPctColor = (pct) => {
   if (pct === 75) return '#9E9E9E'
   if (pct === 100) return '#4CAF50'
   return undefined
-}
-
-export const isPortionItem = (dish) => {
-  const portionKeywords = ["pulav", "pulao", "dal chawal", "dhal chawal", "biryani", "khichdi", "khichadi", "rice", "pilaf", "polo"]
-  return portionKeywords.some(k => dish.toLowerCase().includes(k))
 }
 
 export const hasUserOverride = (appSettings = {}, userId = null, dayName = null, mealType = null) => {
@@ -59,11 +52,6 @@ export const isSurveyOpen = (appSettings = {}, userId = null) => {
   if (day === 0) return true
   if (day === 1 && hour < close) return true
   return false
-}
-
-const parseHm = (val, defaultH, defaultM) => {
-  const p = (val || '').split(':').map(Number)
-  return (p.length === 2 && !isNaN(p[0]) && !isNaN(p[1])) ? { h: p[0], m: p[1] } : { h: defaultH, m: defaultM }
 }
 
 export const canEditMeal = (dayName, weekId, mealType, appSettings = {}, userId = null) => {
@@ -180,76 +168,9 @@ export const mergeDishSnapshot = (existing, day, meal, dishes) => {
   return obj
 }
 
-export function useSurveyData(weeklyMenu, appSettings = {}) {
-  const { user } = useAuth()
-  const [surveyData, setSurveyData] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const openHour = parseInt(appSettings.survey_open_hour, 10)
-  const currentWeekId = getSurveyTargetWeek(isNaN(openHour) ? 20 : openHour, appSettings.survey_status === 'open')
-
-  const loadSurvey = useCallback(async () => {
-    if (!user) { setLoading(false); return }
-    setLoading(true)
-    try {
-      const { data } = await supabase.from('survey_submissions_flat')
-        .select('*').eq('user_id', user.id)
-        .order('week_id', { ascending: false }).limit(1).maybeSingle()
-      if (data && data.week_id === currentWeekId) {
-        setSurveyData(data)
-      } else {
-        setSurveyData(null)
-      }
-    } catch { setSurveyData(null) }
-    setLoading(false)
-  }, [user, currentWeekId])
-
-  useEffect(() => { loadSurvey() }, [loadSurvey])
-
-  const getSlotStatus = useCallback((day, meal) => {
-    if (!surveyData) return null
-    const dk = day.substring(0, 3).toLowerCase()
-    const mk = meal === 'lunch' ? 'l' : 'd'
-    return surveyData[`${dk}_${mk}_status`] || null
-  }, [surveyData])
-
-  const getDishResponse = useCallback((day, meal, dishIdx) => {
-    if (!surveyData) return null
-    const dk = day.substring(0, 3).toLowerCase()
-    const mk = meal === 'lunch' ? 'l' : 'd'
-    const val = surveyData[`${dk}_${mk}_dish_${dishIdx + 1}`]
-    if (val === undefined || val === null) return null
-    if (val === 'Yes') return 'yes'
-    if (val === 'No') return 'no'
-    if (typeof val === 'string' && val.endsWith('%')) return parseInt(val.replace('%', ''))
-    if (typeof val === 'string' && /^\d+$/.test(val)) return parseInt(val)
-    return val
-  }, [surveyData])
-
-  const getEditCount = useCallback((day, meal) => {
-    if (!surveyData) return 0
-    const dk = day.substring(0, 3).toLowerCase()
-    const mk = meal === 'lunch' ? 'l' : 'd'
-    return (surveyData.edit_metadata || {})[`${dk}_${mk}`] || 0
-  }, [surveyData])
-
-  const dayStatusSummary = DAYS.map((day) => {
-    const dk = day.substring(0, 3).toLowerCase()
-    const lStatus = surveyData?.[`${dk}_l_status`]
-    const dStatus = surveyData?.[`${dk}_d_status`]
-    if (lStatus && dStatus) return 'complete'
-    if (lStatus || dStatus) return 'partial'
-    return 'pending'
-  })
-
-  const refresh = loadSurvey
-
-  return { surveyData, loading, currentWeekId, dayStatusSummary, getSlotStatus, getDishResponse, getEditCount, refresh }
-}
-
 export function useSurveyAutoSave() {
   const [autoSaveStatus, setAutoSaveStatus] = useState('idle')
   const saveTimerRef = useRef(null)
-  const savingRef = useRef(false)
 
   const debouncedSave = useCallback(async (saveFn) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
@@ -279,30 +200,31 @@ export function useSurveyAutoSave() {
   return { autoSaveStatus, scheduleSave, setAutoSaveStatus }
 }
 
-export function useSurveyWindow(appSettings = {}) {
-  const { user } = useAuth()
-  const surveyOpen = isSurveyOpen(appSettings, user?.id)
+// ── Survey window messages (used by member app) ──
+
+export const getSurveyWindowMessage = (appSettings = {}, userId = null) => {
   const openHour = parseInt(appSettings.survey_open_hour, 10)
-  const currentWeekId = getSurveyTargetWeek(isNaN(openHour) ? 20 : openHour, appSettings.survey_status === 'open')
-
-  const isAnyMealEditable = DAYS.some(d =>
-    canEditMeal(d, currentWeekId, 'lunch', appSettings, user?.id) ||
-    canEditMeal(d, currentWeekId, 'dinner', appSettings, user?.id)
-  )
-
-  const getSurveyWindowMessage = () => {
-    const openHour = parseInt(appSettings.survey_open_hour, 10)
-    const closeHour = parseInt(appSettings.survey_close_hour, 10)
-    const open = isNaN(openHour) ? 20 : openHour
-    const close = isNaN(closeHour) ? 11 : closeHour
-    const fmt = h => {
-      const hh = h % 12 === 0 ? 12 : h % 12
-      return `${hh}:00 ${h >= 12 ? 'PM' : 'AM'}`
-    }
-    if (appSettings.survey_status === 'open') return 'Survey window is open (Admin Override)!'
-    if (surveyOpen) return `Survey window is open! (Sat ${fmt(open)} – Mon ${fmt(close)})`
-    return `Survey window opens Saturday ${fmt(open)} and closes Monday ${fmt(close)}.`
+  const closeHour = parseInt(appSettings.survey_close_hour, 10)
+  const open = isNaN(openHour) ? 20 : openHour
+  const close = isNaN(closeHour) ? 11 : closeHour
+  const fmt = h => {
+    const hh = h % 12 === 0 ? 12 : h % 12
+    return `${hh}:00 ${h >= 12 ? 'PM' : 'AM'}`
   }
+  if (appSettings.survey_status === 'open') return 'Survey window is open (Admin Override)!'
+  if (isSurveyOpen(appSettings, userId)) return `Survey window is open! (Sat ${fmt(open)} \u2013 Mon ${fmt(close)})`
+  return `Survey window opens Saturday ${fmt(open)} and closes Monday ${fmt(close)}.`
+}
 
-  return { surveyOpen, isAnyMealEditable, currentWeekId, getSurveyWindowMessage }
+export const formatEditTime = (h, m) => {
+  const period = h >= 12 ? 'PM' : 'AM'
+  let hh = h % 12
+  if (hh === 0) hh = 12
+  return `${hh}${m ? ':' + String(m).padStart(2, '0') : ''} ${period}`
+}
+
+export const getEditWindow = (appSettings = {}, mealType) => {
+  const open = mealType === 'lunch' ? parseHm(appSettings.lunch_edit_open, 20, 0) : parseHm(appSettings.dinner_edit_open, 12, 0)
+  const close = mealType === 'lunch' ? parseHm(appSettings.lunch_edit_close, 11, 0) : parseHm(appSettings.dinner_edit_close, 15, 30)
+  return { open: formatEditTime(open.h, open.m), close: formatEditTime(close.h, close.m) }
 }

@@ -1,5 +1,12 @@
 # Al-Mawaid Releases
 
+## v2.1.3 (versionCode 41) — 2026-08-18
+
+### Live-link (fully linked) build
+- The Android app now loads the web app directly from **https://al-mawaid.vercel.app** (`server.url` in `capacitor.config.ts`, `cleartext: false`) instead of bundling the web assets — every app update ships instantly without a new Play release.
+- Version bumped to 2.1.3 (versionCode 41) so Google Play accepts the new bundle.
+- Signed release AAB: `Al-Mawaid-v2.1.3.aab` (same Al-Mawaid upload cert, CN=Al-Mawaid).
+
 ## v2.1.2 (versionCode 40) — 2026-08-15
 
 ### Survey integrity

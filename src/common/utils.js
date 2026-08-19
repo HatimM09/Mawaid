@@ -1,24 +1,7 @@
 // Shared utilities for Al-Mawaid
 
-/**
- * Returns the Monday of the target survey week as YYYY-MM-DD.
- * During the survey window (Saturday from surveyOpenHour through Sunday),
- * it advances to the NEXT Monday since users are filling for the upcoming week.
- * The open/close hour come from app_settings.survey_open_hour (default 20 = 8PM).
- */
-export const getWeekDate = (surveyOpenHour = 20) => {
-  const now = new Date()
-  const day = now.getDay()
-  const hour = now.getHours()
-  const openHour = parseInt(surveyOpenHour, 10)
-  const open = isNaN(openHour) ? 20 : openHour
-  let diff = now.getDate() - day + (day === 0 ? -6 : 1)
-  if (day === 0 || (day === 6 && hour >= open)) {
-    diff += 7
-  }
-  const monday = new Date(now.setDate(diff))
-  return monday.toISOString().split('T')[0]
-}
+// @deprecated — use getSurveyTargetWeek() instead. Kept only for backward compatibility.
+export const getWeekDate = (surveyOpenHour = 20) => getSurveyTargetWeek(surveyOpenHour, false)
 
 /**
  * Returns the Monday of the survey target week (YYYY-MM-DD) — the week the
@@ -62,6 +45,7 @@ export const getCalendarWeekDate = () => {
 }
 
 export const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+export const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat']
 export const MEALS = ['lunch', 'dinner']
 
 /**
@@ -112,6 +96,17 @@ export const parseDishValue = (val) => {
   return parseInt(val) || 0
 }
 
+// ── Time parsing ──
+// Parse "HH:MM" strings into {h, m} — used by survey windows, edit windows,
+// and automation timing across the whole app. Centralised here so every
+// consumer shares one implementation.
+export const parseHm = (val, defaultH, defaultM) => {
+  const p = (val || '').split(':').map(Number)
+  return (p.length === 2 && !isNaN(p[0]) && !isNaN(p[1]))
+    ? { h: p[0], m: p[1] }
+    : { h: defaultH, m: defaultM }
+}
+
 export const playNotificationChime = () => {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)()
@@ -149,4 +144,27 @@ export const playNotificationChime = () => {
   } catch {
     // Audio not available — silently ignore
   }
+}
+
+// ── Stop-thali timeline helper ──
+// A stop WITH a to_date is bounded: "no thali" only inside [from_date, to_date].
+// A stop without a to_date stays active until a newer resume/stop overrides it.
+export const isStoppedOnDay = (reqs, selDateStr, meal) => {
+  let stopped = false
+  ;(reqs || [])
+    .slice()
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    .forEach(sr => {
+      const coversMeal = !sr.meal_type || sr.meal_type === 'both' || sr.meal_type === meal
+      if (!coversMeal) return
+      const from = sr.from_date ? String(sr.from_date) : null
+      const to = sr.to_date ? String(sr.to_date) : null
+      if (from && selDateStr < from) return
+      if (sr.kind === 'resume') {
+        stopped = false
+      } else if (sr.kind === 'stop') {
+        stopped = to ? selDateStr <= to : true
+      }
+    })
+  return stopped
 }

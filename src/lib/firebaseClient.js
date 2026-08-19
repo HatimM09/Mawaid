@@ -16,10 +16,8 @@ const CLOUDINARY = {
   uploadPreset: import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'al-mawaid-unsigned',
 }
 
-export const auth = supabaseClient.auth
-
-// ── Storage helpers (Cloudinary) ──
-export const fbStorage = {
+// ── Storage helpers (Cloudinary) — used internally by the Proxy ──
+const fbStorage = {
   from() {
     return {
       upload: async (_path, file) => {
@@ -131,6 +129,7 @@ export async function rpcDeleteUser(payload) {
     await supabaseClient.from('user_stats').delete().eq('user_id', p_user_id)
     await supabaseClient.from('notifications').delete().eq('user_id', p_user_id)
     await supabaseClient.from('push_subscriptions').delete().eq('user_id', p_user_id)
+    await supabaseClient.from('survey_day_responses').delete().eq('user_id', p_user_id)
     await supabaseClient.from('survey_submissions_flat').delete().eq('user_id', p_user_id)
     await supabaseClient.from('thali_requests').delete().eq('user_id', p_user_id)
     await supabaseClient.from('daily_feedback').delete().eq('user_id', p_user_id)
@@ -151,53 +150,6 @@ export async function rpcResetPassword(email) {
   } catch (e) {
     return { data: null, error: e }
   }
-}
-
-// ── Realtime channel helper (Supabase Realtime) ──
-
-export function createChannel(name) {
-  let channel = null
-  const subs = []
-  return {
-    on(type, config, cb) {
-      if (type === 'postgres_changes') {
-        const table = config.table
-        const filter = config.filter || ''
-        const event = config.event || '*'
-        if (!channel) {
-          channel = supabaseClient.channel(name)
-        }
-        const sub = channel.on(
-          'postgres_changes',
-          { event, schema: 'public', table, filter },
-          (payload) => cb({ new: payload.new, old: payload.old, eventType: payload.eventType })
-        )
-        subs.push(sub)
-      }
-      return this
-    },
-    subscribe(cb) {
-      if (channel) {
-        channel.subscribe((status) => {
-          if (cb) cb(status === 'SUBSCRIBED' ? 'SUBSCRIBED' : status)
-        })
-      } else {
-        if (cb) cb('SUBSCRIBED')
-      }
-      return this
-    },
-    unsubscribe() {
-      if (channel) {
-        supabaseClient.removeChannel(channel)
-        channel = null
-      }
-      subs.length = 0
-    }
-  }
-}
-
-export function removeChannel(ch) {
-  if (ch?.unsubscribe) ch.unsubscribe()
 }
 
 // ── Invoke Cloud Function helper ──

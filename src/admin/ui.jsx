@@ -1,6 +1,7 @@
 // src/admin/ui.jsx — shared admin UI primitives
 import React, { useState, useEffect } from 'react'
-import { AlertCircle, X, Maximize2, Minimize2 } from 'lucide-react'
+import { AlertCircle, X, Maximize2, Minimize2, Trash2 } from 'lucide-react'
+import { eraseSurveySlot } from '../lib/surveyRows'
 
 export const T = {
   bg: 'var(--bg-deep)',
@@ -511,6 +512,7 @@ const pctColor = (val, isRoti, rotiVal) => {
 
 export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverride }) => {
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [isErasing, setIsErasing] = useState(false)
 
   const toggleFullscreen = async () => {
     if (!document.fullscreenElement) {
@@ -567,6 +569,27 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
   const mealLabels = { lunch: 'LUNCH', dinner: 'DINNER' }
   const mealIcons = { lunch: '☀️', dinner: '🌙' }
 
+  // Admin: erase this member's displayed-meal response for the displayed day.
+  // Clears survey_day_responses + flat mirror via the erase_survey_slot RPC.
+  const canErase = !!(user?.user_id && user?.week_id)
+  const handleErase = async () => {
+    if (!canErase || isErasing) return
+    const who = user?.name || ('#' + (user?.thali_number || 'member'))
+    if (!window.confirm(`Erase the ${mealLabels[displayMeal]} response for ${who}?\n\nThis clears their ${displayMeal} choices for this day and cannot be undone.`)) return
+    setIsErasing(true)
+    try {
+      const dayKey = String(day || '').substring(0, 3).toLowerCase()
+      const { error } = await eraseSurveySlot(user.user_id, user.week_id, dayKey, displayMeal)
+      if (error) throw error
+      onClose()
+    } catch (e) {
+      console.error(e)
+      alert('Erase failed: ' + (e?.message || 'make sure migration 039 has been applied.'))
+    } finally {
+      setIsErasing(false)
+    }
+  }
+
   const getResponseStyle = (value) => {
     if (value === null || value === undefined) {
       return { bg: 'rgba(255,255,255,0.02)', border: 'rgba(255,255,255,0.06)', label: '—', labelColor: 'rgba(255,255,255,0.15)', glow: null, typeLabel: '', typeColor: 'transparent' }
@@ -600,6 +623,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
       display: 'flex', flexDirection: 'column',
       fontFamily: "'Space Grotesk', 'Inter', sans-serif"
     }}>
+      <style>{`.spin { animation: spin 1s linear infinite } @keyframes spin { to { transform: rotate(360deg) } }`}</style>
       {/* Fullscreen toggle — top left */}
       <button
         onClick={toggleFullscreen}
@@ -631,6 +655,30 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
       >
         {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
       </button>
+
+      {/* Admin erase — clears this member's displayed-meal response for the day */}
+      {canErase && (
+        <button
+          onClick={handleErase}
+          disabled={isErasing}
+          title={`Erase ${mealLabels[displayMeal]} response for this member`}
+          aria-label={`Erase ${mealLabels[displayMeal]} response`}
+          style={{
+            position: 'fixed', top: '1.5vh', right: '7vw', zIndex: 10000,
+            background: isErasing ? 'rgba(239,68,68,0.2)' : 'rgba(239, 68, 68, 0.12)',
+            border: '1.5px solid rgba(239, 68, 68, 0.4)',
+            color: '#fca5a5', width: 44, height: 44, borderRadius: '50%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 18, cursor: isErasing ? 'wait' : 'pointer',
+            transition: 'all 0.2s', backdropFilter: 'blur(20px)',
+            boxShadow: '0 0 16px rgba(239,68,68,0.15)'
+          }}
+          onMouseEnter={e => { if (!isErasing) { e.currentTarget.style.background = 'rgba(239,68,68,0.25)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.7)' } }}
+          onMouseLeave={e => { if (!isErasing) { e.currentTarget.style.background = 'rgba(239,68,68,0.12)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.4)' } }}
+        >
+          {isErasing ? <span className="spin">⟳</span> : <Trash2 size={18} />}
+        </button>
+      )}
 
       {/* Close button */}
       <button onClick={onClose} style={{

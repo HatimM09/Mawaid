@@ -5,7 +5,8 @@ import { useAuth, useTheme } from '../admin/context'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { DAYS, getSurveyTargetWeek } from '../common/utils'
 import { isRotiItem, isCountInput, canEditMeal, isSurveyOpen, useSurveyAutoSave, normalizeDishValue, denormalizeDishValue, hasUserOverride, getPctColor, mergeDishSnapshot, getSlotDishes } from '../hooks/useSurvey'
-import { submitSurveyRow } from '../lib/submitSurvey'
+import { submitSurveyRow, beginSurvey } from '../lib/submitSurvey'
+import { fetchLatestUserSurveyRow, fetchUserSurveyRow } from '../lib/surveyRows'
 
 // Fallback palette (deep dark) — the live component derives its palette from the
 // active app theme via buildSurveyTheme(useTheme()), so the pop-up and its cards
@@ -103,8 +104,12 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   // ── NEW UX STATE ──
   const [showIntro, setShowIntro] = useState(false)
   const [errorToast, setErrorToast] = useState(null)
+  const [syncMsg, setSyncMsg] = useState(null)
   const [showSuccess, setShowSuccess] = useState(false)
   const [viewDay, setViewDay] = useState(DAYS[0])
+  // Premium submit-result popup: exact status shown when the final submit
+  // button is hit — filled (success celebration), missing slots, or an error.
+  const [submitResult, setSubmitResult] = useState(null)
   // Day-scoped flow (opened from a Survey-page day card): first show the
   // Lunch/Dinner picker, then the chosen meal's dish-card editor.
   const [mealPicked, setMealPicked] = useState(false)
@@ -191,7 +196,12 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   const totalSlots = slotList.length
   const currentSlot = Math.max(0, slotList.findIndex(s => s.day === currentDay && s.meal === currentMeal))
   const isLast = currentSlot === slotList.length - 1
-  const dishes = menu[currentMeal] || []
+  // Dish names for the current slot. Prefer the live menu (so a newly published
+  // dish can still be answered), but fall back to the saved dish_snapshot — an
+  // Applied slot must keep showing what the user selected even if the admin has
+  // since changed or unpublished the week's menu rows.
+  const liveDishes = menu[currentMeal] || []
+  const dishes = liveDishes.length > 0 ? liveDishes : getSlotDishes(existingData, currentDay, currentMeal, [])
   const hasDishes = dishes.length > 0
   const allDishesAnswered = wantsFood && dishes.every(dish => {
     const resp = responses[dish]
@@ -202,12 +212,20 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     return typeof resp === 'number'
   })
 
+  // A day counts as complete only when EVERY meal the user actually has in this
+  // fill flow is saved. Full-week users have both meals every day (unchanged);
+  // override users granted only lunch or only dinner per day must not show as
+  // "partial" forever just because the un-granted meal was never answered.
   const dayStatusSummary = DAYS.map((day) => {
     const dk = day.substring(0, 3).toLowerCase()
-    const lStatus = existingData?.[`${dk}_l_status`]
-    const dStatus = existingData?.[`${dk}_d_status`]
-    if (lStatus && dStatus) return 'complete'
-    if (lStatus || dStatus) return 'partial'
+    const daySlots = slotList.filter(s => s.day === day)
+    if (daySlots.length === 0) return 'pending'
+    const statuses = daySlots.map(s => {
+      const mk = s.meal === 'lunch' ? 'l' : 'd'
+      return existingData?.[`${dk}_${mk}_status`]
+    })
+    if (statuses.every(Boolean)) return 'complete'
+    if (statuses.some(Boolean)) return 'partial'
     return 'pending'
   })
 
@@ -246,6 +264,13 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     return () => clearTimeout(t)
   }, [errorToast])
 
+  // ── AUTO-CLEAR "Synced ✓" FEEDBACK ──
+  useEffect(() => {
+    if (!syncMsg) return
+    const t = setTimeout(() => setSyncMsg(null), 2200)
+    return () => clearTimeout(t)
+  }, [syncMsg])
+
   const loadExisting = useCallback(async () => {
     try {
       {
@@ -256,22 +281,23 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
           setSnackDefaults(prev => (prev || sd))
         }
       }
-      const { data } = await supabase.from('survey_submissions_flat')
-        .select('*').eq('user_id', user?.id)
-        .order('week_id', { ascending: false }).limit(1).maybeSingle()
+      const { data } = await fetchLatestUserSurveyRow(user?.id)
       let existing = null
       if (data && data.week_id === currentWeekId) existing = data
       setExistingData(existing)
       setDataLoaded(true)
+      // Survey button was clicked and this week has no saved response yet —
+      // create the week's six per-day rows (survey_day_responses) right away.
       const localSubmitted = localStorage.getItem(`survey_submitted_${currentWeekId}_${user?.id}`) === '1'
       const allDone = existing && slotList.every(slot => {
         const dk = slot.day.substring(0, 3).toLowerCase()
         const mk = slot.meal === 'lunch' ? 'l' : 'd'
         return existing[`${dk}_${mk}_status`]
       })
-      // An admin override means the user may re-select their survey — never lock it as submitted
-      setSurveySubmitted(userHasOverride ? false : (!!allDone || localSubmitted))
-      if (existing && surveyOpen && !allDone && !localSubmitted) {
+      // For override users: direct filling mode only (do not show edit view screen)
+      const isSubmitted = userHasOverride ? false : (!!allDone || localSubmitted)
+      setSurveySubmitted(isSubmitted)
+      if (existing && !isSubmitted) {
         for (const slot of slotList) {
           const dk = slot.day.substring(0, 3).toLowerCase()
           const mk = slot.meal === 'lunch' ? 'l' : 'd'
@@ -285,13 +311,29 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     } catch {
       setDataLoaded(true)
     }
-  }, [user, currentWeekId, surveyOpen, userData.thali_no, slotList])
+  }, [user, currentWeekId, userData.thali_no, slotList])
 
   useEffect(() => { loadExisting() }, [loadExisting])
 
+  // ── LIVE SYNC: the week's row changing anywhere (this device, another
+  // device, an admin) is reflected in the open modal within seconds. ──
+  useEffect(() => {
+    if (!user?.id) return
+    const ch = supabase.channel(`survey-modal-sync-${user.id}-${currentWeekId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'survey_day_responses',
+        filter: `user_id=eq.${user.id}`,
+      }, async () => {
+        const { data } = await fetchUserSurveyRow(user?.id, currentWeekId)
+        if (data) setExistingData(data)
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(ch) }
+  }, [user?.id, currentWeekId])
+
   const populateFromExisting = useCallback(() => {
     justLoadedRef.current = true
-    if (!existingData) { setWantsFood(null); setResponses({}); return }
+    if (!existingData) { setWantsFood(null); wantsFoodRef.current = null; setResponses({}); return }
     const statusKey = `${dayKey}_${mealKey}_status`
     const status = existingData[statusKey]
     if (status) {
@@ -316,7 +358,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   useEffect(() => {
     if (!dataLoaded) return
     populateFromExisting()
-  }, [currentDayIndex, currentMeal, dataLoaded, editResponseMode])
+  }, [currentDayIndex, currentMeal, dataLoaded, editResponseMode, populateFromExisting])
 
   // ── Deep-link: when opened from a Survey-page day card, scope the modal to
   // that day — first a Lunch/Dinner picker, then the chosen meal's editor. ──
@@ -332,6 +374,34 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     setMealPicked(false)
     setEditResponseMode(false)
   }, [dataLoaded, initialDay])
+
+  // ── Override card entry: open directly on the member's FIRST granted slot
+  // (or the first granted slot still missing a response), never on an
+  // un-granted Monday — a subset grant must present its card straight away,
+  // and an all-days grant behaves exactly like the normal full-week flow.
+  // Only positions on open: once the member is already ON a granted slot, OR
+  // is actively filling (wantsFood set / responses present), the effect stands
+  // down so refetches after a save never yank them away mid-selection. ──
+  useEffect(() => {
+    if (!dataLoaded || !userHasOverride || initialDay) return
+    // Don't re-position while the user is actively selecting dishes — this
+    // prevents a Realtime/existingData refresh from jumping them to dinner
+    // in the middle of filling out the lunch card (or vice-versa).
+    if (wantsFood !== null || Object.keys(responses).length > 0) return
+    const alreadyOnGranted = slotList.some(s => s.day === currentDay && s.meal === currentMeal)
+    if (alreadyOnGranted) return
+    const first = slotList[0]
+    if (!first) return
+    const missing = slotList.find(s => {
+      const dk = s.day.substring(0, 3).toLowerCase()
+      const mk = s.meal === 'lunch' ? 'l' : 'd'
+      return !existingData?.[`${dk}_${mk}_status`]
+    })
+    const target = missing || first
+    setCurrentDayIndex(DAYS.indexOf(target.day))
+    setCurrentMeal(target.meal)
+    setViewDay(target.day)
+  }, [dataLoaded, userHasOverride, initialDay, slotList, existingData, currentDay, currentMeal, wantsFood, responses])
 
   // Day-scoped picker: choosing a meal opens that meal's dish-card editor.
   const handlePickMeal = (meal) => {
@@ -404,34 +474,96 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   }, [wantsFood, allDishesAnswered])
 
   const saveCurrentIfNeeded = useCallback(async () => {
-    if (wantsFood === null || loading) return
+    // Locked slots (edit window closed) can't be changed, and post-submit edit
+    // mode only persists via the explicit "Save Edit" button — never auto-save
+    // while just navigating between menus.
+    if (wantsFood === null || loading || slotLocked || editResponseMode) return null
     return saveCurrentSlot()
-  }, [wantsFood, loading])
+  }, [wantsFood, loading, slotLocked, editResponseMode])
 
-  const goToPrev = async () => {
-    if (currentSlot === 0) return
-    if (!guardAnswered()) return
-    await saveCurrentIfNeeded()
-    const prev = slotList[currentSlot - 1]
-    setEditResponseMode(false)
-    setAnimatingDayDir('left')
-    setCurrentDayIndex(DAYS.indexOf(prev.day))
-    setCurrentMeal(prev.meal)
+  const moveToSlot = (slot, dir) => {
+    setAnimatingDayDir(dir)
+    setCurrentDayIndex(DAYS.indexOf(slot.day))
+    setCurrentMeal(slot.meal)
+    setViewDay(slot.day)
     setWantsFood(null); setResponses({})
     setTimeout(() => setAnimatingDayDir(null), 350)
   }
 
+  const goToPrev = async () => {
+    if (currentSlot === 0) return
+    if (!slotLocked && !editResponseMode && !guardAnswered()) return
+    await saveCurrentIfNeeded()
+    // Post-submit edit mode keeps editing the previous slot; fill/browse moves
+    // plainly (lock guards are skipped so saved slots stay readable).
+    setEditResponseMode(editResponseMode)
+    moveToSlot(slotList[currentSlot - 1], 'left')
+  }
+
   const goToNext = async () => {
     if (isLast) return
-    if (!guardAnswered()) return
-    await saveCurrentIfNeeded()
-    const next = slotList[currentSlot + 1]
-    setEditResponseMode(false)
-    setAnimatingDayDir('right')
-    setCurrentDayIndex(DAYS.indexOf(next.day))
-    setCurrentMeal(next.meal)
-    setWantsFood(null); setResponses({})
-    setTimeout(() => setAnimatingDayDir(null), 350)
+    if (!slotLocked && !editResponseMode && !guardAnswered()) return
+    const savedStatus = await saveCurrentIfNeeded()
+    // Day-card gate: the current day's card must have BOTH meals answered and
+    // synced before advancing to the next day — no skipping half-finished days.
+    // Override users may be granted ONLY lunch or ONLY dinner per day, so the
+    // gate only applies when both meals actually belong to this fill flow;
+    // a dinner-only (or lunch-only) day is complete once its one meal is saved.
+    if (!slotLocked && !editResponseMode && currentMeal === 'dinner') {
+      const next = slotList[currentSlot + 1]
+      if (next && next.day !== currentDay) {
+        const dayHasLunch = slotList.some(s => s.day === currentDay && s.meal === 'lunch')
+        const dayHasDinner = slotList.some(s => s.day === currentDay && s.meal === 'dinner')
+        if (dayHasLunch && dayHasDinner) {
+          const dk = currentDay.substring(0, 3).toLowerCase()
+          const lunchStatus = existingData?.[`${dk}_l_status`]
+          const dinnerStatus = savedStatus || existingData?.[`${dk}_d_status`]
+          if (!lunchStatus || !dinnerStatus) {
+            window.alert("⚠️ Please complete this day's card — both Lunch and Dinner must be answered before moving on.")
+            return
+          }
+        }
+      }
+    }
+    // Post-submit edit mode keeps editing the previous slot; fill/browse moves
+    // plainly (lock guards are skipped so saved slots stay readable).
+    setEditResponseMode(editResponseMode)
+    moveToSlot(slotList[currentSlot + 1], 'right')
+  }
+
+  // Build the day-scoped write payload from the current slot + form state.
+  // One builder for BOTH the fill-flow save and the post-submit edit save, so
+  // the two paths can never drift apart (single audited write path).
+  const buildUpdateObj = (isEdit = false) => {
+    const updateObj = {
+      user_id: user?.id, week_id: currentWeekId, day: dayKey,
+      thali_number: userData.thali_no, email: userData.email || '',
+      updated_at: new Date().toISOString(),
+      dish_snapshot: mergeDishSnapshot(existingData, currentDay, currentMeal, dishes),
+      _isOverride: userHasOverride || false
+    }
+    const status = wantsFoodRef.current ? 'Applied' : 'Skipped'
+    updateObj[`${dayKey}_${mealKey}_status`] = status
+    const currentEditCount = existingData?.edit_metadata?.[`${dayKey}_${mealKey}`] || 0
+    const editMeta = { ...(existingData?.edit_metadata || {}), [`${dayKey}_${mealKey}`]: currentEditCount + 1 }
+    // Display marker for the submitted-view badge — informational only, never a gate.
+    if (isEdit) editMeta[`${dayKey}_${mealKey}_edited`] = true
+    updateObj.edit_metadata = editMeta
+    if (status === 'Applied') {
+      dishes.forEach((dish, idx) => {
+        const val = responses[dish]
+        const isCount = isCountInput(appSettings, currentDay, currentMeal, idx)
+        if (val !== undefined) updateObj[`${dayKey}_${mealKey}_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCount)
+      })
+    }
+    return updateObj
+  }
+
+  // Re-read the week's row after a write so every reader in the modal
+  // (day list, review, day-card gate) sees the freshly committed values.
+  const refetchExisting = async () => {
+    const { data: refreshed } = await fetchUserSurveyRow(user?.id, currentWeekId)
+    if (refreshed) setExistingData(refreshed)
   }
 
   const saveAndLockEdit = async () => {
@@ -440,70 +572,33 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     setLoading(true)
     try {
-      const updateObj = {
-        user_id: user?.id, week_id: currentWeekId,
-        thali_number: userData.thali_no, email: userData.email || '',
-        updated_at: new Date().toISOString(),
-        dish_snapshot: mergeDishSnapshot(existingData, currentDay, currentMeal, dishes)
-      }
-      const status = wantsFoodRef.current ? 'Applied' : 'Skipped'
-      updateObj[`${dayKey}_${mealKey}_status`] = status
-      const currentEditCount = existingData?.edit_metadata?.[`${dayKey}_${mealKey}`] || 0
-      const editMeta = { ...(existingData?.edit_metadata || {}), [`${dayKey}_${mealKey}`]: currentEditCount + 1 }
-      // Display marker for the submitted-view badge — informational only, never a gate.
-      editMeta[`${dayKey}_${mealKey}_edited`] = true
-      updateObj.edit_metadata = editMeta
-      if (wantsFoodRef.current) {
-        dishes.forEach((dish, idx) => {
-          const val = responses[dish]
-          const isCount = isCountInput(appSettings, currentDay, currentMeal, idx)
-          if (val !== undefined) updateObj[`${dayKey}_${mealKey}_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCount)
-        })
-      }
-      const { error } = await submitSurveyRow(updateObj)
+      const { error } = await submitSurveyRow(buildUpdateObj(true))
       if (error) throw error
-      const { data: refreshed } = await supabase.from('survey_submissions_flat')
-        .select('*').eq('user_id', user?.id).eq('week_id', currentWeekId).maybeSingle()
-      if (refreshed) setExistingData(refreshed)
+      await refetchExisting()
       setEditResponseMode(false)
       setViewDay(currentDay)
+      setSyncMsg(`Synced ✓ ${dayKey} ${mealKey}`)
     } catch (err) {
       console.error('Save edit error:', err)
-      setErrorToast('Failed to save edit. Please try again.')
+      setErrorToast(`Failed to save edit: ${err?.message || 'Please try again.'} Your answer is kept locally and the team has been notified.`)
     } finally { setLoading(false) }
   }
 
   const saveCurrentSlot = async () => {
-    if (wantsFoodRef.current === null && wantsFood === null) return
-    if (loading) return
+    if (wantsFoodRef.current === null && wantsFood === null) return null
+    if (loading) return null
     setLoading(true)
     try {
-      const updateObj = {
-        user_id: user?.id, week_id: currentWeekId,
-        thali_number: userData.thali_no, email: userData.email || '',
-        updated_at: new Date().toISOString(),
-        dish_snapshot: mergeDishSnapshot(existingData, currentDay, currentMeal, dishes)
-      }
-      const status = wantsFoodRef.current === false ? 'Skipped' : (wantsFood === false ? 'Skipped' : 'Applied')
-      updateObj[`${dayKey}_${mealKey}_status`] = status
-      const currentEditCount = existingData?.edit_metadata?.[`${dayKey}_${mealKey}`] || 0
-      const editMeta = { ...(existingData?.edit_metadata || {}), [`${dayKey}_${mealKey}`]: currentEditCount + 1 }
-      updateObj.edit_metadata = editMeta
-      if (status === 'Applied') {
-        dishes.forEach((dish, idx) => {
-          const val = responses[dish]
-          const isCount = isCountInput(appSettings, currentDay, currentMeal, idx)
-          if (val !== undefined) updateObj[`${dayKey}_${mealKey}_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCount)
-        })
-      }
-      const { error } = await submitSurveyRow(updateObj)
+      const { error } = await submitSurveyRow(buildUpdateObj(false))
       if (error) throw error
-      const { data: refreshed } = await supabase.from('survey_submissions_flat')
-        .select('*').eq('user_id', user?.id).eq('week_id', currentWeekId).maybeSingle()
-      if (refreshed) setExistingData(refreshed)
+      await refetchExisting()
+      const status = wantsFoodRef.current ? 'Applied' : 'Skipped'
+      setSyncMsg(`Synced ✓ ${dayKey} ${mealKey}`)
+      return status
     } catch (err) {
       console.error('Save error:', err)
-      setErrorToast('Failed to save. Your draft is preserved locally.')
+      setErrorToast(`Failed to save: ${err?.message || 'Your draft is preserved locally.'} The team has been notified.`)
+      return null
     } finally { setLoading(false) }
   }
 
@@ -558,17 +653,24 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     // the missing-slot check below catches anything still unfilled.
     if (!reviewMode) {
       if (wantsFood === null) {
-        window.alert('⚠️ Please choose Yes or No for this meal before submitting.')
+        setSubmitResult({ type: 'missing', title: '⚠️ This slot is not answered', message: 'Please choose Yes or No for this meal before submitting.' })
         return
       }
       if (wantsFood === true && !allDishesAnswered) {
-        window.alert('⚠️ Please answer all dishes before submitting your weekly survey.')
+        setSubmitResult({ type: 'missing', title: '⚠️ Not every dish is answered', message: 'Please answer all the dishes for this meal before submitting your weekly survey.' })
         return
       }
     }
     await saveCurrentSlot()
-    const { data: fresh } = await supabase.from('survey_submissions_flat')
-      .select('*').eq('user_id', user?.id).eq('week_id', currentWeekId).maybeSingle()
+    let fresh
+    try {
+      const { data } = await fetchUserSurveyRow(user?.id, currentWeekId)
+      fresh = data
+    } catch (e) {
+      console.error('Re-fetch error:', e)
+      setSubmitResult({ type: 'error', title: '❌ Something went wrong', message: e?.message || 'Could not verify your saved answers. Your answers are kept locally — please try again.' })
+      return
+    }
     if (fresh) setExistingData(fresh)
     const missing = slotList.filter(slot => {
       const dk = slot.day.substring(0, 3).toLowerCase()
@@ -576,11 +678,22 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
       return !(fresh?.[`${dk}_${mk}_status`])
     })
     if (missing.length > 0) {
-      const list = missing.slice(0, 3).map(s => `${s.day.substring(0, 3).toUpperCase()} ${s.meal}`).join(', ')
-      window.alert(`⚠️ Your survey is not complete yet — still missing: ${list}${missing.length > 3 ? '…' : ''}. Fill those slots first, then submit.`)
+      setSubmitResult({
+        type: 'missing',
+        title: '⚠️ Survey not fully filled',
+        message: `Your survey is missing ${missing.length} slot${missing.length === 1 ? '' : 's'} before it can be submitted. Fill them first, then tap Submit again.`,
+        missingSlots: missing,
+        filled: slotList.length - missing.length,
+        total: slotList.length,
+      })
       return
     }
-    await finalizeSubmit()
+    try {
+      await finalizeSubmit()
+    } catch (e) {
+      console.error('Confirm submit error:', e)
+      setSubmitResult({ type: 'error', title: '❌ Something went wrong', message: e?.message || 'Your survey could not be submitted. Your answers are kept locally — please try again.' })
+    }
   }
 
   // ── REVIEW STEP: reached from the final slot (Saturday dinner). Saves the
@@ -770,6 +883,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
           const isActive = day === viewDay
           const editable = dayCanBeEdited(day)
           const firstSlot = slotList.find(s => s.day === day) || slotList[0]
+          const mealsInFlow = slotList.filter(s => s.day === day).length
           const statusIcon = isComplete ? '✓✓' : isPartial ? '◐' : '○'
           const statusColor = isComplete ? THEME.yesColor : isPartial ? '#FF9800' : THEME.textSub
           return (
@@ -799,7 +913,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
                 <div style={{ fontSize: 15, fontWeight: 800, color: THEME.text, fontFamily: "'Playfair Display',serif" }}>{day}</div>
                 <div style={{ fontSize: 11, color: THEME.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ color: statusColor, fontWeight: 800 }}>{statusIcon}</span>
-                  <span>{isComplete ? 'Both meals saved' : isPartial ? 'Partially filled' : 'Not filled'}</span>
+                  <span>{isComplete ? (mealsInFlow > 1 ? 'Both meals saved' : 'Meal saved') : isPartial ? 'Partially filled' : 'Not filled'}</span>
                 </div>
               </div>
               {editable ? (
@@ -1213,17 +1327,18 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {dishList.length > 0 ? dishList.map((dish, i) => {
                     const v = existingData?.[`${dk}_${mk}_dish_${i + 1}`]
-                    if (!v || v === 'No' || v === 'no') return null
                     const isCount = isCountInput(appSettings, viewDay, meal, i)
                     const isRoti = isRotiItem(dish)
+                    const skipped = v === undefined || v === null || v === 'No' || v === 'no'
+                    const isPct = !skipped && !isCount && !isRoti && (typeof v === 'number' || String(v).endsWith('%'))
                     return (
                       <span key={i} style={{
                         fontSize: 10, fontWeight: 700, fontFamily: "'DM Sans',sans-serif",
-                        color: isRoti ? '#4CAF50' : THEME.accent,
-                        background: isRoti ? 'rgba(76,175,80,0.12)' : THEME.accentBg,
+                        color: skipped ? THEME.noColor : isRoti ? '#4CAF50' : THEME.accent,
+                        background: skipped ? THEME.noBg : isRoti ? 'rgba(76,175,80,0.12)' : THEME.accentBg,
                         padding: '3px 8px', borderRadius: 6,
                       }}>
-                        {dish}: <strong>{isCount ? `${v} ppl` : isRoti ? '✅' : `${v}%`}</strong>
+                        {dish}: <strong>{skipped ? '❌' : isRoti ? '✅' : isCount ? `${v} ppl` : isPct ? `${v}%` : v}</strong>
                       </span>
                     )
                   }) : <span style={{ fontSize: 11, color: THEME.textSub, fontStyle: 'italic', fontFamily: "'DM Sans',sans-serif" }}>Menu being prepared</span>}
@@ -1304,6 +1419,63 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
             onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = loading ? 'none' : `0 8px 20px ${THEME.accentBg}` }}
           >{loading ? 'Submitting...' : '✅ Submit Weekly Survey'}</button>
         </div>
+      </div>
+    )
+  }
+
+  // ── LOCKED SLOT VIEW: shown when a slot already has a saved response but the
+  // edit window is closed — the response stays readable (read-only) and the user
+  // can still move between menus via the nav row. ──
+  const LockedSlotView = () => {
+    const savedStatus = existingData?.[`${dayKey}_${mealKey}_status`]
+    const isApplied = savedStatus === 'Applied'
+    const dishList = getSlotDishes(existingData, currentDay, currentMeal, menu[currentMeal] || [])
+    const fmtVal = (v, isCount, isRoti) => {
+      if (v === undefined || v === null) return null
+      if (v === 'No' || v === 'no') return '❌'
+      if (isRoti) return '✅'
+      if (isCount) return `${v} ppl`
+      if (typeof v === 'number') return `${v}%`
+      if (typeof v === 'string' && v.endsWith('%')) return v
+      return String(v)
+    }
+    return (
+      <div style={{
+        marginBottom: 16, padding: 14, borderRadius: 14,
+        background: isApplied
+          ? 'linear-gradient(135deg, rgba(76,175,80,0.08), rgba(76,175,80,0.02))'
+          : 'linear-gradient(135deg, rgba(244,67,54,0.06), rgba(244,67,54,0.01))',
+        border: `1.5px solid ${isApplied ? '#4CAF50' : '#F4433660'}`,
+        fontFamily: "'DM Sans',sans-serif",
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: isApplied ? '#4CAF50' : '#F44336' }}>
+            {isApplied ? '✅ Your saved response' : '❌ Skipped — no meal this slot'}
+          </span>
+          <span style={{ fontSize: 9.5, fontWeight: 700, color: THEME.textSub, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+            🔒 read-only · window closed
+          </span>
+        </div>
+        {isApplied && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {dishList.length > 0 ? dishList.map((dish, i) => {
+              const v = existingData?.[`${dayKey}_${mealKey}_dish_${i + 1}`]
+              const isCount = isCountInput(appSettings, currentDay, currentMeal, i)
+              const isRoti = isRotiItem(dish)
+              const skipped = v === undefined || v === null || v === 'No' || v === 'no'
+              return (
+                <span key={i} style={{
+                  fontSize: 10, fontWeight: 700,
+                  color: skipped ? THEME.noColor : isRoti ? '#4CAF50' : THEME.accent,
+                  background: skipped ? THEME.noBg : isRoti ? 'rgba(76,175,80,0.12)' : THEME.accentBg,
+                  padding: '3px 8px', borderRadius: 6,
+                }}>
+                  {dish}: <strong>{skipped ? '❌' : fmtVal(v, isCount, isRoti)}</strong>
+                </span>
+              )
+            }) : <span style={{ fontSize: 11, color: THEME.textSub, fontStyle: 'italic' }}>Menu being prepared</span>}
+          </div>
+        )}
       </div>
     )
   }
@@ -1542,6 +1714,17 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
                 Saved
               </span>
             )}
+            {syncMsg && (
+              <span style={{
+                fontSize: 11, color: THEME.yesColor, fontWeight: 700,
+                fontFamily: "'DM Sans',sans-serif",
+                display: 'flex', alignItems: 'center', gap: 4,
+                animation: 'surveyPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              }}>
+                <span style={{ fontSize: 13 }}>✓</span>
+                {syncMsg}
+              </span>
+            )}
             <button onClick={onClose} style={{ background: THEME.softBg, border: 'none', cursor: 'pointer', padding: 10, borderRadius: 10, color: THEME.textSub, display: 'flex', transition: 'all 0.2s' }}
               onMouseEnter={e => { e.currentTarget.style.background = THEME.cardActive; e.currentTarget.style.color = THEME.text }}
               onMouseLeave={e => { e.currentTarget.style.background = THEME.softBg; e.currentTarget.style.color = THEME.textSub }}
@@ -1563,22 +1746,21 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
                 days, then the lunch/dinner routine for the selected day */}
             {(surveySubmitted || reviewMode) && editResponseMode ? (
               <div style={{ marginBottom: 16 }}>
-                {!initialDay && (
-                  <>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: THEME.textSub, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span>📅 Your Week</span>
-                      <button onClick={() => { setEditResponseMode(false); setViewDay(currentDay) }}
-                        style={{
-                          background: 'transparent', border: 'none', cursor: 'pointer',
-                          color: THEME.accent, fontSize: 10, fontWeight: 800,
-                          fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', gap: 4,
-                        }}>
-                        <ChevronLeft size={12} /> {reviewMode ? 'Back to review' : 'Back to plan'}
-                      </button>
-                    </div>
-                    <DayList />
-                  </>
-                )}
+                {/* Week day list always shown while editing — even when the modal
+                    was deep-linked to a single day — so the user can jump to any
+                    other day's menu instead of being stuck on one day. */}
+                <div style={{ fontSize: 11, fontWeight: 700, color: THEME.textSub, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>📅 Your Week</span>
+                  <button onClick={() => { setEditResponseMode(false); setViewDay(currentDay) }}
+                    style={{
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: THEME.accent, fontSize: 10, fontWeight: 800,
+                      fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', gap: 4,
+                    }}>
+                    <ChevronLeft size={12} /> {reviewMode ? 'Back to review' : 'Back to plan'}
+                  </button>
+                </div>
+                <DayList />
                 {/* Lunch/Dinner routine for the day being edited */}
                 <MealSwitcher />
               </div>
@@ -1622,6 +1804,10 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
                     : 'The survey window is currently closed. It opens Saturday 8:00 PM and closes Monday 11:00 AM.'}
                 </div>
               </div>}
+
+            {/* An Applied/Skipped slot that can't be edited right now is still
+                readable — show exactly what was saved instead of a blank lock. */}
+            {slotLocked && existingData?.[`${dayKey}_${mealKey}_status`] && <LockedSlotView />}
 
             {!hasDishes && !slotLocked && !surveySubmitted && !editResponseMode && (
               <div style={{ marginBottom: 16, padding: 16, borderRadius: 12, background: THEME.cardActive, border: `1px solid ${THEME.border}`, textAlign: 'center' }}>
@@ -1748,7 +1934,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
             {/* ── NAVIGATION: Previous / Save & Continue / Review — the week is
                 filled in order (Mon → Sat); no day tabs and no auto-save. On the
                 final slot the primary action opens the Review step. ── */}
-            {!surveySubmitted && !slotLocked && !reviewMode && (
+            {!reviewMode && !(surveySubmitted && !editResponseMode) && (
               <div style={{ display: 'flex', gap: 8, marginTop: 8, position: 'relative', zIndex: 1 }}>
                 {currentSlot > 0 && (
                   <button onClick={goToPrev} style={{
@@ -1757,21 +1943,36 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
                   }}><ChevronLeft size={16} /> Previous</button>
                 )}
 
-                {!isLast && wantsFood !== null && (
-                  <button onClick={goToNext}
+                {!isLast && wantsFood !== null && !slotLocked && !editResponseMode && (
+                  <button onClick={goToNext} disabled={loading}
                     style={{
                       marginLeft: currentSlot > 0 ? 'auto' : 0, padding: '12px 22px', borderRadius: 12, border: 'none',
-                      background: THEME.accentGrad, color: '#000', cursor: 'pointer', fontSize: 13, fontWeight: 900,
+                      background: loading ? THEME.border : THEME.accentGrad, color: loading ? 'rgba(0,0,0,0.3)' : '#000',
+                      cursor: loading ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 900,
                       display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif",
-                      boxShadow: `0 8px 20px ${THEME.accentBg}`,
-                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                      boxShadow: loading ? 'none' : `0 8px 20px ${THEME.accentBg}`,
+                      opacity: loading ? 0.6 : 1, transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                     }}
-                    onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 12px 28px ${THEME.accentBg}` }}
-                    onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 8px 20px ${THEME.accentBg}` }}
+                    onMouseEnter={e => { if (!loading) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 12px 28px ${THEME.accentBg}` } }}
+                    onMouseLeave={e => { if (!loading) { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 8px 20px ${THEME.accentBg}` } }}
                   >💾 Save & Continue <ChevronRight size={16} /></button>
                 )}
 
-                {isLast && (
+                {/* When the slot is locked (window closed) or being edited, the
+                    nav still moves between menus — browsing never requires the
+                    slot to be currently bookable. */}
+                {!isLast && (slotLocked || editResponseMode) && (
+                  <button onClick={goToNext}
+                    style={{
+                      marginLeft: currentSlot > 0 ? 'auto' : 0, padding: '12px 22px', borderRadius: 12,
+                      border: `1px solid ${THEME.border}`, background: 'transparent',
+                      color: THEME.text, cursor: 'pointer', fontSize: 13, fontWeight: 800,
+                      display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif",
+                    }}
+                  >Next menu <ChevronRight size={16} /></button>
+                )}
+
+                {isLast && !slotLocked && !surveySubmitted && (
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     {!initialDay ? (
                       /* Full-week fill flow: the final slot hands off to the review
@@ -1818,6 +2019,72 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
         )}
       </div>
       </div>
+
+      {/* ── PREMIUM SUBMIT-RESULT POPUP: exact status when the final submit
+          button is hit — missing slots or a save error. Success uses the
+          dedicated celebration screen above. ── */}
+      {submitResult && (
+        <>
+          <style>{SURVEY_STYLES}</style>
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 10002,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(5,5,10,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+            padding: 20, animation: 'surveyBackdropIn 0.3s ease-out',
+          }}>
+            <div style={{
+              background: THEME.modalBg,
+              borderRadius: 24, padding: '28px 24px', width: '100%', maxWidth: 420, boxSizing: 'border-box',
+              border: `1.5px solid ${submitResult.type === 'missing' ? 'rgba(255,152,0,0.55)' : 'rgba(244,67,54,0.55)'}`,
+              boxShadow: '0 30px 80px rgba(0,0,0,0.55)',
+              textAlign: 'center',
+              animation: 'surveyModalIn 0.38s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            }}>
+              <div style={{
+                width: 72, height: 72, borderRadius: '50%', margin: '0 auto 16px',
+                background: submitResult.type === 'missing'
+                  ? 'linear-gradient(135deg, #FF9800, #F57C00)'
+                  : 'linear-gradient(135deg, #F44336, #D32F2F)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: `0 0 40px ${submitResult.type === 'missing' ? 'rgba(255,152,0,0.4)' : 'rgba(244,67,54,0.4)'}`,
+                animation: 'surveyPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              }}>
+                <span style={{ fontSize: 32 }}>{submitResult.type === 'missing' ? '⚠️' : '❌'}</span>
+              </div>
+              <h3 style={{ margin: '0 0 8px', fontSize: 19, fontWeight: 800, color: submitResult.type === 'missing' ? '#FF9800' : '#F44336', fontFamily: "'Playfair Display',serif" }}>
+                {submitResult.title}
+              </h3>
+              <p style={{ margin: '0 0 10px', fontSize: 13, color: THEME.textSub, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>
+                {submitResult.message}
+              </p>
+              {submitResult.missingSlots && submitResult.missingSlots.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginBottom: 6 }}>
+                  {submitResult.missingSlots.map(s => (
+                    <span key={`${s.day}-${s.meal}`} style={{
+                      fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 100,
+                      background: 'rgba(255,152,0,0.12)', color: '#FF9800', border: '1px solid rgba(255,152,0,0.3)',
+                      fontFamily: "'DM Sans',sans-serif",
+                    }}>{s.day.substring(0, 3).toUpperCase()} {s.meal}</span>
+                  ))}
+                </div>
+              )}
+              {submitResult.filled !== undefined && (
+                <div style={{ fontSize: 12, fontWeight: 800, color: THEME.text, fontFamily: "'DM Sans',sans-serif", marginBottom: 14 }}>
+                  Filled <span style={{ color: submitResult.type === 'missing' ? '#FF9800' : '#F44336' }}>{submitResult.filled}</span> of {submitResult.total} slot{submitResult.total === 1 ? '' : 's'}
+                </div>
+              )}
+              <button onClick={() => setSubmitResult(null)} style={{
+                width: '100%', padding: 14, borderRadius: 14, border: 'none',
+                background: submitResult.type === 'missing' ? 'linear-gradient(135deg, #FF9800, #F57C00)' : 'linear-gradient(135deg, #F44336, #D32F2F)',
+                color: '#fff', fontSize: 14, fontWeight: 900, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", marginTop: 16,
+                boxShadow: `0 8px 24px ${submitResult.type === 'missing' ? 'rgba(255,152,0,0.35)' : 'rgba(244,67,54,0.35)'}`,
+              }}>
+                {submitResult.type === 'missing' ? 'Fill Missing Slots' : 'Try Again'}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </>
   )
 }

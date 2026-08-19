@@ -9,4 +9,4 @@ policy = "per_worker"
 "process-scheduled" = { verify_jwt = false }
 "survey-digest" = { verify_jwt = false }
 "send-push" = { verify_jwt = false }
-"submit-survey" = { verify_jwt = true }
+"submit-survey" = { verify_jwt = false }

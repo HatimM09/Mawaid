@@ -6,6 +6,8 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   bundledWebRuntime: false,
   server: {
+    url: 'https://al-mawaid.vercel.app',
+    cleartext: false,
     androidScheme: 'https'
   },
   plugins: {

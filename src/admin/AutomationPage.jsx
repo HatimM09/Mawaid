@@ -7,7 +7,8 @@ import {
   Zap, Timer, MessageSquare, Settings, Shield
 } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Btn, StatCard, Badge, Grid, Alert, SectionHeader, Modal } from './ui'
-import { getWeekDate } from '../common/utils'
+import { getSurveyTargetWeek } from '../common/utils'
+import { fetchWeekRows } from '../lib/surveyRows'
 import SurveyAccessManager from './SurveyAccessManager'
 
 const STATUS_COLORS = {
@@ -217,27 +218,28 @@ export default function AutomationPage() {
       const statusField = `${dayKey}_${mealKey}_status`
       const isSunday = day === 0
 
-      const weekId = getWeekDate(parseInt(s.survey_open_hour) || 20)
+      const weekId = getSurveyTargetWeek(parseInt(s.survey_open_hour) || 20, s.survey_status === 'open')
 
       const [
         { count: sc },
-        { count: ps },
-        { count: ta },
+        { data: weekRows },
         { count: tm },
       ] = await Promise.all([
         supabase.from('broadcast_schedule').select('id', { count: 'exact', head: true }).eq('status', 'scheduled'),
-        isSunday
-          ? { count: 0 }
-          : supabase.from('survey_submissions_flat').select('id', { count: 'exact', head: true }).eq('week_id', weekId).not(statusField, 'eq', 'Applied').not(statusField, 'eq', 'Skipped'),
-        isSunday
-          ? { count: 0 }
-          : supabase.from('survey_submissions_flat').select('id', { count: 'exact', head: true }).eq('week_id', weekId).eq(statusField, 'Applied'),
+        fetchWeekRows(weekId),
         supabase.from('user_stats').select('user_id', { count: 'exact', head: true }),
       ])
 
+      const rows = weekRows || []
+      const pendingSurvey = isSunday ? 0 : rows.filter(r => {
+        const v = r[statusField]
+        return v !== 'Applied' && v !== 'Skipped'
+      }).length
+      const todayAppliedCount = isSunday ? 0 : rows.filter(r => r[statusField] === 'Applied').length
+
       setScheduledCount(sc)
-      setPendingSurveyCount(ps)
-      setTodayApplied(ta)
+      setPendingSurveyCount(pendingSurvey)
+      setTodayApplied(todayAppliedCount)
       setTotalMembers(tm)
 
       // Real delivery coverage for the last 24h (from per-broadcast counters)
@@ -264,7 +266,7 @@ export default function AutomationPage() {
       .channel('automation-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, () => { loadRef.current() })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'broadcast_schedule' }, () => { loadRef.current() })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_submissions_flat' }, () => { loadRef.current() })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => { loadRef.current() })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_feedback' }, () => { loadRef.current() })
       .subscribe()
     return () => supabase.removeChannel(channel)

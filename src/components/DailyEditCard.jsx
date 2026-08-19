@@ -4,10 +4,10 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Sun, Moon } from 'lucide-react'
 import { useTheme, useAuth } from '../admin/context'
-import { supabase } from '../lib/firebaseClient'
-import { getWeekDate, DAYS } from '../common/utils'
+import { getSurveyTargetWeek, DAYS, parseHm } from '../common/utils'
 import { submitSurveyRow } from '../lib/submitSurvey'
 import { isRotiItem, isCountInput, mergeDishSnapshot } from '../hooks/useSurvey'
+import { fetchUserSurveyRow } from '../lib/surveyRows'
 
 // ── Skeleton Placeholder ──
 const SkeletonDish = ({ t }) => (
@@ -55,14 +55,6 @@ export const getCardMealInfo = (weeklyMenu, appSettings = {}) => {
   const dayIdx = now.getDay()
   if (dayIdx === 0) return null  // Sunday — no card
 
-  // Parse configurable timings from appSettings (fall back to sensible defaults)
-  const parseHm = (val, defaultH, defaultM) => {
-    const p = (val || '').split(':').map(Number)
-    return (p.length === 2 && !isNaN(p[0]) && !isNaN(p[1]))
-      ? { h: p[0], m: p[1] }
-      : { h: defaultH, m: defaultM }
-  }
-
   const lunchClose = parseHm(appSettings.lunch_edit_close, 11, 0)
   const dinnerOpen = parseHm(appSettings.dinner_edit_open, 12, 0)
   const dinnerClose = parseHm(appSettings.dinner_edit_close, 15, 30)
@@ -107,11 +99,7 @@ export const getSurveyCloseHour = (appSettings = {}) => {
 
 export const getEditCloseTime = (appSettings, mealType) => {
   const key = mealType === 'lunch' ? 'lunch_edit_close' : 'dinner_edit_close';
-  const val = appSettings[key];
-  if (!val) return mealType === 'lunch' ? { h: 11, m: 0 } : { h: 15, m: 30 };
-  const parts = val.split(':').map(Number);
-  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) return { h: parts[0], m: parts[1] };
-  return mealType === 'lunch' ? { h: 11, m: 0 } : { h: 15, m: 30 };
+  return parseHm(appSettings[key], mealType === 'lunch' ? 11 : 15, mealType === 'lunch' ? 0 : 30);
 }
 
 export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () => {}, onComplete = () => {}, appSettings }) {
@@ -144,12 +132,10 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
       // The daily card edits a meal that belongs to the SURVEY target week
       // (same week the tracker + weekly survey read) — not the calendar week.
       // On Sat evening → Mon lunch, and across week boundaries, these differ.
-      const weekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
+      const weekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
       const dayKey = mi.day.substring(0, 3).toLowerCase()
       const mealKey = mi.meal === 'lunch' ? 'l' : 'd'
-      const { data } = await supabase
-        .from('survey_submissions_flat')
-        .select('*').eq('user_id', user.id).eq('week_id', weekId).maybeSingle()
+      const { data } = await fetchUserSurveyRow(user.id, weekId)
       if (!data) return
       const status = data[dayKey + '_' + mealKey + '_status']
       if (status !== 'Applied') return
@@ -187,15 +173,15 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
       // Survey target week — keep the daily quick-edit in the same row the
       // tracker and weekly survey read (getWeekDate shifts to next week during
       // the Sat-evening → Mon survey window; the calendar week does not).
-      const weekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
+      const weekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
       const dayKey = mi.day.substring(0, 3).toLowerCase()
       const mealKey = mi.meal === 'lunch' ? 'l' : 'd'
       const statusKey = dayKey + '_' + mealKey + '_status'
-      const { data: existing } = await supabase.from('survey_submissions_flat')
-        .select('*').eq('user_id', user.id).eq('week_id', weekId).maybeSingle()
+      const { data: existing } = await fetchUserSurveyRow(user.id, weekId)
       const upsertObj = {
         user_id: user.id,
         week_id: weekId,
+        day: dayKey,
         [statusKey]: 'Applied',
         updated_at: new Date().toISOString(),
         dish_snapshot: mergeDishSnapshot(existing, mi.day, mi.meal, mi.dishes)
@@ -221,6 +207,7 @@ export default function DailyEditCard({ weeklyMenu, isOpen = true, onClose = () 
       onCompleteRef.current()
     } catch (err) {
       console.error('Error saving quick edit:', err)
+      alert('Could not save your meal: ' + (err?.message || 'please try again.'))
     } finally {
       setSaving(false)
     }

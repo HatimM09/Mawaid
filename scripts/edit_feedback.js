@@ -1,8 +1,12 @@
-const fs = require('fs');
-const path = require('path');
+import { readFileSync, writeFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-const filePath = path.join(__dirname, '..', 'src', 'App.jsx');
-let content = fs.readFileSync(filePath, 'utf8');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const filePath = join(__dirname, '..', 'src', 'App.jsx');
+let content = readFileSync(filePath, 'utf8');
 let changes = 0;
 
 // Replace 1: the shared textarea block (after the meal cards, before Btn)
@@ -66,5 +70,5 @@ if (content.includes(oldSubmit)) {
   console.log('3. Old submission line NOT found - skipping');
 }
 
-fs.writeFileSync(filePath, content);
+writeFileSync(filePath, content);
 console.log('\\nDone! Made', changes, 'change(s)');

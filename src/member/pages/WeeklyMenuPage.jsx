@@ -1,29 +1,39 @@
 import React, { useState, useEffect } from 'react'
 import { Utensils, Sun, Moon, ChevronDown } from 'lucide-react'
-import { supabase } from '../../lib/firebaseClient'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
-import { getCalendarWeekDate } from '../../common/utils'
+import { getSurveyTargetWeek } from '../../common/utils'
 import { getSlotDishes } from '../../hooks/useSurvey'
 import { WeeklyMenuSkeleton } from '../../common/Skeleton'
 import { DAYS, getTodayKey } from '../constants'
+import { fetchUserSurveyRow } from '../../lib/surveyRows'
 
-export default function WeeklyMenuPage() {
+export default function WeeklyMenuPage({ appSettings = {} }) {
   const t = useTheme()
-  const weeklyMenu = useWeeklyMenu(getCalendarWeekDate())
+  // The menu + saved responses belong to the SURVEY TARGET week — the same week
+  // the weekly survey, tracker and daily quick-edit write to (it shifts to the
+  // NEXT week during the Sat 8PM–Mon 11AM survey window, which the calendar week
+  // does not). Reading the calendar week here made a member's just-submitted
+  // responses invisible on the Menu page during that window.
+  const currentWeekId = getSurveyTargetWeek(
+    parseInt(appSettings.survey_open_hour, 10) || 20,
+    appSettings.survey_status === 'open'
+  )
+  const weeklyMenu = useWeeklyMenu(currentWeekId)
   const todayKey = getTodayKey()
   const [expandedDay, setExpandedDay] = useState(todayKey)
   const { user } = useAuth()
   const [userSurvey, setUserSurvey] = useState(null)
 
-  // Fetch user survey response
+  // Fetch user survey response — responses now live in survey_day_responses
+  // (merged flat shape); the legacy flat mirror is the fallback.
   useEffect(() => {
     const fetchSurvey = async () => {
-      const { data } = await supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id).eq('week_id', getCalendarWeekDate()).maybeSingle()
+      const { data } = await fetchUserSurveyRow(user.id, currentWeekId)
       setUserSurvey(data)
     }
     fetchSurvey()
-  }, [user.id])
+  }, [user.id, currentWeekId])
 
   // Position-aware response lookup: when the row carries a dish_snapshot, the
   // value for a dish is read from the position the dish held when it was saved,

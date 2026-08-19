@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { QrCode, ClipboardList, Users, Bell, LifeBuoy, Info, MessageCircle, Phone, MapPin, Check, KeyRound, Eye, EyeOff, LogOut, X, ChevronRight } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/firebaseClient'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
-import { getWeekDate } from '../../common/utils'
-import { getSlotDishes } from '../../hooks/useSurvey'
+import { getSurveyTargetWeek } from '../../common/utils'
+import { getSlotDishes, hasUserOverride } from '../../hooks/useSurvey'
+import { fetchLatestUserSurveyRow, fetchUserSurveyRow } from '../../lib/surveyRows'
 import { ProfileSkeleton, ListPageSkeleton, RequestsSkeleton, NotificationsSkeleton, KhidmatTeamSkeleton } from '../../common/Skeleton'
 import { THEMES } from '../theme'
 import { DAYS } from '../constants'
@@ -168,6 +169,7 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <input
+              name="current-password"
               type={showPw ? 'text' : 'password'}
               placeholder="Current password (only needed if re-login required)"
               value={curPass}
@@ -176,6 +178,7 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
             />
             <div style={{ display: 'flex', gap: 8 }}>
               <input
+                name="new-password"
                 type={showPw ? 'text' : 'password'}
                 placeholder="New password (min 6 chars)"
                 value={newPass}
@@ -183,6 +186,7 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
                 style={pwInputStyle(t)}
               />
               <input
+                name="confirm-password"
                 type={showPw ? 'text' : 'password'}
                 placeholder="Confirm new password"
                 value={confirmPass}
@@ -252,81 +256,118 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
 
 function MySurveysPage({ onBack }) {
   const t = useTheme(), { user } = useAuth()
-  const weeklyMenu = useWeeklyMenu()
   const [surveys, setSurveys] = useState({})
   const [loading, setLoading] = useState(true)
+  const [surveyWeekId, setSurveyWeekId] = useState(null)
+  const [appSettings, setAppSettings] = useState({})
+  // Use the survey data's week_id for the menu so dish names match the snapshot
+  const weeklyMenu = useWeeklyMenu(surveyWeekId || getSurveyTargetWeek())
+
   useEffect(() => {
-    supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id).order('week_id', { ascending: false }).limit(1).maybeSingle()
+    supabase.from('app_settings').select('key, value')
       .then(({ data }) => {
-        if (!data) return setSurveys({})
-        const grouped = {}
-        DAYS.forEach(day => {
-          const dayKey = day.substring(0, 3).toLowerCase()
-            ;['lunch', 'dinner'].forEach(meal => {
-              const mealKey = meal === 'lunch' ? 'l' : 'd'
-              const status = data[`${dayKey}_${mealKey}_status`]
-              if (status) {
-                const dishResponses = {}
-                const dishes = getSlotDishes(data, day, meal, weeklyMenu[day]?.[meal] || [])
-                dishes.forEach((d, i) => {
-                  const val = data[`${dayKey}_${mealKey}_dish_${i + 1}`]
-                  if (val !== undefined && val !== null) {
-                    dishResponses[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : (() => { const n = parseInt(val); return isNaN(n) ? val : n })()
-                  }
-                })
-                if (!grouped[day]) grouped[day] = {}
-                grouped[day][meal] = {
-                  wants_food: status === 'Applied',
-                  dish_responses: dishResponses,
-                  edit_count: (data.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0,
-                  updated_at: data.updated_at || null
+        const s = {}
+        ;(data || []).forEach(r => { if (r && r.key) s[r.key] = r.value })
+        setAppSettings(s)
+      })
+      .catch(() => {})
+  }, [])
+
+  const markOverride = useCallback((grouped, rawData) => {
+    // The override badge is derived from the admin grant (user_overrides)
+    // or the saved override flag in survey response metadata.
+    Object.keys(grouped).forEach(day => {
+      Object.keys(grouped[day]).forEach(meal => {
+        const hasSlotOverride = hasUserOverride(appSettings, user?.id, day, meal) ||
+          hasUserOverride(appSettings, user?.id) ||
+          rawData?._isOverride ||
+          rawData?.edit_metadata?.[`${day.substring(0, 3).toLowerCase()}_${meal === 'lunch' ? 'l' : 'd'}_override`]
+        if (hasSlotOverride) grouped[day][meal].is_override = true
+      })
+    })
+    return grouped
+  }, [appSettings, user?.id])
+
+  const processRow = useCallback((data, menu) => {
+    if (!data) return {}
+    const grouped = {}
+    DAYS.forEach(day => {
+      const dayKey = day.substring(0, 3).toLowerCase()
+        ;['lunch', 'dinner'].forEach(meal => {
+          const mealKey = meal === 'lunch' ? 'l' : 'd'
+          const status = data[`${dayKey}_${mealKey}_status`]
+          if (status) {
+            const dishResponses = {}
+            // Resolve dish names from the saved snapshot, else the published
+            // menu. If BOTH are unavailable, fall back to generic "Dish N"
+            // labels so stored responses always render — never an empty card.
+            const dishes = getSlotDishes(data, day, meal, menu[day]?.[meal] || [])
+            const nameList = dishes.length > 0
+              ? dishes
+              : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`)
+            nameList.forEach((d, i) => {
+              const val = data[`${dayKey}_${mealKey}_dish_${i + 1}`]
+              if (val !== undefined && val !== null && val !== '') {
+                const lower = String(val).toLowerCase()
+                if (lower === 'yes') dishResponses[d] = 'yes'
+                else if (lower === 'no') dishResponses[d] = 'no'
+                else if (typeof val === 'string' && val.endsWith('%')) dishResponses[d] = val
+                else {
+                  const n = parseInt(val)
+                  dishResponses[d] = isNaN(n) ? val : n
                 }
               }
             })
+            if (!grouped[day]) grouped[day] = {}
+            grouped[day][meal] = {
+              wants_food: status === 'Applied',
+              dish_responses: dishResponses,
+              edit_count: (data.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0,
+              updated_at: data.updated_at || null
+            }
+          }
         })
-        setSurveys(grouped)
-      }).finally(() => setLoading(false))
-  }, [weeklyMenu, user.id])
+    })
+    return grouped
+  }, [])
+
+  const loadData = useCallback(async () => {
+    const { data } = await fetchLatestUserSurveyRow(user.id)
+    if (!data) { setSurveys({}); return }
+    setSurveyWeekId(data.week_id)
+    setSurveys(markOverride(processRow(data, weeklyMenu), data))
+  }, [user.id, weeklyMenu, processRow, markOverride])
+
+  useEffect(() => {
+    loadData().finally(() => setLoading(false))
+  }, [loadData])
+
+  // Re-process when the weekly menu loads (the initial render may have an empty menu)
+  useEffect(() => {
+    if (!surveyWeekId || Object.keys(weeklyMenu).length === 0) return
+    fetchLatestUserSurveyRow(user.id).then(({ data }) => {
+      if (data) setSurveys(markOverride(processRow(data, weeklyMenu), data))
+    })
+  }, [weeklyMenu, surveyWeekId, user.id, processRow, markOverride])
 
   // Realtime subscription: refresh surveys on any change
   useEffect(() => {
     const subscription = supabase.channel('survey_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_submissions_flat' }, () => {
-        const fetchData = async () => {
-          const { data: rows } = await supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id).order('week_id', { ascending: false }).limit(1).maybeSingle();
-          if (!rows) return setSurveys({});
-          const grouped = {};
-          DAYS.forEach(day => {
-            const dayKey = day.substring(0, 3).toLowerCase();
-            ['lunch', 'dinner'].forEach(meal => {
-              const mealKey = meal === 'lunch' ? 'l' : 'd';
-              const status = rows[`${dayKey}_${mealKey}_status`];
-              if (status) {
-                const dishResponses = {};
-                const dishes = getSlotDishes(rows, day, meal, weeklyMenu[day]?.[meal] || []);
-                dishes.forEach((d, i) => {
-                  const val = rows[`${dayKey}_${mealKey}_dish_${i + 1}`];
-                  if (val !== undefined && val !== null) {
-                    dishResponses[d] = val === 'Yes' ? 'yes' : val === 'No' ? 'no' : (() => { const n = parseInt(val); return isNaN(n) ? val : n })();
-                  }
-                });
-                if (!grouped[day]) grouped[day] = {};
-                grouped[day][meal] = {
-                  wants_food: status === 'Applied',
-                  dish_responses: dishResponses,
-                  edit_count: (rows.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0,
-                  updated_at: rows.updated_at || null
-                };
-              }
-            });
-          });
-          setSurveys(grouped);
-        };
-        fetchData();
-      })
-      .subscribe();
-    return () => supabase.removeChannel(subscription);
-  }, [user.id, weeklyMenu]);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => { loadData() })
+      .subscribe()
+    return () => supabase.removeChannel(subscription)
+  }, [loadData])
+
+  const formatDishVal = (val, dish) => {
+    if (val === 'yes') return '✅ Yes'
+    if (val === 'no') return '❌ Skip'
+    if (typeof val === 'string' && val.endsWith('%')) return val
+    if (typeof val === 'number') {
+      if ([0, 25, 50, 75, 100].includes(val) && !isRotiItem(dish)) return `${val}%`
+      return `${val} portion${val === 1 ? '' : 's'}`
+    }
+    return String(val)
+  }
 
   return (
     <main style={{ flex: 1, padding: '16px 16px 160px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
@@ -341,29 +382,91 @@ function MySurveysPage({ onBack }) {
             </div>
             {['lunch', 'dinner'].map(meal => {
               const r = dayData?.[meal] || {};
+              const hasResponse = r.wants_food !== undefined
+              const isOverride = !!r.is_override
+
               return (
-                <div key={meal} style={{ marginBottom: 8, padding: 11, background: t.inputBg, borderRadius: 10, border: `1px solid ${t.border}` }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{meal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}</span>
-                    <span style={{ fontSize: 10, color: (r.edit_count || 0) < 1 ? t.accent : t.textSub, fontFamily: "'DM Sans',sans-serif", fontWeight: 600 }}>{r.edit_count === undefined ? '' : (r.edit_count || 0) === 0 ? 'Not edited yet' : `Edited ${r.edit_count} time(s)`}</span>
-                    {r.updated_at && (
-                      <span style={{ fontSize: 9, color: t.textSub, fontFamily: "'DM Sans',sans-serif", fontWeight: 500, opacity: 0.7, marginLeft: 6 }}>
-                        • {new Date(r.updated_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                <div key={meal} style={{
+                  marginBottom: 10, padding: 13,
+                  background: isOverride
+                    ? 'linear-gradient(135deg, rgba(76,175,80,0.08) 0%, rgba(255,255,255,0.02) 100%)'
+                    : t.inputBg,
+                  borderRadius: 12,
+                  border: `1px solid ${isOverride ? 'rgba(76,175,80,0.35)' : t.border}`,
+                  borderLeft: `3px solid ${isOverride ? '#4CAF50' : hasResponse ? t.accent : t.border}`,
+                  transition: 'all 0.2s ease',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>
+                        {meal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}
                       </span>
-                    )}
+                      {hasResponse && (
+                        isOverride ? (
+                          <span style={{
+                            fontSize: 9, fontWeight: 900, color: '#4CAF50',
+                            padding: '2px 8px', borderRadius: 6,
+                            background: 'rgba(76,175,80,0.15)',
+                            border: '1px solid rgba(76,175,80,0.4)',
+                            fontFamily: "'DM Sans',sans-serif",
+                            letterSpacing: '0.04em',
+                            display: 'inline-flex', alignItems: 'center', gap: 4
+                          }}>
+                            <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#4CAF50' }} />
+                            OVERRIDE SURVEY
+                          </span>
+                        ) : (
+                          <span style={{
+                            fontSize: 9, fontWeight: 800, color: t.accent,
+                            padding: '2px 8px', borderRadius: 6,
+                            background: t.accentBg,
+                            border: `1px solid ${t.accentBorder}`,
+                            fontFamily: "'DM Sans',sans-serif",
+                            letterSpacing: '0.04em',
+                            display: 'inline-flex', alignItems: 'center', gap: 4
+                          }}>
+                            <span style={{ width: 4, height: 4, borderRadius: '50%', background: t.accent }} />
+                            WEEKLY SURVEY
+                          </span>
+                        )
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 10, color: (r.edit_count || 0) < 1 ? t.accent : t.textSub, fontFamily: "'DM Sans',sans-serif", fontWeight: 600 }}>
+                        {r.edit_count === undefined ? '' : (r.edit_count || 0) === 0 ? 'Original response' : `Edited ${r.edit_count}x`}
+                      </span>
+                      {r.updated_at && (
+                        <span style={{ fontSize: 9, color: t.textSub, fontFamily: "'DM Sans',sans-serif", fontWeight: 500, opacity: 0.7 }}>
+                          • {new Date(r.updated_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
                   </div>
+
                   {r.wants_food !== undefined ? (
                     <>
-                      <div style={{ fontSize: 13, color: r.wants_food ? t.successText : '#e05555', fontWeight: 700, fontFamily: "'DM Sans',sans-serif", marginBottom: r.wants_food ? 6 : 0 }}>{r.wants_food ? '✅ Requested Food' : '❌ Skipped'}</div>
+                      <div style={{
+                        fontSize: 13, color: r.wants_food ? t.successText : '#e05555',
+                        fontWeight: 800, fontFamily: "'DM Sans',sans-serif",
+                        marginBottom: r.wants_food ? 8 : 0,
+                        display: 'flex', alignItems: 'center', gap: 5,
+                      }}>
+                        {r.wants_food ? '✅ Requested Food' : '❌ Skipped'}
+                      </div>
                       {r.wants_food && r.dish_responses && Object.entries(r.dish_responses).map(([dish, val]) => (
-                        <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: `1px solid ${t.border}` }}>
+                        <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${t.border}` }}>
                           <span style={{ fontSize: 12, color: t.textBody, fontFamily: "'DM Sans',sans-serif" }}>{dish}</span>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{val === 'yes' ? '✅' : val === 'no' ? '❌' : `${val}%`}</span>
+                          <span style={{ fontSize: 12, fontWeight: 800, color: isOverride ? '#4CAF50' : t.accent, fontFamily: "'DM Sans',sans-serif" }}>
+                            {formatDishVal(val, dish)}
+                          </span>
                         </div>
                       ))}
                     </>
                   ) : (
-                    <div style={{ fontSize: 13, color: t.textSub, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>No response</div>
+                    <div style={{ fontSize: 12, color: t.textSub, fontWeight: 600, fontFamily: "'DM Sans',sans-serif", fontStyle: 'italic' }}>
+                      No survey response recorded for this slot
+                    </div>
                   )}
                 </div>
               )
@@ -630,7 +733,7 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
         try {
           const dayNum = new Date().getDay()
           const h = new Date().getHours()
-          const weekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
+          const weekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
           let isEating = false
 
           if (dayNum !== 0) {
@@ -640,13 +743,8 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
             const dayKey = today.substring(0, 3).toLowerCase()
             const mealKey = mealName === 'lunch' ? 'l' : 'd'
             
-            const { data: subData } = await supabase
-              .from('survey_submissions_flat')
-              .select(`${dayKey}_${mealKey}_status`)
-              .eq('user_id', user.id)
-              .eq('week_id', weekId)
-              .maybeSingle()
-               
+            const { data: subData } = await fetchUserSurveyRow(user.id, weekId)
+
             const status = subData ? subData[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
             isEating = status === 'Applied'
           }

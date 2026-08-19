@@ -3,11 +3,12 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/firebaseClient'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
-import { RefreshCw, Search, Filter, Utensils, Download, User as UserIcon, Calendar as CalendarIcon, Scan, X } from 'lucide-react'
+import { RefreshCw, Search, Filter, Utensils, Download, User as UserIcon, Calendar as CalendarIcon, Scan, X, Trash2 } from 'lucide-react'
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Grid, Modal, SectionHeader, SurveyResponseDisplay, PackingTVView, fmtDate, fmtDateTime, ErrorBanner } from './ui'
-import { getWeekDate, DAYS, MEALS } from '../common/utils'
+import { getSurveyTargetWeek, DAYS, MEALS } from '../common/utils'
 import { getSlotDishes } from '../hooks/useSurvey'
+import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot } from '../lib/surveyRows'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
 } from 'recharts'
@@ -30,10 +31,20 @@ export default function SurveysPage() {
   const urlUserId = searchParams.get('userId')
   const [focusedUserId, setFocusedUserId] = useState(urlUserId)
   
-  const [dayFilter, setDayFilter] = useState('all')
+  const [dayFilter, setDayFilter] = useState(() => {
+    const d = new Date().getDay()
+    // Default to today's day name if it's a weekday (Mon-Sat), else Monday
+    const dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday']
+    const today = dayNames[d]
+    return ['monday','tuesday','wednesday','thursday','friday','saturday'].includes(today) ? today : 'monday'
+  })
   const [surveyOpenHour, setSurveyOpenHour] = useState(20)
-  const surveyWeekId = () => getWeekDate(surveyOpenHour)
-  const [mealFilter, setMealFilter] = useState('all')
+  const [surveyForceOpen, setSurveyForceOpen] = useState(false)
+  const surveyWeekId = () => getSurveyTargetWeek(surveyOpenHour, surveyForceOpen)
+  const [mealFilter, setMealFilter] = useState(() => {
+    const h = new Date().getHours() + new Date().getMinutes() / 60
+    return (h >= 20 || h < 14) ? 'lunch' : 'dinner'
+  })
   const [search, setSearch] = useState('')
   const [chartData, setChartData] = useState([])
   const [selectedUser, setSelectedUser] = useState(null)
@@ -92,6 +103,7 @@ export default function SurveysPage() {
       const u = users[userId] || {}
       setSelectedUser({
         ...u,
+        week_id: resp?.week_id || null,
         status: resp.wants_food ? 'Applied' : 'Skipped',
         dishResponses: resp.dish_responses,
         currentDay: dayFilter,
@@ -130,8 +142,7 @@ export default function SurveysPage() {
       const mealKey = mealFilter === 'lunch' ? 'l' : 'd'
       const weekId = surveyWeekId()
       
-      const { data: row } = await supabase.from('survey_submissions_flat')
-        .select('*').eq('user_id', userId).eq('week_id', weekId).maybeSingle()
+      const { data: row } = await fetchUserSurveyRow(userId, weekId)
       
       const buildCur = buildAllDishes(row, dayFilter, mealFilter, weeklyMenu[dayFilter]?.[mealFilter] || [])
       const buildLunch = buildAllDishes(row, dayFilter, 'lunch', weeklyMenu[dayFilter]?.lunch || [])
@@ -139,6 +150,7 @@ export default function SurveysPage() {
 
       setSelectedUser({
         ...u,
+        week_id: weekId,
         status: buildCur._status,
         dishResponses: buildCur,
         lunch: { status: buildLunch._status, dishes: buildLunch },
@@ -197,6 +209,7 @@ export default function SurveysPage() {
         if (oldRows && oldRows.length) {
           const oldWeeks = [...new Set(oldRows.map(r => r.week_id))].filter(Boolean)
           for (const ow of oldWeeks) {
+            await supabase.from('survey_day_responses').delete().eq('week_id', ow)
             await supabase.from('survey_submissions_flat').delete().eq('week_id', ow)
           }
         }
@@ -208,34 +221,37 @@ export default function SurveysPage() {
         try { setDishInputConfig(JSON.parse(configData.value)) } catch {}
       }
 
-      // Read configured survey open hour so the tracked week matches the survey window
-      const { data: openHourRow } = await supabase.from('app_settings').select('value').eq('key', 'survey_open_hour').maybeSingle()
+      // Read configured survey open hour + force-open status so the tracked
+      // week matches the member survey side (Sat-morning force-open fills target
+      // the NEXT week; the tracker must read that same week)
+      const [{ data: openHourRow }, { data: statusRow }] = await Promise.all([
+        supabase.from('app_settings').select('value').eq('key', 'survey_open_hour').maybeSingle(),
+        supabase.from('app_settings').select('value').eq('key', 'survey_status').maybeSingle(),
+      ])
       if (openHourRow) {
         const h = parseInt(openHourRow.value, 10)
         if (!isNaN(h)) setSurveyOpenHour(h)
       }
+      setSurveyForceOpen(statusRow?.value === 'open')
 
-      let query = supabase
-        .from('survey_submissions_flat')
-        .select('*, user_stats(*)')
-        .order('updated_at', { ascending: false })
-
-      if (weekFilter !== 'all') {
-        query = query.eq('week_id', weekFilter)
-      }
-
-      const { data: flat, error } = await query
+      const { data: rows, error } = await fetchAllUserRows()
       
       if (error) throw error
       setLoadError(null)
 
+      // Attach user_stats for the UI (name, thali number)
+      const { data: userStatsRows } = await supabase.from('user_stats').select('*')
+      const statsMap = new Map((userStatsRows || []).map(u => [u.user_id, u]))
+      const merged = (rows || []).map(r => ({ ...r, user_stats: statsMap.get(r.user_id) || null }))
+      merged.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))
+
       // Collect distinct week_ids for the filter
-      const weeks = [...new Set((flat || []).map(r => r.week_id).filter(Boolean))].sort().reverse()
+      const weeks = [...new Set(merged.map(r => r.week_id).filter(Boolean))].sort().reverse()
       setAvailableWeeks(weeks)
 
       // Map users for the UI stats if needed
       const uMap = {}
-      ;(flat || []).forEach(row => { 
+      merged.forEach(row => { 
         if (row.user_stats) uMap[row.user_id] = row.user_stats 
       })
       setUsers(uMap)
@@ -246,9 +262,9 @@ export default function SurveysPage() {
         return rotiKeywords.some(k => dish.toLowerCase().includes(k))
       }
       
-      // Transform flat rows into normalized response objects
+      // Transform merged rows into normalized response objects
       const normalized = []
-      ;(flat || []).forEach(row => {
+      merged.forEach(row => {
         DAYS.forEach(day => {
           const dayKey = day.substring(0, 3).toLowerCase()
           MEALS.forEach(meal => {
@@ -298,11 +314,14 @@ export default function SurveysPage() {
     return () => clearInterval(interval)
   }, [load])
 
-  // --- REAL-TIME SUBSCRIPTION ---
+  // --- REAL-TIME SUBSCRIPTION --- watch both tables for override saves ---
   useEffect(() => {
     const channel = supabase
       .channel('surveys-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_submissions_flat' }, () => {
+        load(true)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => {
         load(true)
       })
       .subscribe()
@@ -328,13 +347,14 @@ export default function SurveysPage() {
     const u = users[r.user_id] || {}
     const q = search.toLowerCase()
     const matchSearch = !q || (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q) || String(u.thali_number || '').includes(q)
+    const matchWeek = weekFilter === 'all' || r.week_id === weekFilter
 
     if (viewMode === 'aggregate') {
       const matchDay = dayFilter === 'all' || r.day === dayFilter
       const matchMeal = mealFilter === 'all' || r.meal === mealFilter
-      return matchSearch && matchDay && matchMeal
+      return matchSearch && matchWeek && matchDay && matchMeal
     } else {
-      return matchSearch && r.day === dayFilter && r.meal === mealFilter
+      return matchSearch && matchWeek && r.day === dayFilter && r.meal === mealFilter
     }
   })
 
@@ -369,6 +389,25 @@ export default function SurveysPage() {
       isPct: isPctDish[name]
     }))
   }, [filtered])
+
+  // Erase individual survey portion entry from Supabase
+  const handleEraseRow = async (r) => {
+    if (!r.user_id || !r.week_id) return
+    const u = users[r.user_id] || {}
+    const who = u.name ? `${u.name} (#${u.thali_number || '—'})` : `Thali #${u.thali_number || '—'}`
+    const dayKey = (r.day || '').substring(0, 3).toLowerCase()
+    if (!window.confirm(`Erase ${r.day.toUpperCase()} ${r.meal.toUpperCase()} response for ${who}?\n\nThis will permanently delete this portion from Supabase.`)) {
+      return
+    }
+    try {
+      const { error } = await eraseSurveySlot(r.user_id, r.week_id, dayKey, r.meal)
+      if (error) throw error
+      await load(true)
+    } catch (e) {
+      console.error('Erase failed:', e)
+      alert('Erase failed: ' + (e?.message || 'Please try again.'))
+    }
+  }
 
   // TABLE ROWS - AGGREGATE VIEW
   const aggregateRows = filtered.map(r => {
@@ -405,12 +444,25 @@ export default function SurveysPage() {
         })}
       </div>,
       <div style={{ fontSize: 11, color: T.textSub }}>{fmtDateTime(r.created_at)}</div>,
+      <button
+        type="button"
+        onClick={() => handleEraseRow(r)}
+        title="Erase response from Supabase"
+        style={{
+          padding: '6px 10px', borderRadius: 8,
+          background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+          color: '#ef4444', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4,
+          fontSize: 11, fontWeight: 700,
+        }}
+      >
+        <Trash2 size={12} /> Erase
+      </button>
     ]
   })
 
   // DAILY BREAKDOWN (Pivoted Table)
   const dailyDishes = weeklyMenu[dayFilter]?.[mealFilter] || []
-  const dailyHeaders = ['Thali User', ...dailyDishes, 'Submitted']
+  const dailyHeaders = ['Thali User', ...dailyDishes, 'Submitted', 'Action']
   const dailyRows = filtered.map(r => {
     const u = users[r.user_id] || {}
     const qtys = r.dish_responses || {}
@@ -458,6 +510,19 @@ export default function SurveysPage() {
       </div>,
       ...dishCells,
       <div style={{ fontSize: 10, color: T.textSub }}>{fmtDate(r.created_at)}</div>,
+      <button
+        type="button"
+        onClick={() => handleEraseRow(r)}
+        title="Erase response from Supabase"
+        style={{
+          padding: '6px 10px', borderRadius: 8,
+          background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+          color: '#ef4444', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4,
+          fontSize: 11, fontWeight: 700,
+        }}
+      >
+        <Trash2 size={12} /> Erase
+      </button>
     ]
   })
 
@@ -558,6 +623,10 @@ export default function SurveysPage() {
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', background: T.inputBg, padding: '4px', borderRadius: 14, border: `1px solid ${T.border}`, overflowX: 'auto', maxWidth: '85vw' }}>
+            <button onClick={() => setDayFilter('all')}
+              style={{ flexShrink: 0, padding: '6px 14px', borderRadius: 10, border: 'none', background: dayFilter === 'all' ? T.accentGrad : 'transparent', color: dayFilter === 'all' ? '#fff' : T.textSub, fontSize: 10, fontWeight: 800, cursor: 'pointer', transition: '0.2s' }}>
+              All
+            </button>
             {DAYS.map(day => (
               <button key={day} onClick={() => setDayFilter(day)}
                 style={{ flexShrink: 0, padding: '6px 14px', borderRadius: 10, border: 'none', background: dayFilter === day ? T.accentGrad : 'transparent', color: dayFilter === day ? '#fff' : T.textSub, fontSize: 10, fontWeight: 800, cursor: 'pointer', transition: '0.2s' }}>
@@ -567,10 +636,14 @@ export default function SurveysPage() {
           </div>
 
           <div style={{ display: 'flex', background: T.inputBg, padding: '4px', borderRadius: 14, border: `1px solid ${T.border}` }}>
+            <button onClick={() => setMealFilter('all')}
+              style={{ padding: '6px 14px', borderRadius: 10, border: 'none', background: mealFilter === 'all' ? T.accentGrad : 'transparent', color: mealFilter === 'all' ? '#fff' : T.textSub, fontSize: 10, fontWeight: 800, cursor: 'pointer', transition: '0.2s' }}>
+              All
+            </button>
             {MEALS.map(meal => (
               <button key={meal} onClick={() => setMealFilter(meal)}
                 style={{ padding: '6px 14px', borderRadius: 10, border: 'none', background: mealFilter === meal ? (meal === 'lunch' ? '#c49c5a' : '#5e9ce0') : 'transparent', color: mealFilter === meal ? '#fff' : T.textSub, fontSize: 10, fontWeight: 800, cursor: 'pointer', transition: '0.2s' }}>
-                {meal.charAt(0).toUpperCase()}
+                {meal.charAt(0).toUpperCase() + meal.slice(1)}
               </button>
             ))}
           </div>
@@ -600,7 +673,7 @@ export default function SurveysPage() {
         <AdminCard style={{ padding: 0, overflow: 'hidden', borderRadius: 24 }}>
           {viewMode === 'aggregate' ? (
             <Table
-              headers={['Thali User', 'Week', 'Day', 'Meal', 'Quantities Selected', 'Submitted']}
+              headers={['Thali User', 'Week', 'Day', 'Meal', 'Quantities Selected', 'Submitted', 'Action']}
               rows={aggregateRows}
               emptyMsg="No survey logs found for this filter."
             />

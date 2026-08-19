@@ -10,7 +10,8 @@ import {
 } from './ui'
 import { QRCodeCanvas } from 'qrcode.react'
 import { jsPDF } from 'jspdf'
-import { getWeekDate } from '../common/utils'
+import { getSurveyTargetWeek } from '../common/utils'
+import { fetchWeekRows } from '../lib/surveyRows'
 import {
   BarChart, Bar, XAxis, Tooltip, ResponsiveContainer,
   AreaChart, Area, PieChart, Pie, Cell,
@@ -325,23 +326,30 @@ export default function Dashboard() {
   }, [loadAll])
 
   const loadStats = useCallback(async () => {
-    let hourRow
+    let hourRow, statusRow
     try {
-      hourRow = await supabase.from('app_settings').select('value').eq('key', 'survey_open_hour').maybeSingle()
+      const [hr, sr] = await Promise.all([
+        supabase.from('app_settings').select('value').eq('key', 'survey_open_hour').maybeSingle(),
+        supabase.from('app_settings').select('value').eq('key', 'survey_status').maybeSingle(),
+      ])
+      hourRow = hr
+      statusRow = sr
     } catch {
       hourRow = { data: null }
     }
     hourRow = hourRow ?? { data: null }
     const parsed = parseInt(hourRow?.value, 10)
-    const currentWeekId = getWeekDate(isNaN(parsed) ? 20 : parsed)
+    const currentWeekId = getSurveyTargetWeek(isNaN(parsed) ? 20 : parsed, statusRow?.value === 'open')
     const [u, s, f, r, q, allUsers, allSubmissions, allInventory] = await Promise.all([
       supabase.from('user_stats').select('user_id', { count: 'exact', head: true }),
-      supabase.from('survey_submissions_flat').select('user_id', { count: 'exact', head: true }).eq('week_id', currentWeekId),
+      // Count members who have any survey data this week (day responses)
+      fetchWeekRows(currentWeekId).then(res => ({ count: (res.data || []).length })),
       supabase.from('daily_feedback').select('id', { count: 'exact', head: true }),
       supabase.from('thali_requests').select('id', { count: 'exact', head: true }).or('status.eq.pending,status.is.null'),
       supabase.from('queries').select('id', { count: 'exact', head: true }).or('status.eq.open,status.is.null'),
       supabase.from('user_stats').select('user_id, name, thali_number'),
-      supabase.from('survey_submissions_flat').select('*').eq('week_id', currentWeekId),
+      // Load merged rows for the current week
+      fetchWeekRows(currentWeekId),
       supabase.from('inventory').select('id, stock, low_stock_threshold'),
     ])
 
@@ -430,7 +438,7 @@ export default function Dashboard() {
   useEffect(() => {
     const channels = [
       supabase.channel('dashboard-survey-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_submissions_flat' }, () => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => {
           if (initialSyncRef.current) return
           loadStats()
           setBadgeKey(k => k + 1)

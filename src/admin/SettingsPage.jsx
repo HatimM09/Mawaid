@@ -3,9 +3,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/firebaseClient'
 import { Save, RefreshCw, Calendar, Send, Clock, Trash2, Upload, Download, FileSpreadsheet } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Btn, Alert, Input, SectionHeader } from './ui'
-import { getWeekDate, getCalendarWeekDate, addWeeks } from '../common/utils'
-
-const DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday']
+import { getSurveyTargetWeek, getCalendarWeekDate, addWeeks, DAYS } from '../common/utils'
+import { fetchWeekRows } from '../lib/surveyRows'
+import { DEFAULT_MENU } from '../common/constants'
+import { isSurveyOpen } from '../hooks/useSurvey'
 
 const formatWeekLabel = (weekStart) => {
   const d = new Date(weekStart + 'T00:00:00')
@@ -14,27 +15,7 @@ const formatWeekLabel = (weekStart) => {
   return `${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}–${end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
 }
 
-const DEFAULT_MENU = {
-  monday:    { lunch: 'Chola, Kulcha, Shreekhand, Dal, Chawal', dinner: 'FMB Menu' },
-  tuesday:   { lunch: 'American Choupsey, Wafers, Butter Khichdi', dinner: 'Roti, Veg Jaipuri, Chicken Pulao, Soup' },
-  wednesday: { lunch: 'Vegetable Sandwich, Bhel Salad, Corn Pulao', dinner: 'Roti, White Chicken, Manchurian Rice, Gravy' },
-  thursday:  { lunch: 'Chicken 65, Corn Munch Salad, Dal Makhni, Chawal', dinner: 'Roti, Mango Custard, Matar Paneer, Tuwar Pulao, Palidu' },
-  friday:    { lunch: 'FMB Menu', dinner: 'Roti, Gobi Matar, Chicken Kashmiri Pulao, Soup' },
-  saturday:  { lunch: 'Chana Bateta, Dal Makhni, Chawal', dinner: 'Roti, Chicken Tarkari, Veg Coconut Rice, Kung Pao Gravy' },
-}
 
-// ── Survey window (auto mode): Sat openHour – Mon closeHour from app_settings ──
-const surveyTimingOpenNow = (cfg = {}) => {
-  const now = new Date()
-  const day = now.getDay()
-  const hour = now.getHours()
-  const open = parseInt(cfg.survey_open_hour, 10)
-  const close = parseInt(cfg.survey_close_hour, 10)
-  if (day === 6 && hour >= (isNaN(open) ? 20 : open)) return true
-  if (day === 0) return true
-  if (day === 1 && hour < (isNaN(close) ? 11 : close)) return true
-  return false
-}
 
 // ── CSV Menu Import helpers ──
 const DAY_ALIASES = {
@@ -145,7 +126,7 @@ export default function SettingsPage() {
   // during the Saturday window flows naturally.
   const calendarWeek = getCalendarWeekDate()
   const nextWeek = addWeeks(calendarWeek, 1)
-  const [targetWeek, setTargetWeek] = useState(() => getWeekDate())
+  const [targetWeek, setTargetWeek] = useState(() => getSurveyTargetWeek())
   const [publishAt, setPublishAt] = useState('')
   const [publishing, setPublishing] = useState(false)
   const [dishInputConfig, setDishInputConfig] = useState({})
@@ -160,21 +141,27 @@ export default function SettingsPage() {
   const loadWeeklyTracking = useCallback(async () => {
     let openHour = 20
     let hourRow
+    let statusRow
     try {
-      hourRow = await supabase.from('app_settings').select('value').eq('key', 'survey_open_hour').maybeSingle()
+      const [hr, sr] = await Promise.all([
+        supabase.from('app_settings').select('value').eq('key', 'survey_open_hour').maybeSingle(),
+        supabase.from('app_settings').select('value').eq('key', 'survey_status').maybeSingle(),
+      ])
+      hourRow = hr
+      statusRow = sr
     } catch {
       hourRow = { data: null }
     }
     const parsed = parseInt(hourRow?.value, 10)
     if (!isNaN(parsed)) openHour = parsed
-    const weekStart = getWeekDate(openHour)
+    const weekStart = getSurveyTargetWeek(openHour, statusRow?.value === 'open')
     setWeeklyTrack(p => ({ ...p, loading: true, weekStart }))
     try {
-      const [{ data: users }, { data: subs }] = await Promise.all([
+      const [{ data: users }, { data: mergedRows }] = await Promise.all([
         supabase.from('user_stats').select('user_id, name, thali_number, email'),
-        supabase.from('survey_submissions_flat').select('user_id, week_id').eq('week_id', weekStart),
+        fetchWeekRows(weekStart),
       ])
-      const submittedIds = new Set((subs || []).map(s => s.user_id))
+      const submittedIds = new Set((mergedRows || []).map(s => s.user_id))
       const allUsers = (users || []).filter(u => u.user_id)
       setWeeklyTrack({
         loading: false,
@@ -934,8 +921,7 @@ export default function SettingsPage() {
                             const { data: surveyRows } = await supabase.from('app_settings').select('key,value')
                             const surveyCfg = {}
                             ;(surveyRows || []).forEach(r => { surveyCfg[r.key] = r.value })
-                            const surveyOpen = surveyCfg.survey_status === 'open'
-                              || (surveyCfg.survey_status !== 'closed' && surveyTimingOpenNow(surveyCfg))
+                            const surveyOpen = isSurveyOpen(surveyCfg)
                             if (surveyOpen) {
                               const { data: markerRow } = await supabase
                                 .from('app_settings').select('value').eq('key', 'survey_notified_week').maybeSingle()

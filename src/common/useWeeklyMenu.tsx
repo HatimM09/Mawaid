@@ -1,7 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/firebaseClient';
-import { getWeekDate } from './utils';
+import { getSurveyTargetWeek } from './utils';
 import { queryKeys } from '../lib/queryClient';
 
 const formatMenu = (rows: any[], weekId: string) => {
@@ -41,7 +41,7 @@ const fetchWeeklyMenu = async (weekStart: string): Promise<any> => {
  *   from menu-display surfaces (Menu page, Today's menu & feedback) so the
  *   CURRENT week's menu keeps showing even after next week is published.
  */
-export const useWeeklyMenu = (weekStart = getWeekDate()) => {
+export const useWeeklyMenu = (weekStart = getSurveyTargetWeek()) => {
   const queryClient = useQueryClient();
   const instanceRef = useRef(Date.now());
 

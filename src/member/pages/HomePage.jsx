@@ -5,11 +5,12 @@ import { supabase } from '../../lib/firebaseClient'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
 import DailyEditCard, { getCardMealInfo } from '../../components/DailyEditCard'
-import { getWeekDate, getCalendarWeekDate } from '../../common/utils'
+import { getSurveyTargetWeek, getCalendarWeekDate } from '../../common/utils'
 import { HomePageSkeleton } from '../../common/Skeleton'
 import { DAYS, getTodayKey } from '../constants'
 import { hasUserOverride, isSurveyOpen, canEditMeal, getEditWindow } from '../survey'
 import { Card, Btn, Avatar } from '../ui'
+import { fetchUserSurveyRow } from '../../lib/surveyRows'
 
 export default function HomePage({ appSettings = {}, onGoToSurvey }) {
   const t = useTheme()
@@ -30,7 +31,7 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
   const manualEditOpenRef = useRef(false)
 
   const editPromptStorageKey = useCallback((day, meal) =>
-    `almawaid_edit_prompt_${user?.id || 'anon'}_${getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)}_${day}_${meal}`
+    `almawaid_edit_prompt_${user?.id || 'anon'}_${getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)}_${day}_${meal}`
   , [user?.id, appSettings.survey_open_hour])
 
   const markEditPromptDone = useCallback((day, meal) => {
@@ -64,7 +65,7 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
       return
     }
 
-    const currentWeekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
+    const currentWeekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
     const today = todayKey
 
     const pick = (day, meal) => {
@@ -122,11 +123,15 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
 
   const loadData = useCallback(async () => {
     try {
-      const weekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
-      const [{ data: profile }, { data: existingFb }, { data: surveyData }] = await Promise.all([
+      const weekId = getSurveyTargetWeek(
+        parseInt(appSettings.survey_open_hour, 10) || 20,
+        appSettings.survey_status === 'open'
+      )
+      const [{ data: profile }, { data: existingFb }, surveyData] = await Promise.all([
         supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
         supabase.from('daily_feedback').select('*').eq('user_id', user.id).eq('day', todayKey).maybeSingle(),
-        supabase.from('survey_submissions_flat').select('*').eq('user_id', user.id).eq('week_id', weekId).maybeSingle(),
+        // Survey responses now live in survey_day_responses (merged flat shape)
+        fetchUserSurveyRow(user.id, weekId).then(r => r.data),
       ])
       if (profile) setProfileData({ name: profile.name || '', thali_number: profile.thali_number || '', avatar_url: profile.avatar_url || '' })
       if (existingFb) {
@@ -136,15 +141,41 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
         setLunchComment(existingFb.lunch_comment || '')
         setDinnerComment(existingFb.dinner_comment || '')
       }
-      // Hide the weekly-survey notice once every day's meals are answered
-      const allDone = !!surveyData && DAYS.every(day => {
-        const dk = day.substring(0, 3).toLowerCase()
-        return surveyData[`${dk}_l_status`] && surveyData[`${dk}_d_status`]
+      // Hide the weekly-survey notice once every EXPECTED meal is answered —
+      // override users may be granted only specific meals, so the notice must
+      // disappear once those are saved even if un-granted days stay empty.
+      const overrideActive = hasUserOverride({ user_overrides: appSettings.user_overrides }, user.id)
+      let expectedSlots
+      if (overrideActive && appSettings.user_overrides) {
+        try {
+          const overrides = typeof appSettings.user_overrides === 'string'
+            ? JSON.parse(appSettings.user_overrides)
+            : appSettings.user_overrides
+          const o = overrides[user.id]
+          if (o && !o.all) {
+            expectedSlots = []
+            DAYS.forEach(day => {
+              const dayOverride = o[day.toLowerCase()]
+              if (dayOverride) {
+                if (dayOverride.lunch) expectedSlots.push({ day, meal: 'lunch' })
+                if (dayOverride.dinner) expectedSlots.push({ day, meal: 'dinner' })
+              }
+            })
+          }
+        } catch { /* fall through to full week */ }
+      }
+      if (!expectedSlots || expectedSlots.length === 0) {
+        expectedSlots = DAYS.flatMap(day => [{ day, meal: 'lunch' }, { day, meal: 'dinner' }])
+      }
+      const allDone = !!surveyData && expectedSlots.every(slot => {
+        const dk = slot.day.substring(0, 3).toLowerCase()
+        const mk = slot.meal === 'lunch' ? 'l' : 'd'
+        return surveyData[`${dk}_${mk}_status`]
       })
       setWeeklySurveySubmitted(allDone)
     } catch { /* ignore */ }
     setStatsLoading(false)
-  }, [user?.id, todayKey, appSettings.survey_open_hour])
+  }, [user?.id, todayKey, appSettings.survey_open_hour, appSettings.survey_status, appSettings.user_overrides])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -153,7 +184,7 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
   useEffect(() => {
     if (!user?.id) return
     const ch = supabase.channel('home-survey-status')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_submissions_flat', filter: `user_id=eq.${user.id}` }, () => loadData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses', filter: `user_id=eq.${user.id}` }, () => loadData())
       .subscribe()
     return () => supabase.removeChannel(ch)
   }, [user?.id, loadData])
@@ -221,7 +252,7 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
     } finally { setSubmittingFeedback(false) }
   }
 
-  const currentWeekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
+  const currentWeekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
 
   // Time-window lunch/dinner quick-edit: only shown while a meal's edit window is live
   const currentMealInfo = weeklyMenu ? getCardMealInfo(weeklyMenu, appSettings) : null

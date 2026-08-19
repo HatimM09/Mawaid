@@ -5,11 +5,12 @@
 // FCM is sent via Firebase Admin SDK (admin.messaging) — no OAuth needed.
 // ═════════════════════════════════════════════════════════════════
 
-const { onRequest } = require('firebase-functions/v2/https')
-const { setGlobalOptions } = require('firebase-functions/v2/options')
-const admin = require('firebase-admin')
-const webpush = require('web-push')
-const { createClient } = require('@supabase/supabase-js')
+import { onRequest } from 'firebase-functions/v2/https'
+import { setGlobalOptions } from 'firebase-functions/v2/options'
+import admin from 'firebase-admin'
+import webpush from 'web-push'
+import { createClient } from '@supabase/supabase-js'
+import process from 'process'
 
 setGlobalOptions({ region: 'us-central1' })
 admin.initializeApp()
@@ -43,7 +44,7 @@ const setCorsHeaders = (res) => {
 // ═════════════════════════════════════════════════════════════════
 // sendPush — HTTP endpoint for sending push notifications
 // ════════════════════════════════════════════════════════════════
-exports.sendPush = onRequest({
+export const sendPush = onRequest({
   secrets: ['SUPABASE_SERVICE_ROLE_KEY'],
   cors: true,
   invoker: 'public',

@@ -5,7 +5,8 @@ import { ThemeCtx, useAuth } from '../admin/context'
 import { updateSystemTheme } from '../admin/ui'
 import OfflineBanner from '../components/OfflineBanner'
 import DailySurveyModal from '../components/DailySurveyModal'
-import { getWeekDate } from '../common/utils'
+import { getSurveyTargetWeek } from '../common/utils'
+import { fetchUserSurveyRow } from '../lib/surveyRows'
 import { THEMES } from './theme'
 import { hasUserOverride, isSurveyOpen } from './survey'
 import { GeoBg, GlobalStyles } from './ui'
@@ -142,7 +143,7 @@ export default function ThaliUserApp() {
         try {
           const dayNum = new Date().getDay()
           const h = new Date().getHours()
-          const weekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
+          const weekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
           let isEating = false
 
           if (dayNum !== 0) {
@@ -152,13 +153,7 @@ export default function ThaliUserApp() {
             const dayKey = today.substring(0, 3).toLowerCase()
             const mealKey = mealName === 'lunch' ? 'l' : 'd'
             
-            const { data: subData } = await supabase
-              .from('survey_submissions_flat')
-              .select(`${dayKey}_${mealKey}_status`)
-              .eq('user_id', user.id)
-              .eq('week_id', weekId)
-              .maybeSingle()
-              
+            const { data: subData } = await fetchUserSurveyRow(user.id, weekId)
             const status = subData ? subData[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
             isEating = status === 'Applied'
           }
@@ -199,7 +194,7 @@ export default function ThaliUserApp() {
             try {
 const dayNum = new Date().getDay()
           const h = new Date().getHours()
-          const weekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
+          const weekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
           let isEating = false
 
           if (dayNum !== 0) {
@@ -209,14 +204,8 @@ const dayNum = new Date().getDay()
                 const dayKey = today.substring(0, 3).toLowerCase()
                 const mealKey = mealName === 'lunch' ? 'l' : 'd'
                 
-                const { data } = await supabase
-                  .from('survey_submissions_flat')
-                  .select(`${dayKey}_${mealKey}_status`)
-                  .eq('user_id', user.id)
-                  .eq('week_id', weekId)
-                  .maybeSingle()
-                  
-                const status = data ? data[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
+                const { data: statusData } = await fetchUserSurveyRow(user.id, weekId)
+                const status = statusData ? statusData[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
                 isEating = status === 'Applied'
               }
               
@@ -399,7 +388,7 @@ const dayNum = new Date().getDay()
         })()}
 
         {activeTab === 'home' && <HomePage setShowDailySurvey={setShowDailySurvey} onGoToSurvey={() => { loadAppSettings(); setActiveTab('survey') }} appSettings={appSettings} />}
-        {activeTab === 'menu' && <WeeklyMenuPage />}
+        {activeTab === 'menu' && <WeeklyMenuPage appSettings={appSettings} />}
         {activeTab === 'survey' && <SurveyPage appSettings={appSettings} />}
 
         {activeTab === 'post' && <PostPage />}

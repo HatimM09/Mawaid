@@ -3,9 +3,11 @@ import { X, ChevronRight, Sun, Moon, Check, CheckCircle } from 'lucide-react'
 import { supabase } from '../lib/firebaseClient'
 import { useAuth } from '../admin/context'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
-import { getWeekDate } from '../common/utils'
+import { getSurveyTargetWeek } from '../common/utils'
 import { isRotiItem, isCountInput, normalizeDishValue, denormalizeDishValue, useSurveyAutoSave, getPctColor, mergeDishSnapshot } from '../hooks/useSurvey'
+import { getTodayKey } from '../member/constants'
 import { submitSurveyRow } from '../lib/submitSurvey'
+import { fetchUserSurveyRow } from '../lib/surveyRows'
 
 const THEME = {
   bg: '#0d0d1a', card: 'rgba(255,255,255,0.03)', cardActive: 'rgba(255,255,255,0.06)',
@@ -14,11 +16,6 @@ const THEME = {
   accentBg: 'rgba(212,175,55,0.1)', text: '#f0f0f5', textSub: 'rgba(240,240,245,0.5)',
   inputBg: 'rgba(255,255,255,0.05)', successText: '#4CAF50',
   success: '#4CAF50', danger: '#F44336'
-}
-
-const getTodayKey = () => {
-  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-  return days[new Date().getDay()]
 }
 
 export default function DailySurveyModal({ onClose, appSettings = {}, day: propDay }) {
@@ -60,11 +57,10 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
     saveTimerRef.current = setTimeout(async () => {
       setAutoSaveStatus('saving')
       try {
-        const currentWeekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
-        const { data: existing } = await supabase.from('survey_submissions_flat')
-          .select('*').eq('user_id', user?.id).eq('week_id', currentWeekId).maybeSingle()
+        const currentWeekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
+        const { data: existing } = await fetchUserSurveyRow(user?.id, currentWeekId)
         const updateObj = {
-          user_id: user?.id, week_id: currentWeekId,
+          user_id: user?.id, week_id: currentWeekId, day: dayKey,
           thali_number: userData.thali_no, email: userData.email || '',
           updated_at: new Date().toISOString()
         }
@@ -105,7 +101,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
   useEffect(() => {
     if (Object.keys(responses).length === 0) return
     if (initialLoadRef.current) return
-    const currentWeekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
+    const currentWeekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
     const draftKey = `survey_draft_${currentWeekId}_${user?.id}`
     const timer = setTimeout(() => {
       try { localStorage.setItem(draftKey, JSON.stringify({ responses, updatedAt: new Date().toISOString() })) } catch {}
@@ -122,9 +118,8 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
   // Load existing submission
   useEffect(() => {
     const loadExisting = async () => {
-      const currentWeekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
-      const { data: existing } = await supabase.from('survey_submissions_flat')
-        .select('*').eq('user_id', user?.id).eq('week_id', currentWeekId).maybeSingle()
+      const currentWeekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
+      const { data: existing } = await fetchUserSurveyRow(user?.id, currentWeekId)
       if (existing) {
         const dk = today.substring(0, 3).toLowerCase()
         const lunchVal = existing[`${dk}_l_status`]
@@ -157,9 +152,9 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
   const submitSurvey = async () => {
     setLoading(true)
     try {
-      const currentWeekId = getWeekDate(parseInt(appSettings.survey_open_hour, 10) || 20)
+      const currentWeekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
       const updateObj = {
-        user_id: user?.id, week_id: currentWeekId,
+        user_id: user?.id, week_id: currentWeekId, day: dayKey,
         thali_number: userData.thali_no, email: userData.email || '',
         updated_at: new Date().toISOString()
       }
@@ -633,6 +628,7 @@ function DishToggle({ dish, meal, idx, responses, toggleDish, setResponses, appS
             touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent'
           }}>−</button>
           <input
+            name={`${dayKey}-dish-count-${idx}`}
             type="number"
             min={1}
             max={maxCount ?? 99}

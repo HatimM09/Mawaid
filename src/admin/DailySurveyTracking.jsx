@@ -5,7 +5,7 @@ import { supabase } from '../lib/firebaseClient'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { 
   Search, RefreshCw, ChevronRight, Check, X, Filter, 
-  Calendar, Utensils, User as UserIcon, Clock, ChevronDown, ChevronUp, Scan
+  Calendar, Utensils, User as UserIcon, Clock, ChevronDown, ChevronUp, Scan, Trash2
 } from 'lucide-react'
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { 
@@ -13,35 +13,9 @@ import {
   SectionHeader, Modal, PackingTVView, fmtDate, ErrorBanner
 } from './ui'
 
-import { getWeekDate, DAYS, toLocalDateStr } from '../common/utils'
-import { getPctColor, getSlotDishes } from '../hooks/useSurvey'
-
-// Decide whether a member's thali is stopped on the given date for the given meal,
-// based on their pending/approved stop & resume requests (sorted by created_at, so
-// the most recent request that affects the day wins).
-// A stop WITH a to_date is strictly bounded: the member is "No Thali" only inside
-// [from_date, to_date] and is treated as eating again right after to_date (so the
-// tracker shows their real survey response once the stop period ends). A stop
-// without a to_date stays active until a newer resume/stop request overrides it.
-const isStoppedOnDay = (reqs, selDateStr, meal) => {
-  let stopped = false
-  ;(reqs || [])
-    .slice()
-    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-    .forEach(sr => {
-      const coversMeal = !sr.meal_type || sr.meal_type === 'both' || sr.meal_type === meal
-      if (!coversMeal) return
-      const from = sr.from_date ? String(sr.from_date) : null
-      const to = sr.to_date ? String(sr.to_date) : null
-      if (from && selDateStr < from) return // request not active yet
-      if (sr.kind === 'resume') {
-        stopped = false // resumed eating from this request's from_date onward
-      } else if (sr.kind === 'stop') {
-        stopped = to ? selDateStr <= to : true // within range -> stopped; after to_date -> eating again
-      }
-    })
-  return stopped
-}
+import { getSurveyTargetWeek, DAYS, toLocalDateStr, isStoppedOnDay } from '../common/utils'
+import { getPctColor, getSlotDishes, hasUserOverride } from '../hooks/useSurvey'
+import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot } from '../lib/surveyRows'
 
 // Pick the stop request whose dates best describe the current stopped period
 // (prefer the newest stop that actually covers the day, else the newest stop).
@@ -84,9 +58,11 @@ export default function DailySurveyTracking() {
   const [availableWeeks, setAvailableWeeks] = useState([])
   const [dishInputConfig, setDishInputConfig] = useState({})
   const [surveyOpenHour, setSurveyOpenHour] = useState(20)
+  const [surveyForceOpen, setSurveyForceOpen] = useState(false)
 
-  // Survey target week based on the configured open hour (default Sat 8PM)
-  const surveyWeekId = () => getWeekDate(surveyOpenHour)
+  // Survey target week based on the configured open hour (default Sat 8PM);
+  // matches the member side so force-open/override fills are visible
+  const surveyWeekId = () => getSurveyTargetWeek(surveyOpenHour, surveyForceOpen)
 
   // Helper to check if a dish at a given index is count or percentage
   const getInputType = (d, m, idx) => {
@@ -108,9 +84,8 @@ export default function DailySurveyTracking() {
       const dayKey = day.substring(0, 3).toLowerCase()
       const mealKey = meal === 'lunch' ? 'l' : 'd'
       const weekId = surveyWeekId()
-      
-      const { data: row } = await supabase.from('survey_submissions_flat')
-        .select('*').eq('user_id', userId).eq('week_id', weekId).maybeSingle()
+
+      const { data: row } = await fetchUserSurveyRow(userId, weekId)
 
       // Check for an active stop-thali request covering this day+meal
       const dayIdx = DAYS.indexOf(day)
@@ -147,9 +122,12 @@ export default function DailySurveyTracking() {
       const buildDishMap = (dayName, mealName, fallbackList) => {
         const mk = mealName === 'lunch' ? 'l' : 'd'
         const dishList = getSlotDishes(row, dayName, mealName, fallbackList)
+        const names = dishList.length > 0
+          ? dishList
+          : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`)
         const result = {}
         result._status = row ? row[`${dayKey}_${mk}_status`] : null
-        dishList.forEach((d, i) => {
+        names.forEach((d, i) => {
           const val = row ? row[`${dayKey}_${mk}_dish_${i + 1}`] : null
           if (val !== undefined && val !== null && val !== '') {
             const rotiKw = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
@@ -171,6 +149,7 @@ export default function DailySurveyTracking() {
 
       setSelectedUser({
         ...u,
+        week_id: weekId,
         stopped: isStopped,
         stopInfo,
         status: isStopped ? 'Skipped' : lunchMap._status,
@@ -259,32 +238,40 @@ export default function DailySurveyTracking() {
         if (oldRows && oldRows.length) {
           const oldWeeks = [...new Set(oldRows.map(r => r.week_id))].filter(Boolean)
           for (const ow of oldWeeks) {
+            await supabase.from('survey_day_responses').delete().eq('week_id', ow)
             await supabase.from('survey_submissions_flat').delete().eq('week_id', ow)
           }
         }
       } catch (e) { console.warn('Cleanup error:', e) }
 
-      // Load dish input config
-      const { data: settingsData } = await supabase.from('app_settings').select('*').eq('key', 'dish_input_config').maybeSingle()
-      if (settingsData) {
-        try { setDishInputConfig(JSON.parse(settingsData.value)) } catch {}
+      // Load app settings (dish input config, survey open hour, status, user overrides)
+      const { data: allSettings } = await supabase.from('app_settings').select('*')
+      const settingsMap = {}
+      ;(allSettings || []).forEach(r => { if (r && r.key) settingsMap[r.key] = r.value })
+
+      if (settingsMap.dish_input_config) {
+        try { setDishInputConfig(JSON.parse(settingsMap.dish_input_config)) } catch {}
       }
 
-      // Load configured survey open hour so the tracked week matches the survey window
-      const { data: openHourRow } = await supabase.from('app_settings').select('value').eq('key', 'survey_open_hour').maybeSingle()
-      if (openHourRow) {
-        const h = parseInt(openHourRow.value, 10)
-        if (!isNaN(h)) setSurveyOpenHour(h)
+      let curOpenHour = 20
+      if (settingsMap.survey_open_hour) {
+        const h = parseInt(settingsMap.survey_open_hour, 10)
+        if (!isNaN(h)) curOpenHour = h
       }
+      const curForceOpen = settingsMap.survey_status === 'open'
+      setSurveyOpenHour(curOpenHour)
+      setSurveyForceOpen(curForceOpen)
+
+      const targetWeekId = getSurveyTargetWeek(curOpenHour, curForceOpen)
 
       const { data: users, error: usersError } = await supabase
         .from('user_stats')
         .select('user_id, name, thali_number, email, avatar_url')
       if (usersError) throw usersError
 
-      const { data: submissions, error: subsError } = await supabase
-        .from('survey_submissions_flat')
-        .select('*')
+      // Load ALL merged survey rows (per user+week: live day rows first,
+      // legacy flat mirror as the fallback for historical weeks).
+      const { data: allRows, error: subsError } = await fetchAllUserRows()
       if (subsError) throw subsError
 
       // Thali stop/stop requests — used to mark a member as "no thali" (stopped)
@@ -303,7 +290,7 @@ export default function DailySurveyTracking() {
         .in('status', ['pending', 'approved'])
 
       const dayIdx = DAYS.indexOf(day)
-      const trackingWeek = new Date(surveyWeekId() + 'T00:00:00')
+      const trackingWeek = new Date(targetWeekId + 'T00:00:00')
       const selDate = new Date(trackingWeek)
       selDate.setDate(trackingWeek.getDate() + (dayIdx === -1 ? 0 : dayIdx))
       const selDateStr = toLocalDateStr(selDate)
@@ -343,19 +330,21 @@ export default function DailySurveyTracking() {
 
       setLoadError(null)
 
-      // Merge submissions into user records
+      // Merge merged rows into user records (one array per user, newest week first)
       const subMap = {}
-      for (const s of submissions || []) {
+      for (const s of allRows || []) {
         if (!subMap[s.user_id]) subMap[s.user_id] = []
         subMap[s.user_id].push(s)
       }
       const resultsRaw = (users || []).map(u => ({
         ...u,
-        survey_submissions_flat: subMap[u.user_id] || []
+        survey_submissions_flat: (subMap[u.user_id] || [])
+          .slice()
+          .sort((a, b) => (b.week_id || '').localeCompare(a.week_id || '')),
       }))
 
       // Collect distinct week_ids for filter
-      const allWeeks = [...new Set((submissions || []).map(s => s.week_id).filter(Boolean))].sort().reverse()
+      const allWeeks = [...new Set((allRows || []).map(s => s.week_id).filter(Boolean))].sort().reverse()
       setAvailableWeeks(allWeeks)
       
       const dayKey = day.substring(0, 3).toLowerCase()
@@ -388,7 +377,9 @@ export default function DailySurveyTracking() {
         const submissionData = Array.isArray(u.survey_submissions_flat) ? u.survey_submissions_flat : (u.survey_submissions_flat ? [u.survey_submissions_flat] : [])
         let resp
         if (weekFilter === 'all') {
-          resp = submissionData.sort((a, b) => (b.week_id || '').localeCompare(a.week_id || ''))[0]
+          resp = submissionData.slice().sort((a, b) =>
+            (b.week_id || '').localeCompare(a.week_id || '')
+          )[0]
         } else {
           resp = submissionData.find(r => r.week_id === weekFilter)
         }
@@ -398,8 +389,12 @@ export default function DailySurveyTracking() {
         const stoppedInfo = stoppedMap[u.user_id]
         const isStopped = !!stoppedInfo
         const baseStatus = buildCurMeal._status
+        const isOverride = hasUserOverride(settingsMap, u.user_id, day, meal) ||
+          hasUserOverride(settingsMap, u.user_id) ||
+          (resp && (resp._isOverride || resp.edit_metadata?.[`${dayKey}_${mealKey}_override`]))
         return { 
           ...u, 
+          _isOverride: !!isOverride,
           stopped: isStopped,
           stopInfo: stoppedInfo || null,
           status: isStopped ? 'Skipped' : baseStatus,
@@ -425,10 +420,16 @@ export default function DailySurveyTracking() {
   useEffect(() => {
     load()
 
-    // REALTIME SUBSCRIPTION
+    // REALTIME SUBSCRIPTION — watch tables so saves appear live
     const surveySub = supabase
       .channel('survey_tracking')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_submissions_flat' }, () => {
+        load(true)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => {
+        load(true)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, () => {
         load(true)
       })
       .subscribe()
@@ -856,9 +857,13 @@ function MemberRow({ user, onClick }) {
             <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 800, marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               ⏹️ STOP THALI{user.stopInfo?.from_date ? ` · ${user.stopInfo.from_date}` + (user.stopInfo.to_date && user.stopInfo.to_date !== user.stopInfo.from_date ? ` → ${user.stopInfo.to_date}` : '') : ''}
             </div>
+          ) : user._isOverride ? (
+            <div style={{ fontSize: 10, color: '#4CAF50', fontWeight: 800, marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ padding: '1px 6px', borderRadius: 4, background: 'rgba(76,175,80,0.15)', border: '1px solid rgba(76,175,80,0.3)' }}>OVERRIDE</span>
+            </div>
           ) : user.updated_at && (
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: 500, marginTop: 2, opacity: 0.7 }}>
-              📅 {new Date(user.updated_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              {new Date(user.updated_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
             </div>
           )}
         </div>

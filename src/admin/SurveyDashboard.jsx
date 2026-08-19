@@ -10,8 +10,9 @@ import {
   T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner, Modal,
   SectionHeader, SurveyResponseDisplay, PackingTVView, fmtDate, ErrorBanner
 } from './ui'
-import { getWeekDate, DAYS, MEALS, getDayKey, getMealKey } from '../common/utils'
+import { getSurveyTargetWeek, DAYS, MEALS, getDayKey, getMealKey } from '../common/utils'
 import { getSlotDishes } from '../hooks/useSurvey'
+import { fetchWeekRows, fetchAllUserRows } from '../lib/surveyRows'
 
 const TABS = ['overview', 'tracking', 'automation']
 
@@ -52,9 +53,10 @@ export default function SurveyDashboard() {
   })
 
   const loadAvailableWeeks = useCallback(async () => {
-    const { data } = await supabase.from('survey_submissions_flat').select('week_id', { count: true, distinct: true })
-    if (data) {
-      const weeks = [...new Set(data.map(r => r.week_id))].sort().reverse()
+    const { data } = await fetchAllUserRows()
+    const allData = data || []
+    if (allData.length) {
+      const weeks = [...new Set(allData.map(r => r.week_id))].sort().reverse()
       setAvailableWeeks(weeks)
     }
   }, [])
@@ -62,14 +64,10 @@ export default function SurveyDashboard() {
   const loadOverviewStats = useCallback(async () => {
     setStatsLoading(true)
     try {
-      const currentWeekId = getWeekDate(parseInt(autoSettings.survey_open_hour) || 20)
-      const allDays = DAYS.map(d => getDayKey(d))
-      const mealKeys = ['l', 'd']
-      const cols = allDays.flatMap(dk => mealKeys.map(mk => `${dk}_${mk}_status`))
-      cols.push('user_id', 'week_id')
+      const currentWeekId = getSurveyTargetWeek(parseInt(autoSettings.survey_open_hour) || 20, autoSettings.survey_status === 'open')
 
-      const { data: submissions } = await supabase.from('survey_submissions_flat')
-        .select(cols.join(',')).eq('week_id', currentWeekId)
+      // Load merged rows for the week — day responses are the single store
+      const { data: submissions } = await fetchWeekRows(currentWeekId)
       const { data: allUsers } = await supabase.from('user_stats').select('*')
 
       if (allUsers) {
@@ -115,7 +113,7 @@ export default function SurveyDashboard() {
   const loadTrackData = useCallback(async () => {
     setLoading(true)
     try {
-      const currentWeekId = getWeekDate(parseInt(autoSettings.survey_open_hour) || 20)
+      const currentWeekId = getSurveyTargetWeek(parseInt(autoSettings.survey_open_hour) || 20, autoSettings.survey_status === 'open')
       const weekId = trackWeekFilter !== 'all' ? trackWeekFilter : currentWeekId
       const dk = getDayKey(trackDay)
       const mk = getMealKey(trackMeal)
@@ -123,12 +121,8 @@ export default function SurveyDashboard() {
       const menu = weeklyMenu[trackDay]?.[trackMeal] || []
 
       const { data: allUsers } = await supabase.from('user_stats').select('*')
-      // Fetch all dish columns (max 6 per slot) + the dish-name snapshot so
-      // responses stay correctly labelled even if the menu changed since save.
-      const dishCols = Array.from({ length: 6 }, (_, i) => `${dk}_${mk}_dish_${i + 1}`)
-      const { data: submissions } = await supabase.from('survey_submissions_flat')
-        .select(`user_id, ${statusCol}, updated_at, dish_snapshot, ${dishCols.join(',')}`)
-        .eq('week_id', weekId)
+      // Load merged rows for the week — day responses are the single store
+      const { data: submissions } = await fetchWeekRows(weekId)
 
       const subMap = {}
       const subTimeMap = {}
@@ -181,11 +175,11 @@ export default function SurveyDashboard() {
     if (activeTab === 'tracking') loadTrackData()
   }, [activeTab])
 
-  // Auto-refresh on realtime changes
+  // Auto-refresh on realtime changes — watch both tables for override saves
   useEffect(() => {
     const channel = supabase
       .channel('survey-dashboard-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_submissions_flat' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => {
         if (activeTab === 'overview') loadOverviewStats()
         if (activeTab === 'tracking') loadTrackData()
       })
@@ -205,7 +199,7 @@ export default function SurveyDashboard() {
 
   const sendReminderNow = async () => {
     try {
-      const currentWeekId = getWeekDate(parseInt(autoSettings.survey_open_hour) || 20)
+      const currentWeekId = getSurveyTargetWeek(parseInt(autoSettings.survey_open_hour) || 20, autoSettings.survey_status === 'open')
       const dk = getDayKey(trackDay)
       const mk = getMealKey(trackMeal)
       const statusCol = `${dk}_${mk}_status`
