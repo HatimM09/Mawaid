@@ -531,10 +531,9 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     moveToSlot(slotList[currentSlot + 1], 'right')
   }
 
-  // Build the day-scoped write payload from the current slot + form state.
-  // One builder for BOTH the fill-flow save and the post-submit edit save, so
-  // the two paths can never drift apart (single audited write path).
   const buildUpdateObj = (isEdit = false) => {
+    const isWants = wantsFoodRef.current !== null ? wantsFoodRef.current : wantsFood
+    const status = isWants ? 'Applied' : 'Skipped'
     const updateObj = {
       user_id: user?.id, week_id: currentWeekId, day: dayKey,
       thali_number: userData.thali_no, email: userData.email || '',
@@ -542,18 +541,20 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
       dish_snapshot: mergeDishSnapshot(existingData, currentDay, currentMeal, dishes),
       _isOverride: userHasOverride || false
     }
-    const status = wantsFoodRef.current ? 'Applied' : 'Skipped'
     updateObj[`${dayKey}_${mealKey}_status`] = status
     const currentEditCount = existingData?.edit_metadata?.[`${dayKey}_${mealKey}`] || 0
     const editMeta = { ...(existingData?.edit_metadata || {}), [`${dayKey}_${mealKey}`]: currentEditCount + 1 }
     // Display marker for the submitted-view badge — informational only, never a gate.
     if (isEdit) editMeta[`${dayKey}_${mealKey}_edited`] = true
+    if (userHasOverride) editMeta[`${dayKey}_${mealKey}_override`] = true
     updateObj.edit_metadata = editMeta
     if (status === 'Applied') {
       dishes.forEach((dish, idx) => {
         const val = responses[dish]
         const isCount = isCountInput(appSettings, currentDay, currentMeal, idx)
-        if (val !== undefined) updateObj[`${dayKey}_${mealKey}_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCount)
+        if (val !== undefined && val !== null) {
+          updateObj[`${dayKey}_${mealKey}_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCount)
+        }
       })
     }
     return updateObj
@@ -1974,9 +1975,25 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
 
                 {isLast && !slotLocked && !surveySubmitted && (
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    {!initialDay ? (
-                      /* Full-week fill flow: the final slot hands off to the review
-                         step (day list with ✏️ Edit) instead of submitting directly. */
+                    {userHasOverride || initialDay ? (
+                      /* Override flow or Day-scoped deep-link: direct submit button on final slot */
+                      <button onClick={handleSubmitWeekly}
+                        disabled={loading}
+                        style={{
+                          padding: '12px 24px', borderRadius: 12, border: 'none',
+                          background: loading ? THEME.border : THEME.accentGrad,
+                          color: loading ? 'rgba(0,0,0,0.3)' : '#000',
+                          cursor: loading ? 'not-allowed' : 'pointer',
+                          fontSize: 13, fontWeight: 900, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif",
+                          boxShadow: loading ? 'none' : `0 8px 20px ${THEME.accentBg}`,
+                          opacity: loading ? 0.6 : 1,
+                          transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                        }}
+                        onMouseEnter={e => { if (!loading) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 12px 28px ${THEME.accentBg}` } }}
+                        onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = loading ? 'none' : `0 8px 20px ${THEME.accentBg}` }}
+                      >{loading ? 'Submitting...' : (userHasOverride ? '🚀 Submit Override Survey' : '✅ Submit Weekly Survey')}</button>
+                    ) : (
+                      /* Full-week fill flow: the final slot hands off to the review step */
                       <button onClick={openReview}
                         disabled={loading}
                         style={{
@@ -1992,24 +2009,6 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
                         onMouseEnter={e => { if (!loading) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 12px 28px ${THEME.accentBg}` } }}
                         onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = loading ? 'none' : `0 8px 20px ${THEME.accentBg}` }}
                       >{loading ? 'Saving...' : '📋 Review & Submit'} <ChevronRight size={16} /></button>
-                    ) : (
-                      /* Day-scoped deep-link (opened from a day card): keep the
-                         direct submit for the day being edited. */
-                      <button onClick={handleSubmitWeekly}
-                        disabled={loading}
-                        style={{
-                          padding: '12px 24px', borderRadius: 12, border: 'none',
-                          background: loading ? THEME.border : THEME.accentGrad,
-                          color: loading ? 'rgba(0,0,0,0.3)' : '#000',
-                          cursor: loading ? 'not-allowed' : 'pointer',
-                          fontSize: 13, fontWeight: 900, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif",
-                          boxShadow: loading ? 'none' : `0 8px 20px ${THEME.accentBg}`,
-                          opacity: loading ? 0.6 : 1,
-                          transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                        }}
-                        onMouseEnter={e => { if (!loading) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 12px 28px ${THEME.accentBg}` } }}
-                        onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = loading ? 'none' : `0 8px 20px ${THEME.accentBg}` }}
-                      >{loading ? 'Submitting...' : '✅ Submit Weekly Survey'}</button>
                     )}
                   </div>
                 )}

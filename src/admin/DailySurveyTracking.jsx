@@ -29,7 +29,10 @@ const pickStopInfo = (reqs, selDateStr, meal) => {
 }
 
 export default function DailySurveyTracking() {
-  const weeklyMenu = useWeeklyMenu() || {}
+  const [surveyOpenHour, setSurveyOpenHour] = useState(20)
+  const [surveyForceOpen, setSurveyForceOpen] = useState(false)
+  const surveyWeekId = () => getSurveyTargetWeek(surveyOpenHour, surveyForceOpen)
+  const weeklyMenu = useWeeklyMenu(surveyWeekId()) || {}
   const [searchParams] = useSearchParams()
   const urlMeal = searchParams.get('meal')
   const [loading, setLoading] = useState(true)
@@ -57,12 +60,6 @@ export default function DailySurveyTracking() {
   const [weekFilter, setWeekFilter] = useState('all')
   const [availableWeeks, setAvailableWeeks] = useState([])
   const [dishInputConfig, setDishInputConfig] = useState({})
-  const [surveyOpenHour, setSurveyOpenHour] = useState(20)
-  const [surveyForceOpen, setSurveyForceOpen] = useState(false)
-
-  // Survey target week based on the configured open hour (default Sat 8PM);
-  // matches the member side so force-open/override fills are visible
-  const surveyWeekId = () => getSurveyTargetWeek(surveyOpenHour, surveyForceOpen)
 
   // Helper to check if a dish at a given index is count or percentage
   const getInputType = (d, m, idx) => {
@@ -121,14 +118,15 @@ export default function DailySurveyTracking() {
       
       const buildDishMap = (dayName, mealName, fallbackList) => {
         const mk = mealName === 'lunch' ? 'l' : 'd'
+        const dk = String(dayName || day).substring(0, 3).toLowerCase()
         const dishList = getSlotDishes(row, dayName, mealName, fallbackList)
         const names = dishList.length > 0
           ? dishList
           : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`)
         const result = {}
-        result._status = row ? row[`${dayKey}_${mk}_status`] : null
+        result._status = row ? row[`${dk}_${mk}_status`] : null
         names.forEach((d, i) => {
-          const val = row ? row[`${dayKey}_${mk}_dish_${i + 1}`] : null
+          const val = row ? row[`${dk}_${mk}_dish_${i + 1}`] : null
           if (val !== undefined && val !== null && val !== '') {
             const rotiKw = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
             if (rotiKw.some(k => d.toLowerCase().includes(k))) {
@@ -353,11 +351,12 @@ export default function DailySurveyTracking() {
       
       const buildDishMap = (r, dayName, mealName, fallbackList) => {
         const mk = mealName === 'lunch' ? 'l' : 'd'
+        const dk = String(dayName || day).substring(0, 3).toLowerCase()
         const dishList = getSlotDishes(r, dayName, mealName, fallbackList)
         const result = {}
-        result._status = r ? r[`${dayKey}_${mk}_status`] : null
+        result._status = r ? r[`${dk}_${mk}_status`] : null
         dishList.forEach((d, i) => {
-          const val = r ? r[`${dayKey}_${mk}_dish_${i + 1}`] : null
+          const val = r ? r[`${dk}_${mk}_dish_${i + 1}`] : null
           if (val !== undefined && val !== null && val !== '') {
             const rotiKw = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
             if (rotiKw.some(k => d.toLowerCase().includes(k))) {

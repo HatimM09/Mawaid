@@ -21,7 +21,10 @@ const TooltipStyle = {
 
 export default function SurveysPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const weeklyMenu = useWeeklyMenu() || {}
+  const [surveyOpenHour, setSurveyOpenHour] = useState(20)
+  const [surveyForceOpen, setSurveyForceOpen] = useState(false)
+  const surveyWeekId = () => getSurveyTargetWeek(surveyOpenHour, surveyForceOpen)
+  const weeklyMenu = useWeeklyMenu(surveyWeekId()) || {}
   const [loading, setLoading] = useState(true)
   const [responses, setResponses] = useState([])
   const [users, setUsers] = useState({})
@@ -38,9 +41,6 @@ export default function SurveysPage() {
     const today = dayNames[d]
     return ['monday','tuesday','wednesday','thursday','friday','saturday'].includes(today) ? today : 'monday'
   })
-  const [surveyOpenHour, setSurveyOpenHour] = useState(20)
-  const [surveyForceOpen, setSurveyForceOpen] = useState(false)
-  const surveyWeekId = () => getSurveyTargetWeek(surveyOpenHour, surveyForceOpen)
   const [mealFilter, setMealFilter] = useState(() => {
     const h = new Date().getHours() + new Date().getMinutes() / 60
     return (h >= 20 || h < 14) ? 'lunch' : 'dinner'
