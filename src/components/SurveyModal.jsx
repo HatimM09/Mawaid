@@ -472,7 +472,8 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     // Locked slots (edit window closed) can't be changed, and post-submit edit
     // mode only persists via the explicit "Save Edit" button — never auto-save
     // while just navigating between menus.
-    if (wantsFood === null || loading || slotLocked || editResponseMode) return null
+    const curWants = wantsFoodRef.current !== null ? wantsFoodRef.current : wantsFood
+    if (curWants === null || loading || slotLocked || editResponseMode) return null
     return saveCurrentSlot()
   }, [wantsFood, loading, slotLocked, editResponseMode])
 
@@ -483,6 +484,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     setCurrentMeal(slot.meal)
     setViewDay(slot.day)
     setWantsFood(null)
+    wantsFoodRef.current = null
     setResponses({})
     setTimeout(() => setAnimatingDayDir(null), 350)
   }
@@ -502,7 +504,8 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   const goToNext = async () => {
     if (isLast) return
     if (!slotLocked && !editResponseMode && !guardAnswered()) return
-    await saveCurrentIfNeeded()
+    const saveResult = await saveCurrentIfNeeded()
+    const latestData = saveResult?.refreshed || existingData
     // Day-card gate: the current day's card must have BOTH meals answered and
     // synced before advancing to the next day — no skipping half-finished days.
     // Override users may be granted ONLY lunch or ONLY dinner per day, so the
@@ -515,8 +518,8 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
         const dayHasDinner = slotList.some(s => s.day === currentDay && s.meal === 'dinner')
         if (dayHasLunch && dayHasDinner) {
           const dk = currentDay.substring(0, 3).toLowerCase()
-          const lunchStatus = existingData?.[`${dk}_l_status`]
-          const dinnerStatus = existingData?.[`${dk}_d_status`]
+          const lunchStatus = latestData?.[`${dk}_l_status`]
+          const dinnerStatus = latestData?.[`${dk}_d_status`]
           if (!lunchStatus || !dinnerStatus) {
             window.alert("⚠️ Please complete this day's card — both Lunch and Dinner must be answered before moving on.")
             return
@@ -566,10 +569,11 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   const refetchExisting = async () => {
     const { data: refreshed } = await fetchUserSurveyRow(user?.id, currentWeekId)
     if (refreshed) setExistingData(refreshed)
+    return refreshed || null
   }
 
   const saveAndLockEdit = async () => {
-    if (wantsFoodRef.current === null) return
+    if (wantsFoodRef.current === null && wantsFood === null) return
     if (loading) return
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     setLoading(true)
@@ -587,16 +591,17 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   }
 
   const saveCurrentSlot = async () => {
-    if (wantsFoodRef.current === null && wantsFood === null) return null
+    const curWants = wantsFoodRef.current !== null ? wantsFoodRef.current : wantsFood
+    if (curWants === null) return null
     if (loading) return null
     setLoading(true)
     try {
       const { error } = await submitSurveyRow(buildUpdateObj(false))
       if (error) throw error
-      await refetchExisting()
-      const status = wantsFoodRef.current ? 'Applied' : 'Skipped'
+      const refreshed = await refetchExisting()
+      const status = curWants ? 'Applied' : 'Skipped'
       setSyncMsg(`Synced ✓ ${dayKey} ${mealKey}`)
-      return status
+      return { status, refreshed }
     } catch (err) {
       console.error('Save error:', err)
       setErrorToast(`Failed to save: ${err?.message || 'Your draft is preserved locally.'} The team has been notified.`)
@@ -845,7 +850,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
           return (
             <button
               key={m}
-              onClick={() => { setCurrentMeal(m); setWantsFood(null); setResponses({}) }}
+              onClick={() => { setCurrentMeal(m); setWantsFood(null); wantsFoodRef.current = null; setResponses({}) }}
               style={{
                 flex: 1, padding: '9px 12px', borderRadius: 10,
                 border: `1.5px solid ${isActive ? THEME.accent : 'transparent'}`,
@@ -920,7 +925,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
               </div>
               {editable ? (
                 <button
-                  onClick={(e) => { e.stopPropagation(); if (firstSlot) { setCurrentDayIndex(idx); setCurrentMeal(firstSlot.meal); setEditResponseMode(true); setWantsFood(null); setResponses({}) } }}
+                  onClick={(e) => { e.stopPropagation(); if (firstSlot) { setCurrentDayIndex(idx); setCurrentMeal(firstSlot.meal); setEditResponseMode(true); setWantsFood(null); wantsFoodRef.current = null; setResponses({}) } }}
                   style={{
                     padding: '8px 14px', borderRadius: 10, flexShrink: 0,
                     border: `1.5px solid ${THEME.accent}`, background: THEME.accentBg, color: THEME.accent,

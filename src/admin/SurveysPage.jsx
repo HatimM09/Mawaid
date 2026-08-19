@@ -272,10 +272,13 @@ export default function SurveysPage() {
             const status = row[`${dayKey}_${mealKey}_status`]
             if (status) {
               const dishResponses = {}
-              const dishes = getSlotDishes(row, day, meal, weeklyMenu[day]?.[meal] || [])
+              const dishList = getSlotDishes(row, day, meal, weeklyMenu[day]?.[meal] || [])
+              const dishes = dishList.length > 0
+                ? dishList
+                : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => row && row[`${dayKey}_${mealKey}_dish_${i + 1}`] !== undefined && row[`${dayKey}_${mealKey}_dish_${i + 1}`] !== null && row[`${dayKey}_${mealKey}_dish_${i + 1}`] !== '')
               dishes.forEach((d, i) => {
                 const val = row[`${dayKey}_${mealKey}_dish_${i + 1}`]
-                if (val !== undefined && val !== null) {
+                if (val !== undefined && val !== null && val !== '') {
                   const lowerVal = String(val).toLowerCase()
                   if (isRotiItem(d)) {
                     dishResponses[d] = lowerVal === 'yes' ? 'yes' : 'no'

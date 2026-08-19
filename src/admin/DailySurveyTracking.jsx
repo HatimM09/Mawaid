@@ -353,9 +353,12 @@ export default function DailySurveyTracking() {
         const mk = mealName === 'lunch' ? 'l' : 'd'
         const dk = String(dayName || day).substring(0, 3).toLowerCase()
         const dishList = getSlotDishes(r, dayName, mealName, fallbackList)
+        const names = dishList.length > 0
+          ? dishList
+          : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => r && r[`${dk}_${mk}_dish_${i + 1}`] !== undefined && r[`${dk}_${mk}_dish_${i + 1}`] !== null && r[`${dk}_${mk}_dish_${i + 1}`] !== '')
         const result = {}
         result._status = r ? r[`${dk}_${mk}_status`] : null
-        dishList.forEach((d, i) => {
+        names.forEach((d, i) => {
           const val = r ? r[`${dk}_${mk}_dish_${i + 1}`] : null
           if (val !== undefined && val !== null && val !== '') {
             const rotiKw = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
