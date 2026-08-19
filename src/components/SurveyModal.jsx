@@ -238,7 +238,9 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   // survey window is open (or for override users). After it closes, the daily
   // lunch/dinner edits happen through the daily edit cards on the Home page.
   // While FILLING, slots are also locked when the meal isn't editable.
-  const slotLocked = surveySubmitted ? !wholeWeekEditable : !isEditable
+  // Override users: their GRANTED slots are always unlocked — never block them.
+  const slotIsGranted = userHasOverride && slotList.some(s => s.day === currentDay && s.meal === currentMeal)
+  const slotLocked = slotIsGranted ? false : (surveySubmitted ? !wholeWeekEditable : !isEditable)
 
 
   // ── ESCAPE KEY TO CLOSE ──
