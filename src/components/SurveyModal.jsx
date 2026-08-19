@@ -271,6 +271,8 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     return () => clearTimeout(t)
   }, [syncMsg])
 
+  const positionedOnOpenRef = useRef(false)
+
   const loadExisting = useCallback(async () => {
     try {
       {
@@ -286,8 +288,6 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
       if (data && data.week_id === currentWeekId) existing = data
       setExistingData(existing)
       setDataLoaded(true)
-      // Survey button was clicked and this week has no saved response yet —
-      // create the week's six per-day rows (survey_day_responses) right away.
       const localSubmitted = localStorage.getItem(`survey_submitted_${currentWeekId}_${user?.id}`) === '1'
       const allDone = existing && slotList.every(slot => {
         const dk = slot.day.substring(0, 3).toLowerCase()
@@ -297,23 +297,47 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
       // For override users: direct filling mode only (do not show edit view screen)
       const isSubmitted = userHasOverride ? false : (!!allDone || localSubmitted)
       setSurveySubmitted(isSubmitted)
-      if (existing && !isSubmitted) {
-        for (const slot of slotList) {
-          const dk = slot.day.substring(0, 3).toLowerCase()
-          const mk = slot.meal === 'lunch' ? 'l' : 'd'
-          if (!existing[`${dk}_${mk}_status`]) {
-            setCurrentDayIndex(DAYS.indexOf(slot.day))
-            setCurrentMeal(slot.meal)
-            return
-          }
-        }
-      }
     } catch {
       setDataLoaded(true)
     }
-  }, [user, currentWeekId, userData.thali_no, slotList])
+  }, [user, currentWeekId, userData.thali_no, slotList, userHasOverride])
 
   useEffect(() => { loadExisting() }, [loadExisting])
+
+  // ── Single initial positioning on open ──
+  // Positions the modal onto the first granted/unanswered slot ONCE when opened.
+  // Never re-runs on state changes or background syncs so the user is never yanked away.
+  useEffect(() => {
+    if (!dataLoaded || positionedOnOpenRef.current || slotList.length === 0) return
+    positionedOnOpenRef.current = true
+
+    if (initialDay) {
+      const daySlot = slotList.find(s => s.day === initialDay)
+      if (daySlot) {
+        setCurrentDayIndex(DAYS.indexOf(daySlot.day))
+        setCurrentMeal(daySlot.meal)
+        setViewDay(daySlot.day)
+      } else {
+        const idx = DAYS.indexOf(initialDay)
+        if (idx !== -1) {
+          setCurrentDayIndex(idx)
+          setViewDay(initialDay)
+        }
+      }
+      return
+    }
+
+    // Find first slot missing a status
+    const missing = slotList.find(s => {
+      const dk = s.day.substring(0, 3).toLowerCase()
+      const mk = s.meal === 'lunch' ? 'l' : 'd'
+      return !existingData?.[`${dk}_${mk}_status`]
+    })
+    const target = missing || slotList[0]
+    setCurrentDayIndex(DAYS.indexOf(target.day))
+    setCurrentMeal(target.meal)
+    setViewDay(target.day)
+  }, [dataLoaded, slotList, existingData, initialDay])
 
   // ── LIVE SYNC: the week's row changing anywhere (this device, another
   // device, an admin) is reflected in the open modal within seconds. ──
@@ -332,7 +356,6 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   }, [user?.id, currentWeekId])
 
   const populateFromExisting = useCallback(() => {
-    justLoadedRef.current = true
     if (!existingData) { setWantsFood(null); wantsFoodRef.current = null; setResponses({}); return }
     const statusKey = `${dayKey}_${mealKey}_status`
     const status = existingData[statusKey]
@@ -374,34 +397,6 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     setMealPicked(false)
     setEditResponseMode(false)
   }, [dataLoaded, initialDay])
-
-  // ── Override card entry: open directly on the member's FIRST granted slot
-  // (or the first granted slot still missing a response), never on an
-  // un-granted Monday — a subset grant must present its card straight away,
-  // and an all-days grant behaves exactly like the normal full-week flow.
-  // Only positions on open: once the member is already ON a granted slot, OR
-  // is actively filling (wantsFood set / responses present), the effect stands
-  // down so refetches after a save never yank them away mid-selection. ──
-  useEffect(() => {
-    if (!dataLoaded || !userHasOverride || initialDay) return
-    // Don't re-position while the user is actively selecting dishes — this
-    // prevents a Realtime/existingData refresh from jumping them to dinner
-    // in the middle of filling out the lunch card (or vice-versa).
-    if (wantsFood !== null || Object.keys(responses).length > 0) return
-    const alreadyOnGranted = slotList.some(s => s.day === currentDay && s.meal === currentMeal)
-    if (alreadyOnGranted) return
-    const first = slotList[0]
-    if (!first) return
-    const missing = slotList.find(s => {
-      const dk = s.day.substring(0, 3).toLowerCase()
-      const mk = s.meal === 'lunch' ? 'l' : 'd'
-      return !existingData?.[`${dk}_${mk}_status`]
-    })
-    const target = missing || first
-    setCurrentDayIndex(DAYS.indexOf(target.day))
-    setCurrentMeal(target.meal)
-    setViewDay(target.day)
-  }, [dataLoaded, userHasOverride, initialDay, slotList, existingData, currentDay, currentMeal, wantsFood, responses])
 
   // Day-scoped picker: choosing a meal opens that meal's dish-card editor.
   const handlePickMeal = (meal) => {
@@ -482,11 +477,13 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   }, [wantsFood, loading, slotLocked, editResponseMode])
 
   const moveToSlot = (slot, dir) => {
+    if (!slot) return
     setAnimatingDayDir(dir)
     setCurrentDayIndex(DAYS.indexOf(slot.day))
     setCurrentMeal(slot.meal)
     setViewDay(slot.day)
-    setWantsFood(null); setResponses({})
+    setWantsFood(null)
+    setResponses({})
     setTimeout(() => setAnimatingDayDir(null), 350)
   }
 
@@ -497,13 +494,15 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     // Post-submit edit mode keeps editing the previous slot; fill/browse moves
     // plainly (lock guards are skipped so saved slots stay readable).
     setEditResponseMode(editResponseMode)
-    moveToSlot(slotList[currentSlot - 1], 'left')
+    if (currentSlot > 0) {
+      moveToSlot(slotList[currentSlot - 1], 'left')
+    }
   }
 
   const goToNext = async () => {
     if (isLast) return
     if (!slotLocked && !editResponseMode && !guardAnswered()) return
-    const savedStatus = await saveCurrentIfNeeded()
+    await saveCurrentIfNeeded()
     // Day-card gate: the current day's card must have BOTH meals answered and
     // synced before advancing to the next day — no skipping half-finished days.
     // Override users may be granted ONLY lunch or ONLY dinner per day, so the
@@ -517,7 +516,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
         if (dayHasLunch && dayHasDinner) {
           const dk = currentDay.substring(0, 3).toLowerCase()
           const lunchStatus = existingData?.[`${dk}_l_status`]
-          const dinnerStatus = savedStatus || existingData?.[`${dk}_d_status`]
+          const dinnerStatus = existingData?.[`${dk}_d_status`]
           if (!lunchStatus || !dinnerStatus) {
             window.alert("⚠️ Please complete this day's card — both Lunch and Dinner must be answered before moving on.")
             return
@@ -528,7 +527,9 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     // Post-submit edit mode keeps editing the previous slot; fill/browse moves
     // plainly (lock guards are skipped so saved slots stay readable).
     setEditResponseMode(editResponseMode)
-    moveToSlot(slotList[currentSlot + 1], 'right')
+    if (currentSlot < slotList.length - 1) {
+      moveToSlot(slotList[currentSlot + 1], 'right')
+    }
   }
 
   const buildUpdateObj = (isEdit = false) => {
