@@ -591,21 +591,22 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
   }
 
   const getResponseStyle = (value) => {
-    if (value === null || value === undefined) {
+    if (value === null || value === undefined || value === '') {
       return { bg: 'rgba(255,255,255,0.02)', border: 'rgba(255,255,255,0.06)', label: '—', labelColor: 'rgba(255,255,255,0.15)', glow: null, typeLabel: '', typeColor: 'transparent' }
     }
-    if (value === 'yes') {
+    const strVal = String(value).toLowerCase()
+    if (strVal === 'yes') {
       return { bg: 'rgba(16, 185, 129, 0.08)', border: '#10b981', label: 'YES', labelColor: '#10b981', glow: 'rgba(16, 185, 129, 0.5)', typeLabel: 'ROTI', typeColor: '#10b981' }
     }
-    if (value === 'no') {
+    if (strVal === 'no') {
       return { bg: 'rgba(239, 68, 68, 0.08)', border: '#ef4444', label: 'NO', labelColor: '#ef4444', glow: 'rgba(239, 68, 68, 0.5)', typeLabel: 'ROTI', typeColor: '#ef4444' }
     }
     const num = parseInt(value) || 0
     const isPercent = typeof value === 'string' && value.endsWith('%')
-    if (num > 0) {
+    if (num > 0 || isPercent) {
       return {
         bg: 'rgba(212, 175, 55, 0.06)', border: 'rgba(212, 175, 55, 0.5)',
-        label: isPercent ? value : `${num}`,
+        label: isPercent ? (typeof value === 'string' ? value : `${num}%`) : `${num}`,
         labelColor: '#ffffff', glow: 'rgba(212, 175, 55, 0.5)',
         typeLabel: isPercent ? 'PCT' : 'COUNT',
         typeColor: '#fcd34d'

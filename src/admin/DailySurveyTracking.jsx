@@ -142,16 +142,18 @@ export default function DailySurveyTracking() {
         return result
       }
 
-      const lunchMap = buildDishMap(day, 'lunch', weeklyMenu[day]?.lunch || [])
-      const dinnerMap = buildDishMap(day, 'dinner', weeklyMenu[day]?.dinner || [])
+      const dayNameLower = day.toLowerCase()
+      const dayMenu = weeklyMenu[dayNameLower] || weeklyMenu[day] || {}
+      const lunchMap = buildDishMap(day, 'lunch', dayMenu.lunch || [])
+      const dinnerMap = buildDishMap(day, 'dinner', dayMenu.dinner || [])
 
       setSelectedUser({
         ...u,
         week_id: weekId,
         stopped: isStopped,
         stopInfo,
-        status: isStopped ? 'Skipped' : lunchMap._status,
-        dishResponses: buildDishMap(day, meal, weeklyMenu[day]?.[meal] || []),
+        status: isStopped ? 'Skipped' : (meal === 'lunch' ? lunchMap._status : dinnerMap._status),
+        dishResponses: buildDishMap(day, meal, dayMenu[meal] || []),
         lunch: { status: isStopped ? 'Skipped' : lunchMap._status, dishes: lunchMap },
         dinner: { status: isStopped ? 'Skipped' : dinnerMap._status, dishes: dinnerMap },
         currentDay: day,
@@ -385,9 +387,11 @@ export default function DailySurveyTracking() {
         } else {
           resp = submissionData.find(r => r.week_id === weekFilter)
         }
-        const buildCurMeal = buildDishMap(resp, day, meal, weeklyMenu[day]?.[meal] || [])
-        const buildLunch = buildDishMap(resp, day, 'lunch', weeklyMenu[day]?.lunch || [])
-        const buildDinner = buildDishMap(resp, day, 'dinner', weeklyMenu[day]?.dinner || [])
+        const dayKeyLower = day.toLowerCase()
+        const dayMenu = weeklyMenu[dayKeyLower] || weeklyMenu[day] || {}
+        const buildCurMeal = buildDishMap(resp, day, meal, dayMenu[meal] || [])
+        const buildLunch = buildDishMap(resp, day, 'lunch', dayMenu.lunch || [])
+        const buildDinner = buildDishMap(resp, day, 'dinner', dayMenu.dinner || [])
         const stoppedInfo = stoppedMap[u.user_id]
         const isStopped = !!stoppedInfo
         const baseStatus = buildCurMeal._status

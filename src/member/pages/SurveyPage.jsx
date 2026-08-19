@@ -152,7 +152,15 @@ export default function SurveyPage({ appSettings = {} }) {
     if (!status || status !== 'Applied') return null
     const dk = day.substring(0, 3).toLowerCase()
     const mk = meal === 'lunch' ? 'l' : 'd'
-    const dishes = getSlotDishes(surveyData, day, meal, weeklyMenu[day]?.[meal] || [])
+    const dayKey = day.toLowerCase()
+    const menuDishes = (weeklyMenu[dayKey] || weeklyMenu[day])?.[meal] || []
+    const dishList = getSlotDishes(surveyData, day, meal, menuDishes)
+    const dishes = dishList.length > 0
+      ? dishList
+      : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => {
+          const val = surveyData?.[`${dk}_${mk}_dish_${i + 1}`]
+          return val !== undefined && val !== null && val !== ''
+        })
     if (!dishes || dishes.length === 0) return null
 
     const items = dishes.map((d, i) => {

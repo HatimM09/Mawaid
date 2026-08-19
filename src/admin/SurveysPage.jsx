@@ -144,9 +144,10 @@ export default function SurveysPage() {
       
       const { data: row } = await fetchUserSurveyRow(userId, weekId)
       
-      const buildCur = buildAllDishes(row, dayFilter, mealFilter, weeklyMenu[dayFilter]?.[mealFilter] || [])
-      const buildLunch = buildAllDishes(row, dayFilter, 'lunch', weeklyMenu[dayFilter]?.lunch || [])
-      const buildDinner = buildAllDishes(row, dayFilter, 'dinner', weeklyMenu[dayFilter]?.dinner || [])
+      const dayMenu = weeklyMenu[dayFilter.toLowerCase()] || weeklyMenu[dayFilter] || {}
+      const buildCur = buildAllDishes(row, dayFilter, mealFilter, dayMenu[mealFilter] || [])
+      const buildLunch = buildAllDishes(row, dayFilter, 'lunch', dayMenu.lunch || [])
+      const buildDinner = buildAllDishes(row, dayFilter, 'dinner', dayMenu.dinner || [])
 
       setSelectedUser({
         ...u,
@@ -272,7 +273,8 @@ export default function SurveysPage() {
             const status = row[`${dayKey}_${mealKey}_status`]
             if (status) {
               const dishResponses = {}
-              const dishList = getSlotDishes(row, day, meal, weeklyMenu[day]?.[meal] || [])
+              const dayMenu = weeklyMenu[day.toLowerCase()] || weeklyMenu[day] || {}
+              const dishList = getSlotDishes(row, day, meal, dayMenu[meal] || [])
               const dishes = dishList.length > 0
                 ? dishList
                 : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => row && row[`${dayKey}_${mealKey}_dish_${i + 1}`] !== undefined && row[`${dayKey}_${mealKey}_dish_${i + 1}`] !== null && row[`${dayKey}_${mealKey}_dish_${i + 1}`] !== '')

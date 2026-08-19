@@ -100,29 +100,35 @@ export const isCountInput = (appSettings, dayName, meal, idx) => {
 }
 
 export const normalizeDishValue = (val, dish, isCount) => {
-  if (val === undefined || val === null) return null
-  if (isRotiItem(dish)) return val === 'yes' || val === 'Yes' ? 'yes' : 'no'
+  if (val === undefined || val === null || val === '') return null
+  if (isRotiItem(dish)) return String(val).toLowerCase() === 'yes' ? 'yes' : 'no'
   if (isCount) {
-    if (val === 'no' || val === 'No') return 'no'
-    return { status: 'yes', value: parseInt(val) || 0 }
+    if (String(val).toLowerCase() === 'no') return 'no'
+    if (typeof val === 'object' && val?.status) return val
+    const n = parseInt(val)
+    return isNaN(n) ? 'no' : { status: 'yes', value: n }
   }
   if (typeof val === 'string' && val.endsWith('%')) return parseInt(val) || 0
-  if (val === 'yes' || val === 'Yes') return 100
-  if (val === 'no' || val === 'No') return 0
+  const lv = String(val).toLowerCase()
+  if (lv === 'yes') return 100
+  if (lv === 'no') return 0
   if (typeof val === 'number') return val
-  return 0
+  const parsed = parseInt(val)
+  return isNaN(parsed) ? 0 : parsed
 }
 
 export const denormalizeDishValue = (val, dish, isCount) => {
-  if (val === 'yes') return isRotiItem(dish) ? 'Yes' : 'Yes'
-  if (val === 'no') return 'No'
-  if (isRotiItem(dish)) return val === 'yes' ? 'Yes' : 'No'
+  if (val === 'yes' || val === 'Yes') return isRotiItem(dish) ? 'Yes' : 'Yes'
+  if (val === 'no' || val === 'No') return 'No'
+  if (isRotiItem(dish)) return String(val).toLowerCase() === 'yes' ? 'Yes' : 'No'
   if (isCount) {
-    if (val === 'no' || val === null) return 'No'
-    if (val?.status === 'yes') return String(val.value)
+    if (val === 'no' || val === 'No' || val === null) return 'No'
+    if (typeof val === 'object' && val?.status === 'yes') return String(val.value)
+    if (typeof val === 'number' || typeof val === 'string') return String(val)
     return 'No'
   }
   if (typeof val === 'number') return `${val}%`
+  if (typeof val === 'string' && val.endsWith('%')) return val
   return 'No'
 }
 

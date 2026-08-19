@@ -130,7 +130,8 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     try { localStorage.removeItem(draftKey) } catch { return }
   }
   const currentDay = DAYS[currentDayIndex]
-  const menu = weeklyMenu[currentDay] || { lunch: [], dinner: [] }
+  const currentDayLower = (currentDay || '').toLowerCase()
+  const menu = weeklyMenu[currentDayLower] || weeklyMenu[currentDay] || { lunch: [], dinner: [] }
   const dayKey = currentDay.substring(0, 3).toLowerCase()
   const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
   const isEditable = canEditMeal(currentDay, currentWeekId, currentMeal, appSettings, user?.id)
@@ -538,11 +539,12 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   const buildUpdateObj = (isEdit = false) => {
     const isWants = wantsFoodRef.current !== null ? wantsFoodRef.current : wantsFood
     const status = isWants ? 'Applied' : 'Skipped'
+    const targetDishes = dishes && dishes.length > 0 ? dishes : Object.keys(responses)
     const updateObj = {
       user_id: user?.id, week_id: currentWeekId, day: dayKey,
       thali_number: userData.thali_no, email: userData.email || '',
       updated_at: new Date().toISOString(),
-      dish_snapshot: mergeDishSnapshot(existingData, currentDay, currentMeal, dishes),
+      dish_snapshot: mergeDishSnapshot(existingData, currentDay, currentMeal, targetDishes),
       _isOverride: userHasOverride || false
     }
     updateObj[`${dayKey}_${mealKey}_status`] = status
@@ -553,7 +555,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     if (userHasOverride) editMeta[`${dayKey}_${mealKey}_override`] = true
     updateObj.edit_metadata = editMeta
     if (status === 'Applied') {
-      dishes.forEach((dish, idx) => {
+      targetDishes.forEach((dish, idx) => {
         const val = responses[dish]
         const isCount = isCountInput(appSettings, currentDay, currentMeal, idx)
         if (val !== undefined && val !== null) {
@@ -1291,8 +1293,8 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
           const mk = meal === 'lunch' ? 'l' : 'd'
           const status = existingData?.[`${dk}_${mk}_status`]
           const isApplied = status === 'Applied'
-          const isSkipped = status === 'Skipped'
-          const dishList = getSlotDishes(existingData, viewDay, meal, weeklyMenu[viewDay]?.[meal] || [])
+          const viewDayMenu = weeklyMenu[viewDay.toLowerCase()] || weeklyMenu[viewDay] || {}
+          const dishList = getSlotDishes(existingData, viewDay, meal, viewDayMenu[meal] || [])
           const editedAfterSubmit = existingData?.edit_metadata?.[`${dk}_${mk}_edited`] || false
           const appliedCount = dishList.filter((_, i) => {
             const v = existingData?.[`${dk}_${mk}_dish_${i + 1}`]

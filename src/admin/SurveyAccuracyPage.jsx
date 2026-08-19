@@ -219,7 +219,8 @@ export default function SurveyAccuracyPage() {
           // menu) actually has a rating — applied with zero or partial dish
           // ratings is NOT complete, because the kitchen can't cook what was
           // never rated.
-          const dishes = getSlotDishes(row, dayName, mealName, weeklyMenu[dayName]?.[mealName] || [])
+          const dayMenu = weeklyMenu[dayName.toLowerCase()] || weeklyMenu[dayName] || {}
+          const dishes = getSlotDishes(row, dayName, mealName, dayMenu[mealName] || [])
           const rated = dishes.reduce((acc, d, i) => {
             const raw = row?.[`${dk}_${mk}_dish_${i + 1}`]
             return acc + (raw !== undefined && raw !== null && raw !== '' ? 1 : 0)
@@ -580,7 +581,8 @@ export default function SurveyAccuracyPage() {
                                       const st = r.slotStatus[`${dk}_${mk}_status`]
                                       const isStopped = stopped[`${dk}_${mk}`]
                                       const row = r.row
-                                      const dishes = getSlotDishes(row, dayName, mealName, weeklyMenu[dayName]?.[mealName] || [])
+                                      const dayMenu = weeklyMenu[dayName.toLowerCase()] || weeklyMenu[dayName] || {}
+                                      const dishes = getSlotDishes(row, dayName, mealName, dayMenu[mealName] || [])
                                       const dishValues = {}
                                       dishes.forEach((d, i) => {
                                         const raw = row?.[`${dk}_${mk}_dish_${i + 1}`]
