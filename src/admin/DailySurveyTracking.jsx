@@ -389,7 +389,7 @@ setLoadError(null)
         return result
       }
 
-      const results = (resultsRaw || []).map(u => {
+      const results = (users || []).map(u => {
         // Use the first (most recent) merged row from survey_day_responses
         const row = ((allRows || []).find(r => r.user_id === u.user_id) || {})
         let resp = row
