@@ -15,48 +15,79 @@ export const getPctColor = (pct) => {
   return undefined
 }
 
-export const hasUserOverride = (appSettings = {}, userId = null, dayName = null, mealType = null) => {
-  if (!userId || !appSettings.user_overrides) return false;
-  try {
-    const overrides = typeof appSettings.user_overrides === 'string'
-      ? JSON.parse(appSettings.user_overrides)
-      : appSettings.user_overrides;
-    const userOverride = overrides[userId];
-    if (!userOverride) return false;
-    if (userOverride.all) return true;
-    if (dayName) {
-      const dayOverride = userOverride[dayName.toLowerCase()];
-      if (dayOverride) {
-        if (mealType) return !!dayOverride[mealType];
-        return !!(dayOverride.lunch || dayOverride.dinner || dayOverride.all);
+// ── New admin-configurable survey window (day + time from-to) ──
+// Admin now picks start Day+Time and end Day+Time (e.g. Sat 20:00 → Mon 11:00).
+// The legacy survey_status open/closed override is removed — only this window controls visibility.
+// New fillers, partial/resume, and havent-filled members all share the same window; admin has full rights via the admin panels.
+
+const DAY_TO_NUM = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 }
+const NUM_TO_DAY_CAP = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+
+const parseSurveyWindow = (appSettings = {}) => {
+  // New keys (authoritative). Fallback to legacy sat 20:00 → mon 11:00 for existing installs.
+  let startDayRaw = appSettings.survey_window_start_day
+  let startTimeRaw = appSettings.survey_window_start_time
+  let endDayRaw = appSettings.survey_window_end_day
+  let endTimeRaw = appSettings.survey_window_end_time
+
+  // Back-compat: if new keys absent, derive from legacy hour settings
+  if (startDayRaw == null && startTimeRaw == null && endDayRaw == null && endTimeRaw == null) {
+    if (appSettings.survey_open_hour != null || appSettings.survey_close_hour != null) {
+      const openHour = parseInt(appSettings.survey_open_hour, 10)
+      const closeHour = parseInt(appSettings.survey_close_hour, 10)
+      return {
+        startDay: 6, // Saturday
+        startTime: { h: isNaN(openHour) ? 20 : openHour, m: 0 },
+        endDay: 1, // Monday
+        endTime: { h: isNaN(closeHour) ? 11 : closeHour, m: 0 },
       }
-    } else {
-      return Object.keys(userOverride).length > 0;
     }
-  } catch { }
-  return false;
+  }
+
+  const normalizeDay = (v, fallback) => {
+    if (v == null || v === '') return fallback
+    if (typeof v === 'number' && v >= 0 && v <= 6) return v
+    const s = String(v).toLowerCase().trim()
+    if (DAY_TO_NUM[s] != null) return DAY_TO_NUM[s]
+    const n = parseInt(s, 10)
+    if (!isNaN(n) && n >= 0 && n <= 6) return n
+    return fallback
+  }
+
+  const startDay = normalizeDay(startDayRaw, 6)
+  const endDay = normalizeDay(endDayRaw, 1)
+  const startTime = parseHm(startTimeRaw, 20, 0)
+  const endTime = parseHm(endTimeRaw, 11, 0)
+  return { startDay, startTime, endDay, endTime }
 }
+
+export const getSurveyWindowConfig = (appSettings = {}) => parseSurveyWindow(appSettings)
 
 export const isSurveyOpen = (appSettings = {}, userId = null) => {
-  if (userId && hasUserOverride(appSettings, userId)) return true
-  if (appSettings.survey_status === 'open') return true
-  if (appSettings.survey_status === 'closed') return false
+  const cfg = parseSurveyWindow(appSettings)
   const now = new Date()
-  const day = now.getDay()
-  const hour = now.getHours()
-  const openHour = parseInt(appSettings.survey_open_hour, 10)
-  const closeHour = parseInt(appSettings.survey_close_hour, 10)
-  const open = isNaN(openHour) ? 20 : openHour
-  const close = isNaN(closeHour) ? 11 : closeHour
-  if (day === 6 && hour >= open) return true
-  if (day === 0) return true
-  if (day === 1 && hour < close) return true
-  return false
+  const nowDay = now.getDay()
+  const nowMin = nowDay * 1440 + now.getHours() * 60 + now.getMinutes()
+  const startMin = cfg.startDay * 1440 + cfg.startTime.h * 60 + cfg.startTime.m
+  const endMin = cfg.endDay * 1440 + cfg.endTime.h * 60 + cfg.endTime.m
+  if (startMin === endMin) return false
+  if (startMin < endMin) {
+    return nowMin >= startMin && nowMin < endMin
+  }
+  // wraps across week boundary (e.g. Sat 20:00 → Mon 11:00)
+  return nowMin >= startMin || nowMin < endMin
 }
 
-export const canEditMeal = (dayName, weekId, mealType, appSettings = {}, userId = null) => {
-  if (hasUserOverride(appSettings, userId, dayName, mealType)) return true
-  if (isSurveyOpen(appSettings)) return true
+export const getSurveyWindowLabel = (appSettings = {}) => {
+  const cfg = parseSurveyWindow(appSettings)
+  const fmt = (h, m) => formatEditTime(h, m)
+  const sDay = NUM_TO_DAY_CAP[cfg.startDay]
+  const eDay = NUM_TO_DAY_CAP[cfg.endDay]
+  return `${sDay} ${fmt(cfg.startTime.h, cfg.startTime.m)} – ${eDay} ${fmt(cfg.endTime.h, cfg.endTime.m)}`
+}
+
+export const canEditMeal = (dayName, weekId, mealType, appSettings = {}) => {
+  if (!isSurveyOpen(appSettings)) return false
   if (mealType === 'lunch' && appSettings.lunch_edit_status === 'closed') return false
   if (mealType === 'lunch' && appSettings.lunch_edit_status === 'open') return true
   if (mealType === 'dinner' && appSettings.dinner_edit_status === 'closed') return false
@@ -71,7 +102,6 @@ export const canEditMeal = (dayName, weekId, mealType, appSettings = {}, userId 
     const open = parseHm(appSettings.lunch_edit_open, 20, 0)
     const close = parseHm(appSettings.lunch_edit_close, 11, 0)
     const openDate = new Date(mealDate)
-    openDate.setDate(openDate.getDate() - 1)
     openDate.setHours(open.h, open.m, 0, 0)
     const closeDate = new Date(mealDate)
     closeDate.setHours(close.h, close.m, 0, 0)
@@ -133,12 +163,6 @@ export const denormalizeDishValue = (val, dish, isCount) => {
 }
 
 // ── Dish-snapshot helpers ──
-// Responses are stored positionally (mon_l_dish_1…6) with NO dish identity.
-// To keep responses correctly labelled even when the admin later edits the
-// menu, every writer stores the dish list it saved against in `dish_snapshot`
-// (keyed by slot, e.g. { "mon_l": ["Dish A", …] }) and every reader resolves
-// dish names from that snapshot, falling back to the current menu.
-
 export const getSlotKey = (day, meal) =>
   `${day.substring(0, 3).toLowerCase()}_${meal === 'lunch' ? 'l' : 'd'}`
 
@@ -149,16 +173,12 @@ export const getDishSnapshot = (row, day, meal) => {
     const obj = typeof snap === 'string' ? JSON.parse(snap) : snap
     const list = obj?.[getSlotKey(day, meal)]
     return Array.isArray(list) && list.length ? list : null
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
 
-// Dish names to use for a slot: the saved snapshot if present, else the menu.
 export const getSlotDishes = (row, day, meal, fallbackDishes = []) =>
   getDishSnapshot(row, day, meal) || (Array.isArray(fallbackDishes) ? fallbackDishes : [])
 
-// Merge the dish list being saved into the row's snapshot (keeps all slots).
 export const mergeDishSnapshot = (existing, day, meal, dishes) => {
   if (!Array.isArray(dishes) || dishes.length === 0) {
     return existing?.dish_snapshot || {}
@@ -167,14 +187,13 @@ export const mergeDishSnapshot = (existing, day, meal, dishes) => {
   let obj = {}
   try {
     obj = typeof prev === 'string' ? JSON.parse(prev) : (prev && typeof prev === 'object' ? { ...prev } : {})
-  } catch {
-    obj = {}
-  }
+  } catch { obj = {} }
   obj[getSlotKey(day, meal)] = dishes
   return obj
 }
 
-export function useSurveyAutoSave() {
+// ── Auto-save hook ──
+export const useSurveyAutoSave = () => {
   const [autoSaveStatus, setAutoSaveStatus] = useState('idle')
   const saveTimerRef = useRef(null)
 
@@ -185,9 +204,7 @@ export function useSurveyAutoSave() {
       await saveFn()
       setAutoSaveStatus('saved')
       setTimeout(() => setAutoSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 2000)
-    } catch {
-      setAutoSaveStatus('idle')
-    }
+    } catch { setAutoSaveStatus('idle') }
   }, [])
 
   const scheduleSave = useCallback(async (saveFn, delay = 600) => {
@@ -209,17 +226,10 @@ export function useSurveyAutoSave() {
 // ── Survey window messages (used by member app) ──
 
 export const getSurveyWindowMessage = (appSettings = {}, userId = null) => {
-  const openHour = parseInt(appSettings.survey_open_hour, 10)
-  const closeHour = parseInt(appSettings.survey_close_hour, 10)
-  const open = isNaN(openHour) ? 20 : openHour
-  const close = isNaN(closeHour) ? 11 : closeHour
-  const fmt = h => {
-    const hh = h % 12 === 0 ? 12 : h % 12
-    return `${hh}:00 ${h >= 12 ? 'PM' : 'AM'}`
-  }
-  if (appSettings.survey_status === 'open') return 'Survey window is open (Admin Override)!'
-  if (isSurveyOpen(appSettings, userId)) return `Survey window is open! (Sat ${fmt(open)} \u2013 Mon ${fmt(close)})`
-  return `Survey window opens Saturday ${fmt(open)} and closes Monday ${fmt(close)}.`
+  const cfg = parseSurveyWindow(appSettings)
+  const label = getSurveyWindowLabel(appSettings)
+  if (isSurveyOpen(appSettings, userId)) return `Survey window is open! (${label})`
+  return `Survey window opens ${label}.`
 }
 
 export const formatEditTime = (h, m) => {

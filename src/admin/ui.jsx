@@ -570,7 +570,9 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
   const mealIcons = { lunch: '☀️', dinner: '🌙' }
 
   // Admin: erase this member's displayed-meal response for the displayed day.
-  // Clears survey_day_responses + flat mirror via the erase_survey_slot RPC.
+  // Clears survey_day_responses + flat mirror via the erase_survey_slot RPC,
+  // AND survey_day_responses (granted slots) via erase_override_slot so
+  // no stale override answer survives the erase.
   const canErase = !!(user?.user_id && user?.week_id)
   const handleErase = async () => {
     if (!canErase || isErasing) return

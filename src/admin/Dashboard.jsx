@@ -326,23 +326,14 @@ export default function Dashboard() {
   }, [loadAll])
 
   const loadStats = useCallback(async () => {
-    let hourRow, statusRow
+    let settings = {}
     try {
-      const [hr, sr] = await Promise.all([
-        supabase.from('app_settings').select('value').eq('key', 'survey_open_hour').maybeSingle(),
-        supabase.from('app_settings').select('value').eq('key', 'survey_status').maybeSingle(),
-      ])
-      hourRow = hr
-      statusRow = sr
-    } catch {
-      hourRow = { data: null }
-    }
-    hourRow = hourRow ?? { data: null }
-    const parsed = parseInt(hourRow?.value, 10)
-    const currentWeekId = getSurveyTargetWeek(isNaN(parsed) ? 20 : parsed, statusRow?.value === 'open')
-    const [u, s, f, r, q, allUsers, allSubmissions, allInventory] = await Promise.all([
+      const { data: appSettings } = await supabase.from('app_settings').select('*')
+      if (appSettings) appSettings.forEach(row => { settings[row.key] = row.value })
+    } catch { /* ignore */ }
+    const currentWeekId = getSurveyTargetWeek(settings)
+    const [u, s, f, r, q, allUsers, allSubmissions, allOverride, allInventory] = await Promise.all([
       supabase.from('user_stats').select('user_id', { count: 'exact', head: true }),
-      // Count members who have any survey data this week (day responses)
       fetchWeekRows(currentWeekId).then(res => ({ count: (res.data || []).length })),
       supabase.from('daily_feedback').select('id', { count: 'exact', head: true }),
       supabase.from('thali_requests').select('id', { count: 'exact', head: true }).or('status.eq.pending,status.is.null'),
@@ -350,6 +341,9 @@ export default function Dashboard() {
       supabase.from('user_stats').select('user_id, name, thali_number'),
       // Load merged rows for the current week
       fetchWeekRows(currentWeekId),
+      // Override responses for the current week — override-only users have no
+      // normal day-responses rows, so without this they show as "pending".
+      supabase.from('survey_day_responses').select('user_id, day, l_status, d_status').eq('week_id', currentWeekId),
       supabase.from('inventory').select('id, stock, low_stock_threshold'),
     ])
 
@@ -358,15 +352,27 @@ export default function Dashboard() {
     const isLunch = h >= 20 || h < 14
     const todayKey = `${today}_${isLunch ? 'l' : 'd'}_status`
     
-    const submissions = allSubmissions.data || []
-    const todayCount = submissions.filter(s => s[todayKey] === 'Applied').length
+    // Effective rows: overlay override day statuses on the normal rows so
+    // override-only users are counted as submitted and their today-status
+    // (Applied) feeds the thali count.
+    const byUser = new Map()
+    ;((allSubmissions && allSubmissions.data) || []).forEach(r => byUser.set(r.user_id, { ...r }))
+    ;((allOverride && allOverride.data) || []).forEach(o => {
+      const dk = String(o.day || '').substring(0, 3).toLowerCase()
+      const existing = byUser.get(o.user_id) || {}
+      if (o.l_status) existing[`${dk}_l_status`] = o.l_status
+      if (o.d_status) existing[`${dk}_d_status`] = o.d_status
+      byUser.set(o.user_id, existing)
+    })
+    const submissions = [...byUser.values()]
+    const todayCount = submissions.filter(sr => sr[todayKey] === 'Applied').length
     
     const inventory = allInventory.data || []
     const lowStockCount = inventory.filter(p => p.stock <= p.low_stock_threshold).length
 
     setStats({
       users: u.count ?? 0,
-      surveys: s.count ?? 0,
+      surveys: byUser.size || (s.count ?? 0),
       feedback: f.count ?? 0,
       requests: r.count ?? 0,
       queries: q.count ?? 0,

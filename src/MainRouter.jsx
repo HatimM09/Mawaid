@@ -11,14 +11,14 @@ const Dashboard = lazy(() => import('./admin/Dashboard'))
 const UsersPage = lazy(() => import('./admin/UsersPage'))
 const DailySurveyTracking = lazy(() => import('./admin/DailySurveyTracking'))
 const SurveyDashboard = lazy(() => import('./admin/SurveyDashboard'))
-import FeedbackAdminPage from './admin/FeedbackAdminPage'
+const SurveysPage = lazy(() => import('./admin/SurveysPage'))
+const FeedbackAdminPage = lazy(() => import('./admin/FeedbackAdminPage'))
 const RequestsAdminPage = lazy(() => import('./admin/RequestsAdminPage'))
 const QueriesAdminPage = lazy(() => import('./admin/QueriesAdminPage'))
 const StaffPage = lazy(() => import('./admin/StaffPage'))
 const SettingsPage = lazy(() => import('./admin/SettingsPage'))
 const InventoryPage = lazy(() => import('./admin/InventoryPage'))
 const NotificationsAdminPage = lazy(() => import('./admin/NotificationsAdminPage'))
-const SurveyWriteLogPage = lazy(() => import('./admin/SurveyWriteLogPage'))
 const SurveyAccuracyPage = lazy(() => import('./admin/SurveyAccuracyPage'))
 const KhidmatPortal = lazy(() => import('./admin/KhidmatPortal'))
 const InventoryManagerPortal = lazy(() => import('./admin/InventoryManagerPortal'))
@@ -57,7 +57,8 @@ export default function MainRouter() {
               <Route path="users" element={<RequireRole roles={['admin']}><UsersPage /></RequireRole>} />
               <Route path="survey-dashboard" element={<RequireRole roles={['admin']}><SurveyDashboard /></RequireRole>} />
               <Route path="survey-tracking" element={<RequireRole roles={['admin']}><DailySurveyTracking /></RequireRole>} />
-              <Route path="survey-write-log" element={<RequireRole roles={['admin']}><SurveyWriteLogPage /></RequireRole>} />
+              <Route path="surveys" element={<RequireRole roles={['admin']}><SurveysPage /></RequireRole>} />
+              <Route path="survey-write-log" element={<RequireRole roles={['admin']}><SurveyAccuracyPage /></RequireRole>} />
               <Route path="survey-accuracy" element={<RequireRole roles={['admin']}><SurveyAccuracyPage /></RequireRole>} />
               <Route path="inventory" element={<RequireRole roles={['admin', 'inventory_manager']}><InventoryPage /></RequireRole>} />
               <Route path="feedback" element={<RequireRole roles={['admin', 'khidmat_guzar', 'supervisor']}><FeedbackAdminPage /></RequireRole>} />

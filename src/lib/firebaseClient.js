@@ -130,7 +130,6 @@ export async function rpcDeleteUser(payload) {
     await supabaseClient.from('notifications').delete().eq('user_id', p_user_id)
     await supabaseClient.from('push_subscriptions').delete().eq('user_id', p_user_id)
     await supabaseClient.from('survey_day_responses').delete().eq('user_id', p_user_id)
-    await supabaseClient.from('survey_submissions_flat').delete().eq('user_id', p_user_id)
     await supabaseClient.from('thali_requests').delete().eq('user_id', p_user_id)
     await supabaseClient.from('daily_feedback').delete().eq('user_id', p_user_id)
     await supabaseClient.from('queries').delete().eq('user_id', p_user_id)

@@ -12,7 +12,7 @@ import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot } from '../lib/su
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
 } from 'recharts'
-import SurveyAccessManager from './SurveyAccessManager'
+
 
 const TooltipStyle = {
   contentStyle: { background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, color: T.text, fontSize: 13 },
@@ -49,7 +49,6 @@ export default function SurveysPage() {
   const [chartData, setChartData] = useState([])
   const [selectedUser, setSelectedUser] = useState(null)
   const [isScanning, setIsScanning] = useState(false)
-  const [isAccessManagerOpen, setIsAccessManagerOpen] = useState(false)
   const [loadError, setLoadError] = useState(null)
   const [weekFilter, setWeekFilter] = useState('all')
   const [availableWeeks, setAvailableWeeks] = useState([])
@@ -319,13 +318,10 @@ export default function SurveysPage() {
     return () => clearInterval(interval)
   }, [load])
 
-  // --- REAL-TIME SUBSCRIPTION --- watch both tables for override saves ---
+  // --- REAL-TIME SUBSCRIPTION ---
   useEffect(() => {
     const channel = supabase
       .channel('surveys-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_submissions_flat' }, () => {
-        load(true)
-      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => {
         load(true)
       })
@@ -541,9 +537,7 @@ export default function SurveysPage() {
           <Btn variant="primary" onClick={() => setIsScanning(true)} style={{ height: 48, padding: '0 24px', borderRadius: 14 }}>
             <Scan size={18} /> <span className="desktop-only">Launch Scanner</span><span className="mobile-only">Scan</span>
           </Btn>
-          <Btn variant="outline" onClick={() => setIsAccessManagerOpen(true)} style={{ height: 48, padding: '0 24px', borderRadius: 14 }}>
-            <UserIcon size={18} /> <span className="desktop-only">Manage Access</span><span className="mobile-only">Access</span>
-          </Btn>
+
           <Btn variant="outline" onClick={() => {
             const csv = dailyHeaders.join(',') + "\n" +
               filtered.map(r => {
@@ -723,7 +717,6 @@ export default function SurveysPage() {
         )}
       </Modal>
 
-      <SurveyAccessManager isOpen={isAccessManagerOpen} onClose={() => setIsAccessManagerOpen(false)} />
     </PageWrap>
   )
 }

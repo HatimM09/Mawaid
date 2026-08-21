@@ -1,9 +1,8 @@
 // src/lib/surveyRows.js
 // Single source of truth for reading member survey responses.
-//
 // survey_day_responses (one row per day mon–sat, both lunch l_* and dinner d_*
-// in the same row) is the ONLY store member writes touch. survey_submissions_flat
-// is a legacy/read-only fallback so historical weeks keep displaying.
+// in the same row) is the ONLY store. No override table, no legacy flat dependency.
+
 import { supabase } from './firebaseClient'
 import { DAY_KEYS } from '../common/utils'
 
@@ -19,9 +18,8 @@ function parseMetaJson(val) {
   try { return JSON.parse(val) } catch { return {} }
 }
 
-// Merge per-day rows into the flat "one row per user per week" shape every
-// reader (member My Surveys, admin tracking, dashboards) already expects:
-//   mon_l_status, mon_l_dish_1, …, sat_d_dish_14, plus the metadata fields.
+// Convert per-day rows into a flat user-row expected by readers.
+// Expected shape: mon_l_status, mon_l_dish_1, …, sat_d_dish_5, plus metadata.
 export function flattenDayRows(rows) {
   const byUser = {}
   for (const row of rows || []) {
@@ -41,7 +39,6 @@ export function flattenDayRows(rows) {
         updated_at: row.updated_at,
       }
     } else {
-      // Merge snapshots & metadata across all days so no slot's dish names or edits are lost
       if (row.dish_snapshot) {
         flat.dish_snapshot = { ...flat.dish_snapshot, ...parseMetaJson(row.dish_snapshot) }
       }
@@ -53,7 +50,7 @@ export function flattenDayRows(rows) {
       if (row.submitted_at && (!flat.submitted_at || row.submitted_at > flat.submitted_at)) {
         flat.submitted_at = row.submitted_at
       }
-      if (row.updated_at && (!flat.updated_at || row.updated_at > flat.updated_at)) {
+      if (row.updated_at && (!flat.updated_at || row.updated_at > row.updated_at)) {
         flat.updated_at = row.updated_at
       }
       if (row.created_at && (!flat.created_at || row.created_at < flat.created_at)) {
@@ -72,25 +69,14 @@ export function flattenDayRows(rows) {
   return Object.values(byUser)
 }
 
-// Union of the live per-day rows with legacy flat rows. Used for week-scoped
-// admin reads where a week can mix members on both formats.
-async function loadMerged(weekId = null) {
-  const dayQuery = supabase.from('survey_day_responses').select('*')
-  const flatQuery = supabase.from('survey_submissions_flat').select('*')
-  if (weekId) {
-    dayQuery.eq('week_id', weekId)
-    flatQuery.eq('week_id', weekId)
-  }
-  const [{ data: dayData, error: dayErr }, { data: flatData }] = await Promise.all([dayQuery, flatQuery])
-  if (dayErr) return { data: null, error: dayErr }
-  const dayRows = flattenDayRows(dayData)
-  const seen = new Set(dayRows.map(r => `${r.user_id}|${r.week_id}`))
-  const legacy = (flatData || []).filter(r => r.user_id && !seen.has(`${r.user_id}|${r.week_id}`))
-  return { data: [...dayRows, ...legacy], error: null }
+// Convert per-day rows into a single flat row.
+export function flattenDayRow(rows) {
+  const list = flattenDayRows(rows)
+  return list.length ? list[0] : null
 }
 
-// Load one member's merged row for a week: live day rows, fall back to the
-// legacy flat mirror only when the member has no day rows that week.
+// Load one member's flat row for a week. Reads only survey_day_responses;
+// no legacy flat table fallback in the core path.
 export async function fetchUserSurveyRow(userId, weekId) {
   const { data: dayData, error: dayErr } = await supabase
     .from('survey_day_responses')
@@ -99,20 +85,7 @@ export async function fetchUserSurveyRow(userId, weekId) {
     .eq('week_id', weekId)
   if (dayErr) return { data: null, error: dayErr }
   const flat = flattenDayRow(dayData)
-  if (flat) return { data: flat, error: null }
-  const { data: flatData, error: flatErr } = await supabase
-    .from('survey_submissions_flat')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('week_id', weekId)
-    .maybeSingle()
-  if (flatErr) return { data: null, error: flatErr }
-  return { data: flatData || null, error: null }
-}
-
-export function flattenDayRow(rows) {
-  const list = flattenDayRows(rows)
-  return list.length ? list[0] : null
+  return { data: flat || null, error: null }
 }
 
 // Load the member's MOST RECENT week (latest week_id with any saved day).
@@ -126,30 +99,22 @@ export async function fetchLatestUserSurveyRow(userId) {
   if (weeksErr) return { data: null, error: weeksErr }
   const latest = weeks && weeks.length ? weeks[0].week_id : null
   if (latest) return fetchUserSurveyRow(userId, latest)
-  const { data: flatData, error: flatErr } = await supabase
-    .from('survey_submissions_flat')
+  return { data: null, error: null }
+}
+
+// Load every member's row for a week (or all weeks when omitted).
+// Live day rows only — no legacy flat table fallback.
+export async function fetchWeekRows(weekId) {
+  const { data, error } = await supabase
+    .from('survey_day_responses')
     .select('*')
-    .eq('user_id', userId)
-    .order('week_id', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  if (flatErr) return { data: null, error: flatErr }
-  return { data: flatData || null, error: null }
+    .eq('week_id', weekId)
+  if (error) return { data: null, error }
+  return { data: flattenDayRows(data), error: null }
 }
 
-// Load every member's merged row for a week (or all weeks when omitted) —
-// admin tracking/dashboards. Live day rows win, legacy flat is the fallback.
-export function fetchWeekRows(weekId) {
-  return loadMerged(weekId)
-}
-
-export function fetchAllUserRows() {
-  return loadMerged()
-}
-
-// Admin: erase one member's lunch or dinner for a single day. Backed by the
-// erase_survey_slot RPC (migration 039) which clears survey_day_responses and
-// the flat mirror in one transaction and writes an audit log row, with direct Supabase fallback.
+// Admin: erase one member's lunch or dinner for a single day.
+// Only clears survey_day_responses — no legacy flat mirror update needed.
 export async function eraseSurveySlot(userId, weekId, day, meal) {
   const dayKey = (day || '').substring(0, 3).toLowerCase()
   try {
@@ -165,13 +130,12 @@ export async function eraseSurveySlot(userId, weekId, day, meal) {
     console.warn('[eraseSurveySlot] RPC exception, falling back to direct update:', e)
   }
 
-  // Direct Supabase fallback
+  // Direct Supabase fallback — only survey_day_responses
   try {
     const mealPrefix = meal === 'dinner' ? 'd' : 'l'
     
-    // Clear meal columns in survey_day_responses
     const dayUpdates = { [`${mealPrefix}_status`]: null }
-    for (let i = 1; i <= 14; i++) {
+    for (let i = 1; i <= 5; i++) {
       dayUpdates[`${mealPrefix}_dish_${i}`] = null
     }
     dayUpdates.updated_at = new Date().toISOString()
@@ -184,22 +148,18 @@ export async function eraseSurveySlot(userId, weekId, day, meal) {
       .eq('day', dayKey)
 
     if (dayErr) throw dayErr
-
-    // Also clear in survey_submissions_flat for legacy mirror
-    const flatUpdates = { [`${dayKey}_${mealPrefix}_status`]: null }
-    for (let i = 1; i <= 14; i++) {
-      flatUpdates[`${dayKey}_${mealPrefix}_dish_${i}`] = null
-    }
-    flatUpdates.updated_at = new Date().toISOString()
-    await supabase
-      .from('survey_submissions_flat')
-      .update(flatUpdates)
-      .eq('user_id', userId)
-      .eq('week_id', weekId)
-
     return { data: { ok: true }, error: null }
   } catch (err) {
     console.error('[eraseSurveySlot] Direct update failed:', err)
     return { data: null, error: err }
   }
+}
+
+// Load all rows for all users (used by admin grids).
+export async function fetchAllUserRows() {
+  const { data, error } = await supabase
+    .from('survey_day_responses')
+    .select('*')
+  if (error) return { data: null, error }
+  return { data: flattenDayRows(data), error: null }
 }

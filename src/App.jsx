@@ -9,10 +9,10 @@ import { AuthCtx, ThemeCtx } from './admin/context'
 import LoginPage from './LoginPage'
 import PushManager from './lib/PushManager'
 import UpdatePrompt from './components/UpdatePrompt'
-import KhidmatPortal from './admin/KhidmatPortal'
-import InventoryManagerPortal from './admin/InventoryManagerPortal'
 import { THEMES } from './member/theme'
 import ThaliUserApp from './member/ThaliUserApp'
+const KhidmatPortal = React.lazy(() => import('./admin/KhidmatPortal'))
+const InventoryManagerPortal = React.lazy(() => import('./admin/InventoryManagerPortal'))
 
 export default function App() {
   const [session, setSession] = useState(undefined)
@@ -101,7 +101,9 @@ export default function App() {
           <PushManager />
           <UpdatePrompt />
           <Toaster position="top-center" />
-          <KhidmatPortal signOut={signOut} user={authValue.user} />
+          <React.Suspense fallback={<div style={{ minHeight: '100vh', background: '#0c0c14', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a78bfa' }}>Loading…</div>}>
+            <KhidmatPortal signOut={signOut} user={authValue.user} />
+          </React.Suspense>
         </ThemeCtx.Provider>
       </AuthCtx.Provider>
     )
@@ -114,7 +116,9 @@ export default function App() {
           <PushManager />
           <UpdatePrompt />
           <Toaster position="top-center" />
-          <InventoryManagerPortal signOut={signOut} user={authValue.user} />
+          <React.Suspense fallback={<div style={{ minHeight: '100vh', background: '#0c0c14', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a78bfa' }}>Loading…</div>}>
+            <InventoryManagerPortal signOut={signOut} user={authValue.user} />
+          </React.Suspense>
         </ThemeCtx.Provider>
       </AuthCtx.Provider>
     )

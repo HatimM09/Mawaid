@@ -53,8 +53,11 @@ export default function SurveyDashboard() {
   })
 
   const loadAvailableWeeks = useCallback(async () => {
-    const { data } = await fetchAllUserRows()
-    const allData = data || []
+    const [normal, ovr] = await Promise.all([
+      fetchAllUserRows(),
+      supabase.from('survey_day_responses').select('week_id'),
+    ])
+    const allData = [...(normal.data || []), ...(ovr.data || [])]
     if (allData.length) {
       const weeks = [...new Set(allData.map(r => r.week_id))].sort().reverse()
       setAvailableWeeks(weeks)
@@ -64,10 +67,26 @@ export default function SurveyDashboard() {
   const loadOverviewStats = useCallback(async () => {
     setStatsLoading(true)
     try {
-      const currentWeekId = getSurveyTargetWeek(parseInt(autoSettings.survey_open_hour) || 20, autoSettings.survey_status === 'open')
+      const currentWeekId = getSurveyTargetWeek(autoSettings)
 
       // Load merged rows for the week — day responses are the single store
       const { data: submissions } = await fetchWeekRows(currentWeekId)
+      // Overlay override day-statuses so override-only users are counted too
+      const { data: overrideRows } = await supabase
+        .from('survey_day_responses')
+        .select('user_id, day, l_status, d_status')
+        .eq('week_id', currentWeekId)
+      const effectiveMap = {}
+      ;(submissions || []).forEach(sub => { effectiveMap[sub.user_id] = sub })
+      ;(overrideRows || []).forEach(o => {
+        const dk = String(o.day || '').substring(0, 3).toLowerCase()
+        const existing = effectiveMap[o.user_id] || { user_id: o.user_id }
+        if (o.l_status) existing[`${dk}_l_status`] = o.l_status
+        if (o.d_status) existing[`${dk}_d_status`] = o.d_status
+        effectiveMap[o.user_id] = existing
+      })
+      const effectiveSubs = Object.values(effectiveMap)
+
       const { data: allUsers } = await supabase.from('user_stats').select('*')
 
       if (allUsers) {
@@ -85,13 +104,11 @@ export default function SurveyDashboard() {
           const mk = getMealKey(meal)
           const key = `${day}_${meal}`
           let applied = 0, skipped = 0, pending = 0
-          if (submissions) {
-            submissions.forEach(sub => {
-              const status = sub[`${dk}_${mk}_status`]
-              if (status === 'Applied') applied++
-              else if (status === 'Skipped') skipped++
-            })
-          }
+          effectiveSubs.forEach(sub => {
+            const status = sub[`${dk}_${mk}_status`]
+            if (status === 'Applied') applied++
+            else if (status === 'Skipped') skipped++
+          })
           pending = totalUsers - applied - skipped
           stats[key] = { applied, skipped, pending }
         })
@@ -113,7 +130,7 @@ export default function SurveyDashboard() {
   const loadTrackData = useCallback(async () => {
     setLoading(true)
     try {
-      const currentWeekId = getSurveyTargetWeek(parseInt(autoSettings.survey_open_hour) || 20, autoSettings.survey_status === 'open')
+      const currentWeekId = getSurveyTargetWeek(autoSettings)
       const weekId = trackWeekFilter !== 'all' ? trackWeekFilter : currentWeekId
       const dk = getDayKey(trackDay)
       const mk = getMealKey(trackMeal)
@@ -123,11 +140,26 @@ export default function SurveyDashboard() {
       const { data: allUsers } = await supabase.from('user_stats').select('*')
       // Load merged rows for the week — day responses are the single store
       const { data: submissions } = await fetchWeekRows(weekId)
+      // Overlay override day-statuses so override-only users appear in the grid
+      const { data: overrideRows } = await supabase
+        .from('survey_day_responses')
+        .select('user_id, day, l_status, d_status')
+        .eq('week_id', weekId)
+      const effectiveMap = {}
+      ;(submissions || []).forEach(sub => { effectiveMap[sub.user_id] = sub })
+      ;(overrideRows || []).forEach(o => {
+        const dk = String(o.day || '').substring(0, 3).toLowerCase()
+        const existing = effectiveMap[o.user_id] || { user_id: o.user_id }
+        if (o.l_status) existing[`${dk}_l_status`] = o.l_status
+        if (o.d_status) existing[`${dk}_d_status`] = o.d_status
+        effectiveMap[o.user_id] = existing
+      })
+      const effectiveSubs = Object.values(effectiveMap)
 
       const subMap = {}
       const subTimeMap = {}
       const dishMap = {}
-      ;(submissions || []).forEach(sub => {
+      effectiveSubs.forEach(sub => {
         subMap[sub.user_id] = sub[statusCol]
         subTimeMap[sub.user_id] = sub.updated_at
         if (sub[statusCol] === 'Applied') {
@@ -183,6 +215,10 @@ export default function SurveyDashboard() {
         if (activeTab === 'overview') loadOverviewStats()
         if (activeTab === 'tracking') loadTrackData()
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => {
+        if (activeTab === 'overview') loadOverviewStats()
+        if (activeTab === 'tracking') loadTrackData()
+      })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
@@ -199,7 +235,7 @@ export default function SurveyDashboard() {
 
   const sendReminderNow = async () => {
     try {
-      const currentWeekId = getSurveyTargetWeek(parseInt(autoSettings.survey_open_hour) || 20, autoSettings.survey_status === 'open')
+      const currentWeekId = getSurveyTargetWeek(autoSettings)
       const dk = getDayKey(trackDay)
       const mk = getMealKey(trackMeal)
       const statusCol = `${dk}_${mk}_status`

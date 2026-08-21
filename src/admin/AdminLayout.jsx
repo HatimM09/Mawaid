@@ -13,10 +13,10 @@ import { playNotificationChime } from '../common/utils'
 const NAV = [
   { to: '/admin', label: 'Dashboard', Icon: LayoutDashboard, color: 'var(--accent-primary)', end: true, roles: ['admin', 'inventory_manager', 'khidmat_guzar', 'supervisor'] },
   { to: '/admin/users', label: 'Thali Users', Icon: Users, color: 'var(--accent-primary)', roles: ['admin'] },
-  { to: '/admin/survey-dashboard', label: 'Survey Form', Icon: ClipboardList, color: 'var(--accent-primary)', roles: ['admin'] },
+  { to: '/admin/survey-dashboard', label: 'Survey Summary', Icon: ClipboardList, color: 'var(--accent-primary)', roles: ['admin'] },
+  { to: '/admin/surveys', label: 'Survey Form', Icon: Star, color: 'var(--accent-primary)', roles: ['admin'] },
   { to: '/admin/survey-tracking', label: 'Survey Tracking', Icon: History, color: 'var(--accent-primary)', roles: ['admin'] },
-  { to: '/admin/survey-write-log', label: 'Write Log', Icon: FileWarning, color: 'var(--accent-primary)', roles: ['admin'] },
-  { to: '/admin/survey-accuracy', label: 'Accuracy', Icon: Target, color: 'var(--accent-primary)', roles: ['admin'] },
+  { to: '/admin/survey-accuracy', label: 'Accuracy & Logs', Icon: Target, color: 'var(--accent-primary)', roles: ['admin'] },
   { to: '/admin/requests', label: 'Thali Requests', Icon: FileText, color: 'var(--accent-primary)', roles: ['admin', 'khidmat_guzar', 'supervisor'] },
   { to: '/admin/inventory', label: 'Inventory', Icon: Package, color: 'var(--accent-primary)', roles: ['admin', 'inventory_manager'] },
   { to: '/admin/queries', label: 'Queries', Icon: MessageSquare, color: 'var(--accent-primary)', roles: ['admin', 'khidmat_guzar', 'supervisor'] },

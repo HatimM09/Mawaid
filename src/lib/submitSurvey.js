@@ -39,6 +39,10 @@ async function logClientWrite({ user_id, week_id, day, action = 'submit', payloa
 
 /**
  * Upsert one survey_day_responses row for the signed-in member.
+ * The payload carries day-scoped keys (mon_l_status, mon_l_dish_1, …) which
+ * are stored day-local (l_status, l_dish_1, …) on the matching day row.
+ * survey_submissions_flat is no longer written — survey_day_responses is the
+ * single source of truth for live sync.
  * @param {object} payload - the partial row (user_id, week_id, day, slot
  *   statuses, dish values, dish_snapshot, edit_metadata, …)
  * @returns {Promise<{data: any, error: any}>}
@@ -48,16 +52,6 @@ export async function submitSurveyRow(payload) {
     return { data: null, error: new Error('Invalid survey payload.') }
   }
 
-  // EVERY survey save goes to survey_day_responses (one row per day, both
-  // lunch l_* and dinner d_* in the same row). survey_submissions_flat is
-  // legacy — historical data only. survey_overrides no longer exists.
-  return upsertDirect(payload)
-}
-
-// Single write path: upsert the TARGETED day rows in survey_day_responses.
-// The payload carries day-scoped keys (mon_l_status, mon_l_dish_1, …) which
-// are stored day-local (l_status, l_dish_1, …) on the matching day row.
-async function upsertDirect(payload) {
   const userId = payload.user_id
   const weekId = payload.week_id
   const thaliLabel = typeof payload.thali_number === 'string' && payload.thali_number
@@ -83,7 +77,7 @@ async function upsertDirect(payload) {
     for (const k of Object.keys(payload)) {
       if (k.startsWith(day + '_')) dayRow[k.slice(day.length + 1)] = payload[k]
     }
-    for (const f of ['thali_number', 'email', 'dish_snapshot', 'edit_metadata', 'submitted_at', 'updated_at']) {
+    for (const f of ['thali_number', 'email', 'dish_snapshot', 'edit_metadata', 'updated_at']) {
       if (payload[f] !== undefined) dayRow[f] = payload[f]
     }
     return dayRow
@@ -116,8 +110,7 @@ export async function beginSurvey(userId, weekId) {
   if (!userId || !weekId) return
   try {
     // Seed per-day rows in survey_day_responses (used by admin tracker).
-    // NOTE: `.upsert()` — `.insert()` ignores onConflict/ignoreDuplicates and
-    // 409s on any already-existing day row.
+    // Idempotent upsert with ignoreDuplicates.
     const { error: seedErr } = await supabase
       .from('survey_day_responses')
       .upsert(DAY_KEYS.map(day => ({ user_id: userId, week_id: weekId, day })),

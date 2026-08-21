@@ -3,13 +3,13 @@ import { supabase } from '../lib/firebaseClient'
 import { useNavigate } from 'react-router-dom'
 import {
   Clock, RefreshCw, BarChart3, Calendar, Send,
-  Sun, Moon, Activity, CheckCircle, XCircle, AlertTriangle,
-  Zap, Timer, MessageSquare, Settings, Shield
+  Sun, Moon, Activity, Zap, Timer, Settings,
+  Lock, CheckCircle2
 } from 'lucide-react'
-import { T, PageWrap, PageTitle, AdminCard, Btn, StatCard, Badge, Grid, Alert, SectionHeader, Modal } from './ui'
+import { T, PageWrap, PageTitle, AdminCard, Btn, StatCard, Grid, Alert, SectionHeader, Modal } from './ui'
 import { getSurveyTargetWeek } from '../common/utils'
 import { fetchWeekRows } from '../lib/surveyRows'
-import SurveyAccessManager from './SurveyAccessManager'
+import { isSurveyOpen, getSurveyWindowConfig, getSurveyWindowLabel } from '../hooks/useSurvey'
 
 const STATUS_COLORS = {
   auto: { color: '#6366f1', bg: 'rgba(99,102,241,0.12)', label: 'AUTO', border: 'rgba(99,102,241,0.3)' },
@@ -17,28 +17,19 @@ const STATUS_COLORS = {
   closed: { color: '#ef4444', bg: 'rgba(239,68,68,0.12)', label: 'CLOSED', border: 'rgba(239,68,68,0.3)' },
 }
 
-// Resolve the effective survey live state: explicit open/closed wins over the
-// auto-schedule window.
-const resolveSurveyLive = (status, settings = {}) => {
-  if (status === 'open') return true
-  if (status === 'closed') return false
-  return isTimingOpen('survey', settings)
-}
+const DAYS_OPTIONS = [
+  { value: 'monday', label: 'Monday' },
+  { value: 'tuesday', label: 'Tuesday' },
+  { value: 'wednesday', label: 'Wednesday' },
+  { value: 'thursday', label: 'Thursday' },
+  { value: 'friday', label: 'Friday' },
+  { value: 'saturday', label: 'Saturday' },
+  { value: 'sunday', label: 'Sunday' },
+]
 
 const isTimingOpen = (type, settings) => {
   const now = new Date()
-  const day = now.getDay()
   const minute = now.getHours() * 60 + now.getMinutes()
-
-  if (type === 'survey') {
-    const openH = parseInt(settings.survey_open_hour) || 20
-    const closeH = parseInt(settings.survey_close_hour) || 11
-    if (day === 6 && now.getHours() >= openH) return true
-    if (day === 0) return true
-    if (day === 1 && now.getHours() < closeH) return true
-    return false
-  }
-
   if (type === 'lunch') {
     const openParts = (settings.lunch_edit_open || '20:00').split(':').map(Number)
     const closeParts = (settings.lunch_edit_close || '11:00').split(':').map(Number)
@@ -52,7 +43,6 @@ const isTimingOpen = (type, settings) => {
     }
     return false
   }
-
   if (type === 'dinner') {
     const openParts = (settings.dinner_edit_open || '12:00').split(':').map(Number)
     const closeParts = (settings.dinner_edit_close || '15:30').split(':').map(Number)
@@ -70,7 +60,6 @@ function StatusBadge({ status, liveStatus }) {
   const activeColor = isLiveOpen ? '#10b981' : isLiveClosed ? '#ef4444' : sc.color
   const activeBg = isLiveOpen ? 'rgba(16,185,129,0.12)' : isLiveClosed ? 'rgba(239,68,68,0.12)' : sc.bg
   const label = isLiveOpen ? 'LIVE: OPEN' : isLiveClosed ? 'LIVE: CLOSED' : sc.label
-
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -80,31 +69,35 @@ function StatusBadge({ status, liveStatus }) {
       border: `1px solid ${activeColor}40`,
     }}>
       {(isLiveOpen || isLiveClosed) && (
-        <span style={{
-          width: 5, height: 5, borderRadius: '50%',
-          background: activeColor,
-          animation: isLiveOpen ? 'pulse 2s infinite' : 'none',
-        }} />
+        <span style={{ width: 5, height: 5, borderRadius: '50%', background: activeColor, animation: isLiveOpen ? 'pulse 2s infinite' : 'none' }} />
       )}
       {label}
     </span>
   )
 }
 
+function LiveWindowBadge({ isOpen }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 900,
+      letterSpacing: '0.08em', textTransform: 'uppercase',
+      background: isOpen ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.12)',
+      color: isOpen ? '#10b981' : '#ef4444',
+      border: `1px solid ${isOpen ? 'rgba(16,185,129,0.35)' : 'rgba(239,68,68,0.35)'}`,
+    }}>
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'currentColor', animation: isOpen ? 'pulse 2s infinite' : 'none' }} />
+      {isOpen ? 'LIVE: OPEN' : 'LIVE: CLOSED'}
+    </span>
+  )
+}
+
 function AutomationCard({ icon, title, description, status, liveStatus, onToggle, stats, loading, action }) {
   return (
-    <AdminCard style={{
-      display: 'flex', flexDirection: 'column', gap: 16,
-      border: `1px solid ${STATUS_COLORS[status]?.border || 'rgba(197,160,89,0.15)'}`,
-    }}>
+    <AdminCard style={{ display: 'flex', flexDirection: 'column', gap: 16, border: `1px solid ${STATUS_COLORS[status]?.border || 'rgba(197,160,89,0.15)'}` }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 10, flexShrink: 0,
-            background: 'rgba(197,160,89,0.08)', border: '1px solid rgba(197,160,89,0.2)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
-            color: T.accent,
-          }}>{icon}</div>
+          <div style={{ width: 40, height: 40, borderRadius: 10, flexShrink: 0, background: 'rgba(197,160,89,0.08)', border: '1px solid rgba(197,160,89,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: T.accent }}>{icon}</div>
           <div>
             <div style={{ fontSize: 15, fontWeight: 800, color: T.text, marginBottom: 2 }}>{title}</div>
             <div style={{ fontSize: 12, color: T.textSub, lineHeight: 1.4 }}>{description}</div>
@@ -113,11 +106,7 @@ function AutomationCard({ icon, title, description, status, liveStatus, onToggle
         <StatusBadge status={status} liveStatus={liveStatus} />
       </div>
       {stats && (
-        <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 8,
-          padding: '10px 12px', borderRadius: 10,
-          background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(197,160,89,0.08)',
-        }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 8, padding: '10px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(197,160,89,0.08)' }}>
           {stats.map((s, i) => (
             <div key={i} style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 18, fontWeight: 800, color: s.color || T.text }}>{s.value}</div>
@@ -129,25 +118,10 @@ function AutomationCard({ icon, title, description, status, liveStatus, onToggle
       {onToggle ? (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {[['auto', 'AUTO', '#6366f1'], ['open', 'OPEN', '#10b981'], ['closed', 'CLOSED', '#ef4444']].map(([val, label, color]) => (
-            <button
-              key={val}
-              onClick={() => onToggle(val)}
-              disabled={loading}
-              style={{
-                flex: 1, padding: '8px 6px', borderRadius: 8, cursor: 'pointer',
-                background: status === val ? `${color}18` : 'transparent',
-                border: status === val ? `1px solid ${color}40` : '1px solid transparent',
-                color: status === val ? color : T.textSub,
-                fontSize: 10, fontWeight: 900, letterSpacing: '0.06em',
-                transition: 'all 0.2s', fontFamily: 'inherit',
-                opacity: loading ? 0.5 : 1,
-              }}
-            >{label}</button>
+            <button key={val} onClick={() => onToggle(val)} disabled={loading} style={{ flex: 1, padding: '8px 6px', borderRadius: 8, cursor: 'pointer', background: status === val ? `${color}18` : 'transparent', border: status === val ? `1px solid ${color}40` : '1px solid transparent', color: status === val ? color : T.textSub, fontSize: 10, fontWeight: 900, letterSpacing: '0.06em', transition: 'all 0.2s', fontFamily: 'inherit', opacity: loading ? 0.5 : 1 }}>{label}</button>
           ))}
         </div>
-      ) : action ? (
-        <div>{action}</div>
-      ) : null}
+      ) : action ? <div>{action}</div> : null}
     </AdminCard>
   )
 }
@@ -155,12 +129,13 @@ function AutomationCard({ icon, title, description, status, liveStatus, onToggle
 export default function AutomationPage() {
   const navigate = useNavigate()
   const [settings, setSettings] = useState({})
-  const [surveyStatus, setSurveyStatus] = useState('auto')
+  const [surveyWindowStartDay, setSurveyWindowStartDay] = useState('saturday')
+  const [surveyWindowStartTime, setSurveyWindowStartTime] = useState('20:00')
+  const [surveyWindowEndDay, setSurveyWindowEndDay] = useState('monday')
+  const [surveyWindowEndTime, setSurveyWindowEndTime] = useState('11:00')
   const [lunchEditStatus, setLunchEditStatus] = useState('auto')
   const [dinnerEditStatus, setDinnerEditStatus] = useState('auto')
   const [surveyMsg, setSurveyMsg] = useState('')
-  const [surveyOpenHour, setSurveyOpenHour] = useState(20)
-  const [surveyCloseHour, setSurveyCloseHour] = useState(10)
   const [lunchEditOpen, setLunchEditOpen] = useState('20:00')
   const [lunchEditClose, setLunchEditClose] = useState('11:00')
   const [dinnerEditOpen, setDinnerEditOpen] = useState('12:00')
@@ -172,21 +147,19 @@ export default function AutomationPage() {
   const [saving, setSaving] = useState(false)
   const [quickSaving, setQuickSaving] = useState(false)
   const [msg, setMsg] = useState('')
-  const [isAccessManagerOpen, setIsAccessManagerOpen] = useState(false)
-
   const [showBroadcast, setShowBroadcast] = useState(false)
   const [broadcastTitle, setBroadcastTitle] = useState('')
   const [broadcastBody, setBroadcastBody] = useState('')
   const [broadcasting, setBroadcasting] = useState(false)
-
   const [scheduledCount, setScheduledCount] = useState(0)
   const [pendingSurveyCount, setPendingSurveyCount] = useState(0)
   const [todayApplied, setTodayApplied] = useState(0)
   const [totalMembers, setTotalMembers] = useState(0)
   const [delivered24h, setDelivered24h] = useState(0)
   const [failed24h, setFailed24h] = useState(0)
-
   const loadRef = useRef(null)
+
+  const computeLive = (s) => isSurveyOpen(s) ? 'open' : 'closed'
 
   const load = useCallback(async () => {
     try {
@@ -195,18 +168,19 @@ export default function AutomationPage() {
       if (appSettings) {
         appSettings.forEach(row => { s[row.key] = row.value })
         setSettings(s)
-        setSurveyStatus(s.survey_status || 'auto')
+        setSurveyWindowStartDay((s.survey_window_start_day || 'saturday').toLowerCase())
+        setSurveyWindowStartTime(s.survey_window_start_time || '20:00')
+        setSurveyWindowEndDay((s.survey_window_end_day || 'monday').toLowerCase())
+        setSurveyWindowEndTime(s.survey_window_end_time || '11:00')
         setLunchEditStatus(s.lunch_edit_status || 'auto')
         setDinnerEditStatus(s.dinner_edit_status || 'auto')
         setSurveyMsg(s.survey_msg || '')
-        setSurveyOpenHour(parseInt(s.survey_open_hour) || 20)
-        setSurveyCloseHour(parseInt(s.survey_close_hour) || 11)
         setLunchEditOpen(s.lunch_edit_open || '20:00')
         setLunchEditClose(s.lunch_edit_close || '11:00')
         setDinnerEditOpen(s.dinner_edit_open || '12:00')
         setDinnerEditClose(s.dinner_edit_close || '15:30')
       }
-      setLiveSurveyStatus(resolveSurveyLive(s.survey_status) ? 'open' : 'closed')
+      setLiveSurveyStatus(computeLive(s))
       setLiveLunchStatus(isTimingOpen('lunch', s) ? 'open' : 'closed')
       setLiveDinnerStatus(isTimingOpen('dinner', s) ? 'open' : 'closed')
 
@@ -217,64 +191,52 @@ export default function AutomationPage() {
       const mealKey = today.getHours() < 15 ? 'l' : 'd'
       const statusField = `${dayKey}_${mealKey}_status`
       const isSunday = day === 0
-
-      const weekId = getSurveyTargetWeek(parseInt(s.survey_open_hour) || 20, s.survey_status === 'open')
+      const weekId = getSurveyTargetWeek(s)
 
       const [
         { count: sc },
         { data: weekRows },
         { count: tm },
+        { data: overrideRows },
       ] = await Promise.all([
         supabase.from('broadcast_schedule').select('id', { count: 'exact', head: true }).eq('status', 'scheduled'),
         fetchWeekRows(weekId),
         supabase.from('user_stats').select('user_id', { count: 'exact', head: true }),
+        supabase.from('survey_day_responses').select('user_id, day, l_status, d_status').eq('week_id', weekId),
       ])
-
-      const rows = weekRows || []
-      const pendingSurvey = isSunday ? 0 : rows.filter(r => {
-        const v = r[statusField]
-        return v !== 'Applied' && v !== 'Skipped'
-      }).length
+      const byUser = new Map()
+      ;(weekRows || []).forEach(r => byUser.set(r.user_id, r))
+      ;(overrideRows || []).forEach(o => {
+        const dk = String(o.day || '').substring(0, 3).toLowerCase()
+        const existing = byUser.get(o.user_id) || { user_id: o.user_id }
+        if (o.l_status) existing[`${dk}_l_status`] = o.l_status
+        if (o.d_status) existing[`${dk}_d_status`] = o.d_status
+        byUser.set(o.user_id, existing)
+      })
+      const rows = [...byUser.values()]
+      const pendingSurvey = isSunday ? 0 : rows.filter(r => { const v = r[statusField]; return v !== 'Applied' && v !== 'Skipped' }).length
       const todayAppliedCount = isSunday ? 0 : rows.filter(r => r[statusField] === 'Applied').length
-
       setScheduledCount(sc)
       setPendingSurveyCount(pendingSurvey)
       setTodayApplied(todayAppliedCount)
       setTotalMembers(tm)
-
-      // Real delivery coverage for the last 24h (from per-broadcast counters)
       const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
-      const { data: recentBc } = await supabase
-        .from('broadcast_schedule')
-        .select('sent_count, failed_count')
-        .gte('sent_at', since)
-        .limit(200)
+      const { data: recentBc } = await supabase.from('broadcast_schedule').select('sent_count, failed_count').gte('sent_at', since).limit(200)
       setDelivered24h((recentBc || []).reduce((n, s) => n + (s.sent_count || 0), 0))
       setFailed24h((recentBc || []).reduce((n, s) => n + (s.failed_count || 0), 0))
-    } catch (e) {
-      console.error('Automation load error:', e)
-    }
+    } catch (e) { console.error('Automation load error:', e) }
     setLoading(false)
   }, [])
 
   loadRef.current = load
-
   useEffect(() => { load() }, [load])
-
   useEffect(() => {
-    const channel = supabase
-      .channel('automation-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, () => { loadRef.current() })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'broadcast_schedule' }, () => { loadRef.current() })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => { loadRef.current() })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_feedback' }, () => { loadRef.current() })
-      .subscribe()
+    const channel = supabase.channel('automation-realtime').on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, () => { loadRef.current() }).on('postgres_changes', { event: '*', schema: 'public', table: 'broadcast_schedule' }, () => { loadRef.current() }).on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => { loadRef.current() }).on('postgres_changes', { event: '*', schema: 'public', table: 'daily_feedback' }, () => { loadRef.current() }).subscribe()
     return () => supabase.removeChannel(channel)
   }, [])
-
   useEffect(() => {
     const timer = setInterval(() => {
-      setLiveSurveyStatus(resolveSurveyLive(settings.survey_status) ? 'open' : 'closed')
+      setLiveSurveyStatus(computeLive(settings) ? 'open' : 'closed')
       setLiveLunchStatus(isTimingOpen('lunch', settings) ? 'open' : 'closed')
       setLiveDinnerStatus(isTimingOpen('dinner', settings) ? 'open' : 'closed')
     }, 30000)
@@ -282,33 +244,25 @@ export default function AutomationPage() {
   }, [settings])
 
   const handleToggle = async (key, value) => {
-    setSaving(true)
-    setMsg('')
+    setSaving(true); setMsg('')
     try {
-      const { error } = await supabase.from('app_settings').upsert(
-        { key, value },
-        { onConflict: 'key' }
-      )
+      const { error } = await supabase.from('app_settings').upsert({ key, value }, { onConflict: 'key' })
       if (error) throw error
-      if (key === 'survey_status') setSurveyStatus(value)
       if (key === 'lunch_edit_status') setLunchEditStatus(value)
       if (key === 'dinner_edit_status') setDinnerEditStatus(value)
-      setMsg('Automation setting updated')
-      setTimeout(() => setMsg(''), 2000)
-    } catch (e) {
-      setMsg(`Error: ${e.message}`)
-    }
+      setMsg('Automation setting updated'); setTimeout(() => setMsg(''), 2000)
+    } catch (e) { setMsg(`Error: ${e.message}`) }
     setSaving(false)
   }
 
   const quickSaveSurveySettings = async () => {
-    setQuickSaving(true)
-    setMsg('')
+    setQuickSaving(true); setMsg('')
     const toSave = [
-      { key: 'survey_status', value: surveyStatus },
-      { key: 'survey_msg', value: surveyMsg || 'Survey opens Saturday at 8:00 PM and closes Monday at 11:00 AM.' },
-      { key: 'survey_open_hour', value: surveyOpenHour.toString() },
-      { key: 'survey_close_hour', value: surveyCloseHour.toString() },
+      { key: 'survey_window_start_day', value: surveyWindowStartDay.toLowerCase() },
+      { key: 'survey_window_start_time', value: surveyWindowStartTime },
+      { key: 'survey_window_end_day', value: surveyWindowEndDay.toLowerCase() },
+      { key: 'survey_window_end_time', value: surveyWindowEndTime },
+      { key: 'survey_msg', value: surveyMsg || `Survey opens ${getSurveyWindowLabel({ survey_window_start_day: surveyWindowStartDay, survey_window_start_time: surveyWindowStartTime, survey_window_end_day: surveyWindowEndDay, survey_window_end_time: surveyWindowEndTime })}.` },
       { key: 'lunch_edit_status', value: lunchEditStatus },
       { key: 'lunch_edit_open', value: lunchEditOpen },
       { key: 'lunch_edit_close', value: lunchEditClose },
@@ -316,468 +270,185 @@ export default function AutomationPage() {
       { key: 'dinner_edit_open', value: dinnerEditOpen },
       { key: 'dinner_edit_close', value: dinnerEditClose },
     ]
+    // Clean up legacy override keys if present
+    try { await supabase.from('app_settings').delete().in('key', ['survey_status', 'survey_open_hour', 'survey_close_hour']).then(() => {}) } catch {}
     let err = null
     for (const row of toSave) {
-      const { error } = await supabase.from('app_settings')
-        .upsert(row, { onConflict: 'key' })
+      const { error } = await supabase.from('app_settings').upsert(row, { onConflict: 'key' })
       if (error) { err = error; break }
     }
     setQuickSaving(false)
-    if (err) {
-      setMsg(`Quick save failed: ${err.message}`)
-    } else {
-      const now = new Date().toLocaleTimeString()
-      setMsg(`✅ Survey settings applied at ${now}`)
-      setTimeout(() => setMsg(''), 3000)
-    }
+    if (err) { setMsg(`Quick save failed: ${err.message}`) }
+    else { const now = new Date().toLocaleTimeString(); setMsg(`✅ Survey window updated at ${now} — ${surveyWindowStartDay} ${surveyWindowStartTime} → ${surveyWindowEndDay} ${surveyWindowEndTime}`); setTimeout(() => setMsg(''), 4000) }
   }
 
   const sendBroadcast = async () => {
-    const title = broadcastTitle.trim()
-    const body = broadcastBody.trim()
-    if (!title || !body) {
-      setMsg('Broadcast title and message are required')
-      return
-    }
-    setBroadcasting(true)
-    setMsg('')
-    const now = new Date().toISOString()
+    const title = broadcastTitle.trim(); const body = broadcastBody.trim()
+    if (!title || !body) { setMsg('Broadcast title and message are required'); return }
+    setBroadcasting(true); setMsg(''); const now = new Date().toISOString()
     try {
-      // 1. Persist the notice so it shows in the user's in-app inbox + notice history
-      const { data: noticeData, error: noticeError } = await supabase
-        .from('notices')
-        .insert([{
-          title,
-          message: body,
-          body,
-          sender_name: 'Al-Mawaid',
-          media: [],
-          scheduled_at: now,
-          target_user_id: null,
-          tone: 'var(--accent-primary)',
-          channel: 'push',
-          created_at: now,
-        }])
-        .select()
-        .single()
+      const { data: noticeData, error: noticeError } = await supabase.from('notices').insert([{ title, message: body, body, sender_name: 'Al-Mawaid', media: [], scheduled_at: now, target_user_id: null, tone: 'var(--accent-primary)', channel: 'push', created_at: now }]).select().single()
       if (noticeError) throw noticeError
-
       const { data: all } = await supabase.from('user_stats').select('user_id').limit(5000)
       const userIds = (all || []).map(u => u.user_id).filter(Boolean)
-
-      // 2. Fire real push notifications to every subscribed device.
-      //    The notices insert above already surfaces an in-app toast + inbox entry,
-      //    so we must NOT also write `notifications` rows — that would double-deliver.
       let sent = 0, failed = 0
       try {
-        const { data: pushResult, error: pushError } = await supabase.functions.invoke('send-push', {
-          body: { title, body, target_type: 'all', url: '/', sender_name: 'Al-Mawaid' }
-        })
+        const { data: pushResult, error: pushError } = await supabase.functions.invoke('send-push', { body: { title, body, target_type: 'all', url: '/', sender_name: 'Al-Mawaid' } })
         if (pushError) throw pushError
-        sent = pushResult?.sent || 0
-        failed = pushResult?.failed || 0
-      } catch (err) {
-        console.error('Broadcast push trigger error:', err)
-        failed = userIds.length
-      }
-
-      // 3. Log it in the broadcast schedule
+        sent = pushResult?.sent || 0; failed = pushResult?.failed || 0
+      } catch (err) { console.error('Broadcast push trigger error:', err); failed = userIds.length }
       const adminUser = (await supabase.auth.getUser()).data?.user?.id || null
-      await supabase.from('broadcast_schedule').insert([{
-        notice_id: noticeData.id,
-        title,
-        body,
-        sender_name: 'Al-Mawaid',
-        tone: 'var(--accent-primary)',
-        media_url: '',
-        target_type: 'all',
-        channel: 'push',
-        status: failed > 0 && sent === 0 ? 'failed' : 'sent',
-        scheduled_for: now,
-        total_targets: userIds.length,
-        sent_count: sent,
-        failed_count: failed,
-        created_by: adminUser,
-      }])
-
-      setMsg(`✅ Broadcast sent to ${userIds.length} member(s) · ${sent} push delivered, ${failed} failed`)
-      setShowBroadcast(false)
-      setBroadcastTitle('')
-      setBroadcastBody('')
-      setTimeout(() => setMsg(''), 5000)
-    } catch (e) {
-      console.error('Broadcast error:', e)
-      setMsg(`Broadcast failed: ${e.message}`)
-    }
+      await supabase.from('broadcast_schedule').insert([{ notice_id: noticeData.id, title, body, sender_name: 'Al-Mawaid', tone: 'var(--accent-primary)', media_url: '', target_type: 'all', channel: 'push', status: failed > 0 && sent === 0 ? 'failed' : 'sent', scheduled_for: now, total_targets: userIds.length, sent_count: sent, failed_count: failed, created_by: adminUser }])
+      setMsg(`✅ Broadcast sent to ${userIds.length} member(s) · ${sent} push delivered, ${failed} failed`); setShowBroadcast(false); setBroadcastTitle(''); setBroadcastBody(''); setTimeout(() => setMsg(''), 5000)
+    } catch (e) { console.error('Broadcast error:', e); setMsg(`Broadcast failed: ${e.message}`) }
     setBroadcasting(false)
   }
 
   const autoProcesses = [
-    {
-      key: 'survey_status',
-      title: 'Survey Window',
-      description: 'Auto-opens Saturday 8PM, closes Monday 11AM. Members can submit their weekly meal preferences.',
-      icon: <Calendar size={18} />,
-      status: surveyStatus,
-      liveStatus: liveSurveyStatus,
-      stats: [
-        { label: 'Applied Today', value: todayApplied, color: '#10b981' },
-        { label: 'Pending', value: pendingSurveyCount, color: '#f59e0b' },
-        { label: 'Total Members', value: totalMembers, color: T.accent },
-      ],
-    },
-    {
-      key: 'lunch_edit_status',
-      title: 'Lunch Edit Window',
-      description: 'Auto-opens previous night 8PM, closes same day 11AM. Members can modify lunch preferences.',
-      icon: <Sun size={18} />,
-      status: lunchEditStatus,
-      liveStatus: liveLunchStatus,
-      stats: [
-        { label: 'Window', value: `${settings.lunch_edit_open || '20:00'} - ${settings.lunch_edit_close || '11:00'}`, color: T.text },
-        { label: 'Status', value: liveLunchStatus === 'open' ? 'Open Now' : 'Closed', color: liveLunchStatus === 'open' ? '#10b981' : '#ef4444' },
-      ],
-    },
-    {
-      key: 'dinner_edit_status',
-      title: 'Dinner Edit Window',
-      description: 'Auto-opens 12PM, closes 3:30PM. Members can modify dinner preferences for same day.',
-      icon: <Moon size={18} />,
-      status: dinnerEditStatus,
-      liveStatus: liveDinnerStatus,
-      stats: [
-        { label: 'Window', value: `${settings.dinner_edit_open || '12:00'} - ${settings.dinner_edit_close || '15:30'}`, color: T.text },
-        { label: 'Status', value: liveDinnerStatus === 'open' ? 'Open Now' : 'Closed', color: liveDinnerStatus === 'open' ? '#10b981' : '#ef4444' },
-      ],
-    },
+    { key: 'lunch_edit_status', title: 'Lunch Edit Window', description: 'Auto-opens previous night 8PM, closes same day 11AM. Members can modify lunch preferences.', icon: <Sun size={18} />, status: lunchEditStatus, liveStatus: liveLunchStatus, stats: [{ label: 'Window', value: `${settings.lunch_edit_open || '20:00'} - ${settings.lunch_edit_close || '11:00'}`, color: T.text }, { label: 'Status', value: liveLunchStatus === 'open' ? 'Open Now' : 'Closed', color: liveLunchStatus === 'open' ? '#10b981' : '#ef4444' }] },
+    { key: 'dinner_edit_status', title: 'Dinner Edit Window', description: 'Auto-opens 12PM, closes 3:30PM. Members can modify dinner preferences for same day.', icon: <Moon size={18} />, status: dinnerEditStatus, liveStatus: liveDinnerStatus, stats: [{ label: 'Window', value: `${settings.dinner_edit_open || '12:00'} - ${settings.dinner_edit_close || '15:30'}`, color: T.text }, { label: 'Status', value: liveDinnerStatus === 'open' ? 'Open Now' : 'Closed', color: liveDinnerStatus === 'open' ? '#10b981' : '#ef4444' }] },
   ]
 
-  const systemProcesses = [
-    {
-      title: 'Scheduled Broadcasts',
-      description: 'Upcoming automated notifications and menu publish schedules.',
-      icon: <Send size={18} />,
-      status: 'auto',
-      liveStatus: null,
-      stats: [
-        { label: 'Scheduled', value: scheduledCount, color: '#6366f1' },
-        { label: 'Delivered 24h', value: delivered24h, color: '#10b981' },
-        { label: 'Failed 24h', value: failed24h, color: '#ef4444' },
-      ],
-    },
-  ]
+  const systemProcesses = [{ title: 'Scheduled Broadcasts', description: 'Upcoming automated notifications and menu publish schedules.', icon: <Send size={18} />, status: 'auto', liveStatus: null, stats: [{ label: 'Scheduled', value: scheduledCount, color: '#6366f1' }, { label: 'Delivered 24h', value: delivered24h, color: '#10b981' }, { label: 'Failed 24h', value: failed24h, color: '#ef4444' }] }]
 
   if (loading) {
     return (
-      <PageWrap>
-        <PageTitle>Automation</PageTitle>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>
-          {[1,2,3,4,5,6].map(i => (
-            <AdminCard key={i} style={{ height: 180 }}>
-              <div style={{ width: '60%', height: 14, borderRadius: 7, background: T.border, marginBottom: 12 }} />
-              <div style={{ width: '100%', height: 10, borderRadius: 5, background: T.border, marginBottom: 8 }} />
-              <div style={{ width: '80%', height: 10, borderRadius: 5, background: T.border }} />
-            </AdminCard>
-          ))}
-        </div>
-      </PageWrap>
+      <PageWrap><PageTitle>Automation</PageTitle><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 20 }}>{[1,2,3,4].map(i => (<AdminCard key={i} style={{ height: 180 }}><div style={{ width: '60%', height: 14, borderRadius: 7, background: T.border, marginBottom: 12 }} /><div style={{ width: '100%', height: 10, borderRadius: 5, background: T.border, marginBottom: 8 }} /><div style={{ width: '80%', height: 10, borderRadius: 5, background: T.border }} /></AdminCard>))}</div></PageWrap>
     )
   }
 
+  const windowLabel = getSurveyWindowLabel({ survey_window_start_day: surveyWindowStartDay, survey_window_start_time: surveyWindowStartTime, survey_window_end_day: surveyWindowEndDay, survey_window_end_time: surveyWindowEndTime })
+  const isLiveOpen = liveSurveyStatus === 'open'
+
   return (
     <PageWrap>
-      <style>{`
-        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-      `}</style>
-
+      <style>{`@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }`}</style>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <PageTitle sub="Manage automated processes and view real-time system status">
-          <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Zap size={28} color={T.accent} />
-            Automation
-          </span>
-        </PageTitle>
-        <Btn variant="ghost" onClick={() => load()} disabled={loading}>
-          <RefreshCw size={15} className={loading ? 'spin' : ''} />
-        </Btn>
+        <PageTitle sub="Admin controls when the weekly survey is visible. Members can fill as New, resume Partial, or complete Haven't filled — admin has full rights."><span style={{ display: 'flex', alignItems: 'center', gap: 12 }}><Zap size={28} color={T.accent} />Automation</span></PageTitle>
+        <Btn variant="ghost" onClick={() => load()} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} /></Btn>
       </div>
-
-      {msg && (
-        <div style={{ marginBottom: 20 }}>
-          <Alert msg={msg} type={msg.includes('Error') ? 'error' : 'success'} />
-        </div>
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 32 }}>
-        <StatCard icon={<Activity size={20} />} label="Live Window Status" value={liveSurveyStatus === 'open' ? 'SURVEY OPEN' : 'SURVEY CLOSED'} color={liveSurveyStatus === 'open' ? '#10b981' : '#ef4444'} sub={liveSurveyStatus === 'open' ? 'Members can submit' : 'Opens Saturday 8PM'} />
+      {msg && (<div style={{ marginBottom: 20 }}><Alert msg={msg} type={msg.includes('Error') || msg.includes('failed') ? 'error' : 'success'} /></div>)}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
+        <StatCard icon={<Activity size={20} />} label="Live Window Status" value={isLiveOpen ? 'SURVEY OPEN' : 'SURVEY CLOSED'} color={isLiveOpen ? '#10b981' : '#ef4444'} sub={isLiveOpen ? 'New · Partial · Haven\'t filled can submit' : windowLabel} />
         <StatCard icon={<BarChart3 size={20} />} label="Today's Applied" value={todayApplied} color="#6366f1" sub={`Out of ${totalMembers} members`} />
         <StatCard icon={<Timer size={20} />} label="Scheduled Broadcasts" value={scheduledCount} color="#f59e0b" sub={`${delivered24h} delivered in last 24h`} />
-
       </div>
 
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ fontSize: 11, color: T.textSub, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 16 }}>
-          <Clock size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
-          Time-based Automations
+      {/* ── NEW: Survey Live Window (From → To) ── */}
+      <AdminCard style={{ marginBottom: 24, border: `1.5px solid ${isLiveOpen ? 'rgba(16,185,129,0.35)' : T.border}`, background: isLiveOpen ? 'linear-gradient(135deg, rgba(16,185,129,0.07), transparent 70%)' : T.card }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: isLiveOpen ? 'rgba(16,185,129,0.15)' : T.accentBg, border: `1px solid ${isLiveOpen ? 'rgba(16,185,129,0.35)' : T.accentBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: isLiveOpen ? '#10b981' : T.accent }}><Calendar size={20} /></div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 900, color: T.text, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>Survey Live Window <LiveWindowBadge isOpen={isLiveOpen} /></div>
+              <div style={{ fontSize: 12, color: T.textSub, marginTop: 4, lineHeight: 1.5 }}>Pick the <strong style={{ color: T.text }}>From (Day + Time)</strong> and <strong style={{ color: T.text }}>To (Day + Time)</strong> when the weekly survey is visible. New members, Partial-resume, and Haven't-filled all use this same window. Admin retains full rights in the tracker.</div>
+              <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 20, background: T.inputBg, border: `1px solid ${T.border}`, fontSize: 11, color: T.textSub }}><Clock size={12} /> Current: <strong style={{ color: T.accent }}>{windowLabel}</strong></div>
+            </div>
+          </div>
+          <button type="button" onClick={quickSaveSurveySettings} disabled={quickSaving} style={{ padding: '10px 18px', borderRadius: 12, border: 'none', background: quickSaving ? T.border : 'var(--accent-grad)', color: quickSaving ? T.textSub : '#000', fontSize: 12, fontWeight: 900, cursor: quickSaving ? 'not-allowed' : 'pointer', opacity: quickSaving ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>{quickSaving ? '⏳ Saving…' : '⚡ Apply Window'}</button>
         </div>
-        <Grid cols={3} gap={16}>
-          {autoProcesses.map(p => (
-            <AutomationCard
-              key={p.key}
-              icon={p.icon}
-              title={p.title}
-              description={p.description}
-              status={p.status}
-              liveStatus={p.liveStatus}
-              stats={p.stats}
-              loading={saving}
-              onToggle={(val) => handleToggle(p.key, val)}
-            />
-          ))}
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 14, alignItems: 'end' }}>
+          {/* From */}
+          <div style={{ padding: 14, borderRadius: 12, background: T.inputBg, border: `1px solid ${T.inputBorder}` }}>
+            <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: T.accent, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} /> From — Survey Opens</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 8 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.textSub, marginBottom: 4 }}>Day</label>
+                <select value={surveyWindowStartDay} onChange={e => setSurveyWindowStartDay(e.target.value)} style={{ width: '100%', padding: '10px 10px', borderRadius: 8, background: T.card, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }}>
+                  {DAYS_OPTIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.textSub, marginBottom: 4 }}>Time</label>
+                <input type="time" value={surveyWindowStartTime} onChange={e => setSurveyWindowStartTime(e.target.value)} style={{ width: '100%', padding: '10px 10px', borderRadius: 8, boxSizing: 'border-box', background: T.card, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }} />
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingBottom: 18, fontSize: 18, color: T.accent, fontWeight: 900 }}>→</div>
+          {/* To */}
+          <div style={{ padding: 14, borderRadius: 12, background: T.inputBg, border: `1px solid ${T.inputBorder}` }}>
+            <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#ef4444', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444' }} /> To — Survey Closes</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 8 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.textSub, marginBottom: 4 }}>Day</label>
+                <select value={surveyWindowEndDay} onChange={e => setSurveyWindowEndDay(e.target.value)} style={{ width: '100%', padding: '10px 10px', borderRadius: 8, background: T.card, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }}>
+                  {DAYS_OPTIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.textSub, marginBottom: 4 }}>Time</label>
+                <input type="time" value={surveyWindowEndTime} onChange={e => setSurveyWindowEndTime(e.target.value)} style={{ width: '100%', padding: '10px 10px', borderRadius: 8, boxSizing: 'border-box', background: T.card, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: isLiveOpen ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.06)', border: `1px solid ${isLiveOpen ? 'rgba(16,185,129,0.22)' : 'rgba(239,68,68,0.18)'}`, display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: T.textSub, lineHeight: 1.5, flexWrap: 'wrap' }}>
+          {isLiveOpen ? <CheckCircle2 size={14} color="#10b981" /> : <Lock size={14} color="#ef4444" />}
+          <span>{isLiveOpen ? 'Survey is currently LIVE — new fillers, partial-resume and haven\'t-filled members can all submit or edit their week.' : `Survey is currently CLOSED — members see: "${surveyMsg || `Opens ${windowLabel}`}"`}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.7 }}>Admin tracker has full rights regardless of window.</span>
+        </div>
+
+        <div style={{ marginTop: 12 }}>
+          <label htmlFor="surveyMsg2" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>Closed Message (shown to members when survey is outside window)</label>
+          <input id="surveyMsg2" value={surveyMsg} onChange={e => setSurveyMsg(e.target.value)} placeholder={`e.g. Survey opens ${windowLabel}.`} style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, outline: 'none', fontFamily: 'inherit' }} />
+        </div>
+      </AdminCard>
+
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 11, color: T.textSub, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 16 }}><Clock size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} /> Meal Edit Windows</div>
+        <Grid cols={2} gap={16}>
+          {autoProcesses.map(p => (<AutomationCard key={p.key} icon={p.icon} title={p.title} description={p.description} status={p.status} liveStatus={p.liveStatus} stats={p.stats} loading={saving} onToggle={(val) => handleToggle(p.key, val)} />))}
         </Grid>
       </div>
 
       <div>
-        <div style={{ fontSize: 11, color: T.textSub, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 16 }}>
-          <Settings size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
-          System Automations
-        </div>
+        <div style={{ fontSize: 11, color: T.textSub, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 16 }}><Settings size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />System Automations</div>
         <Grid cols={4} gap={16}>
-          {systemProcesses.map((p, i) => (
-            <AutomationCard
-              key={i}
-              icon={p.icon}
-              title={p.title}
-              description={p.description}
-              status={p.status}
-              liveStatus={p.liveStatus}
-              stats={p.stats}
-              action={
-                <Btn onClick={() => navigate('/admin/notifications')} style={{ width: '100%' }}>
-                  <Settings size={14} /> Manage Broadcasts
-                </Btn>
-              }
-              loading={false}
-            />
-          ))}
+          {systemProcesses.map((p, i) => (<AutomationCard key={i} icon={p.icon} title={p.title} description={p.description} status={p.status} liveStatus={p.liveStatus} stats={p.stats} action={<Btn onClick={() => navigate('/admin/notifications')} style={{ width: '100%' }}><Settings size={14} /> Manage Broadcasts</Btn>} loading={false} />))}
         </Grid>
       </div>
 
-      {/* Notification Actions */}
       <SectionHeader style={{ marginTop: 32, marginBottom: 12 }}>📢 Send Broadcast</SectionHeader>
       <AdminCard style={{ marginBottom: 32 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <Send size={20} color={T.accent} />
-          <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Broadcast Now</div>
-        </div>
-        <div style={{ fontSize: 12, color: T.textSub, marginBottom: 16, lineHeight: 1.4 }}>
-          Create and send an instant broadcast notification to all members. Members receive a single in-app alert plus a native push when the app is closed.
-        </div>
-        <Btn onClick={() => setShowBroadcast(true)} style={{ width: '100%' }}>
-          <Send size={14} /> Broadcast
-        </Btn>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}><Send size={20} color={T.accent} /><div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Broadcast Now</div></div>
+        <div style={{ fontSize: 12, color: T.textSub, marginBottom: 16, lineHeight: 1.4 }}>Create and send an instant broadcast notification to all members. Members receive a single in-app alert plus a native push when the app is closed.</div>
+        <Btn onClick={() => setShowBroadcast(true)} style={{ width: '100%' }}><Send size={14} /> Broadcast</Btn>
       </AdminCard>
 
-      {/* Survey Configuration */}
-      <AdminCard style={{ marginTop: 32 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap', gap: 10 }}>
-          <SectionHeader style={{ marginBottom: 0 }}>🛠️ Survey Access Controls</SectionHeader>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Btn type="button" variant="outline" onClick={() => setIsAccessManagerOpen(true)}>
-              <Shield size={16} /> User Overrides
-            </Btn>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 800,
-              background: surveyStatus === 'open' ? 'rgba(16,185,129,0.12)' : surveyStatus === 'closed' ? 'rgba(239,68,68,0.12)' : 'rgba(99,102,241,0.12)',
-              color: surveyStatus === 'open' ? '#10b981' : surveyStatus === 'closed' ? '#ef4444' : '#6366f1',
-              border: `1px solid ${surveyStatus === 'open' ? 'rgba(16,185,129,0.3)' : surveyStatus === 'closed' ? 'rgba(239,68,68,0.3)' : 'rgba(99,102,241,0.3)'}`,
-            }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor', animation: surveyStatus === 'open' ? 'pulse 2s infinite' : 'none' }} />
-              Survey: {surveyStatus.toUpperCase()}
+      <AdminCard style={{ marginTop: 8 }}>
+        <SectionHeader style={{ marginBottom: 8 }}>🛠️ Meal Edit Window Timing</SectionHeader>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+          <div style={{ padding: '14px 16px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.inputBorder}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}><span style={{ fontSize: 15 }}>☀️</span><span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Lunch Edit Window</span><span style={{ fontSize: 10, color: T.textSub, opacity: 0.6 }}>prev night → same day</span></div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 8, alignItems: 'center' }}>
+              <div><label style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Opens (prev night)</label><input type="time" value={lunchEditOpen} onChange={e => setLunchEditOpen(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }} /></div>
+              <div style={{ fontSize: 16, color: T.accent, padding: '0 4px' }}>→</div>
+              <div><label style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Closes (same day)</label><input type="time" value={lunchEditClose} onChange={e => setLunchEditClose(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }} /></div>
             </div>
-            <button
-              type="button"
-              onClick={quickSaveSurveySettings}
-              disabled={quickSaving}
-              style={{
-                padding: '8px 18px', borderRadius: 10, border: 'none',
-                background: 'var(--accent-grad)', color: '#000',
-                fontSize: 12, fontWeight: 900, cursor: quickSaving ? 'not-allowed' : 'pointer',
-                opacity: quickSaving ? 0.6 : 1, transition: 'all 0.2s',
-                display: 'flex', alignItems: 'center', gap: 6,
-              }}
-            >
-              {quickSaving ? '⏳ Saving…' : '⚡ Apply Now'}
-            </button>
+          </div>
+          <div style={{ padding: '14px 16px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.inputBorder}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}><span style={{ fontSize: 15 }}>🌙</span><span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Dinner Edit Window</span><span style={{ fontSize: 10, color: T.textSub, opacity: 0.6 }}>same day</span></div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 8, alignItems: 'center' }}>
+              <div><label style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Opens (same day)</label><input type="time" value={dinnerEditOpen} onChange={e => setDinnerEditOpen(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }} /></div>
+              <div style={{ fontSize: 16, color: T.accent, padding: '0 4px' }}>→</div>
+              <div><label style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Closes (same day)</label><input type="time" value={dinnerEditClose} onChange={e => setDinnerEditClose(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }} /></div>
+            </div>
           </div>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 16 }}>
-          <div>
-            <div style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
-              Survey Window Timing
-            </div>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <div>
-                <span style={{ fontSize: 10, color: T.textSub }}>Opens Saturday</span>
-                <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                  <input type="number" min={0} max={23} value={surveyOpenHour} onChange={e => setSurveyOpenHour(e.target.value)}
-                    style={{ width: 60, padding: '8px', borderRadius: 6, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, textAlign: 'center', outline: 'none', fontFamily: 'inherit' }}
-                  />
-                  <span style={{ fontSize: 12, color: T.textSub, display: 'flex', alignItems: 'center' }}>:00</span>
-                </div>
-              </div>
-              <span style={{ color: T.accent }}>→</span>
-              <div>
-                <span style={{ fontSize: 10, color: T.textSub }}>Closes Monday</span>
-                <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                  <input type="number" min={0} max={23} value={surveyCloseHour} onChange={e => setSurveyCloseHour(e.target.value)}
-                    style={{ width: 60, padding: '8px', borderRadius: 6, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, textAlign: 'center', outline: 'none', fontFamily: 'inherit' }}
-                  />
-                  <span style={{ fontSize: 12, color: T.textSub, display: 'flex', alignItems: 'center' }}>:00</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div>
-            <label htmlFor="surveyMsg" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
-              Survey Notice (shown when closed)
-            </label>
-            <textarea
-              id="surveyMsg"
-              value={surveyMsg}
-              onChange={e => setSurveyMsg(e.target.value)}
-              rows={2}
-              placeholder="Survey opens Saturday at 8:00 PM."
-              style={{
-                width: '100%', boxSizing: 'border-box', resize: 'vertical',
-                padding: '10px 12px', borderRadius: 8,
-                background: T.inputBg, border: `1px solid ${T.inputBorder}`,
-                color: T.text, fontSize: 13, outline: 'none', fontFamily: 'inherit',
-              }}
-            />
-          </div>
-        </div>
-
-        <div style={{
-          marginTop: 20, paddingTop: 20, borderTop: `1px solid ${T.border}`,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
-            <Clock size={14} color="#6366f1" />
-            <span style={{ fontSize: 12, fontWeight: 800, color: T.text, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              Meal Edit Window Timing
-            </span>
-            <span style={{ fontSize: 10, color: T.textSub, marginLeft: 'auto', opacity: 0.7 }}>
-              Used when status is AUTO — apply with ⚡ Apply Now
-            </span>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <div style={{ padding: '14px 16px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.inputBorder}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <span style={{ fontSize: 15 }}>☀️</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Lunch Edit Window</span>
-                <span style={{ fontSize: 10, color: T.textSub, opacity: 0.6 }}>prev night → same day</span>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 8, alignItems: 'center' }}>
-                <div>
-                  <label htmlFor="lunchEditOpen" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Opens (prev night)</label>
-                  <input type="time" id="lunchEditOpen" value={lunchEditOpen} onChange={e => setLunchEditOpen(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }}
-                  />
-                </div>
-                <div style={{ fontSize: 16, color: T.accent, padding: '0 4px' }}>→</div>
-                <div>
-                  <label htmlFor="lunchEditClose" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Closes (same day)</label>
-                  <input type="time" id="lunchEditClose" value={lunchEditClose} onChange={e => setLunchEditClose(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }}
-                  />
-                </div>
-              </div>
-            </div>
-            <div style={{ padding: '14px 16px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.inputBorder}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <span style={{ fontSize: 15 }}>🌙</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>Dinner Edit Window</span>
-                <span style={{ fontSize: 10, color: T.textSub, opacity: 0.6 }}>same day</span>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 8, alignItems: 'center' }}>
-                <div>
-                  <label htmlFor="dinnerEditOpen" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Opens (same day)</label>
-                  <input type="time" id="dinnerEditOpen" value={dinnerEditOpen} onChange={e => setDinnerEditOpen(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }}
-                  />
-                </div>
-                <div style={{ fontSize: 16, color: T.accent, padding: '0 4px' }}>→</div>
-                <div>
-                  <label htmlFor="dinnerEditClose" style={{ display: 'block', color: T.textSub, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Closes (same day)</label>
-                  <input type="time" id="dinnerEditClose" value={dinnerEditClose} onChange={e => setDinnerEditClose(e.target.value)}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: 6, boxSizing: 'border-box', background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit' }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-          <p style={{ fontSize: 10, color: T.textSub, marginTop: 12, opacity: 0.7, lineHeight: 1.65 }}>
-            💡 These timings apply when the Lunch/Dinner Edit Window status above is set to <strong>AUTO</strong>.
-            Changes take effect immediately via Realtime.
-          </p>
+        <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <p style={{ flex: 1, fontSize: 10, color: T.textSub, opacity: 0.7, lineHeight: 1.65, margin: 0 }}>💡 Meal edit windows apply when Lunch/Dinner status is AUTO. Survey window above controls the weekly fill for all member types.</p>
+          <button type="button" onClick={quickSaveSurveySettings} disabled={quickSaving} style={{ padding: '9px 16px', borderRadius: 10, border: 'none', background: quickSaving ? T.border : 'var(--accent-grad)', color: quickSaving ? T.textSub : '#000', fontSize: 12, fontWeight: 800, cursor: quickSaving ? 'not-allowed' : 'pointer', opacity: quickSaving ? 0.6 : 1 }}>⚡ Apply Meal Windows</button>
         </div>
       </AdminCard>
 
-      <SurveyAccessManager isOpen={isAccessManagerOpen} onClose={() => setIsAccessManagerOpen(false)} />
-
-      {/* Instant Broadcast Modal */}
       <Modal isOpen={showBroadcast} onClose={() => setShowBroadcast(false)} title="📢 Send Instant Broadcast" maxWidth={520}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ fontSize: 12, color: T.textSub, lineHeight: 1.5 }}>
-            Sends an instant push notification + in-app alert to every member. This cannot be undone.
-          </div>
-          <div>
-            <label htmlFor="broadcastTitle" style={{ display: 'block', fontSize: 11, fontWeight: 800, color: T.textSub, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              Title
-            </label>
-            <input
-              id="broadcastTitle"
-              name="broadcastTitle"
-              value={broadcastTitle}
-              maxLength={60}
-              onChange={e => setBroadcastTitle(e.target.value)}
-              placeholder="Al-Mawaid Announcement"
-              style={{
-                width: '100%', boxSizing: 'border-box', padding: '12px 14px', borderRadius: 12,
-                background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text,
-                fontSize: 14, outline: 'none', fontFamily: 'inherit',
-              }}
-            />
-          </div>
-          <div>
-            <label htmlFor="broadcastBody" style={{ display: 'block', fontSize: 11, fontWeight: 800, color: T.textSub, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              Message
-            </label>
-            <textarea
-              id="broadcastBody"
-              name="broadcastBody"
-              value={broadcastBody}
-              maxLength={500}
-              onChange={e => setBroadcastBody(e.target.value)}
-              rows={4}
-              placeholder="Type your broadcast message..."
-              style={{
-                width: '100%', boxSizing: 'border-box', resize: 'vertical',
-                padding: '12px 14px', borderRadius: 12,
-                background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text,
-                fontSize: 14, outline: 'none', fontFamily: 'inherit', lineHeight: 1.6,
-              }}
-            />
-          </div>
-          <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-            <Btn variant="ghost" onClick={() => setShowBroadcast(false)} disabled={broadcasting}>
-              Cancel
-            </Btn>
-            <Btn onClick={sendBroadcast} disabled={broadcasting}>
-              {broadcasting ? 'Broadcasting…' : <><Send size={14} /> Send to All</>}
-            </Btn>
-          </div>
+          <div style={{ fontSize: 12, color: T.textSub, lineHeight: 1.5 }}>Sends an instant push notification + in-app alert to every member. This cannot be undone.</div>
+          <div><label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: T.textSub, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Title</label><input value={broadcastTitle} maxLength={60} onChange={e => setBroadcastTitle(e.target.value)} placeholder="Al-Mawaid Announcement" style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', borderRadius: 12, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit' }} /></div>
+          <div><label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: T.textSub, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Message</label><textarea value={broadcastBody} maxLength={500} onChange={e => setBroadcastBody(e.target.value)} rows={4} placeholder="Type your broadcast message..." style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', padding: '12px 14px', borderRadius: 12, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 14, outline: 'none', fontFamily: 'inherit', lineHeight: 1.6 }} /></div>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}><Btn variant="ghost" onClick={() => setShowBroadcast(false)} disabled={broadcasting}>Cancel</Btn><Btn onClick={sendBroadcast} disabled={broadcasting}>{broadcasting ? 'Broadcasting…' : <><Send size={14} /> Send to All</>}</Btn></div>
         </div>
       </Modal>
     </PageWrap>

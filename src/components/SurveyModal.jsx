@@ -4,7 +4,7 @@ import { supabase } from '../lib/firebaseClient'
 import { useAuth, useTheme } from '../admin/context'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { DAYS, getSurveyTargetWeek } from '../common/utils'
-import { isRotiItem, isCountInput, canEditMeal, isSurveyOpen, useSurveyAutoSave, normalizeDishValue, denormalizeDishValue, hasUserOverride, getPctColor, mergeDishSnapshot, getSlotDishes } from '../hooks/useSurvey'
+import { isRotiItem, isCountInput, canEditMeal, isSurveyOpen, useSurveyAutoSave, normalizeDishValue, denormalizeDishValue, getPctColor, mergeDishSnapshot, getSlotDishes, getSurveyWindowLabel } from '../hooks/useSurvey'
 import { submitSurveyRow, beginSurvey } from '../lib/submitSurvey'
 import { fetchLatestUserSurveyRow, fetchUserSurveyRow } from '../lib/surveyRows'
 
@@ -73,12 +73,12 @@ const SkeletonDish = ({ theme: TH = THEME }) => (
   </div>
 )
 
-export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
+export default function SurveyModal({ onClose, appSettings = {}, initialDay, initialMeal }) {
   const { user } = useAuth()
   // Theme-matched palette — the pop-up and its cards follow the active app theme.
   const appT = useTheme()
   const THEME = useMemo(() => buildSurveyTheme(appT), [appT])
-  const weeklyMenu = useWeeklyMenu(getSurveyTargetWeek(parseInt(appSettings?.survey_open_hour, 10) || 20, appSettings?.survey_status === 'open')) || {}
+  const weeklyMenu = useWeeklyMenu(getSurveyTargetWeek(appSettings)) || {}
   const [currentDayIndex, setCurrentDayIndex] = useState(0)
   const [currentMeal, setCurrentMeal] = useState('lunch')
   const [wantsFood, setWantsFood] = useState(null)
@@ -114,21 +114,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   // Lunch/Dinner picker, then the chosen meal's dish-card editor.
   const [mealPicked, setMealPicked] = useState(false)
 
-  const surveyOpenHour = parseInt(appSettings?.survey_open_hour, 10)
-  const currentWeekId = getSurveyTargetWeek(isNaN(surveyOpenHour) ? 20 : surveyOpenHour, appSettings?.survey_status === 'open')
-  const draftKey = `survey_draft_${currentWeekId}_${user?.id}`
-  const loadDraft = () => {
-    try {
-      const raw = localStorage.getItem(draftKey)
-      return raw ? JSON.parse(raw) : null
-    } catch { return null }
-  }
-  const saveDraft = (data) => {
-    try { localStorage.setItem(draftKey, JSON.stringify(data)) } catch { return }
-  }
-  const clearDraft = () => {
-    try { localStorage.removeItem(draftKey) } catch { return }
-  }
+  const currentWeekId = getSurveyTargetWeek(appSettings)
   const currentDay = DAYS[currentDayIndex]
   const currentDayLower = (currentDay || '').toLowerCase()
   const menu = weeklyMenu[currentDayLower] || weeklyMenu[currentDay] || { lunch: [], dinner: [] }
@@ -136,73 +122,27 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
   const isEditable = canEditMeal(currentDay, currentWeekId, currentMeal, appSettings, user?.id)
   const surveyOpen = isSurveyOpen(appSettings, user?.id)
-  const userHasOverride = hasUserOverride(appSettings, user?.id)
 
   // ── Post-submit edit gating ──
-  // Two routines per the product flow:
-  //  1) WHOLE-WEEK edits in the survey: live only while the admin-assigned weekly
-  //     survey window is open (Sat open-hour → Mon close-hour, or an admin
-  //     Open/Closed override). Override users can always edit their granted meals.
-  //  2) DAILY lunch/dinner routine: after the weekly window closes, each meal is
-  //     edited from the daily edit cards (Home) inside its own lunch/dinner edit
-  //     window (lunch_edit_open/close, dinner_edit_open/close from the admin).
-  const wholeWeekEditable = surveyOpen || userHasOverride
-  const dayCanBeEdited = (day) => {
-    if (userHasOverride) {
-      // Override users may only edit the meals the admin granted them.
-      return slotList.some(s => s.day === day)
-    }
-    return wholeWeekEditable
-  }
-  // The weekly survey window message reflects the admin-configured hours.
+  // Whole-week edits are live while the admin-assigned weekly survey window is open.
+  // Daily lunch/dinner edits follow the admin's per-meal windows after the weekly window closes.
+  const wholeWeekEditable = surveyOpen
+  const dayCanBeEdited = () => wholeWeekEditable
   const getWindowHint = () => {
-    const openHour = parseInt(appSettings?.survey_open_hour, 10)
-    const closeHour = parseInt(appSettings?.survey_close_hour, 10)
-    const open = isNaN(openHour) ? 20 : openHour
-    const close = isNaN(closeHour) ? 11 : closeHour
-    const fmt = h => {
-      const hh = h % 12 === 0 ? 12 : h % 12
-      return `${hh}:00 ${h >= 12 ? 'PM' : 'AM'}`
-    }
-    return `Whole-week edits: Sat ${fmt(open)} – Mon ${fmt(close)}. After that, daily lunch/dinner edits follow the admin's per-meal windows.`
+    const label = getSurveyWindowLabel(appSettings)
+    return `Whole-week window: ${label}. After that, daily lunch/dinner edits follow per-meal windows.`
   }
 
-  // ── Override-scoped survey: when admin grants specific day/meal access, show ONLY those slots ──
-  const overrideSlots = useMemo(() => {
-    if (!user?.id || !appSettings.user_overrides) return null
-    try {
-      const overrides = typeof appSettings.user_overrides === 'string'
-        ? JSON.parse(appSettings.user_overrides)
-        : appSettings.user_overrides
-      const o = overrides[user.id]
-      if (!o || o.all) return null
-      const slots = []
-      DAYS.forEach((day) => {
-        const dayOverride = o[day.toLowerCase()]
-        if (dayOverride) {
-          if (dayOverride.lunch) slots.push({ day, meal: 'lunch' })
-          if (dayOverride.dinner) slots.push({ day, meal: 'dinner' })
-        }
-      })
-      return slots.length ? slots : null
-    } catch { return null }
-  }, [appSettings.user_overrides, user?.id])
-
-  const slotList = useMemo(() => {
-    if (overrideSlots) return overrideSlots
-    return DAYS.flatMap(day => [{ day, meal: 'lunch' }, { day, meal: 'dinner' }])
-  }, [overrideSlots])
+  const slotList = useMemo(() => DAYS.flatMap(day => [{ day, meal:'lunch'}, { day, meal:'dinner'}]), [])
 
   const dayIndices = useMemo(() => [...new Set(slotList.map(s => DAYS.indexOf(s.day)))], [slotList])
   const totalSlots = slotList.length
   const currentSlot = Math.max(0, slotList.findIndex(s => s.day === currentDay && s.meal === currentMeal))
   const isLast = currentSlot === slotList.length - 1
-  // Dish names for the current slot. Prefer the live menu (so a newly published
-  // dish can still be answered), but fall back to the saved dish_snapshot — an
-  // Applied slot must keep showing what the user selected even if the admin has
-  // since changed or unpublished the week's menu rows.
+  
+  const sourceDataForDishes = existingData
   const liveDishes = menu[currentMeal] || []
-  const dishes = liveDishes.length > 0 ? liveDishes : getSlotDishes(existingData, currentDay, currentMeal, [])
+  const dishes = liveDishes.length > 0 ? liveDishes : getSlotDishes(sourceDataForDishes, currentDay, currentMeal, [])
   const hasDishes = dishes.length > 0
   const allDishesAnswered = wantsFood && dishes.every(dish => {
     const resp = responses[dish]
@@ -213,10 +153,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     return typeof resp === 'number'
   })
 
-  // A day counts as complete only when EVERY meal the user actually has in this
-  // fill flow is saved. Full-week users have both meals every day (unchanged);
-  // override users granted only lunch or only dinner per day must not show as
-  // "partial" forever just because the un-granted meal was never answered.
+  // A day counts as complete only when EVERY meal in the week is saved.
   const dayStatusSummary = DAYS.map((day) => {
     const dk = day.substring(0, 3).toLowerCase()
     const daySlots = slotList.filter(s => s.day === day)
@@ -235,12 +172,10 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   // guards fresh fills outside the survey/edit windows.
 
   // Whole-week editing in the survey modal is only available while the weekly
-  // survey window is open (or for override users). After it closes, the daily
+  // survey window is open. After it closes, the daily
   // lunch/dinner edits happen through the daily edit cards on the Home page.
   // While FILLING, slots are also locked when the meal isn't editable.
-  // Override users: their GRANTED slots are always unlocked — never block them.
-  const slotIsGranted = userHasOverride && slotList.some(s => s.day === currentDay && s.meal === currentMeal)
-  const slotLocked = slotIsGranted ? false : (surveySubmitted ? !wholeWeekEditable : !isEditable)
+  const slotLocked = surveySubmitted ? !wholeWeekEditable : !isEditable
 
 
   // ── ESCAPE KEY TO CLOSE ──
@@ -286,24 +221,21 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
           setSnackDefaults(prev => (prev || sd))
         }
       }
-      const { data } = await fetchLatestUserSurveyRow(user?.id)
-      let existing = null
-      if (data && data.week_id === currentWeekId) existing = data
-      setExistingData(existing)
+      const { data } = await fetchUserSurveyRow(user?.id, currentWeekId)
+      setExistingData(data || null)
       setDataLoaded(true)
-      const localSubmitted = localStorage.getItem(`survey_submitted_${currentWeekId}_${user?.id}`) === '1'
-      const allDone = existing && slotList.every(slot => {
+      const allDone = slotList.every(slot => {
         const dk = slot.day.substring(0, 3).toLowerCase()
         const mk = slot.meal === 'lunch' ? 'l' : 'd'
-        return existing[`${dk}_${mk}_status`]
+        return data?.[`${dk}_${mk}_status`]
       })
-      // For override users: direct filling mode only (do not show edit view screen)
-      const isSubmitted = userHasOverride ? false : (!!allDone || localSubmitted)
-      setSurveySubmitted(isSubmitted)
-    } catch {
-      setDataLoaded(true)
-    }
-  }, [user, currentWeekId, userData.thali_no, slotList, userHasOverride])
+      if (data) {
+        setSurveySubmitted(allDone)
+      } else {
+        setSurveySubmitted(false)
+      }
+    } catch { setDataLoaded(true) }
+  }, [user, currentWeekId, userData.thali_no, slotList])
 
   useEffect(() => { loadExisting() }, [loadExisting])
 
@@ -359,16 +291,17 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   }, [user?.id, currentWeekId])
 
   const populateFromExisting = useCallback(() => {
-    if (!existingData) { setWantsFood(null); wantsFoodRef.current = null; setResponses({}); return }
+    const sourceData = existingData
+    if (!sourceData) { setWantsFood(null); wantsFoodRef.current = null; setResponses({}); return }
     const statusKey = `${dayKey}_${mealKey}_status`
-    const status = existingData[statusKey]
+    const status = sourceData[statusKey]
     if (status) {
       wantsFoodRef.current = status === 'Applied'
       if (status === 'Applied') {
         setWantsFood(true)
         const dishRes = {}
         dishes.forEach((dish, idx) => {
-          const val = existingData[`${dayKey}_${mealKey}_dish_${idx + 1}`]
+          const val = sourceData[`${dayKey}_${mealKey}_dish_${idx + 1}`]
           if (val !== undefined && val !== null) {
             dishRes[dish] = normalizeDishValue(val, dish, isCountInput(appSettings, currentDay, currentMeal, idx))
           }
@@ -393,13 +326,17 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     if (!initialDay) return
     const idx = DAYS.indexOf(initialDay)
     if (idx === -1) return
-    // Always land on the tapped day — for un-granted days (override users) the
-    // MealPicker's empty state handles the "No meals granted" case.
     setCurrentDayIndex(idx)
     setViewDay(initialDay)
-    setMealPicked(false)
-    setEditResponseMode(false)
-  }, [dataLoaded, initialDay])
+    if (initialMeal) {
+      setCurrentMeal(initialMeal)
+      setMealPicked(true)
+      if (surveySubmitted && wholeWeekEditable) setEditResponseMode(true)
+    } else {
+      setMealPicked(false)
+      setEditResponseMode(false)
+    }
+  }, [dataLoaded, initialDay, initialMeal, surveySubmitted, wholeWeekEditable])
 
   // Day-scoped picker: choosing a meal opens that meal's dish-card editor.
   const handlePickMeal = (meal) => {
@@ -427,17 +364,10 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   // ── Restore the in-progress draft (fill flow only) ──
   // Restores the slot the user left off on, even when earlier slots are already
   // saved — only when that slot itself has no saved status yet.
+  // ── Restore from Supabase (no localStorage drafts) ──
   useEffect(() => {
     if (!dataLoaded) return
-    const draft = loadDraft()
-    if (draft && draft.day === currentDay && draft.meal === currentMeal && !surveySubmitted) {
-      const statusKey = `${dayKey}_${mealKey}_status`
-      if (!existingData?.[statusKey]) {
-        wantsFoodRef.current = draft.wantsFood ?? null
-        setWantsFood(draft.wantsFood ?? null)
-        if (draft.responses && Object.keys(draft.responses).length > 0) setResponses(draft.responses)
-      }
-    }
+    // No localStorage drafts — values come from existingData via populateFromExisting
     initialLoadRef.current = false
   }, [dataLoaded])
 
@@ -457,7 +387,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     if (initialLoadRef?.current) return
     if (editResponseMode) return
     const timer = setTimeout(() => {
-      saveDraft({ day: currentDay, meal: currentMeal, wantsFood, responses, updatedAt: new Date().toISOString() })
+      // Drafts stored in Supabase — no localStorage auto-save needed
     }, 800)
     return () => clearTimeout(timer)
   }, [responses, wantsFood, currentDay, currentMeal, editResponseMode])
@@ -511,9 +441,6 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     const latestData = saveResult?.refreshed || existingData
     // Day-card gate: the current day's card must have BOTH meals answered and
     // synced before advancing to the next day — no skipping half-finished days.
-    // Override users may be granted ONLY lunch or ONLY dinner per day, so the
-    // gate only applies when both meals actually belong to this fill flow;
-    // a dinner-only (or lunch-only) day is complete once its one meal is saved.
     if (!slotLocked && !editResponseMode && currentMeal === 'dinner') {
       const next = slotList[currentSlot + 1]
       if (next && next.day !== currentDay) {
@@ -547,14 +474,12 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
       thali_number: userData.thali_no, email: userData.email || '',
       updated_at: new Date().toISOString(),
       dish_snapshot: mergeDishSnapshot(existingData, currentDay, currentMeal, targetDishes),
-      _isOverride: userHasOverride || false
     }
     updateObj[`${dayKey}_${mealKey}_status`] = status
     const currentEditCount = existingData?.edit_metadata?.[`${dayKey}_${mealKey}`] || 0
     const editMeta = { ...(existingData?.edit_metadata || {}), [`${dayKey}_${mealKey}`]: currentEditCount + 1 }
     // Display marker for the submitted-view badge — informational only, never a gate.
     if (isEdit) editMeta[`${dayKey}_${mealKey}_edited`] = true
-    if (userHasOverride) editMeta[`${dayKey}_${mealKey}_override`] = true
     updateObj.edit_metadata = editMeta
     if (status === 'Applied') {
       targetDishes.forEach((dish, idx) => {
@@ -585,9 +510,9 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
       const { error } = await submitSurveyRow(buildUpdateObj(true))
       if (error) throw error
       await refetchExisting()
+      setSyncMsg(`Synced ✓ ${dayKey} ${mealKey}`)
       setEditResponseMode(false)
       setViewDay(currentDay)
-      setSyncMsg(`Synced ✓ ${dayKey} ${mealKey}`)
     } catch (err) {
       console.error('Save edit error:', err)
       setErrorToast(`Failed to save edit: ${err?.message || 'Please try again.'} Your answer is kept locally and the team has been notified.`)
@@ -603,7 +528,6 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
       const { error } = await submitSurveyRow(buildUpdateObj(false))
       if (error) throw error
       const refreshed = await refetchExisting()
-      const status = curWants ? 'Applied' : 'Skipped'
       setSyncMsg(`Synced ✓ ${dayKey} ${mealKey}`)
       return { status, refreshed }
     } catch (err) {
@@ -618,35 +542,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     setLoading(true)
     setErrorToast(null)
     try {
-      // The in-app "Weekly Survey Submitted" notification is best-effort only:
-      // members are not allowed to INSERT into notifications (RLS — the member
-      // insert policy was removed), so a failure here must never block the
-      // submission success state or the saved survey data.
-      try {
-        await supabase.from('notifications').insert({
-          user_id: user?.id, title: 'Weekly Survey Submitted',
-          message: overrideSlots
-            ? `Your granted survey meals (${slotList.length} slot${slotList.length === 1 ? '' : 's'}) have been saved.`
-            : 'Your full week survey (Mon–Sat) has been saved.',
-          url: '/post', type: 'survey'
-        })
-      } catch (notifErr) {
-        console.warn('[SurveyModal] Survey notification skipped (RLS):', notifErr)
-      }
-      try {
-        await supabase.functions.invoke('send-push', {
-          body: {
-            title: 'Al-Mawaid · Weekly survey in',
-            body: overrideSlots
-              ? `Thali ${userData.thali_no || '—'} submitted override survey responses.`
-              : `Thali ${userData.thali_no || '—'} submitted the full week meal plan.`,
-            url: '/admin/survey-tracking',
-            target_type: 'admins',
-          }
-        })
-      } catch (e) { console.warn('[SurveyModal] Admin push skipped:', e) }
-      localStorage.setItem(`survey_submitted_${currentWeekId}_${user?.id}`, '1')
-      clearDraft()
+      // Survey submitted — survey_day_responses is the single source of truth
       setSurveySubmitted(true)
       setReviewMode(false)
       setShowSuccess(true)
@@ -675,8 +571,8 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     await saveCurrentSlot()
     let fresh
     try {
-      const { data } = await fetchUserSurveyRow(user?.id, currentWeekId)
-      fresh = data
+      const { data: normalData } = await fetchUserSurveyRow(user?.id, currentWeekId)
+      fresh = normalData
     } catch (e) {
       console.error('Re-fetch error:', e)
       setSubmitResult({ type: 'error', title: '❌ Something went wrong', message: e?.message || 'Could not verify your saved answers. Your answers are kept locally — please try again.' })
@@ -880,12 +776,12 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   // own status and an Edit option. Editing is live while the weekly survey window
   // is open; afterwards each meal follows the daily lunch/dinner edit windows. ──
   const DayList = () => (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: THEME.textSub, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: THEME.textSub, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span>📅 Your Week — tap Edit to change a day</span>
-        <span style={{ fontSize: 10, color: THEME.accent, fontWeight: 700 }}>✏️ Edit</span>
+        <span style={{ fontSize: 9, color: THEME.accent, fontWeight: 700 }}>✏️ Edit</span>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {dayIndices.map(idx => {
           const day = DAYS[idx]
           const summary = dayStatusSummary[idx]
@@ -902,20 +798,20 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
               key={day}
               onClick={() => setViewDay(day)}
               style={{
-                display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
-                borderRadius: 14, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 9, padding: '9px 11px',
+                borderRadius: 12, cursor: 'pointer',
                 background: isActive ? 'linear-gradient(135deg, rgba(212,175,55,0.12), rgba(212,175,55,0.03))' : THEME.card,
                 border: `1.5px solid ${isActive ? THEME.accent : THEME.border}`,
-                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                boxShadow: isActive ? `0 4px 16px ${THEME.accentBg}` : 'none',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                boxShadow: isActive ? `0 3px 12px ${THEME.accentBg}` : 'none',
               }}
             >
               <div style={{
-                width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+                width: 34, height: 34, borderRadius: 10, flexShrink: 0,
                 background: isActive ? THEME.accentBg : THEME.cardActive,
                 border: `1px solid ${isActive ? THEME.accent : THEME.border}`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 17, fontWeight: 800, color: isActive ? THEME.accent : THEME.textSub,
+                fontSize: 14, fontWeight: 800, color: isActive ? THEME.accent : THEME.textSub,
                 fontFamily: "'Playfair Display',serif",
               }}>
                 {day.charAt(0)}
@@ -1009,23 +905,23 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
       const selColor = sel === 'yes' ? THEME.yesColor : sel === 'no' ? THEME.noColor : null
       return (
         <div style={{
-          marginBottom: 10, padding: '14px 16px', borderRadius: 16,
+          marginBottom: 6, padding: '10px 12px', borderRadius: 12,
           position: 'relative', overflow: 'hidden',
           background: sel ? `linear-gradient(145deg, ${selColor}1a, ${THEME.card})` : THEME.card,
           border: `1.5px solid ${sel ? selColor : THEME.border}`,
-          boxShadow: sel ? `0 8px 26px ${selColor}22` : 'none',
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          animation: isAnimating ? 'surveyPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
+          boxShadow: sel ? `0 6px 18px ${selColor}18` : 'none',
+          transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+          animation: isAnimating ? 'surveyPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
         }}>
           {sel && (
-            <div style={{ position: 'absolute', top: -24, right: -24, width: 110, height: 110, borderRadius: '50%', background: selColor, filter: 'blur(45px)', opacity: 0.15, pointerEvents: 'none' }} />
+            <div style={{ position: 'absolute', top: -20, right: -20, width: 90, height: 90, borderRadius: '50%', background: selColor, filter: 'blur(36px)', opacity: 0.14, pointerEvents: 'none' }} />
           )}
           <div style={{ position: 'relative', zIndex: 1 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: THEME.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: THEME.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</div>
               {sel && statusPill(sel === 'yes' ? '✅ Selected' : '❌ Skipped', selColor)}
             </div>
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
               {['yes', 'no'].map(opt => {
                 const isSelected = sel === opt
                 const isYes = opt === 'yes'
@@ -1073,19 +969,19 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
       const selColor = isYes ? THEME.yesColor : isSkipped ? THEME.noColor : null
       return (
         <div style={{
-          marginBottom: 10, padding: '14px 16px', borderRadius: 16,
+          marginBottom: 6, padding: '10px 12px', borderRadius: 12,
           position: 'relative', overflow: 'hidden',
           background: selColor ? `linear-gradient(145deg, ${selColor}1a, ${THEME.card})` : THEME.card,
           border: `1.5px solid ${selColor || THEME.border}`,
-          boxShadow: selColor ? `0 8px 26px ${selColor}22` : 'none',
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          animation: isAnimating ? 'surveyPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
+          boxShadow: selColor ? `0 6px 18px ${selColor}18` : 'none',
+          transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+          animation: isAnimating ? 'surveyPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
         }}>
           {selColor && (
-            <div style={{ position: 'absolute', top: -24, right: -24, width: 110, height: 110, borderRadius: '50%', background: selColor, filter: 'blur(45px)', opacity: 0.15, pointerEvents: 'none' }} />
+            <div style={{ position: 'absolute', top: -20, right: -20, width: 90, height: 90, borderRadius: '50%', background: selColor, filter: 'blur(36px)', opacity: 0.14, pointerEvents: 'none' }} />
           )}
           <div style={{ position: 'relative', zIndex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: THEME.text, marginBottom: 12, fontFamily: "'DM Sans',sans-serif", display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: THEME.text, marginBottom: 8, fontFamily: "'DM Sans',sans-serif", display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
               <span>{dish}</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {isYes && statusPill(`✅ ${value} ${value === 1 ? 'person' : 'persons'}`, THEME.yesColor)}
@@ -1205,23 +1101,23 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
     const selColor = pctColor || THEME.accent
     return (
       <div style={{
-        marginBottom: 10, padding: '14px 16px', borderRadius: 16,
+        marginBottom: 6, padding: '10px 12px', borderRadius: 12,
         position: 'relative', overflow: 'hidden',
         background: hasResp ? `linear-gradient(145deg, ${selColor}1a, ${THEME.card})` : THEME.card,
         border: `1.5px solid ${hasResp ? selColor : THEME.border}`,
-        boxShadow: hasResp ? `0 8px 26px ${selColor}22` : 'none',
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        animation: isAnimating ? 'surveyPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
+        boxShadow: hasResp ? `0 6px 18px ${selColor}18` : 'none',
+        transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+        animation: isAnimating ? 'surveyPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
       }}>
         {hasResp && (
-          <div style={{ position: 'absolute', top: -24, right: -24, width: 110, height: 110, borderRadius: '50%', background: selColor, filter: 'blur(45px)', opacity: 0.15, pointerEvents: 'none' }} />
+          <div style={{ position: 'absolute', top: -20, right: -20, width: 90, height: 90, borderRadius: '50%', background: selColor, filter: 'blur(36px)', opacity: 0.14, pointerEvents: 'none' }} />
         )}
         <div style={{ position: 'relative', zIndex: 1 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: THEME.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: THEME.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</div>
             {hasResp && statusPill(`${resp}% selected`, selColor)}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 6 }}>
             {[0, 25, 50, 75, 100].map(pct => {
               const pc = getPctColor(pct)
               const isSelected = resp === pct
@@ -1279,9 +1175,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
           ✅ Weekly Survey Submitted
         </div>
         <div style={{ fontSize: 12.5, color: THEME.textSub, fontFamily: "'DM Sans',sans-serif", lineHeight: 1.5 }}>
-          {overrideSlots
-            ? 'Your granted meals are saved. Tap a day tab below to edit any response.'
-            : 'Your meal plan for this week is locked in. Tap a day tab below to edit any response.'}
+          {'Your meal plan for this week is locked in. Tap a day tab below to edit any response.'}
         </div>
       </div>
 
@@ -1294,7 +1188,8 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
           const dk = viewDay.substring(0, 3).toLowerCase()
           const mk = meal === 'lunch' ? 'l' : 'd'
           const status = existingData?.[`${dk}_${mk}_status`]
-          const isApplied = status === 'Applied'
+          const isApplied = status === 'Applied' || status === 'opted_in'
+          const isSkipped = status === 'Skipped' || status === 'opted_out'
           const viewDayMenu = weeklyMenu[viewDay.toLowerCase()] || weeklyMenu[viewDay] || {}
           const dishList = getSlotDishes(existingData, viewDay, meal, viewDayMenu[meal] || [])
           const editedAfterSubmit = existingData?.edit_metadata?.[`${dk}_${mk}_edited`] || false
@@ -1371,8 +1266,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
   // listed with ✏️ Edit on every day, so the user can go back and change any
   // day before tapping Submit Weekly Survey. ──
   const ReviewView = () => {
-    // Count only the days the user actually has slots for (override users may be
-    // granted a subset), so progress never exceeds 100%.
+    // Progress across all 6 days.
     const completed = dayIndices.filter(idx => dayStatusSummary[idx] === 'complete').length
     const total = dayIndices.length
     const pct = Math.round((completed / total) * 100)
@@ -1532,7 +1426,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
           {/* Steps */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24, textAlign: 'left' }}>
             {[
-              { icon: '📅', text: `${totalSlots} slot${totalSlots === 1 ? '' : 's'} to fill${overrideSlots ? ' — only your granted meals' : ' — Mon lunch through Sat dinner'}` },
+              { icon: '📅', text: `${totalSlots} slots to fill — Mon lunch through Sat dinner` },
               { icon: '💾', text: 'Auto-saves as you go — resume where you left off' },
               { icon: '✏️', text: 'Review your week before submitting — tap Edit to change any day' },
               { icon: '✅', text: 'Save & Continue to move to the next meal' },
@@ -1623,13 +1517,13 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
         onClick={e => e.stopPropagation()}
         style={{
           background: THEME.modalBg,
-          borderRadius: 28, padding: 'clamp(14px, 3vw, 22px)',
-          maxWidth: 800, width: '100%', boxSizing: 'border-box',
+          borderRadius: 20, padding: 'clamp(12px, 2.5vw, 18px)',
+          maxWidth: 720, width: '100%', boxSizing: 'border-box',
           border: `1.5px solid ${THEME.modalBorder}`,
-          boxShadow: '0 40px 100px rgba(0,0,0,0.65), 0 0 0 1px rgba(212,175,55,0.07), inset 0 1px 0 rgba(255,255,255,0.06)',
+          boxShadow: '0 30px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(212,175,55,0.07), inset 0 1px 0 rgba(255,255,255,0.06)',
           position: 'relative', overflowX: 'hidden', overflowY: 'auto',
-          maxHeight: 'calc(100dvh - 40px)',
-          animation: 'surveyModalIn 0.38s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          maxHeight: 'calc(100dvh - 32px)',
+          animation: 'surveyModalIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)',
         }}
       >
         {/* ── LOADING OVERLAY ── */}
@@ -1757,21 +1651,22 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
                 days, then the lunch/dinner routine for the selected day */}
             {(surveySubmitted || reviewMode) && editResponseMode ? (
               <div style={{ marginBottom: 16 }}>
-                {/* Week day list always shown while editing — even when the modal
-                    was deep-linked to a single day — so the user can jump to any
-                    other day's menu instead of being stuck on one day. */}
-                <div style={{ fontSize: 11, fontWeight: 700, color: THEME.textSub, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span>📅 Your Week</span>
-                  <button onClick={() => { setEditResponseMode(false); setViewDay(currentDay) }}
-                    style={{
-                      background: 'transparent', border: 'none', cursor: 'pointer',
-                      color: THEME.accent, fontSize: 10, fontWeight: 800,
-                      fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', gap: 4,
-                    }}>
-                    <ChevronLeft size={12} /> {reviewMode ? 'Back to review' : 'Back to plan'}
-                  </button>
-                </div>
-                <DayList />
+                {!initialDay && (
+                  <>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: THEME.textSub, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>📅 Your Week</span>
+                      <button onClick={() => { setEditResponseMode(false); setViewDay(currentDay) }}
+                        style={{
+                          background: 'transparent', border: 'none', cursor: 'pointer',
+                          color: THEME.accent, fontSize: 10, fontWeight: 800,
+                          fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', gap: 4,
+                        }}>
+                        <ChevronLeft size={12} /> {reviewMode ? 'Back to review' : 'Back to plan'}
+                      </button>
+                    </div>
+                    <DayList />
+                  </>
+                )}
                 {/* Lunch/Dinner routine for the day being edited */}
                 <MealSwitcher />
               </div>
@@ -1810,9 +1705,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
             {slotLocked && <div style={{ padding: 16, borderRadius: 12, background: THEME.accentBg, border: `1px solid ${THEME.accent}`, marginBottom: 16 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: THEME.accent, marginBottom: 4, fontFamily: "'DM Sans',sans-serif" }}>🔒 Not Currently Bookable</div>
                 <div style={{ fontSize: 12, color: THEME.textSub, fontFamily: "'DM Sans',sans-serif" }}>
-                  {userHasOverride
-                    ? 'This meal is outside the access granted to you by the admin.'
-                    : 'The survey window is currently closed. It opens Saturday 8:00 PM and closes Monday 11:00 AM.'}
+                  {'The survey window is currently closed. It opens Saturday 8:00 PM and closes Monday 11:00 AM.'}
                 </div>
               </div>}
 
@@ -1985,8 +1878,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
 
                 {isLast && !slotLocked && !surveySubmitted && (
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    {userHasOverride || initialDay ? (
-                      /* Override flow or Day-scoped deep-link: direct submit button on final slot */
+                    {initialDay ? (
                       <button onClick={handleSubmitWeekly}
                         disabled={loading}
                         style={{
@@ -2001,9 +1893,8 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay }) {
                         }}
                         onMouseEnter={e => { if (!loading) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 12px 28px ${THEME.accentBg}` } }}
                         onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = loading ? 'none' : `0 8px 20px ${THEME.accentBg}` }}
-                      >{loading ? 'Submitting...' : (userHasOverride ? '🚀 Submit Override Survey' : '✅ Submit Weekly Survey')}</button>
+                      >{loading ? 'Submitting...' : '✅ Submit Weekly Survey'}</button>
                     ) : (
-                      /* Full-week fill flow: the final slot hands off to the review step */
                       <button onClick={openReview}
                         disabled={loading}
                         style={{

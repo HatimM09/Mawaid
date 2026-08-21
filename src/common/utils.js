@@ -3,18 +3,91 @@
 // @deprecated — use getSurveyTargetWeek() instead. Kept only for backward compatibility.
 export const getWeekDate = (surveyOpenHour = 20) => getSurveyTargetWeek(surveyOpenHour, false)
 
+// ── Survey window helpers (duplicated from useSurvey to avoid circular import) ──
+const _DAY_TO_NUM = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 }
+
+const _parseSurveyWindowFromSettings = (appSettings = {}) => {
+  let startDayRaw = appSettings.survey_window_start_day
+  let startTimeRaw = appSettings.survey_window_start_time
+  let endDayRaw = appSettings.survey_window_end_day
+  let endTimeRaw = appSettings.survey_window_end_time
+  if (startDayRaw == null && startTimeRaw == null && endDayRaw == null && endTimeRaw == null) {
+    if (appSettings.survey_open_hour != null || appSettings.survey_close_hour != null) {
+      const openHour = parseInt(appSettings.survey_open_hour, 10)
+      const closeHour = parseInt(appSettings.survey_close_hour, 10)
+      return {
+        startDay: 6,
+        startTime: { h: isNaN(openHour) ? 20 : openHour, m: 0 },
+        endDay: 1,
+        endTime: { h: isNaN(closeHour) ? 11 : closeHour, m: 0 },
+      }
+    }
+  }
+  const normalizeDay = (v, fallback) => {
+    if (v == null || v === '') return fallback
+    if (typeof v === 'number' && v >= 0 && v <= 6) return v
+    const s = String(v).toLowerCase().trim()
+    if (_DAY_TO_NUM[s] != null) return _DAY_TO_NUM[s]
+    const n = parseInt(s, 10)
+    if (!isNaN(n) && n >= 0 && n <= 6) return n
+    return fallback
+  }
+  const startDay = normalizeDay(startDayRaw, 6)
+  const endDay = normalizeDay(endDayRaw, 1)
+  const startTime = parseHm(startTimeRaw, 20, 0)
+  const endTime = parseHm(endTimeRaw, 11, 0)
+  return { startDay, startTime, endDay, endTime }
+}
+
+const _isSurveyWindowOpen = (appSettings = {}, now = new Date()) => {
+  const cfg = _parseSurveyWindowFromSettings(appSettings)
+  const nowDay = now.getDay()
+  const nowMin = nowDay * 1440 + now.getHours() * 60 + now.getMinutes()
+  const startMin = cfg.startDay * 1440 + cfg.startTime.h * 60 + cfg.startTime.m
+  const endMin = cfg.endDay * 1440 + cfg.endTime.h * 60 + cfg.endTime.m
+  if (startMin === endMin) return false
+  if (startMin < endMin) return nowMin >= startMin && nowMin < endMin
+  return nowMin >= startMin || nowMin < endMin
+}
+
 /**
  * Returns the Monday of the survey target week (YYYY-MM-DD) — the week the
  * weekly survey is planning and the tracker displays.
  *
- * Identical to getWeekDate() EXCEPT when the survey is force-opened
- * (app_settings.survey_status = 'open'): members can then fill the weekly
- * survey at ANY hour, so Saturday shifts to the NEXT Monday all day instead of
- * only after the open hour. Without this, a Saturday-morning fill lands in the
- * PREVIOUS week's row — invisible in the current-week tracker view and later
- * deleted by its auto-cleanup. Daily-edit flows keep using getWeekDate().
+ * Now supports new admin-configurable window (survey_window_start_day/time,
+ * survey_window_end_day/time). When called as getSurveyTargetWeek(appSettings)
+ * it shifts to NEXT Monday when the window is open (so fills land in the
+ * correct week). Legacy signature getSurveyTargetWeek(openHour, forceOpen) is
+ * kept for backward compatibility.
  */
 export const getSurveyTargetWeek = (surveyOpenHour = 20, forceOpen = false) => {
+  // New signature: first arg is appSettings object
+  if (surveyOpenHour && typeof surveyOpenHour === 'object' && !Array.isArray(surveyOpenHour)) {
+    const appSettings = surveyOpenHour
+    const now = new Date()
+    const day = now.getDay()
+    const cfg = _parseSurveyWindowFromSettings(appSettings)
+    // Week-id is STABLE and does not shift when admin changes window mid-week.
+    // Legacy rule: Sat after window-start and all Sunday target NEXT Monday (week being planned),
+    // Mon before window-end targets TODAY. Tue-Fri target current Monday.
+    // This keeps survey rows from splitting across week_ids if window is edited.
+    let diff = now.getDate() - day + (day === 0 ? -6 : 1)
+    const startMinutes = cfg.startTime.h * 60 + cfg.startTime.m
+    const nowMinutes = now.getHours() * 60 + now.getMinutes()
+    const isWrap = (cfg.startDay * 1440 + startMinutes) > (cfg.endDay * 1440 + cfg.endTime.h * 60 + cfg.endTime.m)
+    if (isWrap) {
+      // Default wrap Sat→Mon: use startTime for Sat threshold, Sunday always next Monday
+      if (day === 6 && cfg.startDay === 6 && nowMinutes >= startMinutes) diff += 7
+      else if (day === 6 && cfg.startDay !== 6 && nowMinutes >= startMinutes && day === cfg.startDay) diff += 7
+      else if (day === 0) diff += 7
+      // Mon inside window stays on current Monday — no shift
+    } else {
+      // Non-wrap window inside same week — never shift, survey week is current calendar Monday
+    }
+    const monday = new Date(now)
+    monday.setDate(diff)
+    return monday.toISOString().split('T')[0]
+  }
   const now = new Date()
   const day = now.getDay()
   const hour = now.getHours()

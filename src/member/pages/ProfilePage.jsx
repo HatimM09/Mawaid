@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { QrCode, ClipboardList, Users, Bell, LifeBuoy, Info, MessageCircle, Phone, MapPin, Check, KeyRound, Eye, EyeOff, LogOut, X, ChevronRight } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/firebaseClient'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
 import { getSurveyTargetWeek } from '../../common/utils'
-import { getSlotDishes, hasUserOverride } from '../../hooks/useSurvey'
+import { getSlotDishes, isRotiItem } from '../../hooks/useSurvey'
+import ErrorBoundary from '../../components/ErrorBoundary'
 import { fetchLatestUserSurveyRow, fetchUserSurveyRow } from '../../lib/surveyRows'
 import { ProfileSkeleton, ListPageSkeleton, RequestsSkeleton, NotificationsSkeleton, KhidmatTeamSkeleton } from '../../common/Skeleton'
 import { THEMES } from '../theme'
@@ -274,13 +275,10 @@ function MySurveysPage({ onBack }) {
   }, [])
 
   const markOverride = useCallback((grouped, rawData) => {
-    // The override badge is derived from the admin grant (user_overrides)
-    // or the saved override flag in survey response metadata.
+    // Badge derived from saved flag in survey response metadata.
     Object.keys(grouped).forEach(day => {
       Object.keys(grouped[day]).forEach(meal => {
-        const hasSlotOverride = hasUserOverride(appSettings, user?.id, day, meal) ||
-          hasUserOverride(appSettings, user?.id) ||
-          rawData?._isOverride ||
+        const hasSlotOverride = rawData?._isOverride ||
           rawData?.edit_metadata?.[`${day.substring(0, 3).toLowerCase()}_${meal === 'lunch' ? 'l' : 'd'}_override`]
         if (hasSlotOverride) grouped[day][meal].is_override = true
       })
@@ -304,7 +302,7 @@ function MySurveysPage({ onBack }) {
             const dishes = getSlotDishes(data, day, meal, menu[day]?.[meal] || [])
             const nameList = dishes.length > 0
               ? dishes
-              : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`)
+              : Array.from({ length: 5 }, (_, i) => `Dish ${i + 1}`)
             nameList.forEach((d, i) => {
               const val = data[`${dayKey}_${mealKey}_dish_${i + 1}`]
               if (val !== undefined && val !== null && val !== '') {
@@ -331,12 +329,21 @@ function MySurveysPage({ onBack }) {
     return grouped
   }, [])
 
+  // Override-granted slots — removed along with the override table.
+  // All users now see their normal survey responses.
+  const grantedSlots = null
+
   const loadData = useCallback(async () => {
     const { data } = await fetchLatestUserSurveyRow(user.id)
+    let weekId = data?.week_id
+    if (data) {
+      // No override merging needed — use the normal row directly
+      setSurveyWeekId(weekId)
+    }
     if (!data) { setSurveys({}); return }
-    setSurveyWeekId(data.week_id)
+    setSurveyWeekId(weekId)
     setSurveys(markOverride(processRow(data, weeklyMenu), data))
-  }, [user.id, weeklyMenu, processRow, markOverride])
+  }, [user.id, weeklyMenu, processRow, markOverride, grantedSlots])
 
   useEffect(() => {
     loadData().finally(() => setLoading(false))
@@ -345,10 +352,8 @@ function MySurveysPage({ onBack }) {
   // Re-process when the weekly menu loads (the initial render may have an empty menu)
   useEffect(() => {
     if (!surveyWeekId || Object.keys(weeklyMenu).length === 0) return
-    fetchLatestUserSurveyRow(user.id).then(({ data }) => {
-      if (data) setSurveys(markOverride(processRow(data, weeklyMenu), data))
-    })
-  }, [weeklyMenu, surveyWeekId, user.id, processRow, markOverride])
+    loadData()
+  }, [surveyWeekId, weeklyMenu, loadData])
 
   // Realtime subscription: refresh surveys on any change
   useEffect(() => {
@@ -733,7 +738,7 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
         try {
           const dayNum = new Date().getDay()
           const h = new Date().getHours()
-          const weekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
+          const weekId = getSurveyTargetWeek(appSettings)
           let isEating = false
 
           if (dayNum !== 0) {
@@ -743,9 +748,15 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
             const dayKey = today.substring(0, 3).toLowerCase()
             const mealKey = mealName === 'lunch' ? 'l' : 'd'
             
-            const { data: subData } = await fetchUserSurveyRow(user.id, weekId)
+            // Merge override responses so granted-slot eating status is used
+            // for opt-in/opt-out notice targeting.
+            const [{ data: subData }, { data: ovrData }] = await Promise.all([
+              fetchUserSurveyRow(user.id, weekId),
+              fetchUserOverrideRows(user.id, weekId),
+            ])
+            const effective = subData
 
-            const status = subData ? subData[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
+            const status = effective ? effective[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
             isEating = status === 'Applied'
           }
           
@@ -771,7 +782,7 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
       if (markRead) markRead()
     }
     fetchNotices()
-  }, [user.id, markRead, appSettings.survey_open_hour])
+  }, [user.id, markRead, appSettings.survey_window_start_day])
 
   const timeAgo = (dateStr) => {
     if (!dateStr) return ''

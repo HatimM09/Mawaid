@@ -139,29 +139,23 @@ export default function SettingsPage() {
   const [reminding, setReminding] = useState(false)
 
   const loadWeeklyTracking = useCallback(async () => {
-    let openHour = 20
-    let hourRow
-    let statusRow
+    let settings = {}
     try {
-      const [hr, sr] = await Promise.all([
-        supabase.from('app_settings').select('value').eq('key', 'survey_open_hour').maybeSingle(),
-        supabase.from('app_settings').select('value').eq('key', 'survey_status').maybeSingle(),
-      ])
-      hourRow = hr
-      statusRow = sr
-    } catch {
-      hourRow = { data: null }
-    }
-    const parsed = parseInt(hourRow?.value, 10)
-    if (!isNaN(parsed)) openHour = parsed
-    const weekStart = getSurveyTargetWeek(openHour, statusRow?.value === 'open')
+      const { data: appSettings } = await supabase.from('app_settings').select('*')
+      if (appSettings) appSettings.forEach(row => { settings[row.key] = row.value })
+    } catch { /* ignore */ }
+    const weekStart = getSurveyTargetWeek(settings)
     setWeeklyTrack(p => ({ ...p, loading: true, weekStart }))
     try {
-      const [{ data: users }, { data: mergedRows }] = await Promise.all([
+      const [{ data: users }, { data: mergedRows }, { data: overrideRows }] = await Promise.all([
         supabase.from('user_stats').select('user_id, name, thali_number, email'),
         fetchWeekRows(weekStart),
+        supabase.from('survey_day_responses').select('user_id, day, l_status, d_status').eq('week_id', weekStart),
       ])
+      // Override-only users have no normal rows — treat any override response
+      // for the week as "submitted" so reminders don't ping users who replied.
       const submittedIds = new Set((mergedRows || []).map(s => s.user_id))
+      ;(overrideRows || []).forEach(o => submittedIds.add(o.user_id))
       const allUsers = (users || []).filter(u => u.user_id)
       setWeeklyTrack({
         loading: false,

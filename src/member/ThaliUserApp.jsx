@@ -4,11 +4,11 @@ import { supabase } from '../lib/firebaseClient'
 import { ThemeCtx, useAuth } from '../admin/context'
 import { updateSystemTheme } from '../admin/ui'
 import OfflineBanner from '../components/OfflineBanner'
-import DailySurveyModal from '../components/DailySurveyModal'
 import { getSurveyTargetWeek } from '../common/utils'
 import { fetchUserSurveyRow } from '../lib/surveyRows'
+
 import { THEMES } from './theme'
-import { hasUserOverride, isSurveyOpen } from './survey'
+import { isSurveyOpen } from './survey'
 import { GeoBg, GlobalStyles } from './ui'
 import { playNotificationChime } from './sound'
 import HomePage from './pages/HomePage'
@@ -24,7 +24,6 @@ export default function ThaliUserApp() {
   const initialSubPage = initialParams.get('alerts') === '1' ? 'notifications' : 'main'
   const [activeTab, setActiveTab] = useState(initialTab)
   const [activeSubPage, setActiveSubPage] = useState(initialSubPage)
-  const [showDailySurvey, setShowDailySurvey] = useState(false)
   const [theme, setTheme] = useState(() => localStorage.getItem('almawaid_theme') || 'dark')
   const t = THEMES[theme] || THEMES.dark
   const [unreadCount, setUnreadCount] = useState(0)
@@ -130,6 +129,25 @@ export default function ThaliUserApp() {
       Notification.requestPermission()
     }
 
+    // Shared notice-targeting check: whether the user is currently "eating" a
+    // granted slot. Merge override responses so override users are targeted
+    // correctly (their normal table may be empty).
+    const computeIsEating = async () => {
+      const dayNum = new Date().getDay()
+      if (dayNum === 0) return false
+      const h = new Date().getHours()
+      const weekId = getSurveyTargetWeek(appSettings)
+      const days = ['', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+      const today = days[dayNum]
+      const mealName = h < 15 ? 'lunch' : 'dinner'
+      const dayKey = today.substring(0, 3).toLowerCase()
+      const mealKey = mealName === 'lunch' ? 'l' : 'd'
+      
+      const { data: subData } = await fetchUserSurveyRow(user.id, weekId)
+      const status = subData ? subData[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
+      return status === 'Applied'
+    }
+
     const loadUnread = async () => {
       if (!user) return
       const lastRead = localStorage.getItem('almawaid_last_notice_read') || '1970-01-01T00:00:00.000Z'
@@ -141,22 +159,7 @@ export default function ThaliUserApp() {
 
       if (!error && data) {
         try {
-          const dayNum = new Date().getDay()
-          const h = new Date().getHours()
-          const weekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
-          let isEating = false
-
-          if (dayNum !== 0) {
-            const days = ['', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-            const today = days[dayNum]
-            const mealName = h < 15 ? 'lunch' : 'dinner'
-            const dayKey = today.substring(0, 3).toLowerCase()
-            const mealKey = mealName === 'lunch' ? 'l' : 'd'
-            
-            const { data: subData } = await fetchUserSurveyRow(user.id, weekId)
-            const status = subData ? subData[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
-            isEating = status === 'Applied'
-          }
+          const isEating = await computeIsEating()
           
           const filtered = data.filter(notice => {
             const toneStr = notice.tone || ''
@@ -192,23 +195,7 @@ export default function ThaliUserApp() {
           if (toneStr.includes(':opt_in') || toneStr.includes(':opt_out')) {
             const isOptInTarget = toneStr.includes(':opt_in')
             try {
-const dayNum = new Date().getDay()
-          const h = new Date().getHours()
-          const weekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
-          let isEating = false
-
-          if (dayNum !== 0) {
-            const days = ['', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-            const today = days[dayNum]
-            const mealName = h < 15 ? 'lunch' : 'dinner'
-                const dayKey = today.substring(0, 3).toLowerCase()
-                const mealKey = mealName === 'lunch' ? 'l' : 'd'
-                
-                const { data: statusData } = await fetchUserSurveyRow(user.id, weekId)
-                const status = statusData ? statusData[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
-                isEating = status === 'Applied'
-              }
-              
+              const isEating = await computeIsEating()
               if (isOptInTarget && !isEating) isForMe = false
               if (!isOptInTarget && isEating) isForMe = false
             } catch (e) {
@@ -235,7 +222,7 @@ const dayNum = new Date().getDay()
       })
       .subscribe()
     return () => supabase.removeChannel(channel)
-  }, [user, appSettings.survey_open_hour])
+  }, [user, appSettings])
 
   const markNotificationsRead = useCallback(() => {
     localStorage.setItem('almawaid_last_notice_read', new Date().toISOString())
@@ -247,12 +234,11 @@ const dayNum = new Date().getDay()
   const LogoIcon = ({ size = 20, style = {} }) => (
     <img src="/al-mawaid.png" alt="" style={{ width: size, height: size, objectFit: 'contain', ...style }} />
   )
-  const surveyOverrideActive = hasUserOverride(appSettings, user.id)
   // The Survey tab only appears while the weekly survey is actually open — the
-  // admin set survey_status = open, the auto-schedule window is live, or the admin
-  // granted this user a per-user override. When the admin closes the survey (or the
-  // window passes), the tab disappears immediately.
-  const surveyTabVisible = surveyOverrideActive || isSurveyOpen(appSettings, user.id)
+  // admin set survey_status = open, or the auto-schedule window is live.
+  // Per-user override access has been removed; all users see the survey based on
+  // the admin's schedule settings.
+  const surveyTabVisible = isSurveyOpen(appSettings, user.id)
   const tabs = [
     { id: 'home', label: 'Home', Icon: Home, aria: 'Home Dashboard' },
     { id: 'menu', label: 'Menu', Icon: Utensils, aria: 'Weekly Menu' },
@@ -387,7 +373,7 @@ const dayNum = new Date().getDay()
           )
         })()}
 
-        {activeTab === 'home' && <HomePage setShowDailySurvey={setShowDailySurvey} onGoToSurvey={() => { loadAppSettings(); setActiveTab('survey') }} appSettings={appSettings} />}
+        {activeTab === 'home' && <HomePage onGoToSurvey={() => { loadAppSettings(); setActiveTab('survey') }} appSettings={appSettings} />}
         {activeTab === 'menu' && <WeeklyMenuPage appSettings={appSettings} />}
         {activeTab === 'survey' && <SurveyPage appSettings={appSettings} />}
 
@@ -395,12 +381,11 @@ const dayNum = new Date().getDay()
         {activeTab === 'profile' && <ProfilePage theme={theme} setTheme={handleSetTheme} markRead={markNotificationsRead} appSettings={appSettings} activeSubPage={activeSubPage} setActiveSubPage={setActiveSubPage} />}
 
         <OfflineBanner />
-        {showDailySurvey && <DailySurveyModal onClose={() => { setShowDailySurvey(false); setActiveTab('home') }} appSettings={appSettings} />}
 
         <nav className="mobile-bottom-nav" aria-label="Main navigation">
           {tabs.map(tab => {
             const active = activeTab === tab.id
-            const showSurveyBadge = tab.id === 'survey' && surveyOverrideActive
+            const showSurveyBadge = false // per-user override removed; badge deprecated
             const surveyLive = isSurveyOpen(appSettings, user.id)
             return (
               <button key={tab.id} onClick={() => { if (tab.id === 'survey') loadAppSettings(); setActiveTab(tab.id) }} className={active ? 'active' : ''} aria-label={tab.aria || tab.label}>

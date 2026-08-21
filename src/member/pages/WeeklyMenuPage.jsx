@@ -16,7 +16,7 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
   // does not). Reading the calendar week here made a member's just-submitted
   // responses invisible on the Menu page during that window.
   const currentWeekId = getSurveyTargetWeek(
-    parseInt(appSettings.survey_open_hour, 10) || 20,
+    parseInt(appSettings.survey_window_start_day, 10) || 20,
     appSettings.survey_status === 'open'
   )
   const weeklyMenu = useWeeklyMenu(currentWeekId)
@@ -25,12 +25,11 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
   const { user } = useAuth()
   const [userSurvey, setUserSurvey] = useState(null)
 
-  // Fetch user survey response — responses now live in survey_day_responses
-  // (merged flat shape); the legacy flat mirror is the fallback.
+  // Fetch user survey response — responses live in survey_day_responses
   useEffect(() => {
     const fetchSurvey = async () => {
-      const { data } = await fetchUserSurveyRow(user.id, currentWeekId)
-      setUserSurvey(data)
+      const { data: normal } = await fetchUserSurveyRow(user.id, currentWeekId)
+      setUserSurvey(normal)
     }
     fetchSurvey()
   }, [user.id, currentWeekId])

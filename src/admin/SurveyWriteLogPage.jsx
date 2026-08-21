@@ -148,7 +148,7 @@ export default function SurveyWriteLogPage() {
       {/* ── STAT CARDS ── */}
       <Grid cols={4} style={{ marginBottom: 20 }}>
         <StatCard icon={<ClipboardList size={18} />} label="Logged writes" value={stats.total} color={T.accent} sub="this page" />
-        <StatCard icon={<CheckCircle2 size={18} />} label="Succeeded" value={stats.ok} color={T.success} sub="written to survey_submissions_flat" />
+        <StatCard icon={<CheckCircle2 size={18} />} label="Succeeded" value={stats.ok} color={T.success} sub="written to survey_day_responses" />
         <StatCard icon={<XCircle size={18} />} label="Failed" value={stats.error} color="#ef4444" sub="rejected by submit-survey" />
         <StatCard icon={<Activity size={18} />} label="Drafts" value={stats.draft} color="#a78bfa" sub="auto-saved dish answers" />
       </Grid>

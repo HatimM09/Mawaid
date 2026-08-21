@@ -55,13 +55,15 @@ export default function LunchSurveyEditor({
         setAppSettings(settings)
       }
 
-      // Load current week's survey
-      const currentWeekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
+      // Load current week's survey from survey_day_responses (per-day rows)
+      const currentWeekId = getSurveyTargetWeek(appSettings)
+      const today = new Date().toISOString().split('T')[0].toLowerCase().slice(0, 3) // e.g. 'mon', 'tue', etc.
       const { data: surveyData } = await supabase
-        .from('survey_submissions_flat')
+        .from('survey_day_responses')
         .select('*')
         .eq('user_id', user.id)
         .eq('week_id', currentWeekId)
+        .eq('day', today)
         .maybeSingle()
 
       // Load weekly menu
@@ -135,7 +137,7 @@ export default function LunchSurveyEditor({
   const saveSurveyResponse = async (dish, response) => {
     try {
       const { user } = await supabase.auth.getUser()
-      const currentWeekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
+      const currentWeekId = getSurveyTargetWeek(appSettings)
       const today = new Date().toISOString().split('T')[0].toLowerCase().slice(0, 3)
       const mealKey = 'l'
       
@@ -162,10 +164,10 @@ export default function LunchSurveyEditor({
         updateObj[colName] = response
       }
 
-      // Save to database
+      // Save to database (survey_day_responses is the single source of truth)
       await supabase
-        .from('survey_submissions_flat')
-        .upsert([updateObj], { onConflict: 'user_id,week_id' })
+        .from('survey_day_responses')
+        .upsert([updateObj], { onConflict: 'user_id,week_id,day' })
 
     } catch (err) {
       console.error('Error saving response:', err)
@@ -179,7 +181,7 @@ export default function LunchSurveyEditor({
 
     try {
       const { user } = await supabase.auth.getUser()
-      const currentWeekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
+      const currentWeekId = getSurveyTargetWeek(appSettings)
       const today = new Date().toISOString().split('T')[0].toLowerCase().slice(0, 3)
       const mealKey = 'l'
 
@@ -209,10 +211,10 @@ export default function LunchSurveyEditor({
         }
       })
 
-      // Save to database
+      // Save to database (survey_day_responses is the single source of truth)
       await supabase
-        .from('survey_submissions_flat')
-        .upsert([updateObj], { onConflict: 'user_id,week_id' })
+        .from('survey_day_responses')
+        .upsert([updateObj], { onConflict: 'user_id,week_id,day' })
 
       setSuccess('Survey responses updated successfully!')
 

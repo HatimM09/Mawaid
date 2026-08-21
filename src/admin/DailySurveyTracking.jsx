@@ -14,7 +14,7 @@ import {
 } from './ui'
 
 import { getSurveyTargetWeek, DAYS, toLocalDateStr, isStoppedOnDay } from '../common/utils'
-import { getPctColor, getSlotDishes, hasUserOverride } from '../hooks/useSurvey'
+import { getPctColor, getSlotDishes } from '../hooks/useSurvey'
 import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot } from '../lib/surveyRows'
 
 // Pick the stop request whose dates best describe the current stopped period
@@ -122,7 +122,7 @@ export default function DailySurveyTracking() {
         const dishList = getSlotDishes(row, dayName, mealName, fallbackList)
         const names = dishList.length > 0
           ? dishList
-          : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`)
+          : Array.from({ length: 5 }, (_, i) => `Dish ${i + 1}`)
         const result = {}
         result._status = row ? row[`${dk}_${mk}_status`] : null
         names.forEach((d, i) => {
@@ -233,13 +233,12 @@ export default function DailySurveyTracking() {
         prevWeek.setDate(prevWeek.getDate() - 7)
         const cutoff = prevWeek.toISOString().split('T')[0]
         const { data: oldRows } = await supabase
-          .from('survey_submissions_flat')
+          .from('survey_day_responses')
           .select('week_id').lt('week_id', cutoff)
         if (oldRows && oldRows.length) {
           const oldWeeks = [...new Set(oldRows.map(r => r.week_id))].filter(Boolean)
           for (const ow of oldWeeks) {
             await supabase.from('survey_day_responses').delete().eq('week_id', ow)
-            await supabase.from('survey_submissions_flat').delete().eq('week_id', ow)
           }
         }
       } catch (e) { console.warn('Cleanup error:', e) }
@@ -273,6 +272,20 @@ export default function DailySurveyTracking() {
       // legacy flat mirror as the fallback for historical weeks).
       const { data: allRows, error: subsError } = await fetchAllUserRows()
       if (subsError) throw subsError
+
+      // Load override rows too — granted-slot responses live here and must be
+      // merged over the normal rows so the tracking grid always shows the
+      // member's effective (override-priority) answers.
+      const { data: allOverrideRows, error: ovrError } = await supabase
+        .from('survey_day_responses')
+        .select('*')
+      if (ovrError) throw ovrError
+      const ovrMap = {}
+      for (const o of allOverrideRows || []) {
+        if (!ovrMap[o.user_id]) ovrMap[o.user_id] = {}
+        if (!ovrMap[o.user_id][o.week_id]) ovrMap[o.user_id][o.week_id] = []
+        ovrMap[o.user_id][o.week_id].push(o)
+      }
 
       // Thali stop/stop requests — used to mark a member as "no thali" (stopped)
       const { data: stopRequests } = await supabase
@@ -328,23 +341,22 @@ export default function DailySurveyTracking() {
         if (isStoppedOnDay(reqs, selDateStr, 'dinner')) stoppedDinnerMap[userId] = true
       })
 
-      setLoadError(null)
+setLoadError(null)
 
-      // Merge merged rows into user records (one array per user, newest week first)
+      // Merge merged rows into user records (one array per user, newest week first).
+      // No override merging — each user's effective row is the normal row from survey_day_responses.
       const subMap = {}
       for (const s of allRows || []) {
         if (!subMap[s.user_id]) subMap[s.user_id] = []
         subMap[s.user_id].push(s)
       }
-      const resultsRaw = (users || []).map(u => ({
-        ...u,
-        survey_submissions_flat: (subMap[u.user_id] || [])
-          .slice()
-          .sort((a, b) => (b.week_id || '').localeCompare(a.week_id || '')),
-      }))
 
-      // Collect distinct week_ids for filter
-      const allWeeks = [...new Set((allRows || []).map(s => s.week_id).filter(Boolean))].sort().reverse()
+      setLoadError(null)
+
+      // Collect distinct week_ids for filter (normal rows only).
+      const allWeeks = [...new Set(
+        (allRows || []).map(s => s.week_id).filter(Boolean)
+      )].sort().reverse()
       setAvailableWeeks(allWeeks)
       
       const dayKey = day.substring(0, 3).toLowerCase()
@@ -357,7 +369,7 @@ export default function DailySurveyTracking() {
         const dishList = getSlotDishes(r, dayName, mealName, fallbackList)
         const names = dishList.length > 0
           ? dishList
-          : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => r && r[`${dk}_${mk}_dish_${i + 1}`] !== undefined && r[`${dk}_${mk}_dish_${i + 1}`] !== null && r[`${dk}_${mk}_dish_${i + 1}`] !== '')
+          : Array.from({ length: 5 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => r && r[`${dk}_${mk}_dish_${i + 1}`] !== undefined && r[`${dk}_${mk}_dish_${i + 1}`] !== null && r[`${dk}_${mk}_dish_${i + 1}`] !== '')
         const result = {}
         result._status = r ? r[`${dk}_${mk}_status`] : null
         names.forEach((d, i) => {
@@ -378,14 +390,17 @@ export default function DailySurveyTracking() {
       }
 
       const results = (resultsRaw || []).map(u => {
-        const submissionData = Array.isArray(u.survey_submissions_flat) ? u.survey_submissions_flat : (u.survey_submissions_flat ? [u.survey_submissions_flat] : [])
-        let resp
+        // Use the first (most recent) merged row from survey_day_responses
+        const row = ((allRows || []).find(r => r.user_id === u.user_id) || {})
+        let resp = row
         if (weekFilter === 'all') {
-          resp = submissionData.slice().sort((a, b) =>
+          // Find most recent week
+          const recent = (allRows || []).filter(r => r.user_id === u.user_id).sort((a, b) =>
             (b.week_id || '').localeCompare(a.week_id || '')
           )[0]
+          resp = recent || row
         } else {
-          resp = submissionData.find(r => r.week_id === weekFilter)
+          resp = (allRows || []).find(r => r.user_id === u.user_id && r.week_id === weekFilter) || row
         }
         const dayKeyLower = day.toLowerCase()
         const dayMenu = weeklyMenu[dayKeyLower] || weeklyMenu[day] || {}
@@ -395,9 +410,7 @@ export default function DailySurveyTracking() {
         const stoppedInfo = stoppedMap[u.user_id]
         const isStopped = !!stoppedInfo
         const baseStatus = buildCurMeal._status
-        const isOverride = hasUserOverride(settingsMap, u.user_id, day, meal) ||
-          hasUserOverride(settingsMap, u.user_id) ||
-          (resp && (resp._isOverride || resp.edit_metadata?.[`${dayKey}_${mealKey}_override`]))
+        const isOverride = (resp && (resp._isOverride || resp.edit_metadata?.[`${dayKey}_${mealKey}_override`]))
         return { 
           ...u, 
           _isOverride: !!isOverride,
@@ -429,7 +442,7 @@ export default function DailySurveyTracking() {
     // REALTIME SUBSCRIPTION — watch tables so saves appear live
     const surveySub = supabase
       .channel('survey_tracking')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_submissions_flat' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => {
         load(true)
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => {

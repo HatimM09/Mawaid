@@ -126,10 +126,14 @@ export default function LoginPage({ onRoleLogin }) {
     try {
       if (role === 'inventory_manager') {
         if (!email.trim()) throw { message: 'Email is required.' }
+        // Anonymous email lookup via SECURITY DEFINER RPC — staff is RLS-gated
+        // so a direct query from the login screen would return nothing.
         const { data: invStaff, error: invErr } = await supabaseClient
-          .from('staff').select('*').ilike('email', email).eq('role', 'inventory_manager').maybeSingle()
-        if (invErr || !invStaff) throw { message: 'Unauthorized: Email not registered as Inventory Manager.' }
-        onRoleLogin('inventory_manager', { user: { email, id: invStaff.user_id || `inv_${invStaff.id}`, ...invStaff } })
+          .rpc('login_lookup_inventory_manager', { p_email: email.trim().toLowerCase() })
+        if (invErr) throw invErr
+        const row = invStaff && invStaff.length ? invStaff[0] : null
+        if (!row) throw { message: 'Unauthorized: Email not registered as Inventory Manager.' }
+        onRoleLogin('inventory_manager', { user: { email: row.email, id: row.user_id || `inv_${row.id}`, ...row } })
         setLoading(false); return
       }
 
@@ -143,8 +147,19 @@ export default function LoginPage({ onRoleLogin }) {
       if (!staffRow && !staffErr) {
         const { data: emailMatch } = await supabaseClient.from('staff').select('*').eq('email', session.user.email).maybeSingle()
         if (emailMatch && !emailMatch.user_id) {
-          const { data: updated } = await supabaseClient.from('staff').update({ user_id: session.user.id }).eq('id', emailMatch.id).select().single()
-          staffRow = updated
+          // Self-link via SECURITY DEFINER RPC — non-admin staff can't UPDATE
+          // the staff table directly (admin-only policy), but the RPC only
+          // links when the caller's JWT email matches the row.
+          const { data: linked } = await supabaseClient.rpc('link_staff_user_id', {
+            p_staff_id: emailMatch.id,
+            p_user_id: session.user.id,
+          })
+          if (linked && linked.ok) {
+            const { data: updated } = await supabaseClient.from('staff').select('*').eq('id', emailMatch.id).single()
+            staffRow = updated
+          } else {
+            staffRow = emailMatch
+          }
         } else if (emailMatch) { staffRow = emailMatch }
       }
       if (staffErr && staffErr.code !== 'PGRST116') { await supabaseClient.auth.signOut(); throw new Error(staffErr.message) }

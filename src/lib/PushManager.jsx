@@ -235,8 +235,11 @@ export default function PushManager() {
       }
 
       // ── Web Push subscription (browser/PWA fallback) ──
-      // Skip early return on native — Capacitor may lack PushManager/Web Notification APIs
-      const webPushSupported = 'Notification' in window && 'PushManager' in window && 'serviceWorker' in navigator
+      // Only on the web/PWA. On native (Capacitor/Expo WebView) push goes through
+      // FCM/Expo via PushBridge, and the WebView origin is not an eligible push
+      // context — pushManager.subscribe() there always fails with "Registration
+      // failed - push service error", so skip Web Push entirely on native.
+      const webPushSupported = !isNative() && 'Notification' in window && 'PushManager' in window && 'serviceWorker' in navigator
       if (webPushSupported) {
         try {
           let permission = Notification.permission

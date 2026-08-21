@@ -51,7 +51,6 @@ async function seed() {
     const { error: dErr } = await supabase.from('survey_day_responses').upsert([dayRow], { onConflict: 'user_id,week_id,day' })
     if (dErr) console.error('Error seeding survey day row:', dErr.message)
     else {
-      await supabase.from('survey_submissions_flat').upsert([submission], { onConflict: 'user_id,week_id' })
       console.log(`Seeded ${u.name} (Thali #${u.thali_number})`)
     }
   }

@@ -32,6 +32,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
   const [snackDefaults, setSnackDefaults] = useState(null)
   const [existingLoaded, setExistingLoaded] = useState(false)
   const initialLoadRef = useRef(true)
+  const [errorToast, setErrorToast] = useState(null)
 
   const today = propDay || getTodayKey()
   const menu = weeklyMenu[today] || { lunch: [], dinner: [] }
@@ -57,7 +58,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
     saveTimerRef.current = setTimeout(async () => {
       setAutoSaveStatus('saving')
       try {
-        const currentWeekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
+        const currentWeekId = getSurveyTargetWeek(appSettings)
         const { data: existing } = await fetchUserSurveyRow(user?.id, currentWeekId)
         const updateObj = {
           user_id: user?.id, week_id: currentWeekId, day: dayKey,
@@ -92,7 +93,11 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
         if (autoErr) throw autoErr
         setAutoSaveStatus('saved')
         setTimeout(() => setAutoSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 2000)
-      } catch { setAutoSaveStatus('idle') }
+      } catch (err) {
+        console.error('[DailySurvey] Auto-save error:', err)
+        setErrorToast(`Failed to save: ${err?.message || 'Please try again.'} Your draft is preserved locally.`)
+        setAutoSaveStatus('idle')
+      }
     }, 600)
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
   }, [responses, dayKey, loading])
@@ -101,7 +106,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
   useEffect(() => {
     if (Object.keys(responses).length === 0) return
     if (initialLoadRef.current) return
-    const currentWeekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
+    const currentWeekId = getSurveyTargetWeek(appSettings)
     const draftKey = `survey_draft_${currentWeekId}_${user?.id}`
     const timer = setTimeout(() => {
       try { localStorage.setItem(draftKey, JSON.stringify({ responses, updatedAt: new Date().toISOString() })) } catch {}
@@ -118,31 +123,38 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
   // Load existing submission
   useEffect(() => {
     const loadExisting = async () => {
-      const currentWeekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
+      const currentWeekId = getSurveyTargetWeek(appSettings)
       const { data: existing } = await fetchUserSurveyRow(user?.id, currentWeekId)
+      let existingData = null
       if (existing) {
-        const dk = today.substring(0, 3).toLowerCase()
-        const lunchVal = existing[`${dk}_l_status`]
-        const dinnerVal = existing[`${dk}_d_status`]
-        if (lunchVal) setLunchStatus(lunchVal === 'Applied')
-        if (dinnerVal) setDinnerStatus(dinnerVal === 'Applied')
-        const newResponses = {}
-        allLunchDishes.forEach((dish, idx) => {
-          const col = `${dk}_l_dish_${idx + 1}`
-          const val = existing[col]
-          if (val !== undefined && val !== null && val !== 'No') {
-            newResponses[dish] = normalizeDishValue(val, dish, isCountInput(appSettings, today, 'lunch', idx))
-          }
-        })
-        allDinnerDishes.forEach((dish, idx) => {
-          const col = `${dk}_d_dish_${idx + 1}`
-          const val = existing[col]
-          if (val !== undefined && val !== null && val !== 'No') {
-            newResponses[dish] = normalizeDishValue(val, dish, isCountInput(appSettings, today, 'dinner', idx))
-          }
-        })
-        setResponses(newResponses)
+        // All users now use normal survey_day_responses
+        existingData = existing
+      } else if (existing.week_id === currentWeekId) {
+          // Regular users: only load from current week
+          existingData = existing
+        }
       }
+      const dk = today.substring(0, 3).toLowerCase()
+      const lunchVal = existingData?.[`${dk}_l_status`]
+      const dinnerVal = existingData?.[`${dk}_d_status`]
+      if (lunchVal) setLunchStatus(lunchVal === 'Applied')
+      if (dinnerVal) setDinnerStatus(dinnerVal === 'Applied')
+      const newResponses = {}
+      allLunchDishes.forEach((dish, idx) => {
+        const col = `${dk}_l_dish_${idx + 1}`
+        const val = existingData?.[col]
+        if (val !== undefined && val !== null && val !== 'No') {
+          newResponses[dish] = normalizeDishValue(val, dish, isCountInput(appSettings, today, 'lunch', idx))
+        }
+      })
+      allDinnerDishes.forEach((dish, idx) => {
+        const col = `${dk}_d_dish_${idx + 1}`
+        const val = existingData?.[col]
+        if (val !== undefined && val !== null && val !== 'No') {
+          newResponses[dish] = normalizeDishValue(val, dish, isCountInput(appSettings, today, 'dinner', idx))
+        }
+      })
+      setResponses(newResponses)
       setExistingLoaded(true)
       initialLoadRef.current = false
     }
@@ -152,7 +164,7 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
   const submitSurvey = async () => {
     setLoading(true)
     try {
-      const currentWeekId = getSurveyTargetWeek(parseInt(appSettings.survey_open_hour, 10) || 20)
+      const currentWeekId = getSurveyTargetWeek(appSettings)
       const updateObj = {
         user_id: user?.id, week_id: currentWeekId, day: dayKey,
         thali_number: userData.thali_no, email: userData.email || '',
@@ -477,6 +489,19 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
             </button>
           </div>
         </div>
+
+        {/* Error toast */}
+        {errorToast && (
+          <div style={{
+            marginBottom: 14, padding: '11px 14px', borderRadius: 12,
+            background: 'rgba(244,67,54,0.1)', border: '1px solid rgba(244,67,54,0.35)',
+            color: '#F44336', fontSize: 12, fontFamily: "'DM Sans',sans-serif",
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <span style={{ flex: 1 }}>{errorToast}</span>
+            <button onClick={() => setErrorToast(null)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}><X size={14} /></button>
+          </div>
+        )}
 
         {/* Step Indicator */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 20, justifyContent: 'center' }}>

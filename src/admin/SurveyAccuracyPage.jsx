@@ -3,14 +3,15 @@
 // submissions for a chosen week so nobody can silently slip through.
 //
 // Sources:
-//   - survey_submissions_flat  → which of the 12 slots each member answered
+//   - survey_day_responses  → which of the 12 slots each member answered
 //   - survey_write_log         → saves rejected by submit-survey (failed writes)
 //   - thali_requests           → stop/resume, so members who stopped thali are
 //                                excluded from the expected count (not failures)
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Target, Download, Clock, AlertTriangle, CheckCircle2, XCircle,
-  RefreshCw, Search, ChevronDown, ChevronUp, Calendar, Trash2
+  RefreshCw, Search, ChevronDown, ChevronUp, Calendar, Trash2, ShieldCheck,
+  FileWarning, Activity, ClipboardList
 } from 'lucide-react'
 import { supabase } from '../lib/firebaseClient'
 import { getSurveyTargetWeek, DAYS, toLocalDateStr, isStoppedOnDay } from '../common/utils'
@@ -31,6 +32,25 @@ const flagLabel = {
   noResponse: '⌛ No response',
   failed: '❌ Failed saves',
   stopped: '⏹️ Stopped',
+}
+
+const actionLabel = (a) => a === 'draft' ? 'Draft' : a === 'submit' ? 'Submit' : a || '—'
+const actionColor = (a) => a === 'draft' ? '#a78bfa' : a === 'submit' ? T.accent : T.textSub
+const summarizePayload = (payload) => {
+  if (!payload || typeof payload !== 'object') return ''
+  const slots = Object.keys(payload).filter(k => /_(l|d)_status$/.test(k))
+  if (!slots.length) {
+    const dishKeys = Object.keys(payload).filter(k => /_(l|d)_dish_\d+$/.test(k))
+    return dishKeys.length ? `${dishKeys.length} dish answer${dishKeys.length === 1 ? '' : 's'}` : 'draft'
+  }
+  const applied = slots.filter(k => payload[k] === 'Applied').length
+  const skipped = slots.filter(k => payload[k] === 'Skipped').length
+  const other = slots.length - applied - skipped
+  const parts = []
+  if (applied) parts.push(`${applied} Applied`)
+  if (skipped) parts.push(`${skipped} Skipped`)
+  if (other) parts.push(`${other} other`)
+  return `${slots.length} slot${slots.length === 1 ? '' : 's'} · ${parts.join(' · ') || '—'}`
 }
 
 // Format a stored dish value for display: Yes/No, percentage, or count (×N).
@@ -57,6 +77,10 @@ export default function SurveyAccuracyPage() {
   const [users, setUsers] = useState([])
   const [submissions, setSubmissions] = useState([])
   const [writeErrors, setWriteErrors] = useState([])
+  const [writeLogEntries, setWriteLogEntries] = useState([])
+  const [writeLogFilter, setWriteLogFilter] = useState('all') // all|success|error
+  const [writeLogSearch, setWriteLogSearch] = useState('')
+  const [writeLogExpanded, setWriteLogExpanded] = useState({})
   const [stopReqs, setStopReqs] = useState([])
   const [weeklyMenu, setWeeklyMenu] = useState({})
 
@@ -70,7 +94,7 @@ export default function SurveyAccuracyPage() {
   const [eraseError, setEraseError] = useState(null)
   const [eraseResult, setEraseResult] = useState(null)
 
-  const currentWeek = useMemo(() => getSurveyTargetWeek(surveyOpenHour, surveyForceOpen), [surveyOpenHour, surveyForceOpen])
+  const currentWeek = useMemo(() => getSurveyTargetWeek({ survey_window_start_day: 'saturday', survey_window_start_time: `${String(surveyOpenHour).padStart(2,'0')}:00`, survey_window_end_day: 'monday', survey_window_end_time: '11:00' }), [surveyOpenHour])
   const weekId = selectedWeek || currentWeek
 
   const load = useCallback(async (isSilent = false) => {
@@ -78,25 +102,17 @@ export default function SurveyAccuracyPage() {
     else setRefreshing(true)
     setLoadError(null)
     try {
-      // Survey open hour → the "current" target week matches the survey window
-      const [{ data: openHourRow }, { data: statusRow }] = await Promise.all([
-        supabase
-          .from('app_settings').select('value').eq('key', 'survey_open_hour').maybeSingle(),
-        supabase
-          .from('app_settings').select('value').eq('key', 'survey_status').maybeSingle(),
-      ])
-      if (openHourRow) {
-        const h = parseInt(openHourRow.value, 10)
-        if (!isNaN(h)) setSurveyOpenHour(h)
-      }
-      setSurveyForceOpen(statusRow?.value === 'open')
+      const { data: appSettingsRows } = await supabase.from('app_settings').select('*')
+      const settings = {}
+      if (appSettingsRows) appSettingsRows.forEach(r => { settings[r.key] = r.value })
+      // Keep legacy hour state for display but weekId now uses stable window-based calculation
+      const openHourVal = parseInt(settings.survey_open_hour, 10)
+      if (!isNaN(openHourVal)) setSurveyOpenHour(openHourVal)
+      setSurveyForceOpen(settings.survey_status === 'open')
 
-      const wId = selectedWeek || getSurveyTargetWeek(
-        openHourRow ? parseInt(openHourRow.value, 10) || 20 : 20,
-        statusRow?.value === 'open',
-      )
+      const wId = selectedWeek || getSurveyTargetWeek(settings)
 
-      const [usersRes, weekRes, errRes, reqsRes] = await Promise.all([
+      const [usersRes, weekRes, errRes, reqsRes, writeLogRes] = await Promise.all([
         supabase
           .from('user_stats')
           .select('user_id, name, thali_number, email, avatar_url, role')
@@ -112,6 +128,12 @@ export default function SurveyAccuracyPage() {
           .select('user_id, request_type, status, from_date, to_date, meal_type, created_at')
           .in('request_type', ['stop', 'resume'])
           .in('status', ['pending', 'approved']),
+        supabase
+          .from('survey_write_log')
+          .select('*')
+          .eq('week_id', wId)
+          .order('created_at', { ascending: false })
+          .limit(250),
       ])
 
       const memberData = (usersRes.data || []).filter(u => includeStaff || u.role === 'member')
@@ -129,6 +151,7 @@ export default function SurveyAccuracyPage() {
       setUsers([...memberData, ...orphans])
       setSubmissions(subs)
       setWriteErrors(errRes.data || [])
+      setWriteLogEntries(writeLogRes.data || [])
       setStopReqs(reqsRes.data || [])
 
       // Menu for the chosen week — fallback dish names when a member's row has
@@ -160,11 +183,10 @@ export default function SurveyAccuracyPage() {
 
   useEffect(() => { load() }, [load])
 
-  // Realtime — new member saves, override saves, or failed writes appear live.
+  // Realtime — new member saves or failed writes appear live.
   useEffect(() => {
     const ch = supabase
       .channel('survey-accuracy')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_submissions_flat' }, () => load(true))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => load(true))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_write_log' }, () => load(true))
       .subscribe()
@@ -192,7 +214,9 @@ export default function SurveyAccuracyPage() {
     const weekStart = new Date(weekId + 'T00:00:00')
 
     return (users || []).map(u => {
-      const row = subMap[u.user_id]
+      const normalRow = subMap[u.user_id]
+      const row = normalRow || null
+      const hasOverride = false
       const reqs = reqByUser[u.user_id] || []
       let stopped = 0
       const slotStatus = {}
@@ -265,6 +289,7 @@ export default function SurveyAccuracyPage() {
         errors,
         flag,
         failed: errors.length > 0,
+        hasOverride,
       }
     })
   }, [users, submissions, writeErrors, stopReqs, weeklyMenu, weekId])
@@ -280,6 +305,28 @@ export default function SurveyAccuracyPage() {
       failed: rows.filter(r => r.failed).length,
     }
   }, [rows])
+
+  // ── Write Log derived state (merged page: same week filter) ──
+  const userMapForLog = useMemo(() => {
+    const m = {}
+    ;(users || []).forEach(u => { m[u.user_id] = u })
+    return m
+  }, [users])
+  const writeLogStats = useMemo(() => ({
+    total: writeLogEntries.length,
+    ok: writeLogEntries.filter(e => e.status === 'success').length,
+    error: writeLogEntries.filter(e => e.status === 'error').length,
+  }), [writeLogEntries])
+  const filteredWriteLog = useMemo(() => {
+    const q = writeLogSearch.toLowerCase()
+    return writeLogEntries.filter(e => {
+      if (writeLogFilter !== 'all' && e.status !== writeLogFilter) return false
+      if (!q) return true
+      const u = userMapForLog[e.user_id] || {}
+      const hay = [u.name, String(u.thali_number || ''), e.week_id, e.error, e.action, summarizePayload(e.payload)].filter(Boolean).join(' ').toLowerCase()
+      return hay.includes(q)
+    })
+  }, [writeLogEntries, writeLogFilter, writeLogSearch, userMapForLog])
 
   const q = search.toLowerCase()
   const filtered = rows.filter(r => {
@@ -318,7 +365,7 @@ export default function SurveyAccuracyPage() {
   }
 
   // Erase the selected week from the BACKEND (survey_day_responses,
-  // survey_submissions_flat, survey_write_log) in one transaction via the
+  // survey_day_responses, survey_write_log) in one transaction via the
   // erase_survey_week RPC — every admin view (Dashboard, Tracking, Accuracy,
   // Write Log) reads those same tables, so wiping the DB clears them all.
   const handleEraseWeek = async () => {
@@ -493,7 +540,10 @@ export default function SurveyAccuracyPage() {
                     <React.Fragment key={r.user_id}>
                       <tr style={{ borderBottom: `1px solid ${T.border}`, color: T.text, background: rowColor }}>
                         <td style={{ padding: '12px 16px' }}>
-                          <div style={{ fontWeight: 700 }}>{r.name || 'Unknown member'}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            {r.hasOverride && <ShieldCheck size={13} color="#10b981" title="Has override submissions" />}
+                            <div style={{ fontWeight: 700 }}>{r.name || 'Unknown member'}</div>
+                          </div>
                           <div style={{ fontSize: 10.5, color: T.textSub }}>
                             {r.thali_number ? `#${r.thali_number}` : r.email || (r.orphan ? `no profile · ${r.user_id.slice(0, 8)}` : '')}
                           </div>
@@ -694,8 +744,91 @@ export default function SurveyAccuracyPage() {
         <strong style={{ color: T.accent }}>Accuracy rules:</strong> a member is <strong>Complete</strong> when all expected slots
         (12 minus days they stopped thali) are answered — an <strong>Applied</strong> meal only counts when every dish on its menu has a rating.
         Applied with no dish ratings is <strong>not complete</strong>. <strong>Partial</strong> when some slots remain, <strong>No response</strong> when none
-        are answered, and <strong>Failed saves</strong> when the submit-survey function rejected any write this week — check the
-        Survey Write Log for the full payload. Members whose thali was stopped the entire week are excluded from the expected count.
+        are answered, and <strong>Failed saves</strong> when the submit-survey function rejected any write this week — expand a member row or check the Write Log below for the full payload. Members whose thali was stopped the entire week are excluded from the expected count.
+      </div>
+
+      {/* ── MERGED WRITE LOG — same week, same realtime (no separate page) ── */}
+      <div style={{ marginTop: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <FileWarning size={18} color={T.accent} />
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: T.text }}>Write Log — Week {fmtDate(weekId)}</h3>
+          <Badge color={writeLogStats.error > 0 ? '#ef4444' : T.success} style={{ padding: '4px 10px', fontSize: 11 }}>{writeLogStats.error} failed</Badge>
+          <span style={{ fontSize: 11, color: T.textSub, marginLeft: 'auto' }}>Merged from <code style={{ background: T.inputBg, padding: '2px 6px', borderRadius: 6 }}>survey_write_log</code> • same week filter</span>
+        </div>
+        <Grid cols={3} style={{ marginBottom: 14 }}>
+          <StatCard icon={<ClipboardList size={16} />} label="Logged writes" value={writeLogStats.total} color={T.accent} sub={weekId} />
+          <StatCard icon={<CheckCircle2 size={16} />} label="Succeeded" value={writeLogStats.ok} color={T.success} sub="written to survey_day_responses" />
+          <StatCard icon={<XCircle size={16} />} label="Failed" value={writeLogStats.error} color="#ef4444" sub="rejected this week" />
+        </Grid>
+        <AdminCard style={{ padding: 0, overflow: 'hidden', marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 10, padding: 12, flexWrap: 'wrap', alignItems: 'center', borderBottom: `1px solid ${T.border}` }}>
+            <div style={{ display: 'flex', background: T.inputBg, padding: 3, borderRadius: 10, border: `1px solid ${T.border}` }}>
+              {[['all','All'],['success','✅ Success'],['error','❌ Errors']].map(([v,label]) => (
+                <button key={v} onClick={() => setWriteLogFilter(v)} style={{ padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', background: writeLogFilter===v ? T.accentGrad : 'transparent', color: writeLogFilter===v ? '#000' : T.textSub, fontSize: 11, fontWeight: 800, fontFamily: 'inherit' }}>{label}</button>
+              ))}
+            </div>
+            <div style={{ flex: '1 1 220px', position: 'relative', maxWidth: 360, marginLeft: 'auto' }}>
+              <Search size={14} color={T.textSub} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+              <input value={writeLogSearch} onChange={e=>setWriteLogSearch(e.target.value)} placeholder="Search member, thali, error…"
+                style={{ width:'100%', boxSizing:'border-box', padding:'8px 12px 8px 32px', borderRadius: 10, background: T.inputBg, border:`1px solid ${T.inputBorder}`, color: T.text, fontSize: 12, outline:'none', fontFamily:'inherit' }} />
+            </div>
+          </div>
+          {filteredWriteLog.length === 0 ? (
+            <div style={{ padding: '28px 16px', textAlign: 'center', color: T.textSub, fontSize: 13 }}>{writeLogEntries.length===0 ? `No writes logged for week ${weekId} yet.` : 'No log entries match filters.'}</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width:'100%', borderCollapse:'collapse', fontSize: 12, minWidth: 780 }}>
+                <thead>
+                  <tr style={{ textAlign:'left', color: T.textSub, fontSize: 10, textTransform:'uppercase', letterSpacing:'0.08em', borderBottom:`1px solid ${T.border}` }}>
+                    <th style={{ padding:'10px 14px' }}>Time</th>
+                    <th style={{ padding:'10px 14px' }}>Member</th>
+                    <th style={{ padding:'10px 14px' }}>Action</th>
+                    <th style={{ padding:'10px 14px' }}>Status</th>
+                    <th style={{ padding:'10px 14px' }}>Summary / Error</th>
+                    <th style={{ padding:'10px 12px', width: 36 }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredWriteLog.slice(0, 100).map(e => {
+                    const u = userMapForLog[e.user_id] || {}
+                    const isError = e.status==='error'
+                    const isOpen = !!writeLogExpanded[e.id]
+                    return (
+                      <React.Fragment key={e.id}>
+                        <tr style={{ borderBottom:`1px solid ${T.border}`, background: isError ? 'rgba(239,68,68,0.03)' : 'transparent' }}>
+                          <td style={{ padding:'10px 14px', whiteSpace:'nowrap', color: T.textSub, fontSize: 11 }}>{fmtDateTime(e.created_at)}</td>
+                          <td style={{ padding:'10px 14px' }}>
+                            <div style={{ fontWeight: 700, fontSize: 12 }}>{u.name || 'Unknown'}</div>
+                            <div style={{ fontSize: 10, color: T.textSub }}>{u.thali_number ? `#${u.thali_number}` : (e.user_id||'').slice(0,8)}</div>
+                          </td>
+                          <td style={{ padding:'10px 14px' }}><Badge color={actionColor(e.action)} style={{ padding:'2px 8px', fontSize: 10 }}>{actionLabel(e.action)}</Badge></td>
+                          <td style={{ padding:'10px 14px' }}><Badge color={isError ? '#ef4444' : T.success} style={{ padding:'2px 8px', fontSize: 10 }}>{isError ? '❌ Failed' : '✅ Saved'}</Badge></td>
+                          <td style={{ padding:'10px 14px', maxWidth: 320, wordBreak:'break-word', fontSize: 11, color: isError ? '#ef4444' : T.textSub }}>{isError ? (e.error||'Unknown error') : summarizePayload(e.payload)}</td>
+                          <td style={{ padding:'10px 12px' }}>
+                            <button onClick={()=>setWriteLogExpanded(p=>({ ...p, [e.id]: !p[e.id]}))} style={{ background:'none', border:'none', cursor:'pointer', color: T.accent, display:'flex' }}>{isOpen ? <ChevronUp size={14}/> : <ChevronDown size={14}/>}</button>
+                          </td>
+                        </tr>
+                        {isOpen && (
+                          <tr style={{ borderBottom:`1px solid ${T.border}` }}>
+                            <td colSpan={6} style={{ padding:'0 14px 14px' }}>
+                              <div style={{ background: T.inputBg, borderRadius: 10, padding: 12 }}>
+                                <div style={{ fontSize: 11, fontWeight: 800, color: T.textSub, marginBottom: 6, textTransform:'uppercase' }}>Payload</div>
+                                <pre style={{ margin:0, fontSize: 11, color: T.text, whiteSpace:'pre-wrap', wordBreak:'break-word', fontFamily:'monospace', lineHeight:1.5 }}>{JSON.stringify(e.payload||{}, null, 2)}</pre>
+                                {e.error && <div style={{ marginTop: 8, fontSize: 11, color:'#ef4444', fontWeight:600 }}>Error: {e.error}</div>}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {filteredWriteLog.length > 100 && <div style={{ padding:'10px 14px', textAlign:'center', fontSize: 11, color: T.textSub }}>Showing 100 of {filteredWriteLog.length} — use search to narrow.</div>}
+        </AdminCard>
+        <div style={{ fontSize: 11, color: T.textSub, lineHeight: 1.5 }}>Same <code>survey_write_log</code> as the old Write Log page — now scoped to the selected week and live-synced with Accuracy. No separate page needed.</div>
       </div>
 
       {/* ── ERASE WEEK CONFIRMATION ── */}
@@ -712,7 +845,7 @@ export default function SurveyAccuracyPage() {
           <div style={{ fontSize: 12.5, color: T.textSub, lineHeight: 1.7, marginBottom: 14 }}>
             <strong style={{ color: T.text }}>This erases:</strong>
             <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-              <li>{submissions.length} member submission{submissions.length === 1 ? '' : 's'} (survey_submissions_flat)</li>
+              <li>{submissions.length} member submission{submissions.length === 1 ? '' : 's'} (survey_day_responses)</li>
               <li>per-day response rows (survey_day_responses)</li>
               <li>{writeErrors.length} write-log entr{writeErrors.length === 1 ? 'y' : 'ies'} — failed saves + audit trail</li>
             </ul>
@@ -740,3 +873,4 @@ export default function SurveyAccuracyPage() {
     </PageWrap>
   )
 }
+

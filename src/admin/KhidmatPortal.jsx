@@ -856,7 +856,22 @@ function NoThaliTracker() {
       const mealKey = meal === 'lunch' ? 'l' : 'd'
       const statusCol = `${dayKey}_${mealKey}_status`
 
-      const { data: allRows } = await fetchAllUserRows()
+      const [normalRows, ovrRows] = await Promise.all([
+        fetchAllUserRows(),
+        supabase.from('survey_day_responses').select('*'),
+      ])
+      // Merge override day-statuses over normal rows so override-only skips
+      // (users who only have survey_day_responses) still show here.
+      const byUser = new Map()
+      ;(normalRows.data || []).forEach(r => { byUser.set(r.user_id, r) })
+      ;(ovrRows.data || []).forEach(o => {
+        const dk = String(o.day || '').substring(0, 3).toLowerCase()
+        const existing = byUser.get(o.user_id) || { ...o }
+        if (o.l_status) existing[`${dk}_l_status`] = o.l_status
+        if (o.d_status) existing[`${dk}_d_status`] = o.d_status
+        byUser.set(o.user_id, existing)
+      })
+      const allRows = [...byUser.values()]
       const data = (allRows || []).filter(r => r[statusCol] === 'Skipped')
 
       if (!data) return

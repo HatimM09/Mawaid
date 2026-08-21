@@ -109,10 +109,10 @@ export default function SurveyEditModal({
         }
       })
 
-      // Save to database
+      // Save to database (survey_day_responses is the single source of truth)
       const { error: upsertError } = await supabase
-        .from('survey_submissions_flat')
-        .upsert([updateObj], { onConflict: 'user_id,week_id' })
+        .from('survey_day_responses')
+        .upsert([updateObj], { onConflict: 'user_id,week_id,day' })
 
       if (upsertError) throw upsertError
 
