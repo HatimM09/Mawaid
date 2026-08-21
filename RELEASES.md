@@ -1,5 +1,16 @@
 # Al-Mawaid Releases
 
+## v2.1.4 (versionCode 42) — 2026-08-21
+
+### Bug fixes
+- **ProfilePage**: Fixed `ReferenceError: fetchUserOverrideRows is not defined` — replaced defunct call with the correct `fetchUserSurveyRow` import.
+- **ProfilePage**: Added missing `ErrorBanner` import from `../ui`.
+- **DailySurveyModal**: Fixed syntax error (stray closing brace) inside `loadExisting` useEffect that could break survey loading.
+
+### Build
+- Version bumped to 2.1.4 (versionCode 42).
+- Signed release AAB: `app-release.aab` (5.6 MB), ready for Google Play upload.
+
 ## v2.1.3 (versionCode 41) — 2026-08-18
 
 ### Live-link (fully linked) build

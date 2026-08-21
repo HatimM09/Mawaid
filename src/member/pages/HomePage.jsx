@@ -1,10 +1,11 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { QrCode, Sun, Moon, Clock, ChevronRight, Utensils, Star, Check, ClipboardList } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/firebaseClient'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
 import DailyEditCard, { getCardMealInfo } from '../../components/DailyEditCard'
+import SurveyModal from '../../components/SurveyModal'
 import { getSurveyTargetWeek, getCalendarWeekDate } from '../../common/utils'
 import { HomePageSkeleton } from '../../common/Skeleton'
 import { DAYS, getTodayKey } from '../constants'
@@ -19,6 +20,7 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
 
   const weeklyMenu = useWeeklyMenu(getCalendarWeekDate())
   const [showQR, setShowQR] = useState(false)
+  const [showWeeklySurveyModal, setShowWeeklySurveyModal] = useState(false)
   const [profileData, setProfileData] = useState({ name: '', thali_number: '', avatar_url: '' })
   const [statsLoading, setStatsLoading] = useState(true)
   const [weeklySurveySubmitted, setWeeklySurveySubmitted] = useState(false)
@@ -32,8 +34,8 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
   const manualEditOpenRef = useRef(false)
 
   const editPromptStorageKey = useCallback((day, meal) =>
-    `almawaid_edit_prompt_${user?.id || 'anon'}_${getSurveyTargetWeek(appSettings)}_${day}_${meal}`
-  , [user?.id, appSettings.survey_window_start_day])
+    `almawaid_edit_prompt_${user?.id || 'anon'}_${getCalendarWeekDate()}_${day}_${meal}`
+  , [user?.id])
 
   const markEditPromptDone = useCallback((day, meal) => {
     if (!day || !meal) return
@@ -45,7 +47,7 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
   }, [editPromptStorageKey])
 
   const openDailyEditCard = useCallback((mealInfo) => {
-    manualEditOpenRef.current = true  // user-initiated â€” auto-checker must not close it
+    manualEditOpenRef.current = true  // user-initiated — auto-checker must not close it
     setDailyEditMealInfo(mealInfo)
     setShowDailyEditCard(true)
   }, [])
@@ -58,7 +60,7 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
     const dinnerAuto = appSettings.dinner_edit_status === 'auto'
 
     if (!lunchAuto && !dinnerAuto) {
-      // Only auto-dismiss cards we opened ourselves â€” never a manual one.
+      // Only auto-dismiss cards we opened ourselves — never a manual one.
       if (!manualEditOpenRef.current) {
         setShowDailyEditCard(false)
         setDailyEditMealInfo(null)
@@ -66,7 +68,7 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
       return
     }
 
-    const currentWeekId = getSurveyTargetWeek(appSettings)
+    const calendarWeek = getCalendarWeekDate()
     const today = todayKey
 
     const pick = (day, meal) => {
@@ -77,20 +79,20 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
       return true
     }
 
-    if (lunchAuto && canEditMeal(today, currentWeekId, 'lunch', appSettings, user.id)) {
+    if (lunchAuto && canEditMeal(today, calendarWeek, 'lunch', appSettings)) {
       if (pick(today, 'lunch')) return
     }
-    if (dinnerAuto && canEditMeal(today, currentWeekId, 'dinner', appSettings, user.id)) {
+    if (dinnerAuto && canEditMeal(today, calendarWeek, 'dinner', appSettings)) {
       if (pick(today, 'dinner')) return
     }
 
     const todayIdx = DAYS.indexOf(today)
     const nextDay = todayIdx >= 0 ? DAYS[(todayIdx + 1) % DAYS.length] : null
-    if (nextDay && lunchAuto && canEditMeal(nextDay, currentWeekId, 'lunch', appSettings, user.id)) {
+    if (nextDay && lunchAuto && canEditMeal(nextDay, calendarWeek, 'lunch', appSettings)) {
       if (pick(nextDay, 'lunch')) return
     }
 
-    // Window ended â€” auto-dismiss only cards the auto-checker itself opened.
+    // Window ended — auto-dismiss only cards the auto-checker itself opened.
     if (!manualEditOpenRef.current) {
       setShowDailyEditCard(false)
       setDailyEditMealInfo(null)
@@ -226,17 +228,17 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
     } finally { setSubmittingFeedback(false) }
   }
 
-  const currentWeekId = getSurveyTargetWeek(appSettings)
+  const calendarWeek = getCalendarWeekDate()
 
   // Time-window lunch/dinner quick-edit: only shown while a meal's edit window is live
   const currentMealInfo = weeklyMenu ? getCardMealInfo(weeklyMenu, appSettings) : null
-  const currentEditableMeal = (currentMealInfo && canEditMeal(currentMealInfo.day, currentWeekId, currentMealInfo.meal, appSettings, user.id))
+  const currentEditableMeal = (currentMealInfo && canEditMeal(currentMealInfo.day, calendarWeek, currentMealInfo.meal, appSettings))
     ? currentMealInfo
     : null
 
-  // Weekly survey notice â€” only shown while the Survey tab is actually visible
+  // Weekly survey notice — only shown while the Survey tab is actually visible
   // (survey open / override), so it never points to a missing tab.
-  const surveyTabVisible = isSurveyOpen(appSettings, user.id)
+  const surveyTabVisible = isSurveyOpen(appSettings, user?.id)
 
   if (!weeklyMenu || statsLoading) return <HomePageSkeleton />
 
@@ -248,18 +250,17 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
         <Avatar avatarUrl={profileData?.avatar_url} name={profileData?.name} size={46} />
         <div style={{ flex: 1, position: 'relative', zIndex: 1 }}>
           <div style={{ fontSize: 19, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif", lineHeight: 1.2 }}>{profileData?.name || 'Thali User'}</div>
-          <div style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 2 }}>Thali #{profileData?.thali_number || 'â€”'}</div>
+          <div style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 2 }}>Thali #{profileData?.thali_number || '—'}</div>
         </div>
         <button onClick={() => setShowQR(true)} style={{ background: t.accentBg, border: `1px solid ${t.accentBorder}`, borderRadius: 12, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 2, position: 'relative' }}>
           <QrCode size={22} color={t.accent} />
         </button>
       </Card>
 
-      {/* Weekly survey notice â€” points to the Survey tab (the only fill entry point).
-          Hidden once every day's meals are answered for the week. */}
+      {/* Weekly survey notice — opens SurveyModal directly as popup overlay */}
       {surveyTabVisible && !weeklySurveySubmitted && (
         <button
-          onClick={onGoToSurvey}
+          onClick={() => setShowWeeklySurveyModal(true)}
           style={{
             width: '100%', display: 'flex', alignItems: 'center', gap: 12,
             padding: '13px 16px', margin: '0 0 16px', boxSizing: 'border-box',
@@ -279,14 +280,25 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: t.accent }}>Weekly Survey Open</div>
             <div style={{ fontSize: 13.5, fontWeight: 700, color: t.text, marginTop: 2, lineHeight: 1.35 }}>
-              Fill your weekly survey in the <span style={{ color: t.accent, fontWeight: 800 }}>Survey</span> tab
+              Tap here to fill your <span style={{ color: t.accent, fontWeight: 800 }}>Weekly Survey</span>
             </div>
           </div>
           <ChevronRight size={18} color={t.accent} style={{ flexShrink: 0 }} />
         </button>
       )}
 
-      {/* Time-based Daily Survey Edit button â€” shows during lunch/dinner edit window */}
+      {/* Weekly Survey Modal Popup */}
+      {showWeeklySurveyModal && (
+        <SurveyModal
+          onClose={() => {
+            setShowWeeklySurveyModal(false)
+            loadData()
+          }}
+          appSettings={appSettings}
+        />
+      )}
+
+      {/* Time-based Daily Survey Edit button — shows during lunch/dinner edit window */}
       {currentEditableMeal && (() => {
         const isLunch = currentEditableMeal.meal === 'lunch'
         const MealIcon = isLunch ? Sun : Moon
@@ -329,7 +341,7 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
                   fontSize: 10, fontWeight: 800, letterSpacing: '0.14em',
                   color: t.accent, fontFamily: "'DM Sans',sans-serif", textTransform: 'uppercase'
                 }}>
-                  {isLunch ? 'Today\'s Lunch' : 'Today\'s Dinner'} &bull; Daily Edit
+                  {isLunch ? 'Today\'s Lunch' : 'Today\'s Dinner'} • Daily Edit
                 </div>
                 <div style={{
                   fontSize: 18, fontWeight: 800, color: t.text,
@@ -343,7 +355,7 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
                   fontFamily: "'DM Sans',sans-serif", fontWeight: 600
                 }}>
                   <Clock size={13} color={t.accent} />
-                  Edit window {window.open} â€“ {window.close}
+                  Edit window {window.open} – {window.close}
                 </div>
               </div>
               <div style={{
@@ -356,6 +368,21 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
           </button>
         )
       })()}
+
+      {/* Daily Edit Modal Sheet Popup */}
+      {showDailyEditCard && (dailyEditMealInfo || currentMealInfo) && (
+        <DailyEditCard
+          weeklyMenu={weeklyMenu}
+          mealInfo={dailyEditMealInfo || currentMealInfo}
+          isOpen={showDailyEditCard}
+          onClose={() => closeDailyEditCard(true)}
+          onComplete={() => {
+            closeDailyEditCard(true)
+            loadData()
+          }}
+          appSettings={appSettings}
+        />
+      )}
 
       {showQR && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, backdropFilter: 'blur(10px)' }} onClick={() => setShowQR(false)}>
@@ -450,7 +477,7 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
 
         {feedbackSubmitted.lunch && feedbackSubmitted.dinner ? (
           <div style={{ width: '100%', padding: '14px 0', textAlign: 'center', color: t.successText, fontSize: 14, fontWeight: 700, fontFamily: "'DM Sans',sans-serif" }}>
-            âœ… Feedback submitted for today. Shukran!
+            ✅ Feedback submitted for today. Shukran!
           </div>
         ) : (
           <Btn onClick={handleSubmitCombined} disabled={submittingFeedback || (!lunchStars && !dinnerStars)} style={{ width: '100%', height: 52, fontSize: 15, borderRadius: 16 }}>
@@ -458,18 +485,6 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
           </Btn>
         )}
       </Card>
-
-      {/* Auto Daily Edit Card â€” auto-appears when edit window opens, saves only on Submit */}
-      {showDailyEditCard && dailyEditMealInfo && (
-        <DailyEditCard
-          weeklyMenu={weeklyMenu}
-          isOpen={showDailyEditCard}
-          onClose={() => closeDailyEditCard(true)}
-          onComplete={() => closeDailyEditCard(true)}
-          appSettings={appSettings}
-        />
-      )}
-
     </main>
   )
 }

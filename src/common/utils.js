@@ -61,32 +61,29 @@ const _isSurveyWindowOpen = (appSettings = {}, now = new Date()) => {
  * kept for backward compatibility.
  */
 export const getSurveyTargetWeek = (surveyOpenHour = 20, forceOpen = false) => {
-  // New signature: first arg is appSettings object
+  // New signature: first arg is appSettings object — now fully dynamic
+  // Survey week follows the admin's live window, not hardcoded Sat→Mon.
+  // When window is open (including admin FORCE OPEN), we target NEXT calendar Monday
+  // so fill/resume/edit lands in the week being planned; when closed we target current Monday.
   if (surveyOpenHour && typeof surveyOpenHour === 'object' && !Array.isArray(surveyOpenHour)) {
     const appSettings = surveyOpenHour
     const now = new Date()
     const day = now.getDay()
-    const cfg = _parseSurveyWindowFromSettings(appSettings)
-    // Week-id is STABLE and does not shift when admin changes window mid-week.
-    // Legacy rule: Sat after window-start and all Sunday target NEXT Monday (week being planned),
-    // Mon before window-end targets TODAY. Tue-Fri target current Monday.
-    // This keeps survey rows from splitting across week_ids if window is edited.
-    let diff = now.getDate() - day + (day === 0 ? -6 : 1)
-    const startMinutes = cfg.startTime.h * 60 + cfg.startTime.m
-    const nowMinutes = now.getHours() * 60 + now.getMinutes()
-    const isWrap = (cfg.startDay * 1440 + startMinutes) > (cfg.endDay * 1440 + cfg.endTime.h * 60 + cfg.endTime.m)
-    if (isWrap) {
-      // Default wrap Sat→Mon: use startTime for Sat threshold, Sunday always next Monday
-      if (day === 6 && cfg.startDay === 6 && nowMinutes >= startMinutes) diff += 7
-      else if (day === 6 && cfg.startDay !== 6 && nowMinutes >= startMinutes && day === cfg.startDay) diff += 7
-      else if (day === 0) diff += 7
-      // Mon inside window stays on current Monday — no shift
-    } else {
-      // Non-wrap window inside same week — never shift, survey week is current calendar Monday
-    }
-    const monday = new Date(now)
-    monday.setDate(diff)
-    return monday.toISOString().split('T')[0]
+    const curDiff = now.getDate() - day + (day === 0 ? -6 : 1)
+    const curMonday = new Date(now)
+    curMonday.setDate(curDiff)
+    const curStr = curMonday.toISOString().split('T')[0]
+    const statusRaw = String(appSettings.survey_window_status ?? appSettings.survey_status ?? 'auto').toLowerCase().trim()
+    const status = statusRaw === 'open' || statusRaw === 'closed' ? statusRaw : 'auto'
+    let isOpen
+    if (status === 'open') isOpen = true
+    else if (status === 'closed') isOpen = false
+    else isOpen = _isSurveyWindowOpen(appSettings, now)
+    if (!isOpen) return curStr
+    // window open → next week
+    const next = new Date(curMonday)
+    next.setDate(next.getDate() + 7)
+    return next.toISOString().split('T')[0]
   }
   const now = new Date()
   const day = now.getDay()

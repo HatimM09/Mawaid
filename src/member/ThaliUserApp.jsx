@@ -43,11 +43,7 @@ export default function ThaliUserApp() {
       data.forEach(row => settings[row.key] = row.value)
       setAppSettings(settings)
     } else {
-      // Default settings if none exist — leave the survey in AUTO mode so the tab
-      // only ever appears inside the scheduled window, never forced open.
-      setAppSettings({
-        survey_msg: 'Survey opens Saturday at 8:00 PM and closes Monday at 11:00 AM.'
-      })
+      setAppSettings({})
     }
   }, [])
 
@@ -63,7 +59,7 @@ export default function ThaliUserApp() {
     // Fallback polling: if realtime replication isn't enabled for app_settings,
     // still pick up admin survey opens/closes within 30s. Also refresh on focus
     // so users returning to the app always see the latest survey window state.
-    const poll = setInterval(loadAppSettings, 30000)
+    const poll = setInterval(loadAppSettings, 10000)
     const onVisible = () => {
       if (document.visibilityState === 'visible') loadAppSettings()
     }
@@ -234,11 +230,15 @@ export default function ThaliUserApp() {
   const LogoIcon = ({ size = 20, style = {} }) => (
     <img src="/al-mawaid.png" alt="" style={{ width: size, height: size, objectFit: 'contain', ...style }} />
   )
-  // The Survey tab only appears while the weekly survey is actually open — the
-  // admin set survey_status = open, or the auto-schedule window is live.
-  // Per-user override access has been removed; all users see the survey based on
-  // the admin's schedule settings.
-  const surveyTabVisible = isSurveyOpen(appSettings, user.id)
+  const surveyTabVisible = isSurveyOpen(appSettings, user?.id)
+
+  // Redirect away from survey tab if survey window closes
+  useEffect(() => {
+    if (activeTab === 'survey' && !surveyTabVisible) {
+      setActiveTab('home')
+    }
+  }, [activeTab, surveyTabVisible])
+
   const tabs = [
     { id: 'home', label: 'Home', Icon: Home, aria: 'Home Dashboard' },
     { id: 'menu', label: 'Menu', Icon: Utensils, aria: 'Weekly Menu' },
@@ -246,13 +246,7 @@ export default function ThaliUserApp() {
     { id: 'post', label: 'Requests', Icon: FileText, aria: 'My Requests & Queries' },
     { id: 'profile', label: 'Profile', Icon: User, aria: 'My Profile & Settings' },
   ]
-  const tabLabels = { home: 'AL-MAWAID', menu: 'WEEKLY MENU', survey: 'DAILY SURVEY', post: 'REQUESTS', profile: 'PROFILE' }
-
-  // If the survey window is no longer open/override revoked, the Survey tab
-  // disappears — fall back to Home
-  useEffect(() => {
-    if (!surveyTabVisible && activeTab === 'survey') setActiveTab('home')
-  }, [surveyTabVisible, activeTab])
+  const tabLabels = { home: 'AL-MAWAID', menu: 'WEEKLY MENU', survey: 'WEEKLY SURVEY', post: 'REQUESTS', profile: 'PROFILE' }
 
   return (
     <ThemeCtx.Provider value={t}>

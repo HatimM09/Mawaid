@@ -16,11 +16,19 @@ export default function AdminLogin({ onLogin }) {
   const btnRef = useRef(null)
 
   useEffect(() => {
+    let rafId = null
     const handleMouse = (e) => {
-      setMousePos({ x: e.clientX / window.innerWidth, y: e.clientY / window.innerHeight })
+      if (rafId) return
+      rafId = requestAnimationFrame(() => {
+        setMousePos({ x: e.clientX / window.innerWidth, y: e.clientY / window.innerHeight })
+        rafId = null
+      })
     }
-    window.addEventListener('mousemove', handleMouse)
-    return () => window.removeEventListener('mousemove', handleMouse)
+    window.addEventListener('mousemove', handleMouse, { passive: true })
+    return () => {
+      window.removeEventListener('mousemove', handleMouse)
+      if (rafId) cancelAnimationFrame(rafId)
+    }
   }, [])
 
   const createRipple = useCallback((e) => {
@@ -518,8 +526,8 @@ export default function AdminLogin({ onLogin }) {
               {/* Divider */}
               <div><div className="adm-divider" /></div>
 
-              {/* Input */}
-              <div>
+              {/* Input & Action Form */}
+              <form onSubmit={e => { e.preventDefault(); handleSubmit() }}>
                 <div className={`adm-field ${fieldError ? 'adm-field--error' : ''}`}>
                   <label className="adm-field-label" htmlFor="adminKey">
                     {fieldError ? (
@@ -536,40 +544,41 @@ export default function AdminLogin({ onLogin }) {
                       type="password"
                       id="adminKey"
                       name="adminKey"
+                      autoComplete="current-password"
                       value={password}
                       onChange={e => { setPassword(e.target.value); setFieldError(''); setError('') }}
-                      onKeyDown={e => e.key === 'Enter' && handleSubmit()}
                       placeholder="Enter admin key..."
                       autoFocus
                     />
                   </div>
                 </div>
-              </div>
 
-              {/* Error */}
-              {error && (
-                <div key={error}>
-                  <div className="adm-error" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <AlertCircle size={14} style={{ flexShrink: 0 }} />
-                    <span>{error}</span>
+                {/* Error */}
+                {error && (
+                  <div style={{ marginTop: 8 }}>
+                    <div className="adm-error" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                      <span>{error}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Button */}
+                <div style={{ marginTop: 16 }}>
+                  <div className="adm-btn-wrap">
+                    <button
+                      ref={btnRef}
+                      type="submit"
+                      className="adm-btn"
+                      onClick={(e) => createRipple(e)}
+                      disabled={loading}
+                    >
+                      {loading ? 'Authenticating…' : 'Access Dashboard'}
+                      <ArrowRight size={18} />
+                    </button>
                   </div>
                 </div>
-              )}
-
-              {/* Button */}
-              <div>
-                <div className="adm-btn-wrap">
-                  <button
-                    ref={btnRef}
-                    className="adm-btn"
-                    onClick={(e) => { createRipple(e); handleSubmit() }}
-                    disabled={loading}
-                  >
-                    {loading ? 'Authenticating…' : 'Access Dashboard'}
-                    <ArrowRight size={18} />
-                  </button>
-                </div>
-              </div>
+              </form>
             </div>
 
             <div className="adm-footer">Al-Mawaid Food Service System</div>

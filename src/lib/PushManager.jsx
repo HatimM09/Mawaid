@@ -16,22 +16,41 @@ function isNative() {
 const VAPID_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || 'BEjjek2qtdlh_xXfXqyfZhHQZt9zRQd_2M-WJxtxCkJkHgzUd6r-Szrj9dsgCTF7XAZjEMq3CPLkUvOjGwKCRm0'
 
 async function savePushSubscription(userId, subscription) {
-  const endpoint = subscription.endpoint
-  const subscriptionJson = JSON.stringify(subscription)
-  const { error } = await supabase
-    .from('push_subscriptions')
-    .upsert(
-      {
-        user_id: userId,
-        fcm_token: endpoint,
-        subscription_json: subscriptionJson,
-        token_type: 'webpush',
-        updated_at: new Date().toISOString()
-      },
-      { onConflict: 'user_id, token_type' }
-    )
-  if (error) console.error('[PushManager] Failed to save push subscription:', error.message)
-  else console.log('[PushManager] Push subscription saved to Supabase ✅')
+  if (!userId || !subscription?.endpoint) return
+  try {
+    const endpoint = subscription.endpoint
+    const subscriptionJson = JSON.stringify(subscription)
+    const { error } = await supabase
+      .from('push_subscriptions')
+      .upsert(
+        {
+          user_id: userId,
+          fcm_token: endpoint,
+          subscription_json: subscriptionJson,
+          token_type: 'webpush',
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: 'user_id, token_type' }
+      )
+    if (error) {
+      // If table constraint has different conflict key, attempt graceful fallback
+      if (error.code === '42P10' || error.message?.includes('conflict') || error.message?.includes('ON CONFLICT')) {
+        await supabase.from('push_subscriptions').upsert({
+          user_id: userId,
+          fcm_token: endpoint,
+          subscription_json: subscriptionJson,
+          token_type: 'webpush',
+          updated_at: new Date().toISOString()
+        })
+      } else {
+        console.warn('[PushManager] Push subscription notice:', error.message)
+      }
+    } else {
+      console.log('[PushManager] Push subscription saved to Supabase ✅')
+    }
+  } catch (err) {
+    console.warn('[PushManager] Save push subscription notice:', err?.message || err)
+  }
 }
 
 function navigateTo(url) {
@@ -290,20 +309,23 @@ export default function PushManager() {
         }
 
         const swMessageHandler = (event) => {
-          if (event.data?.type === 'PUSH_RECEIVED') {
-            showToast({
-              title: event.data.title,
-              body: event.data.body,
-              url: event.data.url,
-              image: event.data.image,
-              sender_name: event.data.sender_name,
-            })
-          }
-          if (event.data?.type === 'NOTIFICATION_DEEP_LINK') {
-            navigateTo(event.data.url || '/profile/notifications')
-          }
+          if (!event?.data) return
+          setTimeout(() => {
+            if (event.data?.type === 'PUSH_RECEIVED') {
+              showToast({
+                title: event.data.title,
+                body: event.data.body,
+                url: event.data.url,
+                image: event.data.image,
+                sender_name: event.data.sender_name,
+              })
+            }
+            if (event.data?.type === 'NOTIFICATION_DEEP_LINK') {
+              navigateTo(event.data.url || '/profile/notifications')
+            }
+          }, 0)
         }
-        navigator.serviceWorker.addEventListener('message', swMessageHandler)
+        navigator.serviceWorker.addEventListener('message', swMessageHandler, { passive: true })
 
         const handleDeepLink = (e) => {
           navigateTo(e.detail?.url || '/profile/notifications')

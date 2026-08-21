@@ -15,10 +15,10 @@ export const getPctColor = (pct) => {
   return undefined
 }
 
-// ── New admin-configurable survey window (day + time from-to) ──
-// Admin now picks start Day+Time and end Day+Time (e.g. Sat 20:00 → Mon 11:00).
-// The legacy survey_status open/closed override is removed — only this window controls visibility.
-// New fillers, partial/resume, and havent-filled members all share the same window; admin has full rights via the admin panels.
+// ── Admin-configurable survey window (day + time from-to) + admin override ──
+// Admin picks start Day+Time and end Day+Time (e.g. Sat 20:00 → Mon 11:00) in Automation.
+// survey_window_status = 'auto' | 'open' | 'closed' gives admin instant open/close rights
+// that override the weekly schedule. Linked directly to Automation weekly day/time controls.
 
 const DAY_TO_NUM = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 }
 const NUM_TO_DAY_CAP = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
@@ -63,7 +63,16 @@ const parseSurveyWindow = (appSettings = {}) => {
 
 export const getSurveyWindowConfig = (appSettings = {}) => parseSurveyWindow(appSettings)
 
+export const getSurveyWindowStatus = (appSettings = {}) => {
+  const raw = (appSettings.survey_window_status ?? appSettings.survey_status ?? 'auto')
+  const v = String(raw).toLowerCase().trim()
+  return v === 'open' || v === 'closed' ? v : 'auto'
+}
+
 export const isSurveyOpen = (appSettings = {}, userId = null) => {
+  const mode = getSurveyWindowStatus(appSettings)
+  if (mode === 'open') return true
+  if (mode === 'closed') return false
   const cfg = parseSurveyWindow(appSettings)
   const now = new Date()
   const nowDay = now.getDay()
@@ -87,21 +96,32 @@ export const getSurveyWindowLabel = (appSettings = {}) => {
 }
 
 export const canEditMeal = (dayName, weekId, mealType, appSettings = {}) => {
-  if (!isSurveyOpen(appSettings)) return false
+  // Daily edit is independent of weekly survey window — AUTO follows its own meal window
   if (mealType === 'lunch' && appSettings.lunch_edit_status === 'closed') return false
   if (mealType === 'lunch' && appSettings.lunch_edit_status === 'open') return true
   if (mealType === 'dinner' && appSettings.dinner_edit_status === 'closed') return false
   if (mealType === 'dinner' && appSettings.dinner_edit_status === 'open') return true
   const now = new Date()
-  const weekStart = new Date(weekId)
   const dayIdx = DAYS.indexOf(dayName)
   if (dayIdx === -1) return false
+
+  let weekStart
+  if (weekId && typeof weekId === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(weekId)) {
+    weekStart = new Date(weekId + 'T00:00:00')
+  } else {
+    const curDiff = now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1)
+    weekStart = new Date(now)
+    weekStart.setDate(curDiff)
+    weekStart.setHours(0, 0, 0, 0)
+  }
   const mealDate = new Date(weekStart)
   mealDate.setDate(mealDate.getDate() + dayIdx)
+
   if (mealType === 'lunch') {
     const open = parseHm(appSettings.lunch_edit_open, 20, 0)
     const close = parseHm(appSettings.lunch_edit_close, 11, 0)
     const openDate = new Date(mealDate)
+    openDate.setDate(openDate.getDate() - 1)
     openDate.setHours(open.h, open.m, 0, 0)
     const closeDate = new Date(mealDate)
     closeDate.setHours(close.h, close.m, 0, 0)
@@ -226,8 +246,10 @@ export const useSurveyAutoSave = () => {
 // ── Survey window messages (used by member app) ──
 
 export const getSurveyWindowMessage = (appSettings = {}, userId = null) => {
-  const cfg = parseSurveyWindow(appSettings)
+  const mode = getSurveyWindowStatus(appSettings)
   const label = getSurveyWindowLabel(appSettings)
+  if (mode === 'open') return `Survey forced OPEN by admin — bypassing schedule (${label}).`
+  if (mode === 'closed') return `Survey forced CLOSED by admin — will not open at ${label}.`
   if (isSurveyOpen(appSettings, userId)) return `Survey window is open! (${label})`
   return `Survey window opens ${label}.`
 }

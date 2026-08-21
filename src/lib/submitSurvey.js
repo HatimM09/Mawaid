@@ -52,16 +52,18 @@ export async function submitSurveyRow(payload) {
     return { data: null, error: new Error('Invalid survey payload.') }
   }
 
-  const userId = payload.user_id
-  const weekId = payload.week_id
-  const thaliLabel = typeof payload.thali_number === 'string' && payload.thali_number
-    ? `Thali ${payload.thali_number}`
+  const userId = payload.user_id || payload.userId
+  const weekId = payload.week_id || payload.weekId
+  const thaliLabel = typeof (payload.thali_number || payload.thaliNumber) === 'string' && (payload.thali_number || payload.thaliNumber)
+    ? `Thali ${payload.thali_number || payload.thaliNumber}`
     : 'A member'
 
   // Identify all days represented in this payload
   let targetDays = []
-  if (payload.day && DAY_KEYS.includes(payload.day)) {
-    targetDays = [payload.day]
+  const rawDay = (payload.day || '').toLowerCase()
+  const dayKey = rawDay.length > 3 ? rawDay.substring(0, 3) : rawDay
+  if (dayKey && DAY_KEYS.includes(dayKey)) {
+    targetDays = [dayKey]
   } else {
     targetDays = DAY_KEYS.filter(d => Object.keys(payload).some(k => k.startsWith(d + '_')))
   }
@@ -75,11 +77,34 @@ export async function submitSurveyRow(payload) {
   const dayRows = targetDays.map(day => {
     const dayRow = { user_id: userId, week_id: weekId, day }
     for (const k of Object.keys(payload)) {
-      if (k.startsWith(day + '_')) dayRow[k.slice(day.length + 1)] = payload[k]
+      if (k.startsWith(day + '_')) {
+        dayRow[k.slice(day.length + 1)] = payload[k]
+      }
     }
-    for (const f of ['thali_number', 'email', 'dish_snapshot', 'edit_metadata', 'updated_at']) {
-      if (payload[f] !== undefined) dayRow[f] = payload[f]
+    // Also support direct meal + status / dishValues format
+    if (payload.meal && (payload.meal === 'lunch' || payload.meal === 'dinner')) {
+      const mk = payload.meal === 'lunch' ? 'l' : 'd'
+      if (payload.status) dayRow[`${mk}_status`] = payload.status
+      if (payload.dishValues && typeof payload.dishValues === 'object') {
+        for (const [dk, dv] of Object.entries(payload.dishValues)) {
+          dayRow[`${mk}_${dk}`] = dv
+        }
+      }
     }
+    const thaliNo = payload.thali_number || payload.thaliNumber
+    const email = payload.email
+    const dishSnapshot = payload.dish_snapshot || payload.dishSnapshot
+    const editMetadata = payload.edit_metadata || payload.editMetadata
+    const updatedAt = payload.updated_at || payload.updatedAt || new Date().toISOString()
+    const submittedAt = payload.submitted_at || payload.submittedAt
+
+    if (thaliNo !== undefined) dayRow.thali_number = thaliNo
+    if (email !== undefined) dayRow.email = email
+    if (dishSnapshot !== undefined) dayRow.dish_snapshot = dishSnapshot
+    if (editMetadata !== undefined) dayRow.edit_metadata = editMetadata
+    if (updatedAt !== undefined) dayRow.updated_at = updatedAt
+    if (submittedAt !== undefined) dayRow.submitted_at = submittedAt
+
     return dayRow
   })
 

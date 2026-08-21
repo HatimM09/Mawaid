@@ -12,7 +12,7 @@ import { ProfileSkeleton, ListPageSkeleton, RequestsSkeleton, NotificationsSkele
 import { THEMES } from '../theme'
 import { DAYS } from '../constants'
 import { isSurveyOpen, getSurveyWindowMessage } from '../survey'
-import { Card, Avatar, SectionLabel, BackHeader, Btn, EmptyState } from '../ui'
+import { Card, Avatar, SectionLabel, BackHeader, Btn, EmptyState, ErrorBanner } from '../ui'
 
 export default function ProfilePage({ theme, setTheme, markRead, appSettings, activeSubPage: externalSubPage, setActiveSubPage: externalSetSubPage }) {
   const [internalSubPage, setInternalSubPage] = useState('main')
@@ -168,37 +168,54 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
               <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif" }}>Keep your account secure</div>
             </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <input
-              name="current-password"
-              type={showPw ? 'text' : 'password'}
-              placeholder="Current password (only needed if re-login required)"
-              value={curPass}
-              onChange={e => { setCurPass(e.target.value); setPwMsg({ type: '', text: '' }) }}
-              style={pwInputStyle(t)}
-            />
-            <div style={{ display: 'flex', gap: 8 }}>
+          <form onSubmit={e => { e.preventDefault(); changePassword() }} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div>
+              <label htmlFor="cur-password" style={{ display: 'none' }}>Current Password</label>
               <input
-                name="new-password"
+                id="cur-password"
+                name="current-password"
+                autoComplete="current-password"
+                aria-label="Current Password"
                 type={showPw ? 'text' : 'password'}
-                placeholder="New password (min 6 chars)"
-                value={newPass}
-                onChange={e => { setNewPass(e.target.value); setPwMsg({ type: '', text: '' }) }}
-                style={pwInputStyle(t)}
-              />
-              <input
-                name="confirm-password"
-                type={showPw ? 'text' : 'password'}
-                placeholder="Confirm new password"
-                value={confirmPass}
-                onChange={e => { setConfirmPass(e.target.value); setPwMsg({ type: '', text: '' }) }}
+                placeholder="Current password (only needed if re-login required)"
+                value={curPass}
+                onChange={e => { setCurPass(e.target.value); setPwMsg({ type: '', text: '' }) }}
                 style={pwInputStyle(t)}
               />
             </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <label htmlFor="new-password" style={{ display: 'none' }}>New Password</label>
+                <input
+                  id="new-password"
+                  name="new-password"
+                  autoComplete="new-password"
+                  aria-label="New Password"
+                  type={showPw ? 'text' : 'password'}
+                  placeholder="New password (min 6 chars)"
+                  value={newPass}
+                  onChange={e => { setNewPass(e.target.value); setPwMsg({ type: '', text: '' }) }}
+                  style={pwInputStyle(t)}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label htmlFor="confirm-password" style={{ display: 'none' }}>Confirm New Password</label>
+                <input
+                  id="confirm-password"
+                  name="confirm-password"
+                  autoComplete="new-password"
+                  aria-label="Confirm New Password"
+                  type={showPw ? 'text' : 'password'}
+                  placeholder="Confirm new password"
+                  value={confirmPass}
+                  onChange={e => { setConfirmPass(e.target.value); setPwMsg({ type: '', text: '' }) }}
+                  style={pwInputStyle(t)}
+                />
+              </div>
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 2 }}>
               <button
-                type="button"
-                onClick={changePassword}
+                type="submit"
                 disabled={pwSaving}
                 style={{ flex: 1, padding: '12px', borderRadius: 12, border: 'none', background: t.accentGrad, color: '#fff', fontSize: 14, fontWeight: 800, cursor: pwSaving ? 'wait' : 'pointer', fontFamily: "'DM Sans',sans-serif" }}
               >
@@ -213,7 +230,7 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
                 {pwMsg.text}
               </div>
             )}
-          </div>
+          </form>
         </div>
         <button
           onClick={signOut}
@@ -748,12 +765,7 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
             const dayKey = today.substring(0, 3).toLowerCase()
             const mealKey = mealName === 'lunch' ? 'l' : 'd'
             
-            // Merge override responses so granted-slot eating status is used
-            // for opt-in/opt-out notice targeting.
-            const [{ data: subData }, { data: ovrData }] = await Promise.all([
-              fetchUserSurveyRow(user.id, weekId),
-              fetchUserOverrideRows(user.id, weekId),
-            ])
+            const { data: subData } = await fetchUserSurveyRow(user.id, weekId)
             const effective = subData
 
             const status = effective ? effective[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
@@ -992,8 +1004,10 @@ function SupportTicketsPage({ onBack }) {
             </button>
           ))}
         </div>
-        <input name="ticketSubject" value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" style={{ ...inputStyle, marginBottom: 10 }} />
-        <textarea name="ticketDetails" value={details} onChange={e => setDetails(e.target.value)} placeholder="Describe your problem" style={{ ...inputStyle, minHeight: 110, resize: 'vertical', marginBottom: 10 }} />
+        <label htmlFor="ticketSubject" style={{ display: 'none' }}>Ticket Subject</label>
+        <input id="ticketSubject" name="ticketSubject" aria-label="Ticket Subject" value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject" style={{ ...inputStyle, marginBottom: 10 }} />
+        <label htmlFor="ticketDetails" style={{ display: 'none' }}>Ticket Description</label>
+        <textarea id="ticketDetails" name="ticketDetails" aria-label="Ticket Description" value={details} onChange={e => setDetails(e.target.value)} placeholder="Describe your problem" style={{ ...inputStyle, minHeight: 110, resize: 'vertical', marginBottom: 10 }} />
         {error && <ErrorBanner msg={error} />}
         {success && <div style={{ marginBottom: 10, padding: 11, borderRadius: 10, background: t.successBg, border: `1px solid ${t.successBorder}`, color: t.successText, fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>{success}</div>}
         <button onClick={handleSubmit} disabled={submitting} style={{ width: '100%', padding: 12, borderRadius: 11, border: 'none', background: submitting ? t.border : t.accentGrad, color: '#fff', fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>{submitting ? 'Submitting...' : 'Submit Support Ticket'}</button>

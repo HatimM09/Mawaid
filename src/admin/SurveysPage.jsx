@@ -21,9 +21,8 @@ const TooltipStyle = {
 
 export default function SurveysPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [surveyOpenHour, setSurveyOpenHour] = useState(20)
-  const [surveyForceOpen, setSurveyForceOpen] = useState(false)
-  const surveyWeekId = () => getSurveyTargetWeek(surveyOpenHour, surveyForceOpen)
+  const [appSettings, setAppSettings] = useState({})
+  const surveyWeekId = useCallback(() => getSurveyTargetWeek(appSettings), [appSettings])
   const weeklyMenu = useWeeklyMenu(surveyWeekId()) || {}
   const [loading, setLoading] = useState(true)
   const [responses, setResponses] = useState([])
@@ -117,14 +116,21 @@ export default function SurveysPage() {
   const buildAllDishes = (row, dayName, mealName, fallbackList) => {
     const dk = dayName.substring(0, 3).toLowerCase()
     const mk = mealName === 'lunch' ? 'l' : 'd'
-    const dishList = getSlotDishes(row, dayName, mealName, fallbackList)
+    const snapshotList = getSlotDishes(row, dayName, mealName, null)
+    const dishList = snapshotList && snapshotList.length ? snapshotList : (Array.isArray(fallbackList) && fallbackList.length ? fallbackList : [])
     const res = {}
     res._status = row ? row[`${dk}_${mk}_status`] : 'Not Submitted'
     dishList.forEach((d, i) => {
       const v = row ? row[`${dk}_${mk}_dish_${i + 1}`] : null
       if (v !== undefined && v !== null && v !== '') {
-        const lv = String(v).toLowerCase()
-        res[d] = lv === 'yes' ? 'yes' : lv === 'no' ? 'no' : v
+        const rotiKw = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
+        if (rotiKw.some(k => d.toLowerCase().includes(k))) {
+          res[d] = String(v).toLowerCase() === 'yes' ? 'yes' : 'no'
+        } else {
+          const lv = String(v).toLowerCase()
+          if (lv === 'yes' || lv === 'no') res[d] = lv
+          else res[d] = v
+        }
       } else {
         res[d] = null
       }
@@ -143,7 +149,19 @@ export default function SurveysPage() {
       
       const { data: row } = await fetchUserSurveyRow(userId, weekId)
       
-      const dayMenu = weeklyMenu[dayFilter.toLowerCase()] || weeklyMenu[dayFilter] || {}
+      // Fresh menu for this week so scan shows real dish names, not Dish1
+      let freshMenu = {}
+      try {
+        const { data: menuRows } = await supabase.from('weekly_menu').select('day_name,lunch,dinner').eq('week_start', weekId)
+        ;(menuRows || []).forEach(r => {
+          const k = String(r.day_name || '').toLowerCase()
+          freshMenu[k] = {
+            lunch: r.lunch ? r.lunch.split(',').map(s => s.trim()).filter(Boolean) : [],
+            dinner: r.dinner ? r.dinner.split(',').map(s => s.trim()).filter(Boolean) : [],
+          }
+        })
+      } catch {}
+      const dayMenu = freshMenu[dayFilter.toLowerCase()] || weeklyMenu[dayFilter.toLowerCase()] || weeklyMenu[dayFilter] || {}
       const buildCur = buildAllDishes(row, dayFilter, mealFilter, dayMenu[mealFilter] || [])
       const buildLunch = buildAllDishes(row, dayFilter, 'lunch', dayMenu.lunch || [])
       const buildDinner = buildAllDishes(row, dayFilter, 'dinner', dayMenu.dinner || [])
@@ -215,24 +233,14 @@ export default function SurveysPage() {
         }
       } catch (e) { console.warn('Cleanup error:', e) }
 
-      // Load dish input config
-      const { data: configData } = await supabase.from('app_settings').select('value').eq('key', 'dish_input_config').maybeSingle()
-      if (configData) {
-        try { setDishInputConfig(JSON.parse(configData.value)) } catch {}
+      // Load full app_settings so week matches member side (dynamic day/time + force status)
+      const { data: allSettings } = await supabase.from('app_settings').select('*')
+      const settingsMap = {}
+      ;(allSettings || []).forEach(r => { if (r && r.key) settingsMap[r.key] = r.value })
+      if (settingsMap.dish_input_config) {
+        try { setDishInputConfig(JSON.parse(settingsMap.dish_input_config)) } catch {}
       }
-
-      // Read configured survey open hour + force-open status so the tracked
-      // week matches the member survey side (Sat-morning force-open fills target
-      // the NEXT week; the tracker must read that same week)
-      const [{ data: openHourRow }, { data: statusRow }] = await Promise.all([
-        supabase.from('app_settings').select('value').eq('key', 'survey_open_hour').maybeSingle(),
-        supabase.from('app_settings').select('value').eq('key', 'survey_status').maybeSingle(),
-      ])
-      if (openHourRow) {
-        const h = parseInt(openHourRow.value, 10)
-        if (!isNaN(h)) setSurveyOpenHour(h)
-      }
-      setSurveyForceOpen(statusRow?.value === 'open')
+      setAppSettings(prev => JSON.stringify(prev) === JSON.stringify(settingsMap) ? prev : settingsMap)
 
       const { data: rows, error } = await fetchAllUserRows()
       
@@ -323,6 +331,9 @@ export default function SurveysPage() {
     const channel = supabase
       .channel('surveys-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => {
+        load(true)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, () => {
         load(true)
       })
       .subscribe()

@@ -13,7 +13,7 @@ export const DEFAULT_MENU = {
 
 /** Default app settings when no `app_settings` rows exist. */
 export const DEFAULT_APP_SETTINGS = {
-  survey_msg: 'Survey opens Saturday at 8:00 PM and closes Monday at 11:00 AM.',
+  survey_msg: 'Weekly food survey is currently closed.',
   survey_window_start_day: 'saturday',
   survey_window_start_time: '20:00',
   survey_window_end_day: 'monday',

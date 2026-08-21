@@ -32,8 +32,8 @@ const TONES = [
 ]
 
 const CHANNEL_OPTIONS = [
-  { value: 'in-app', label: 'In-App' },
-  { value: 'push', label: 'Push' },
+  { value: 'push', label: 'Push + In-App (All Subscribed Devices)' },
+  { value: 'in-app', label: 'In-App Only' },
   { value: 'email', label: 'Email' },
 ]
 
@@ -51,7 +51,7 @@ const DEFAULT_FORM = {
   target_user_id: '',
   tone: 'var(--accent-primary)',
   media_url: '',
-  channel: 'in-app',
+  channel: 'push',
   delivery: 'now',
 }
 

@@ -181,7 +181,7 @@ export default function SettingsPage() {
           await supabase.from('notifications').insert({
             user_id: u.user_id,
             title: '📋 Weekly Food Survey Reminder',
-            message: 'You haven’t submitted your weekly food survey yet. Please fill it before the window closes (Mon 11 AM).',
+            message: 'You haven’t submitted your weekly food survey yet. Please fill it before the survey window closes.',
             url: '/',
             type: 'survey_reminder',
             sender_name: 'Al-Mawaid'
@@ -189,7 +189,7 @@ export default function SettingsPage() {
           await supabase.functions.invoke('send-push', {
             body: {
               title: 'Al-Mawaid · Weekly Survey Reminder',
-              body: 'Your weekly menu selections are still pending. Submit before Monday 11:00 AM.',
+              body: 'Your weekly menu selections are still pending. Please submit before the survey window closes.',
               target_type: 'specific',
               user_id: u.user_id,
               url: '/'
@@ -547,7 +547,7 @@ export default function SettingsPage() {
               background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.25)', color: T.textSub,
             }}>
               <strong style={{ color: '#a5b4fc' }}>Preparing next week's menu.</strong> This menu is shown to users in the{' '}
-              <strong style={{ color: T.text }}>weekly survey form</strong> (Sat 8PM – Mon 11AM) so they can choose dishes.
+              <strong style={{ color: T.text }}>weekly survey form</strong> so they can choose dishes.
               Your members still see the <strong style={{ color: T.text }}>current week's menu</strong> on the Menu page and feedback
               until the new week begins on <strong style={{ color: '#a5b4fc' }}>{new Date(nextWeek + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}</strong>.
             </div>
@@ -923,7 +923,7 @@ export default function SettingsPage() {
                                 await supabase.functions.invoke('send-push', {
                                   body: {
                                     title: '📝 Weekly Survey is Open',
-                                    body: `Next week's menu is ready — fill your weekly survey (Sat 8PM – Mon 11AM) to choose your meals.`,
+                                    body: `Next week's menu is ready — fill your weekly survey to choose your meals.`,
                                     target_type: 'all',
                                     notify_in_app: true,
                                     type: 'survey',

@@ -279,15 +279,17 @@ export const Badge = ({ children, color = 'var(--accent-cyan)', style = {} }) =>
 }
 
 export const Input = ({ label, rightAction, ...props }) => {
-  const autoId = label ? label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') : undefined
+  const reactId = React.useId()
+  const baseAutoId = label ? label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') : 'field'
+  const autoId = props.id || `${baseAutoId}_${reactId.replace(/:/g, '')}`
   return (
     <div style={{ width: '100%', position: 'relative' }}>
-      {label && <label htmlFor={props.id || autoId} style={{
+      {label && <label htmlFor={autoId} style={{
         display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
         fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
       }}>{label}</label>}
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-        <input id={props.id || autoId} name={props.name || autoId} style={{
+        <input id={autoId} name={props.name || autoId} style={{
           width: '100%', boxSizing: 'border-box',
           padding: '12px 16px', borderRadius: 12,
           background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
@@ -301,14 +303,16 @@ export const Input = ({ label, rightAction, ...props }) => {
 }
 
 export const Select = ({ label, children, ...props }) => {
-  const autoId = label ? label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') : undefined
+  const reactId = React.useId()
+  const baseAutoId = label ? label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') : 'field'
+  const autoId = props.id || `${baseAutoId}_${reactId.replace(/:/g, '')}`
   return (
     <div style={{ width: '100%' }}>
-      {label && <label htmlFor={props.id || autoId} style={{
+      {label && <label htmlFor={autoId} style={{
         display: 'block', color: 'var(--text-tertiary)', fontSize: 10,
         fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8,
       }}>{label}</label>}
-      <select id={props.id || autoId} name={props.name || autoId} style={{
+      <select id={autoId} name={props.name || autoId} style={{
         width: '100%', boxSizing: 'border-box',
         padding: '12px 16px', borderRadius: 12,
         background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',

@@ -129,10 +129,6 @@ export default function DailySurveyModal({ onClose, appSettings = {}, day: propD
       if (existing) {
         // All users now use normal survey_day_responses
         existingData = existing
-      } else if (existing.week_id === currentWeekId) {
-          // Regular users: only load from current week
-          existingData = existing
-        }
       }
       const dk = today.substring(0, 3).toLowerCase()
       const lunchVal = existingData?.[`${dk}_l_status`]

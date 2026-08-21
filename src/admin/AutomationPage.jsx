@@ -9,7 +9,7 @@ import {
 import { T, PageWrap, PageTitle, AdminCard, Btn, StatCard, Grid, Alert, SectionHeader, Modal } from './ui'
 import { getSurveyTargetWeek } from '../common/utils'
 import { fetchWeekRows } from '../lib/surveyRows'
-import { isSurveyOpen, getSurveyWindowConfig, getSurveyWindowLabel } from '../hooks/useSurvey'
+import { isSurveyOpen, getSurveyWindowConfig, getSurveyWindowLabel, getSurveyWindowStatus } from '../hooks/useSurvey'
 
 const STATUS_COLORS = {
   auto: { color: '#6366f1', bg: 'rgba(99,102,241,0.12)', label: 'AUTO', border: 'rgba(99,102,241,0.3)' },
@@ -133,6 +133,7 @@ export default function AutomationPage() {
   const [surveyWindowStartTime, setSurveyWindowStartTime] = useState('20:00')
   const [surveyWindowEndDay, setSurveyWindowEndDay] = useState('monday')
   const [surveyWindowEndTime, setSurveyWindowEndTime] = useState('11:00')
+  const [surveyWindowStatus, setSurveyWindowStatus] = useState('auto')
   const [lunchEditStatus, setLunchEditStatus] = useState('auto')
   const [dinnerEditStatus, setDinnerEditStatus] = useState('auto')
   const [surveyMsg, setSurveyMsg] = useState('')
@@ -172,6 +173,7 @@ export default function AutomationPage() {
         setSurveyWindowStartTime(s.survey_window_start_time || '20:00')
         setSurveyWindowEndDay((s.survey_window_end_day || 'monday').toLowerCase())
         setSurveyWindowEndTime(s.survey_window_end_time || '11:00')
+        setSurveyWindowStatus(getSurveyWindowStatus(s))
         setLunchEditStatus(s.lunch_edit_status || 'auto')
         setDinnerEditStatus(s.dinner_edit_status || 'auto')
         setSurveyMsg(s.survey_msg || '')
@@ -236,21 +238,43 @@ export default function AutomationPage() {
   }, [])
   useEffect(() => {
     const timer = setInterval(() => {
-      setLiveSurveyStatus(computeLive(settings) ? 'open' : 'closed')
-      setLiveLunchStatus(isTimingOpen('lunch', settings) ? 'open' : 'closed')
-      setLiveDinnerStatus(isTimingOpen('dinner', settings) ? 'open' : 'closed')
+      setLiveSurveyStatus(prev => {
+        const next = computeLive(settings) ? 'open' : 'closed'
+        return prev === next ? prev : next
+      })
+      setLiveLunchStatus(prev => {
+        const next = isTimingOpen('lunch', settings) ? 'open' : 'closed'
+        return prev === next ? prev : next
+      })
+      setLiveDinnerStatus(prev => {
+        const next = isTimingOpen('dinner', settings) ? 'open' : 'closed'
+        return prev === next ? prev : next
+      })
     }, 30000)
     return () => clearInterval(timer)
   }, [settings])
 
   const handleToggle = async (key, value) => {
     setSaving(true); setMsg('')
+    const nextSettings = { ...settings, [key]: value }
+    setSettings(nextSettings)
+    if (key === 'survey_window_status') {
+      setSurveyWindowStatus(value)
+      setLiveSurveyStatus(computeLive(nextSettings))
+    }
+    if (key === 'lunch_edit_status') {
+      setLunchEditStatus(value)
+      setLiveLunchStatus(value === 'open' ? 'open' : value === 'closed' ? 'closed' : (isTimingOpen('lunch', nextSettings) ? 'open' : 'closed'))
+    }
+    if (key === 'dinner_edit_status') {
+      setDinnerEditStatus(value)
+      setLiveDinnerStatus(value === 'open' ? 'open' : value === 'closed' ? 'closed' : (isTimingOpen('dinner', nextSettings) ? 'open' : 'closed'))
+    }
     try {
       const { error } = await supabase.from('app_settings').upsert({ key, value }, { onConflict: 'key' })
       if (error) throw error
-      if (key === 'lunch_edit_status') setLunchEditStatus(value)
-      if (key === 'dinner_edit_status') setDinnerEditStatus(value)
-      setMsg('Automation setting updated'); setTimeout(() => setMsg(''), 2000)
+      setMsg('✅ Automation setting updated')
+      setTimeout(() => setMsg(''), 2500)
     } catch (e) { setMsg(`Error: ${e.message}`) }
     setSaving(false)
   }
@@ -258,6 +282,7 @@ export default function AutomationPage() {
   const quickSaveSurveySettings = async () => {
     setQuickSaving(true); setMsg('')
     const toSave = [
+      { key: 'survey_window_status', value: surveyWindowStatus },
       { key: 'survey_window_start_day', value: surveyWindowStartDay.toLowerCase() },
       { key: 'survey_window_start_time', value: surveyWindowStartTime },
       { key: 'survey_window_end_day', value: surveyWindowEndDay.toLowerCase() },
@@ -270,8 +295,15 @@ export default function AutomationPage() {
       { key: 'dinner_edit_open', value: dinnerEditOpen },
       { key: 'dinner_edit_close', value: dinnerEditClose },
     ]
-    // Clean up legacy override keys if present
-    try { await supabase.from('app_settings').delete().in('key', ['survey_status', 'survey_open_hour', 'survey_close_hour']).then(() => {}) } catch {}
+    const nextSettings = { ...settings }
+    toSave.forEach(r => { nextSettings[r.key] = r.value })
+    setSettings(nextSettings)
+    setLiveSurveyStatus(computeLive(nextSettings))
+    setLiveLunchStatus(lunchEditStatus === 'open' ? 'open' : lunchEditStatus === 'closed' ? 'closed' : (isTimingOpen('lunch', nextSettings) ? 'open' : 'closed'))
+    setLiveDinnerStatus(dinnerEditStatus === 'open' ? 'open' : dinnerEditStatus === 'closed' ? 'closed' : (isTimingOpen('dinner', nextSettings) ? 'open' : 'closed'))
+
+    // Clean up legacy hour keys only — keep survey_window_status as the new override
+    try { await supabase.from('app_settings').delete().in('key', ['survey_open_hour', 'survey_close_hour']).then(() => {}) } catch {}
     let err = null
     for (const row of toSave) {
       const { error } = await supabase.from('app_settings').upsert(row, { onConflict: 'key' })
@@ -279,7 +311,7 @@ export default function AutomationPage() {
     }
     setQuickSaving(false)
     if (err) { setMsg(`Quick save failed: ${err.message}`) }
-    else { const now = new Date().toLocaleTimeString(); setMsg(`✅ Survey window updated at ${now} — ${surveyWindowStartDay} ${surveyWindowStartTime} → ${surveyWindowEndDay} ${surveyWindowEndTime}`); setTimeout(() => setMsg(''), 4000) }
+    else { const now = new Date().toLocaleTimeString(); setMsg(`✅ Survey & Edit windows updated at ${now} — ${surveyWindowStartDay} ${surveyWindowStartTime} → ${surveyWindowEndDay} ${surveyWindowEndTime}`); setTimeout(() => setMsg(''), 4000) }
   }
 
   const sendBroadcast = async () => {
@@ -348,6 +380,33 @@ export default function AutomationPage() {
           <button type="button" onClick={quickSaveSurveySettings} disabled={quickSaving} style={{ padding: '10px 18px', borderRadius: 12, border: 'none', background: quickSaving ? T.border : 'var(--accent-grad)', color: quickSaving ? T.textSub : '#000', fontSize: 12, fontWeight: 900, cursor: quickSaving ? 'not-allowed' : 'pointer', opacity: quickSaving ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>{quickSaving ? '⏳ Saving…' : '⚡ Apply Window'}</button>
         </div>
 
+        {/* Admin override — linked to weekly day/time window */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap', padding: '10px 12px', borderRadius: 12, background: T.inputBg, border: `1px solid ${T.inputBorder}` }}>
+          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: T.textSub, display: 'flex', alignItems: 'center', gap: 6 }}><Zap size={12} color={T.accent} /> Admin Control</span>
+          <span style={{ fontSize: 11, color: T.textSub, opacity: 0.8 }}>Weekly day/time window is linked — override below takes instant effect:</span>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            {[
+              ['auto', 'AUTO', '#6366f1', 'Follows day/time window'],
+              ['open', 'FORCE OPEN', '#10b981', 'Survey open for all members now'],
+              ['closed', 'FORCE CLOSED', '#ef4444', 'Survey closed regardless of window'],
+            ].map(([val, label, color, tip]) => (
+              <button
+                key={val}
+                title={tip}
+                onClick={() => handleToggle('survey_window_status', val)}
+                disabled={saving}
+                style={{
+                  padding: '7px 12px', borderRadius: 8, cursor: saving ? 'wait' : 'pointer',
+                  background: surveyWindowStatus === val ? `${color}18` : 'transparent',
+                  border: surveyWindowStatus === val ? `1px solid ${color}40` : '1px solid transparent',
+                  color: surveyWindowStatus === val ? color : T.textSub,
+                  fontSize: 10, fontWeight: 900, letterSpacing: '0.06em', transition: 'all 0.2s', fontFamily: 'inherit', opacity: saving ? 0.5 : 1
+                }}
+              >{label}</button>
+            ))}
+          </div>
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 14, alignItems: 'end' }}>
           {/* From */}
           <div style={{ padding: 14, borderRadius: 12, background: T.inputBg, border: `1px solid ${T.inputBorder}` }}>
@@ -386,8 +445,13 @@ export default function AutomationPage() {
 
         <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: isLiveOpen ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.06)', border: `1px solid ${isLiveOpen ? 'rgba(16,185,129,0.22)' : 'rgba(239,68,68,0.18)'}`, display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: T.textSub, lineHeight: 1.5, flexWrap: 'wrap' }}>
           {isLiveOpen ? <CheckCircle2 size={14} color="#10b981" /> : <Lock size={14} color="#ef4444" />}
-          <span>{isLiveOpen ? 'Survey is currently LIVE — new fillers, partial-resume and haven\'t-filled members can all submit or edit their week.' : `Survey is currently CLOSED — members see: "${surveyMsg || `Opens ${windowLabel}`}"`}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.7 }}>Admin tracker has full rights regardless of window.</span>
+          <span>
+            {surveyWindowStatus === 'open' ? `Survey is FORCED OPEN by admin — weekly window (${windowLabel}) is bypassed. All members can fill/resume now.`
+              : surveyWindowStatus === 'closed' ? `Survey is FORCED CLOSED by admin — weekly window (${windowLabel}) is paused.`
+              : isLiveOpen ? 'Survey is currently LIVE — new fillers, partial-resume and haven\'t-filled members can all submit or edit their week.'
+              : `Survey is currently CLOSED — members see: "${surveyMsg || `Opens ${windowLabel}`}"`}
+          </span>
+          <span style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.7 }}>{surveyWindowStatus !== 'auto' ? `Override: ${surveyWindowStatus.toUpperCase()} • Linked to weekly day/time` : 'Auto-linked to weekly day/time • Admin tracker has full rights'}</span>
         </div>
 
         <div style={{ marginTop: 12 }}>

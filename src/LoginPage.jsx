@@ -63,11 +63,19 @@ export default function LoginPage({ onRoleLogin }) {
   const btnRef = useRef(null)
 
   useEffect(() => {
+    let rafId = null
     const handleMouse = (e) => {
-      setMousePos({ x: e.clientX / window.innerWidth, y: e.clientY / window.innerHeight })
+      if (rafId) return
+      rafId = requestAnimationFrame(() => {
+        setMousePos({ x: e.clientX / window.innerWidth, y: e.clientY / window.innerHeight })
+        rafId = null
+      })
     }
-    window.addEventListener('mousemove', handleMouse)
-    return () => window.removeEventListener('mousemove', handleMouse)
+    window.addEventListener('mousemove', handleMouse, { passive: true })
+    return () => {
+      window.removeEventListener('mousemove', handleMouse)
+      if (rafId) cancelAnimationFrame(rafId)
+    }
   }, [])
 
   const createRipple = useCallback((e) => {
@@ -845,6 +853,8 @@ export default function LoginPage({ onRoleLogin }) {
                 }}>
                   <input
                     id="rememberMe"
+                    name="rememberMe"
+                    aria-label="Remember Me"
                     type="checkbox"
                     checked={rememberMe}
                     onChange={() => setRememberMe(s => !s)}

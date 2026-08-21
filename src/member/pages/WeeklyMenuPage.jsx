@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Utensils, Sun, Moon, ChevronDown } from 'lucide-react'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
-import { getSurveyTargetWeek } from '../../common/utils'
+import { getCalendarWeekDate } from '../../common/utils'
 import { getSlotDishes } from '../../hooks/useSurvey'
 import { WeeklyMenuSkeleton } from '../../common/Skeleton'
 import { DAYS, getTodayKey } from '../constants'
@@ -10,15 +10,10 @@ import { fetchUserSurveyRow } from '../../lib/surveyRows'
 
 export default function WeeklyMenuPage({ appSettings = {} }) {
   const t = useTheme()
-  // The menu + saved responses belong to the SURVEY TARGET week — the same week
-  // the weekly survey, tracker and daily quick-edit write to (it shifts to the
-  // NEXT week during the Sat 8PM–Mon 11AM survey window, which the calendar week
-  // does not). Reading the calendar week here made a member's just-submitted
-  // responses invisible on the Menu page during that window.
-  const currentWeekId = getSurveyTargetWeek(
-    parseInt(appSettings.survey_window_start_day, 10) || 20,
-    appSettings.survey_status === 'open'
-  )
+  // Menu page always shows CURRENT calendar week's menu (live after Mon 00:00).
+  // SurveyPage uses getSurveyTargetWeek(appSettings) to show NEXT week's menu during the window.
+  // This decouples CSV upload for next week (visible in survey early) from Menu visibility at Mon 00:00.
+  const currentWeekId = getCalendarWeekDate()
   const weeklyMenu = useWeeklyMenu(currentWeekId)
   const todayKey = getTodayKey()
   const [expandedDay, setExpandedDay] = useState(todayKey)

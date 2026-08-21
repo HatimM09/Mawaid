@@ -29,10 +29,10 @@ const pickStopInfo = (reqs, selDateStr, meal) => {
 }
 
 export default function DailySurveyTracking() {
-  const [surveyOpenHour, setSurveyOpenHour] = useState(20)
-  const [surveyForceOpen, setSurveyForceOpen] = useState(false)
-  const surveyWeekId = () => getSurveyTargetWeek(surveyOpenHour, surveyForceOpen)
-  const weeklyMenu = useWeeklyMenu(surveyWeekId()) || {}
+  const [appSettings, setAppSettings] = useState({})
+  const surveyWeekId = useCallback(() => getSurveyTargetWeek(appSettings), [appSettings])
+  const targetWeek = surveyWeekId()
+  const weeklyMenu = useWeeklyMenu(targetWeek) || {}
   const [searchParams] = useSearchParams()
   const urlMeal = searchParams.get('meal')
   const [loading, setLoading] = useState(true)
@@ -119,10 +119,11 @@ export default function DailySurveyTracking() {
       const buildDishMap = (dayName, mealName, fallbackList) => {
         const mk = mealName === 'lunch' ? 'l' : 'd'
         const dk = String(dayName || day).substring(0, 3).toLowerCase()
-        const dishList = getSlotDishes(row, dayName, mealName, fallbackList)
-        const names = dishList.length > 0
+        const snapshotList = getSlotDishes(row, dayName, mealName, null)
+        const dishList = snapshotList && snapshotList.length ? snapshotList : (Array.isArray(fallbackList) && fallbackList.length ? fallbackList : null)
+        const names = dishList && dishList.length
           ? dishList
-          : Array.from({ length: 5 }, (_, i) => `Dish ${i + 1}`)
+          : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => row && row[`${dk}_${mk}_dish_${i + 1}`] !== undefined && row[`${dk}_${mk}_dish_${i + 1}`] !== null && row[`${dk}_${mk}_dish_${i + 1}`] !== '')
         const result = {}
         result._status = row ? row[`${dk}_${mk}_status`] : null
         names.forEach((d, i) => {
@@ -133,7 +134,8 @@ export default function DailySurveyTracking() {
               result[d] = String(val).toLowerCase() === 'yes' ? 'yes' : 'no'
             } else {
               const lowerVal = String(val).toLowerCase()
-              result[d] = lowerVal === 'yes' ? 'yes' : lowerVal === 'no' ? 'no' : val
+              if (lowerVal === 'yes' || lowerVal === 'no') result[d] = lowerVal
+              else result[d] = val
             }
           } else {
             result[d] = null
@@ -142,8 +144,20 @@ export default function DailySurveyTracking() {
         return result
       }
 
+      // Fetch fresh weekly menu for this week to ensure dish names (not Dish1) even if hook stale
+      let freshMenu = {}
+      try {
+        const { data: menuRows } = await supabase.from('weekly_menu').select('day_name,lunch,dinner').eq('week_start', weekId)
+        ;(menuRows || []).forEach(r => {
+          const k = String(r.day_name || '').toLowerCase()
+          freshMenu[k] = {
+            lunch: r.lunch ? r.lunch.split(',').map(s => s.trim()).filter(Boolean) : [],
+            dinner: r.dinner ? r.dinner.split(',').map(s => s.trim()).filter(Boolean) : [],
+          }
+        })
+      } catch {}
       const dayNameLower = day.toLowerCase()
-      const dayMenu = weeklyMenu[dayNameLower] || weeklyMenu[day] || {}
+      const dayMenu = freshMenu[dayNameLower] || weeklyMenu[dayNameLower] || weeklyMenu[day] || {}
       const lunchMap = buildDishMap(day, 'lunch', dayMenu.lunch || [])
       const dinnerMap = buildDishMap(day, 'dinner', dayMenu.dinner || [])
 
@@ -252,16 +266,9 @@ export default function DailySurveyTracking() {
         try { setDishInputConfig(JSON.parse(settingsMap.dish_input_config)) } catch {}
       }
 
-      let curOpenHour = 20
-      if (settingsMap.survey_open_hour) {
-        const h = parseInt(settingsMap.survey_open_hour, 10)
-        if (!isNaN(h)) curOpenHour = h
-      }
-      const curForceOpen = settingsMap.survey_status === 'open'
-      setSurveyOpenHour(curOpenHour)
-      setSurveyForceOpen(curForceOpen)
+      setAppSettings(prev => JSON.stringify(prev) === JSON.stringify(settingsMap) ? prev : settingsMap)
 
-      const targetWeekId = getSurveyTargetWeek(curOpenHour, curForceOpen)
+      const targetWeekId = getSurveyTargetWeek(settingsMap)
 
       const { data: users, error: usersError } = await supabase
         .from('user_stats')
@@ -272,20 +279,6 @@ export default function DailySurveyTracking() {
       // legacy flat mirror as the fallback for historical weeks).
       const { data: allRows, error: subsError } = await fetchAllUserRows()
       if (subsError) throw subsError
-
-      // Load override rows too — granted-slot responses live here and must be
-      // merged over the normal rows so the tracking grid always shows the
-      // member's effective (override-priority) answers.
-      const { data: allOverrideRows, error: ovrError } = await supabase
-        .from('survey_day_responses')
-        .select('*')
-      if (ovrError) throw ovrError
-      const ovrMap = {}
-      for (const o of allOverrideRows || []) {
-        if (!ovrMap[o.user_id]) ovrMap[o.user_id] = {}
-        if (!ovrMap[o.user_id][o.week_id]) ovrMap[o.user_id][o.week_id] = []
-        ovrMap[o.user_id][o.week_id].push(o)
-      }
 
       // Thali stop/stop requests — used to mark a member as "no thali" (stopped)
       const { data: stopRequests } = await supabase
@@ -366,10 +359,12 @@ setLoadError(null)
       const buildDishMap = (r, dayName, mealName, fallbackList) => {
         const mk = mealName === 'lunch' ? 'l' : 'd'
         const dk = String(dayName || day).substring(0, 3).toLowerCase()
-        const dishList = getSlotDishes(r, dayName, mealName, fallbackList)
-        const names = dishList.length > 0
+        // Prefer snapshot (proper dish name sync), fallback to weeklyMenu, else derive from saved columns (no mismatch)
+        const snapshotList = getSlotDishes(r, dayName, mealName, null)
+        const dishList = snapshotList && snapshotList.length ? snapshotList : (Array.isArray(fallbackList) && fallbackList.length ? fallbackList : null)
+        const names = dishList && dishList.length
           ? dishList
-          : Array.from({ length: 5 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => r && r[`${dk}_${mk}_dish_${i + 1}`] !== undefined && r[`${dk}_${mk}_dish_${i + 1}`] !== null && r[`${dk}_${mk}_dish_${i + 1}`] !== '')
+          : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => r && r[`${dk}_${mk}_dish_${i + 1}`] !== undefined && r[`${dk}_${mk}_dish_${i + 1}`] !== null && r[`${dk}_${mk}_dish_${i + 1}`] !== '')
         const result = {}
         result._status = r ? r[`${dk}_${mk}_status`] : null
         names.forEach((d, i) => {
@@ -379,8 +374,10 @@ setLoadError(null)
             if (rotiKw.some(k => d.toLowerCase().includes(k))) {
               result[d] = String(val).toLowerCase() === 'yes' ? 'yes' : 'no'
             } else {
+              // Preserve raw value: "2" = count, "25%" = percentage, "yes"/"no" = roti/other
               const lowerVal = String(val).toLowerCase()
-              result[d] = lowerVal === 'yes' ? 'yes' : lowerVal === 'no' ? 'no' : val
+              if (lowerVal === 'yes' || lowerVal === 'no') result[d] = lowerVal
+              else result[d] = val
             }
           } else {
             result[d] = null
