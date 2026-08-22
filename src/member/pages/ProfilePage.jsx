@@ -4,7 +4,7 @@ import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/firebaseClient'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
-import { getSurveyTargetWeek } from '../../common/utils'
+import { getSurveyTargetWeek, getCalendarWeekDate } from '../../common/utils'
 import { getSlotDishes, isRotiItem } from '../../hooks/useSurvey'
 import ErrorBoundary from '../../components/ErrorBoundary'
 import { fetchLatestUserSurveyRow, fetchUserSurveyRow } from '../../lib/surveyRows'
@@ -169,6 +169,8 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
             </div>
           </div>
           <form onSubmit={e => { e.preventDefault(); changePassword() }} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {/* Hidden username field — Chrome password-form accessibility heuristic */}
+            <input type="text" name="username" autoComplete="username" value={user?.email || ''} readOnly tabIndex={-1} aria-hidden="true" style={{ display: 'none' }} />
             <div>
               <label htmlFor="cur-password" style={{ display: 'none' }}>Current Password</label>
               <input
@@ -275,11 +277,14 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
 function MySurveysPage({ onBack }) {
   const t = useTheme(), { user } = useAuth()
   const [surveys, setSurveys] = useState({})
+  const [dailyEditSurveys, setDailyEditSurveys] = useState({})
   const [loading, setLoading] = useState(true)
   const [surveyWeekId, setSurveyWeekId] = useState(null)
   const [appSettings, setAppSettings] = useState({})
+  const calendarWeekId = getCalendarWeekDate()
   // Use the survey data's week_id for the menu so dish names match the snapshot
   const weeklyMenu = useWeeklyMenu(surveyWeekId || getSurveyTargetWeek())
+  const dailyMenu = useWeeklyMenu(calendarWeekId)
 
   useEffect(() => {
     supabase.from('app_settings').select('key, value')
@@ -351,16 +356,22 @@ function MySurveysPage({ onBack }) {
   const grantedSlots = null
 
   const loadData = useCallback(async () => {
-    const { data } = await fetchLatestUserSurveyRow(user.id)
+    // Fetch the latest (survey) week AND the calendar week — Daily Edit writes
+    // land on the calendar week, so both must be merged to show everything.
+    const [{ data }, calRes] = await Promise.all([
+      fetchLatestUserSurveyRow(user.id),
+      calendarWeekId !== getSurveyTargetWeek(appSettings)
+        ? fetchUserSurveyRow(user.id, calendarWeekId)
+        : Promise.resolve({ data: null }),
+    ])
     let weekId = data?.week_id
     if (data) {
-      // No override merging needed — use the normal row directly
       setSurveyWeekId(weekId)
     }
-    if (!data) { setSurveys({}); return }
-    setSurveyWeekId(weekId)
-    setSurveys(markOverride(processRow(data, weeklyMenu), data))
-  }, [user.id, weeklyMenu, processRow, markOverride, grantedSlots])
+    if (!data) { setSurveys({}) }
+    else setSurveys(markOverride(processRow(data, weeklyMenu), data))
+    setDailyEditSurveys(processRow(calRes?.data || null, dailyMenu))
+  }, [user.id, weeklyMenu, dailyMenu, processRow, markOverride, grantedSlots, appSettings, calendarWeekId])
 
   useEffect(() => {
     loadData().finally(() => setLoading(false))
@@ -394,6 +405,41 @@ function MySurveysPage({ onBack }) {
   return (
     <main style={{ flex: 1, padding: '16px 16px 160px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       <BackHeader title="My Surveys" onBack={onBack} />
+      {/* ── This Week · Daily Edits — live view of current-week daily edits ── */}
+      {calendarWeekId !== (surveyWeekId || getSurveyTargetWeek(appSettings)) && Object.keys(dailyEditSurveys).length > 0 && (
+        <div style={{ marginBottom: 18, padding: '12px 14px', borderRadius: 16, background: t.accentBg, border: `1px solid ${t.accentBorder}` }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif", marginBottom: 2 }}>
+            ⏱️ This Week · Daily Edits
+          </div>
+          <div style={{ fontSize: 10.5, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginBottom: 10 }}>
+            Live changes you made from the Home screen
+          </div>
+          {DAYS.filter(day => dailyEditSurveys[day]).map(day => (
+            <div key={day} style={{ marginBottom: 8, padding: 11, background: t.inputBg, borderRadius: 12, border: `1px solid ${t.border}`, borderLeft: '3px solid #10b981' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, textTransform: 'capitalize', color: t.text, fontFamily: "'DM Sans',sans-serif", marginBottom: 6 }}>
+                {dailyMenu[day]?.en || day}
+              </div>
+              {['lunch', 'dinner'].map(meal => {
+                const r = dailyEditSurveys[day]?.[meal]
+                if (!r) return null
+                return (
+                  <div key={meal} style={{ marginBottom: r.wants_food ? 4 : 0 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, fontFamily: "'DM Sans',sans-serif", color: r.wants_food ? '#10b981' : '#ef4444' }}>
+                      {meal === 'lunch' ? '☀️' : '🌙'} {r.wants_food ? 'Applied' : 'Skipped'}
+                    </span>
+                    {r.wants_food && r.dish_responses && Object.entries(r.dish_responses).map(([dish, val]) => (
+                      <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: `1px solid ${t.border}` }}>
+                        <span style={{ fontSize: 11.5, color: t.textBody, fontFamily: "'DM Sans',sans-serif" }}>{dish}</span>
+                        <span style={{ fontSize: 11.5, fontWeight: 800, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{formatDishVal(val, dish)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
+          ))}
+        </div>
+      )}
       {loading ? <ListPageSkeleton title="My Surveys" count={6} /> : DAYS.map(day => {
         const dayData = surveys[day]
         return (

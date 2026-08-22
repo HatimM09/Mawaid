@@ -13,7 +13,7 @@ import {
   SectionHeader, Modal, PackingTVView, fmtDate, ErrorBanner
 } from './ui'
 
-import { getSurveyTargetWeek, DAYS, toLocalDateStr, isStoppedOnDay } from '../common/utils'
+import { getSurveyTargetWeek, getCalendarWeekDate, dayBelongsToCalendarWeek, DAYS, toLocalDateStr, isStoppedOnDay } from '../common/utils'
 import { getPctColor, getSlotDishes } from '../hooks/useSurvey'
 import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot } from '../lib/surveyRows'
 
@@ -60,6 +60,8 @@ export default function DailySurveyTracking() {
   const [weekFilter, setWeekFilter] = useState('all')
   const [availableWeeks, setAvailableWeeks] = useState([])
   const [dishInputConfig, setDishInputConfig] = useState({})
+  // Menu resolved for the week that owns the selected day (calendar vs target)
+  const [displayMenu, setDisplayMenu] = useState({})
 
   // Helper to check if a dish at a given index is count or percentage
   const getInputType = (d, m, idx) => {
@@ -80,7 +82,13 @@ export default function DailySurveyTracking() {
       
       const dayKey = day.substring(0, 3).toLowerCase()
       const mealKey = meal === 'lunch' ? 'l' : 'd'
-      const weekId = surveyWeekId()
+      // Resolve the week that OWNS this day right now — daily edits made on
+      // Home write to the calendar week for today/tomorrow, the survey target
+      // week otherwise. Reading from the same week keeps tracking in sync.
+      const calWeek = getCalendarWeekDate()
+      const weekId = (dayBelongsToCalendarWeek(day) && calWeek !== surveyWeekId())
+        ? calWeek
+        : surveyWeekId()
 
       const { data: row } = await fetchUserSurveyRow(userId, weekId)
 
@@ -119,8 +127,13 @@ export default function DailySurveyTracking() {
       const buildDishMap = (dayName, mealName, fallbackList) => {
         const mk = mealName === 'lunch' ? 'l' : 'd'
         const dk = String(dayName || day).substring(0, 3).toLowerCase()
+        // Prefer the LIVE weekly menu first (admin can update dish names any
+        // time — tracking must always reflect the current menu), then fall
+        // back to the member's saved dish_snapshot.
         const snapshotList = getSlotDishes(row, dayName, mealName, null)
-        const dishList = snapshotList && snapshotList.length ? snapshotList : (Array.isArray(fallbackList) && fallbackList.length ? fallbackList : null)
+        const menuList = Array.isArray(fallbackList) ? fallbackList.filter(Boolean) : []
+        const dishList = menuList.length ? menuList
+          : (snapshotList && snapshotList.length ? snapshotList : null)
         const names = dishList && dishList.length
           ? dishList
           : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => row && row[`${dk}_${mk}_dish_${i + 1}`] !== undefined && row[`${dk}_${mk}_dish_${i + 1}`] !== null && row[`${dk}_${mk}_dish_${i + 1}`] !== '')
@@ -359,9 +372,12 @@ setLoadError(null)
       const buildDishMap = (r, dayName, mealName, fallbackList) => {
         const mk = mealName === 'lunch' ? 'l' : 'd'
         const dk = String(dayName || day).substring(0, 3).toLowerCase()
-        // Prefer snapshot (proper dish name sync), fallback to weeklyMenu, else derive from saved columns (no mismatch)
+        // Prefer the LIVE weekly menu first (always reflects admin's latest
+        // dish names), then the member's saved dish_snapshot as fallback.
         const snapshotList = getSlotDishes(r, dayName, mealName, null)
-        const dishList = snapshotList && snapshotList.length ? snapshotList : (Array.isArray(fallbackList) && fallbackList.length ? fallbackList : null)
+        const menuList = Array.isArray(fallbackList) ? fallbackList.filter(Boolean) : []
+        const dishList = menuList.length ? menuList
+          : (snapshotList && snapshotList.length ? snapshotList : null)
         const names = dishList && dishList.length
           ? dishList
           : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => r && r[`${dk}_${mk}_dish_${i + 1}`] !== undefined && r[`${dk}_${mk}_dish_${i + 1}`] !== null && r[`${dk}_${mk}_dish_${i + 1}`] !== '')
@@ -386,21 +402,52 @@ setLoadError(null)
         return result
       }
 
+      // Resolve the menu from the SAME week that owns the selected day.
+      // When the survey targets NEXT week but tracking shows today/tomorrow
+      // (calendar week), dish names must come from the calendar week's live
+      // menu — otherwise an admin's menu update shows as "previous menu".
+      let menuForDay = weeklyMenu
+      {
+        const cal = getCalendarWeekDate()
+        if (dayBelongsToCalendarWeek(day) && cal !== surveyWeekId()) {
+          const { data: menuRows, error: menuErr } = await supabase
+            .from('weekly_menu')
+            .select('day_name,lunch,dinner')
+            .eq('week_start', cal)
+          if (!menuErr && menuRows && menuRows.length) {
+            const m = {}
+            menuRows.forEach(r => {
+              const k = String(r.day_name || '').toLowerCase()
+              m[k] = {
+                lunch: r.lunch ? r.lunch.split(',').map(s => s.trim()).filter(Boolean) : [],
+                dinner: r.dinner ? r.dinner.split(',').map(s => s.trim()).filter(Boolean) : [],
+              }
+            })
+            menuForDay = m
+          }
+        }
+      }
+      setDisplayMenu(menuForDay)
+
       const results = (users || []).map(u => {
         // Use the first (most recent) merged row from survey_day_responses
         const row = ((allRows || []).find(r => r.user_id === u.user_id) || {})
         let resp = row
         if (weekFilter === 'all') {
-          // Find most recent week
-          const recent = (allRows || []).filter(r => r.user_id === u.user_id).sort((a, b) =>
+          // Prefer the CALENDAR week's row when the selected day belongs to it
+          // (daily edits live there); otherwise fall back to the latest week.
+          const cal = getCalendarWeekDate()
+          const preferCal = dayBelongsToCalendarWeek(day) && cal !== surveyWeekId()
+          const candidates = (allRows || []).filter(r => r.user_id === u.user_id)
+          const recent = candidates.sort((a, b) =>
             (b.week_id || '').localeCompare(a.week_id || '')
           )[0]
-          resp = recent || row
+          resp = (preferCal ? candidates.find(r => r.week_id === cal) : null) || recent || row
         } else {
           resp = (allRows || []).find(r => r.user_id === u.user_id && r.week_id === weekFilter) || row
         }
         const dayKeyLower = day.toLowerCase()
-        const dayMenu = weeklyMenu[dayKeyLower] || weeklyMenu[day] || {}
+        const dayMenu = menuForDay[dayKeyLower] || menuForDay[day] || {}
         const buildCurMeal = buildDishMap(resp, day, meal, dayMenu[meal] || [])
         const buildLunch = buildDishMap(resp, day, 'lunch', dayMenu.lunch || [])
         const buildDinner = buildDishMap(resp, day, 'dinner', dayMenu.dinner || [])
@@ -499,7 +546,7 @@ setLoadError(null)
   const noResponse = filtered.filter(u => !u.status)
 
   const dishStats = {}
-  const menuDishes = weeklyMenu[day]?.[meal] || []
+  const menuDishes = displayMenu[day]?.[meal] || weeklyMenu[day]?.[meal] || []
   menuDishes.forEach(dish => {
     dishStats[dish] = { total: 0, count: 0, yesNoCount: 0, yesCount: 0, isCount: false, isPct: false }
   })

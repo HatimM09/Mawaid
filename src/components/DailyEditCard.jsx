@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Sun, Moon, Check, X, Clock, Sparkles, Plus, Minus } from 'lucide-react'
 import { useTheme, useAuth } from '../admin/context'
-import { getCalendarWeekDate } from '../common/utils'
+import { getCalendarWeekDate, getOwningWeekId, getSurveyTargetWeek, dayBelongsToCalendarWeek } from '../common/utils'
 import { submitSurveyRow } from '../lib/submitSurvey'
 import {
   isRotiItem,
@@ -23,6 +23,19 @@ export const getCardMealInfo = (weeklyMenu = {}, appSettings = {}) => {
   const dayIdx = now.getDay() // 0 = Sun, 1 = Mon, ...
   const hour = now.getHours()
   const calWeek = getCalendarWeekDate()
+  const targetWeek = getSurveyTargetWeek(appSettings)
+
+  // Own the edit to the week the target DATE actually belongs to, so daily
+  // edits stay linked to My Surveys + Admin Tracking (e.g. Sunday editing
+  // Monday's lunch must write to NEXT week's row, not this week's).
+  const resolveWeek = (dayName) => {
+    const names = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+    if (names[dayIdx] === dayName) return calWeek // today → always calendar week
+    const d = new Date(now)
+    d.setDate(d.getDate() + 1)
+    d.setHours(12, 0, 0, 0)
+    return getOwningWeekId(d, appSettings) || targetWeek || calWeek
+  }
 
   const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
   const todayName = dayNames[dayIdx]
@@ -31,23 +44,25 @@ export const getCardMealInfo = (weeklyMenu = {}, appSettings = {}) => {
   const nextDayIdx = (dayIdx + 1) % 7
   const nextDayName = dayNames[nextDayIdx]
   const tomorrowKey = nextDayName === 'sunday' ? 'monday' : nextDayName
+  const tomorrowWeek = resolveWeek(tomorrowKey)
+  const todayWeek = resolveWeek(todayName)
 
   // 1. Check if today's lunch is editable
   if (canEditMeal(todayKey, calWeek, 'lunch', appSettings)) {
     const dishes = (weeklyMenu && weeklyMenu[todayKey]?.lunch) || []
-    return { day: todayKey, meal: 'lunch', dishes, weekId: calWeek }
+    return { day: todayKey, meal: 'lunch', dishes, weekId: todayWeek }
   }
 
   // 2. Check if tomorrow's lunch is editable (e.g. opens previous night 8 PM)
   if (canEditMeal(tomorrowKey, calWeek, 'lunch', appSettings)) {
     const dishes = (weeklyMenu && weeklyMenu[tomorrowKey]?.lunch) || []
-    return { day: tomorrowKey, meal: 'lunch', dishes, weekId: calWeek }
+    return { day: tomorrowKey, meal: 'lunch', dishes, weekId: tomorrowWeek }
   }
 
   // 3. Check if today's dinner is editable
   if (canEditMeal(todayKey, calWeek, 'dinner', appSettings)) {
     const dishes = (weeklyMenu && weeklyMenu[todayKey]?.dinner) || []
-    return { day: todayKey, meal: 'dinner', dishes, weekId: calWeek }
+    return { day: todayKey, meal: 'dinner', dishes, weekId: todayWeek }
   }
 
   // Fallback based on time of day
@@ -56,7 +71,7 @@ export const getCardMealInfo = (weeklyMenu = {}, appSettings = {}) => {
   const targetMeal = (hour >= 11 && hour < 16) ? 'dinner' : 'lunch'
   const targetDishes = (weeklyMenu && weeklyMenu[targetDay]?.[targetMeal]) || []
 
-  return { day: targetDay, meal: targetMeal, dishes: targetDishes, weekId: calWeek }
+  return { day: targetDay, meal: targetMeal, dishes: targetDishes, weekId: isEvening ? tomorrowWeek : todayWeek }
 }
 
 export default function DailyEditCard({
@@ -77,7 +92,8 @@ export default function DailyEditCard({
         day: propMealInfo.day,
         meal: propMealInfo.meal,
         dishes,
-        weekId: propMealInfo.weekId || getCalendarWeekDate()
+        weekId: propMealInfo.weekId
+          || (dayBelongsToCalendarWeek(propMealInfo.day) ? getCalendarWeekDate() : getSurveyTargetWeek(appSettings))
       }
     }
     return getCardMealInfo(weeklyMenu, appSettings)
@@ -89,7 +105,15 @@ export default function DailyEditCard({
   const [saving, setSaving] = useState(false)
   const [savedSuccess, setSavedSuccess] = useState(false)
   const [userData, setUserData] = useState({ thali_no: '', email: user?.email })
+  const [snackDefaults, setSnackDefaults] = useState(null)
   const [existingData, setExistingData] = useState(null)
+
+  // Admin-assigned per-dish count limit (UsersPage → "default count"). Members
+  // can only reduce these values — same rule as the weekly survey modal.
+  const getMaxCount = (idx) => {
+    const v = snackDefaults?.[`dish_${idx + 1}`]
+    return (v !== undefined && v !== null && v >= 1) ? v : null // null = uncapped
+  }
 
   const dayKey = mi.day.substring(0, 3).toLowerCase()
   const mealKey = mi.meal === 'lunch' ? 'l' : 'd'
@@ -134,6 +158,7 @@ export default function DailyEditCard({
           thali_no: uRes.data.thali_number || '',
           email: uRes.data.email || user.email
         })
+        if (uRes.data.snack_defaults) setSnackDefaults(uRes.data.snack_defaults)
       }
 
       const row = rowRes.data
@@ -639,8 +664,15 @@ export default function DailyEditCard({
                           type="button"
                           onClick={() => {
                             const curNum = (typeof curVal === 'object' && curVal?.status === 'yes') ? (curVal.value || 0) : 0
-                            handleDishChange(dish, { status: 'yes', value: Math.min(20, curNum + 1) })
+                            const maxCount = getMaxCount(idx)
+                            const next = Math.min(maxCount || 20, curNum + 1)
+                            if (next !== curNum) handleDishChange(dish, { status: 'yes', value: next })
                           }}
+                          disabled={(() => {
+                            const maxCount = getMaxCount(idx)
+                            const curNum = (typeof curVal === 'object' && curVal?.status === 'yes') ? (curVal.value || 0) : 0
+                            return maxCount !== null && curNum >= maxCount
+                          })()}
                           style={{
                             width: 26,
                             height: 26,
@@ -648,6 +680,11 @@ export default function DailyEditCard({
                             background: 'rgba(255,255,255,0.06)',
                             border: 'none',
                             color: t.text,
+                            opacity: (() => {
+                              const maxCount = getMaxCount(idx)
+                              const curNum = (typeof curVal === 'object' && curVal?.status === 'yes') ? (curVal.value || 0) : 0
+                              return maxCount !== null && curNum >= maxCount ? 0.35 : 1
+                            })(),
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -657,6 +694,19 @@ export default function DailyEditCard({
                           <Plus size={13} />
                         </button>
                       </div>
+                      {(() => {
+                        const maxCount = getMaxCount(idx)
+                        return maxCount !== null && maxCount < 20 ? (
+                          <span style={{
+                            fontSize: 9, fontWeight: 800, color: t.accent,
+                            background: t.accentBg, padding: '2px 7px', borderRadius: 6,
+                            border: `1px solid ${t.accentBorder}`, whiteSpace: 'nowrap',
+                            fontFamily: "'DM Sans',sans-serif"
+                          }}>
+                            Max {maxCount} (Assigned)
+                          </span>
+                        ) : null
+                      })()}
                     </div>
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 5 }}>

@@ -366,6 +366,9 @@ export default function Dashboard() {
     })
     const submissions = [...byUser.values()]
     const todayCount = submissions.filter(sr => sr[todayKey] === 'Applied').length
+    // Per-meal YES counts for today's box (Applied = user said yes)
+    const todayLunchCount = submissions.filter(sr => sr[`${today}_l_status`] === 'Applied').length
+    const todayDinnerCount = submissions.filter(sr => sr[`${today}_d_status`] === 'Applied').length
     
     const inventory = allInventory.data || []
     const lowStockCount = inventory.filter(p => p.stock <= p.low_stock_threshold).length
@@ -377,6 +380,8 @@ export default function Dashboard() {
       requests: r.count ?? 0,
       queries: q.count ?? 0,
       todayThalis: todayCount,
+      todayLunch: todayLunchCount,
+      todayDinner: todayDinnerCount,
       lowStock: lowStockCount
     })
 
@@ -563,11 +568,28 @@ export default function Dashboard() {
           style={{ gridArea: 'stat2', background: 'rgba(212, 175, 55, 0.05)', border: '1px solid rgba(212, 175, 55, 0.1)', cursor: 'pointer', transition: 'all 0.3s' }}
           className="hover-lift"
         >
-          <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ fontSize: 16 }}>🍱</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: 16 }}>🍱</span>
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-tertiary)' }}>
+              {new Date().toLocaleDateString('en-GB', { weekday: 'long' })}
+            </div>
           </div>
           <div style={{ fontSize: 32, fontWeight: 900, marginTop: 12 }}>{stats.todayThalis}</div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)' }}>Thalis for {new Date().getHours() + new Date().getMinutes() / 60 >= 20 || new Date().getHours() + new Date().getMinutes() / 60 < 14 ? 'Lunch' : 'Dinner'}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)' }}>
+            Thalis for {new Date().getHours() + new Date().getMinutes() / 60 >= 20 || new Date().getHours() + new Date().getMinutes() / 60 < 14 ? 'Lunch' : 'Dinner'}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <div style={{ flex: 1, padding: '6px 10px', borderRadius: 8, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', textAlign: 'center' }}>
+              <span style={{ fontSize: 15, fontWeight: 900, color: '#10b981' }}>{stats.todayLunch}</span>
+              <span style={{ fontSize: 9.5, fontWeight: 800, color: 'var(--text-tertiary)', marginLeft: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Yes Lunch</span>
+            </div>
+            <div style={{ flex: 1, padding: '6px 10px', borderRadius: 8, background: 'rgba(94,156,224,0.08)', border: '1px solid rgba(94,156,224,0.2)', textAlign: 'center' }}>
+              <span style={{ fontSize: 15, fontWeight: 900, color: '#5e9ce0' }}>{stats.todayDinner}</span>
+              <span style={{ fontSize: 9.5, fontWeight: 800, color: 'var(--text-tertiary)', marginLeft: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Yes Dinner</span>
+            </div>
+          </div>
         </AdminCard>
 
         <AdminCard 

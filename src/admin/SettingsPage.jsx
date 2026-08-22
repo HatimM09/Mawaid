@@ -217,8 +217,21 @@ export default function SettingsPage() {
 
   useEffect(() => { load() }, [])
 
-  const load = async () => {
-    setLoading(true)
+  const load = async (silent = false) => {
+    // Silent (background realtime) refresh: skip the loading screen and never
+    // overwrite state while the admin still has unsaved edits in progress.
+    if (!silent) {
+      setLoading(true)
+    } else if (dirtyRef.current) {
+      return
+    }
+    // Re-check right before applying: the admin may have started typing while
+    // the fetches above were in flight.
+    const commit = (fn) => {
+      if (silent && dirtyRef.current) return false
+      fn()
+      return true
+    }
     try {
       const { data: draftRow } = await supabase
         .from('app_settings')
@@ -228,18 +241,18 @@ export default function SettingsPage() {
 
       if (draftRow && draftRow.value) {
         const draft = JSON.parse(draftRow.value)
-        setHelpline(draft.helpline_number || '')
-        if (draft.dish_input_config) setDishInputConfig(draft.dish_input_config)
-        if (draft.menu) setMenu(draft.menu)
-        if (draft.publishAt) setPublishAt(draft.publishAt)
-        if (draft.week_target) setTargetWeek(draft.week_target)
+        commit(() => setHelpline(draft.helpline_number || ''))
+        if (draft.dish_input_config) commit(() => setDishInputConfig(draft.dish_input_config))
+        if (draft.menu) commit(() => setMenu(draft.menu))
+        if (draft.publishAt) commit(() => setPublishAt(draft.publishAt))
+        if (draft.week_target) commit(() => setTargetWeek(draft.week_target))
         setHasDraft(true)
       } else {
         const { data: settings } = await supabase.from('app_settings').select('*')
         if (settings) {
           settings.forEach(row => {
-            if (row.key === 'helpline_number') setHelpline(row.value)
-            if (row.key === 'dish_input_config') { try { setDishInputConfig(JSON.parse(row.value)) } catch(e) { setDishInputConfig({}) } }
+            if (row.key === 'helpline_number') commit(() => setHelpline(row.value))
+            if (row.key === 'dish_input_config') { try { commit(() => setDishInputConfig(JSON.parse(row.value))) } catch(e) { commit(() => setDishInputConfig({})) } }
           })
         }
         const { data: menuData } = await supabase
@@ -253,17 +266,18 @@ export default function SettingsPage() {
             formatted[row.day_name] = { lunch: row.lunch ? row.lunch.split(',').map(s => s.trim()).filter(Boolean).join(', ') : '', dinner: row.dinner ? row.dinner.split(',').map(s => s.trim()).filter(Boolean).join(', ') : '', ar: row.day_ar }
             if (row.publish_at) hasPublishAt = row.publish_at
           })
-          setMenu(formatted)
-          setPublishAt(hasPublishAt ? new Date(hasPublishAt).toISOString().slice(0, 16) : '')
+          commit(() => setMenu(formatted))
+          commit(() => setPublishAt(hasPublishAt ? new Date(hasPublishAt).toISOString().slice(0, 16) : ''))
         } else {
-          setMenu(DEFAULT_MENU)
-          setPublishAt('')
+          commit(() => setMenu(DEFAULT_MENU))
+          commit(() => setPublishAt(''))
         }
         setHasDraft(false)
       }
     } catch (e) {
       console.error('Settings load error:', e)
     }
+    if (!silent) dirtyRef.current = false
     setLoading(false)
     loadedRef.current = true
   }
@@ -306,11 +320,16 @@ export default function SettingsPage() {
   }
 
   // ── REALTIME SUBSCRIPTION ──
+  // Ignore changes to our own auto-saved draft (`draft_data`) — otherwise every
+  // debounced keystroke save triggers a full reload that wipes what the admin
+  // is currently typing.
   useEffect(() => {
     const channel = supabase
       .channel('settings-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, () => {
-        loadRef.current()
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, (payload) => {
+        const key = payload?.new?.key ?? payload?.old?.key
+        if (key === 'draft_data') return
+        loadRef.current(true)
       })
       .subscribe()
 

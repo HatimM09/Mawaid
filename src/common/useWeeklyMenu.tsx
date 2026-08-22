@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/firebaseClient';
 import { getSurveyTargetWeek } from './utils';
@@ -43,7 +43,6 @@ const fetchWeeklyMenu = async (weekStart: string): Promise<any> => {
  */
 export const useWeeklyMenu = (weekStart = getSurveyTargetWeek()) => {
   const queryClient = useQueryClient();
-  const instanceRef = useRef(Date.now());
 
   const queryKey = queryKeys.weeklyMenu(weekStart);
 
@@ -60,8 +59,9 @@ export const useWeeklyMenu = (weekStart = getSurveyTargetWeek()) => {
   // Realtime subscription — auto-refresh when admin publishes/updates menu
   useEffect(() => {
     let cancelled = false;
+    const channelName = `weekly-menu-changes-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const channel = supabase
-      .channel(`weekly-menu-changes-${instanceRef.current}`)
+      .channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'weekly_menu' }, () => {
         if (!cancelled) queryClient.invalidateQueries({ queryKey });
       })
@@ -76,6 +76,5 @@ export const useWeeklyMenu = (weekStart = getSurveyTargetWeek()) => {
       supabase.removeChannel(channel);
     };
   }, [queryClient, queryKey]);
-
   return menu;
 };

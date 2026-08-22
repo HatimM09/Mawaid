@@ -3,7 +3,7 @@ import { ClipboardList, ChevronRight, Lock, CheckCircle2, Pencil, Sparkles, Arro
 import { supabase } from '../../lib/firebaseClient'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
-import { getSurveyTargetWeek } from '../../common/utils'
+import { getSurveyTargetWeek, getCalendarWeekDate } from '../../common/utils'
 import { WeeklyMenuSkeleton } from '../../common/Skeleton'
 import SurveyModal from '../../components/SurveyModal'
 import { MealStatusPill } from './WeeklyMenuPage'
@@ -16,11 +16,13 @@ export default function SurveyPage({ appSettings = {} }) {
   const t = useTheme()
   const { user } = useAuth()
   const currentWeekId = getSurveyTargetWeek(appSettings)
+  const calendarWeekId = getCalendarWeekDate()
   const weeklyMenu = useWeeklyMenu(currentWeekId)
   const [showSurvey, setShowSurvey] = useState(false)
   const [openDay, setOpenDay] = useState(null)
   const [openMeal, setOpenMeal] = useState(null)
   const [surveyData, setSurveyData] = useState(null)
+  const [dailyEditData, setDailyEditData] = useState(null)
   const [loading, setLoading] = useState(true)
 
   const surveyOpen = isSurveyOpen(appSettings, user.id)
@@ -28,11 +30,20 @@ export default function SurveyPage({ appSettings = {} }) {
   const loadSurvey = useCallback(async () => {
     setLoading(true)
     try {
-      const { data: normal } = await fetchUserSurveyRow(user.id, currentWeekId)
+      // Fetch BOTH weeks: the survey target week AND the calendar week where
+      // Daily Edit writes land — so daily edits are always visible here.
+      const needsCalFetch = calendarWeekId !== currentWeekId
+      const [{ data: normal }, calRes] = await Promise.all([
+        fetchUserSurveyRow(user.id, currentWeekId),
+        needsCalFetch
+          ? fetchUserSurveyRow(user.id, calendarWeekId)
+          : Promise.resolve({ data: null }),
+      ])
       setSurveyData(normal || null)
+      setDailyEditData(calRes?.data || null)
     } catch { setSurveyData(null) }
     setLoading(false)
-  }, [user.id, currentWeekId])
+  }, [user.id, currentWeekId, calendarWeekId])
 
   useEffect(() => { loadSurvey() }, [loadSurvey])
 
@@ -312,11 +323,61 @@ export default function SurveyPage({ appSettings = {} }) {
                   }} className="group-hover:translate-x-[2px]">
                     <ArrowUpRight size={18} strokeWidth={2.2} />
                   </span>
-                </button>
-              </div>
+                 </button>
+               </div>
           </div>
         </div>
       </div>
+
+      {/* ── THIS WEEK · DAILY EDITS ──
+          Live view of the CURRENT calendar week's responses — including every
+          change made through the Home-screen Daily Edit card. Only shown when
+          the survey targets a different (next) week. */}
+      {calendarWeekId !== currentWeekId && (
+        <div style={{
+          borderRadius: 28, padding: 6, marginBottom: 18,
+          background: `linear-gradient(135deg, rgba(16,185,129,0.14), transparent)`,
+          border: `1px solid rgba(16,185,129,0.22)`,
+          boxShadow: '0 16px 40px rgba(0,0,0,0.15)',
+          animation: 'entry 0.6s cubic-bezier(0.32,0.72,0,1) 0.05s both'
+        }}>
+          <div style={{ borderRadius: 22, padding: '16px 18px', background: t.card, border: `1px solid ${t.border}`, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+              <Clock3 size={16} color="#10b981" />
+              <span style={{ fontSize: 14, fontWeight: 800, color: t.text, fontFamily: "'Fraunces','Playfair Display',serif" }}>This Week · Daily Edits</span>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: t.textSub, fontFamily: "'Plus Jakarta Sans',sans-serif" }}>Live changes from Home-screen daily edit</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
+              {DAYS.map(day => {
+                const dk = day.substring(0, 3).toLowerCase()
+                const toPill = (v) => v === 'Applied' || v === 'opted_in' ? 'Applied' : v === 'Skipped' || v === 'opted_out' ? 'Skipped' : 'pending'
+                const lStat = toPill(dailyEditData?.[`${dk}_l_status`])
+                const dStat = toPill(dailyEditData?.[`${dk}_d_status`])
+                const pillStyle = (s) => ({
+                  fontSize: 9.5, fontWeight: 800, padding: '2px 8px', borderRadius: 999,
+                  background: s === 'Applied' ? 'rgba(16,185,129,0.10)' : s === 'Skipped' ? 'rgba(239,68,68,0.08)' : 'rgba(255,255,255,0.04)',
+                  color: s === 'Applied' ? '#10b981' : s === 'Skipped' ? '#ef4444' : t.textSub,
+                  border: `1px solid ${s === 'Applied' ? 'rgba(16,185,129,0.25)' : s === 'Skipped' ? 'rgba(239,68,68,0.20)' : t.border}`
+                })
+                return (
+                  <div key={day} style={{ padding: '8px 10px', borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: `1px solid ${t.border}` }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'capitalize', color: t.text, fontFamily: "'Plus Jakarta Sans',sans-serif", marginBottom: 5 }}>{day}</div>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      <span style={pillStyle(lStat)}>☀️ {lStat === 'pending' ? '—' : lStat}</span>
+                      <span style={pillStyle(dStat)}>🌙 {dStat === 'pending' ? '—' : dStat}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            {!dailyEditData && (
+              <div style={{ marginTop: 10, fontSize: 11, color: t.textSub, fontFamily: "'Plus Jakarta Sans',sans-serif", fontStyle: 'italic' }}>
+                No daily edits saved for this week yet.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── WEEK AT A GLANCE — Bento ── */}
       <div style={{
@@ -339,7 +400,7 @@ export default function SurveyPage({ appSettings = {} }) {
               <div>
                 <div style={{ fontSize: 15.5, fontWeight: 800, color: t.text, fontFamily: "'Fraunces','Playfair Display',serif", lineHeight: 1.1, letterSpacing: '-0.01em' }}>This Week's Meals</div>
                 <div style={{ fontSize: 11, color: t.textSub, fontFamily: "'Plus Jakarta Sans',sans-serif", marginTop: 2, letterSpacing: '0.04em' }}>
-                  Fill days in order — Mon to Sat • {weekRangeLabel}
+                  Fill all 12 meals via Start/Resume — Edit unlocks after full submission
                 </div>
               </div>
             </div>
@@ -360,16 +421,19 @@ export default function SurveyPage({ appSettings = {} }) {
               const complete = isFilled(lunchStatus) && isFilled(dinnerStatus)
               const partial = isFilled(lunchStatus) || isFilled(dinnerStatus)
               const rowAccent = complete ? '#10b981' : partial ? '#FF9800' : t.border
-              // Card edit: editable if survey is open OR daily meal window is open for lunch/dinner
+              // Edit options unlock ONLY after the entire weekly survey is filled.
+              // Until then, day cards are read-only progress rows — filling happens
+              // through the main Start/Resume button in strict day order.
               const canEditLunch = canEditMeal(day, currentWeekId, 'lunch', appSettings)
               const canEditDinner = canEditMeal(day, currentWeekId, 'dinner', appSettings)
-              const canEditThisDay = surveyOpen || canEditLunch || canEditDinner
+              const windowOpen = surveyOpen || canEditLunch || canEditDinner
+              const canEditThisDay = isWeeklyComplete && windowOpen
               const locked = !canEditThisDay
 
               return (
                 <div
                   key={day}
-                  onClick={() => { setOpenDay(day); setOpenMeal(null); setShowSurvey(true) }}
+                  onClick={canEditThisDay ? () => { setOpenDay(day); setOpenMeal(null); setShowSurvey(true) } : undefined}
                   style={{
                     width: '100%', display: 'flex', alignItems: 'center', gap: 12,
                     padding: '14px 14px', borderRadius: 18,
@@ -377,12 +441,13 @@ export default function SurveyPage({ appSettings = {} }) {
                     border: `1px solid ${complete ? 'rgba(16,185,129,0.22)' : partial ? 'rgba(255,152,0,0.18)' : t.border}`,
                     borderLeft: `3px solid ${rowAccent}`,
                     textAlign: 'left', fontFamily: "'Plus Jakarta Sans',sans-serif",
-                    cursor: 'pointer',
+                    cursor: canEditThisDay ? 'pointer' : 'default',
+                    opacity: locked ? 0.75 : 1,
                     boxShadow: complete ? '0 6px 18px rgba(16,185,129,0.08), inset 0 1px 0 rgba(255,255,255,0.04)' : 'inset 0 1px 0 rgba(255,255,255,0.03)',
                     transition: 'transform 0.3s cubic-bezier(0.32,0.72,0,1), box-shadow 0.3s ease',
                     animation: `entry 0.5s cubic-bezier(0.32,0.72,0,1) ${0.06 * idx}s both`
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 10px 24px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.05)' }}
+                  onMouseEnter={e => { if (!canEditThisDay) return; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 10px 24px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.05)' }}
                   onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = complete ? '0 6px 18px rgba(16,185,129,0.08), inset 0 1px 0 rgba(255,255,255,0.04)' : 'inset 0 1px 0 rgba(255,255,255,0.03)' }}
                 >
                   <div style={{
@@ -431,16 +496,15 @@ export default function SurveyPage({ appSettings = {} }) {
                       <span style={{ width: 20, height: 20, borderRadius: 999, background: complete ? 'rgba(16,185,129,0.16)' : 'rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${complete ? 'rgba(16,185,129,0.22)' : 'rgba(0,0,0,0.06)'}` }}>
                         <Pencil size={11} />
                       </span>
-                      {complete ? 'Edit' : 'Fill'}
+                      Edit
                     </button>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setOpenDay(day); setOpenMeal(null); setShowSurvey(true) }}
-                      style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6, color: t.textSub, fontSize: 11, fontWeight: 700, padding: '8px 12px', borderRadius: 999, background: 'rgba(255,255,255,0.04)', border: `1px solid ${t.border}`, cursor: 'pointer' }}
+                    <span
+                      title={isWeeklyComplete ? 'Edit window closed' : 'Complete the full weekly survey to unlock editing'}
+                      style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6, color: t.textSub, fontSize: 10.5, fontWeight: 700, padding: '7px 12px', borderRadius: 999, background: 'rgba(255,255,255,0.03)', border: `1px solid ${t.border}`, opacity: 0.8 }}
                     >
-                      <Lock size={12} /> View
-                    </button>
+                      <Lock size={11} /> {isWeeklyComplete ? 'Locked' : `${completedMeals}/12`}
+                    </span>
                   )}
                 </div>
               )

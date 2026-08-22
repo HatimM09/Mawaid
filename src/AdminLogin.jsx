@@ -528,6 +528,8 @@ export default function AdminLogin({ onLogin }) {
 
               {/* Input & Action Form */}
               <form onSubmit={e => { e.preventDefault(); handleSubmit() }}>
+                {/* Hidden username field — Chrome password-form accessibility heuristic */}
+                <input type="text" name="username" autoComplete="username" defaultValue="admin" tabIndex={-1} aria-hidden="true" style={{ display: 'none' }} />
                 <div className={`adm-field ${fieldError ? 'adm-field--error' : ''}`}>
                   <label className="adm-field-label" htmlFor="adminKey">
                     {fieldError ? (

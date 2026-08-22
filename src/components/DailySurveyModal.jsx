@@ -649,7 +649,7 @@ function DishToggle({ dish, meal, idx, responses, toggleDish, setResponses, appS
             touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent'
           }}>−</button>
           <input
-            name={`${dayKey}-dish-count-${idx}`}
+            name={`${String(today || '').substring(0, 3).toLowerCase()}-dish-count-${idx}`}
             type="number"
             min={1}
             max={maxCount ?? 99}

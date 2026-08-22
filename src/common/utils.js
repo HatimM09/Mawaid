@@ -135,6 +135,39 @@ export const toLocalDateStr = (d) => {
 export const getDayKey = (day) => day.substring(0, 3).toLowerCase()
 export const getMealKey = (meal) => meal === 'lunch' ? 'l' : 'd'
 
+/**
+ * Returns the week_id (YYYY-MM-DD Monday) that OWNS a given real date for
+ * survey-response storage. Dates inside the current calendar week belong to
+ * the calendar week (where daily edits live); anything else belongs to the
+ * survey target week. This is the link that keeps Daily Edit writes visible
+ * in My Surveys and Admin Survey Tracking regardless of window state.
+ */
+export const getOwningWeekId = (date, appSettings = {}) => {
+  const cal = getCalendarWeekDate()
+  const target = getSurveyTargetWeek(appSettings)
+  if (cal === target) return cal
+  const d = new Date(date)
+  d.setHours(12, 0, 0, 0)
+  const calStart = new Date(cal + 'T00:00:00')
+  const calEnd = new Date(calStart)
+  calEnd.setDate(calEnd.getDate() + 6)
+  calEnd.setHours(23, 59, 59)
+  return (d >= calStart && d <= calEnd) ? cal : target
+}
+
+/**
+ * Does the given weekday NAME refer to a date inside the current calendar
+ * week right now? (Today always does; tomorrow does too — except when today
+ * is Sunday, because tomorrow is next week's Monday.)
+ */
+export const dayBelongsToCalendarWeek = (dayName) => {
+  const names = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+  const t = new Date().getDay()
+  const todayName = names[t]
+  const tomorrowName = names[(t + 1) % 7]
+  return dayName === todayName || (dayName === tomorrowName && t !== 0)
+}
+
 export const addWeeks = (dateStr, weeks) => {
   const date = new Date(dateStr)
   date.setDate(date.getDate() + weeks * 7)

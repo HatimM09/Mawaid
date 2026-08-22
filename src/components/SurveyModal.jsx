@@ -1,1531 +1,618 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { X, ChevronLeft, ChevronRight, Check, AlertTriangle, Play } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Check, AlertTriangle, Play, Sun, Moon } from 'lucide-react'
 import { supabase } from '../lib/firebaseClient'
 import { useAuth, useTheme } from '../admin/context'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { DAYS, getSurveyTargetWeek } from '../common/utils'
 import { DEFAULT_MENU } from '../common/constants'
-import { isRotiItem, isCountInput, canEditMeal, isSurveyOpen, useSurveyAutoSave, normalizeDishValue, denormalizeDishValue, getPctColor, mergeDishSnapshot, getSlotDishes, getSurveyWindowLabel } from '../hooks/useSurvey'
+import {
+  isRotiItem, isCountInput, canEditMeal, isSurveyOpen,
+  denormalizeDishValue, getPctColor,
+  mergeDishSnapshot, getSlotDishes,
+} from '../hooks/useSurvey'
 import { submitSurveyRow, beginSurvey } from '../lib/submitSurvey'
-import { fetchLatestUserSurveyRow, fetchUserSurveyRow } from '../lib/surveyRows'
+import { fetchUserSurveyRow } from '../lib/surveyRows'
 
-// Fallback palette (deep dark) — the live component derives its palette from the
-// active app theme via buildSurveyTheme(useTheme()), so the pop-up and its cards
-// always match the app's theme (Deep Topaz / Radiant Dawn / Royal Gold & Black).
-const THEME = {
-  bg: '#0d0d1a', card: 'rgba(255,255,255,0.03)', cardActive: 'rgba(255,255,255,0.06)',
-  border: 'rgba(139,92,246,0.15)', borderActive: 'rgba(139,92,246,0.4)',
-  accent: '#D4AF37', accentGrad: 'linear-gradient(135deg, #D4AF37, #B8860B)',
-  accentBg: 'rgba(212,175,55,0.1)', text: '#f0f0f5', textSub: 'rgba(240,240,245,0.5)',
-  inputBg: 'rgba(255,255,255,0.05)', successText: '#4CAF50',
-  yesColor: '#4CAF50', yesBg: 'rgba(76,175,80,0.15)',
-  noColor: '#F44336', noBg: 'rgba(244,67,54,0.15)',
+// ── Static theme (fallback / default) ──────────────────────────────
+const BASE_THEME = {
+  bg: '#0d0d1a',
+  card: 'rgba(255,255,255,0.03)',
+  border: 'rgba(139,92,246,0.15)',
+  accent: '#D4AF37',
+  accentGrad: 'linear-gradient(135deg,#D4AF37,#B8860B)',
+  accentBg: 'rgba(212,175,55,0.1)',
+  accentBorder: 'rgba(212,175,55,0.3)',
+  text: '#f0f0f5',
+  textSub: 'rgba(240,240,245,0.5)',
+  inputBg: 'rgba(255,255,255,0.05)',
+  yesColor: '#4CAF50',
+  yesBg: 'rgba(76,175,80,0.15)',
+  noColor: '#F44336',
+  noBg: 'rgba(244,67,54,0.15)',
+  overlay: 'rgba(5,5,10,0.80)',
+  successOverlay: 'rgba(0,0,0,0.90)',
+  modalBg: 'linear-gradient(165deg,#12121f 0%,#0d0d1a 60%)',
+  modalBorder: 'rgba(212,175,55,0.35)',
+  loadingOverlay: 'rgba(13,13,26,0.85)',
+  softBg: 'rgba(255,255,255,0.03)',
+  softBorder: 'rgba(255,255,255,0.05)',
 }
 
-// Map the app's active theme onto the survey modal's palette.
-const buildSurveyTheme = (t) => {
-  const light = t.id === 'bright'
+function buildTheme(appT) {
+  if (!appT) return BASE_THEME
+  const light = appT.id === 'bright'
   return {
-    ...THEME,
-    bg: t.bg, card: t.card, cardActive: t.cardActive,
-    border: t.border, borderActive: t.borderActive,
-    accent: t.accent, accentGrad: t.accentGrad, accentBg: t.accentBg,
-    text: t.text, textSub: t.textSub, inputBg: t.inputBg, successText: t.successText,
-    overlay: light ? 'rgba(45,36,22,0.5)' : 'rgba(5,5,10,0.78)',
-    successOverlay: light ? 'rgba(253,251,247,0.92)' : 'rgba(0,0,0,0.9)',
+    ...BASE_THEME,
+    bg: appT.bg || BASE_THEME.bg,
+    card: appT.card || BASE_THEME.card,
+    border: appT.border || BASE_THEME.border,
+    accent: appT.accent || BASE_THEME.accent,
+    accentGrad: appT.accentGrad || BASE_THEME.accentGrad,
+    accentBg: appT.accentBg || BASE_THEME.accentBg,
+    accentBorder: appT.accentBorder || BASE_THEME.accentBorder,
+    text: appT.text || BASE_THEME.text,
+    textSub: appT.textSub || BASE_THEME.textSub,
+    inputBg: appT.inputBg || BASE_THEME.inputBg,
+    overlay: light ? 'rgba(45,36,22,0.55)' : 'rgba(5,5,10,0.80)',
+    successOverlay: light ? 'rgba(253,251,247,0.94)' : 'rgba(0,0,0,0.90)',
     modalBg: light
-      ? 'linear-gradient(165deg, #ffffff 0%, #faf4e8 60%)'
-      : 'linear-gradient(165deg, #12121f 0%, #0d0d1a 60%)',
+      ? 'linear-gradient(165deg,#ffffff 0%,#faf4e8 60%)'
+      : 'linear-gradient(165deg,#12121f 0%,#0d0d1a 60%)',
     modalBorder: light ? 'rgba(184,134,11,0.4)' : 'rgba(212,175,55,0.35)',
     loadingOverlay: light ? 'rgba(253,251,247,0.88)' : 'rgba(13,13,26,0.85)',
     softBg: light ? 'rgba(184,134,11,0.07)' : 'rgba(255,255,255,0.03)',
     softBorder: light ? 'rgba(184,134,11,0.18)' : 'rgba(255,255,255,0.05)',
-    rowBg: light
-      ? 'linear-gradient(145deg, rgba(184,134,11,0.08), rgba(184,134,11,0.03))'
-      : 'linear-gradient(145deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))',
-    rowBgHover: light
-      ? 'linear-gradient(145deg, rgba(184,134,11,0.15), rgba(184,134,11,0.05))'
-      : 'linear-gradient(145deg, rgba(212,175,55,0.14), rgba(212,175,55,0.04))',
   }
 }
 
+const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : '')
+
+const parseDishes = (raw) => Array.isArray(raw) ? raw : (raw ? String(raw).split(',').map(s => s.trim()).filter(Boolean) : [])
+
 const SURVEY_STYLES = `
-@keyframes surveyPop { 0% { transform: scale(0.85); opacity: 0.5; } 60% { transform: scale(1.08); } 100% { transform: scale(1); opacity: 1; } }
-@keyframes surveySlideIn { 0% { opacity: 0; transform: translateX(30px); } 100% { opacity: 1; transform: translateX(0); } }
-@keyframes surveyGlow { 0%,100% { box-shadow: 0 0 6px rgba(76,175,80,0.2); } 50% { box-shadow: 0 0 18px rgba(76,175,80,0.5); } }
-@keyframes surveyBadgePop { 0% { transform: scale(0); } 50% { transform: scale(1.2); } 100% { transform: scale(1); } }
-@keyframes surveyShimmer { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
-@keyframes surveyCheck { 0% { transform: scale(0) rotate(-45deg); opacity: 0; } 100% { transform: scale(1) rotate(0deg); opacity: 1; } }
-@keyframes surveySuccess { 0% { transform: scale(0.3); opacity: 0; } 50% { transform: scale(1.15); } 100% { transform: scale(1); opacity: 1; } }
-@keyframes surveyFadeIn { 0% { opacity: 0; transform: translateY(10px); } 100% { opacity: 1; transform: translateY(0); } }
-@keyframes surveyConfetti { 0% { transform: translateY(0) rotate(0deg); opacity: 1; } 100% { transform: translateY(-200px) rotate(720deg); opacity: 0; } }
-@keyframes surveyModalIn { 0% { opacity: 0; transform: translateY(32px) scale(0.96); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
-@keyframes surveyBackdropIn { 0% { opacity: 0; } 100% { opacity: 1; } }
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800;900&family=Playfair+Display:wght@700;800&display=swap');
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes surveyPop { 0%{transform:scale(0.85);opacity:0.5} 60%{transform:scale(1.08)} 100%{transform:scale(1);opacity:1} }
+@keyframes surveyBadgePop { 0%{transform:scale(0)} 50%{transform:scale(1.2)} 100%{transform:scale(1)} }
+@keyframes surveyGlow { 0%,100%{box-shadow:0 0 6px rgba(76,175,80,0.2)} 50%{box-shadow:0 0 18px rgba(76,175,80,0.5)} }
+@keyframes surveySuccess { 0%{transform:scale(0.3);opacity:0} 50%{transform:scale(1.15)} 100%{transform:scale(1);opacity:1} }
+@keyframes surveyModalIn { 0%{opacity:0;transform:translateY(28px) scale(0.97)} 100%{opacity:1;transform:translateY(0) scale(1)} }
+@keyframes surveyFadeIn { 0%{opacity:0;transform:translateY(8px)} 100%{opacity:1;transform:translateY(0)} }
 `
 
-const SkeletonDish = ({ theme: TH = THEME }) => (
-  <div style={{ padding: '10px 14px', borderRadius: 12, background: TH.card, border: `1px solid ${TH.border}`, marginBottom: 8 }}>
-    <div style={{ height: 14, width: '60%', borderRadius: 6, background: TH.border, marginBottom: 10 }} />
-    <div style={{ display: 'flex', gap: 6 }}>
-      {[0, 1, 2, 3, 4].map(i => (
-        <div key={i} style={{ flex: 1, height: 32, borderRadius: 8, background: TH.border }} />
-      ))}
-    </div>
-  </div>
-)
+// ────────────────────────────────────────────────────────────────────
+// DishRow — defined OUTSIDE the main component so it is stable across
+// renders and never gets unmounted/remounted on state changes.
+// ────────────────────────────────────────────────────────────────────
+function DishRow({ dish, idx, mealType, value, onChange, T, appSettings, currentDay, snackDefaults }) {
+  const isRoti = isRotiItem(dish)
+  const isCount = !isRoti && isCountInput(appSettings, currentDay, mealType, idx)
 
+  const profileCount = snackDefaults?.[`dish_${idx + 1}`]
+  const maxVal = (profileCount !== undefined && profileCount !== null && profileCount >= 0) ? profileCount : 99
+
+  const optGrad = (color) => `linear-gradient(145deg,${color}30 0%,${color}10 55%,${color}05 100%)`
+  const optShadow = (color) => `0 6px 20px ${color}40,inset 0 1px 0 rgba(255,255,255,0.12)`
+
+  const Sheen = () => (
+    <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,0.14),transparent)', pointerEvents: 'none', borderRadius: 'inherit' }} />
+  )
+  const CheckBadge = ({ color, size = 18 }) => (
+    <span style={{ position: 'absolute', top: 5, right: 5, width: size, height: size, borderRadius: '50%', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 2px 10px ${color}70`, zIndex: 2, animation: 'surveyBadgePop 0.3s ease' }}>
+      <span style={{ fontSize: size * 0.6, fontWeight: 900, color: '#0d0d1a', lineHeight: 1 }}>✓</span>
+    </span>
+  )
+  const StatusPill = ({ label, color }) => (
+    <span style={{ fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '3px 10px', borderRadius: 100, whiteSpace: 'nowrap', background: `${color}1a`, color, border: `1px solid ${color}55`, animation: 'surveyBadgePop 0.3s ease' }}>{label}</span>
+  )
+
+  // ── ROTI (yes/no binary) ──
+  if (isRoti) {
+    const selColor = value === 'yes' ? T.yesColor : value === 'no' ? T.noColor : null
+    return (
+      <div style={{ marginBottom: 8, padding: '12px 14px', borderRadius: 14, position: 'relative', overflow: 'hidden', background: selColor ? `linear-gradient(145deg,${selColor}1a,${T.card})` : T.card, border: `1.5px solid ${selColor || T.border}`, boxShadow: selColor ? `0 6px 18px ${selColor}18` : 'none', transition: 'all 0.25s' }}>
+        {selColor && <div style={{ position: 'absolute', top: -20, right: -20, width: 90, height: 90, borderRadius: '50%', background: selColor, filter: 'blur(36px)', opacity: 0.14, pointerEvents: 'none' }} />}
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: T.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</div>
+            {value && <StatusPill label={value === 'yes' ? '✅ Selected' : '❌ Skipped'} color={selColor} />}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {['yes', 'no'].map(opt => {
+              const isSel = value === opt
+              const color = opt === 'yes' ? T.yesColor : T.noColor
+              return (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => onChange(dish, opt)}
+                  style={{ flex: 1, padding: '13px 8px', borderRadius: 12, border: `1.5px solid ${isSel ? color : T.border}`, background: isSel ? optGrad(color) : 'transparent', color: isSel ? color : T.textSub, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: isSel ? 'scale(1.02)' : 'scale(1)', boxShadow: isSel ? optShadow(color) : 'none', position: 'relative', overflow: 'hidden' }}
+                >
+                  {isSel && <Sheen />}
+                  {isSel && <CheckBadge color={color} />}
+                  {opt === 'yes' ? '✅ Yes, please' : '❌ No, skip'}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── COUNT (stepper) ──
+  if (isCount) {
+    const isYes = value && typeof value === 'object' && value.status === 'yes'
+    const isSkipped = value === 'no'
+    const countNum = isYes ? (value.value || 1) : 0
+    const atMax = maxVal > 0 ? countNum >= maxVal : true
+    const showInitial = value === undefined || value === null
+    const selColor = isYes ? T.yesColor : isSkipped ? T.noColor : null
+
+    return (
+      <div style={{ marginBottom: 8, padding: '12px 14px', borderRadius: 14, position: 'relative', overflow: 'hidden', background: selColor ? `linear-gradient(145deg,${selColor}1a,${T.card})` : T.card, border: `1.5px solid ${selColor || T.border}`, boxShadow: selColor ? `0 6px 18px ${selColor}18` : 'none', transition: 'all 0.25s' }}>
+        {selColor && <div style={{ position: 'absolute', top: -20, right: -20, width: 90, height: 90, borderRadius: '50%', background: selColor, filter: 'blur(36px)', opacity: 0.14, pointerEvents: 'none' }} />}
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: T.text, marginBottom: 10, fontFamily: "'DM Sans',sans-serif", display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span>{dish}</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {isYes && <StatusPill label={`✅ ${countNum} ${countNum === 1 ? 'person' : 'persons'}`} color={T.yesColor} />}
+              {isSkipped && <StatusPill label="❌ Skipped" color={T.noColor} />}
+              {maxVal < 99 && <span style={{ fontSize: 10, color: T.accent, fontWeight: 800, background: T.accentBg, padding: '3px 8px', borderRadius: 6, border: `1px solid ${T.border}` }}>Max: {maxVal}</span>}
+            </span>
+          </div>
+
+          {showInitial && (
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" onClick={() => onChange(dish, { status: 'yes', value: Math.max(1, Math.min(maxVal || 99, 1)) })}
+                style={{ flex: 1, padding: '12px 8px', borderRadius: 12, border: `1.5px solid ${T.yesColor}`, background: optGrad(T.yesColor), color: T.yesColor, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', boxShadow: `0 6px 18px ${T.yesColor}30`, position: 'relative', overflow: 'hidden' }}>
+                <Sheen />✅ Yes, I want
+              </button>
+              <button type="button" onClick={() => onChange(dish, 'no')}
+                style={{ flex: 1, padding: '12px 8px', borderRadius: 12, border: `1.5px solid ${T.noColor}`, background: optGrad(T.noColor), color: T.noColor, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', position: 'relative', overflow: 'hidden' }}>
+                <Sheen />❌ No, skip
+              </button>
+            </div>
+          )}
+
+          {isSkipped && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <div style={{ padding: '9px 16px', borderRadius: 10, background: optGrad(T.noColor), border: `1px solid ${T.noColor}50`, color: T.noColor, fontSize: 13, fontWeight: 800, fontFamily: "'DM Sans',sans-serif" }}>❌ Skipped</div>
+              <button type="button" onClick={() => onChange(dish, { status: 'yes', value: Math.max(1, Math.min(maxVal || 99, 1)) })}
+                style={{ marginLeft: 'auto', padding: '10px 20px', borderRadius: 12, border: `1.5px solid ${T.accent}`, background: `linear-gradient(145deg,${T.accentBg},transparent)`, color: T.accent, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>
+                ✅ Add back
+              </button>
+            </div>
+          )}
+
+          {isYes && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: `linear-gradient(145deg,${T.yesColor}1f,${T.card})`, borderRadius: 14, padding: '6px 8px', border: `1px solid ${T.yesColor}40`, boxShadow: `0 4px 16px ${T.yesColor}18` }}>
+                <button type="button" onClick={() => onChange(dish, { status: 'yes', value: Math.max(1, countNum - 1) })}
+                  disabled={countNum <= 1}
+                  style={{ width: 44, height: 44, borderRadius: 12, border: `1px solid ${countNum <= 1 ? T.border : T.yesColor + '50'}`, background: T.inputBg, color: countNum <= 1 ? T.textSub : T.text, cursor: countNum <= 1 ? 'not-allowed' : 'pointer', fontSize: 22, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: countNum <= 1 ? 0.4 : 1, transition: 'all 0.2s', touchAction: 'manipulation' }}>
+                  −
+                </button>
+                <div style={{ textAlign: 'center', minWidth: 60 }}>
+                  <div style={{ fontSize: 28, fontWeight: 900, color: T.yesColor, lineHeight: 1, fontFamily: "'DM Sans',sans-serif" }}>{countNum}</div>
+                  <div style={{ fontSize: 9.5, color: T.textSub, fontWeight: 700 }}>{countNum === 1 ? 'person' : 'persons'}</div>
+                </div>
+                <button type="button" onClick={() => { if (!atMax) onChange(dish, { status: 'yes', value: Math.min(maxVal, countNum + 1) }) }}
+                  disabled={atMax}
+                  style={{ width: 44, height: 44, borderRadius: 12, border: `1px solid ${atMax ? T.border : T.yesColor + '50'}`, background: T.inputBg, color: atMax ? T.textSub : T.text, cursor: atMax ? 'not-allowed' : 'pointer', fontSize: 22, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: atMax ? 0.35 : 1, transition: 'all 0.2s', touchAction: 'manipulation' }}>
+                  +
+                </button>
+              </div>
+              <button type="button" onClick={() => onChange(dish, 'no')}
+                style={{ marginLeft: 'auto', padding: '11px 18px', borderRadius: 12, border: `1.5px solid ${T.noColor}50`, background: 'transparent', color: T.noColor, fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>
+                ❌ Skip
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ── PERCENTAGE ──
+  const pctColor = getPctColor(value)
+  const hasResp = typeof value === 'number'
+  const selColor2 = pctColor || T.accent
+  return (
+    <div style={{ marginBottom: 8, padding: '12px 14px', borderRadius: 14, position: 'relative', overflow: 'hidden', background: hasResp ? `linear-gradient(145deg,${selColor2}1a,${T.card})` : T.card, border: `1.5px solid ${hasResp ? selColor2 : T.border}`, boxShadow: hasResp ? `0 6px 18px ${selColor2}18` : 'none', transition: 'all 0.25s' }}>
+      {hasResp && <div style={{ position: 'absolute', top: -20, right: -20, width: 90, height: 90, borderRadius: '50%', background: selColor2, filter: 'blur(36px)', opacity: 0.14, pointerEvents: 'none' }} />}
+      <div style={{ position: 'relative', zIndex: 1 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: T.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</div>
+          {hasResp && <StatusPill label={`${value}% selected`} color={selColor2} />}
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {[0, 25, 50, 75, 100].map(pct => {
+            const pc = getPctColor(pct)
+            const isSel = value === pct
+            const color = pc || T.accent
+            return (
+              <button key={pct} type="button" onClick={() => onChange(dish, pct)}
+                style={{ flex: 1, padding: '13px 4px', borderRadius: 12, border: `1.5px solid ${isSel ? color : T.border}`, background: isSel ? optGrad(color) : 'transparent', color: isSel ? color : T.textSub, fontSize: 12.5, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: isSel ? 'scale(1.04)' : 'scale(1)', boxShadow: isSel ? optShadow(color) : 'none', letterSpacing: '0.02em', position: 'relative', overflow: 'hidden' }}>
+                {isSel && <Sheen />}
+                {pct === 0 ? '0%' : pct + '%'}
+                {isSel && <CheckBadge color={color} size={16} />}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Main SurveyModal
+// ────────────────────────────────────────────────────────────────────
 export default function SurveyModal({ onClose, appSettings = {}, initialDay, initialMeal }) {
   const { user } = useAuth()
-  // Theme-matched palette — the pop-up and its cards follow the active app theme.
   const appT = useTheme()
-  const THEME = useMemo(() => buildSurveyTheme(appT), [appT])
-  const weeklyMenu = useWeeklyMenu(getSurveyTargetWeek(appSettings)) || {}
-  const [currentDayIndex, setCurrentDayIndex] = useState(0)
-  const [currentMeal, setCurrentMeal] = useState('lunch')
-  const [wantsFood, setWantsFood] = useState(null)
-  const wantsFoodRef = useRef(null)
-  const [responses, setResponses] = useState({})
-  const [loading, setLoading] = useState(false)
-  const [existingData, setExistingData] = useState(null)
-  const [dataLoaded, setDataLoaded] = useState(false)
-  const [userData, setUserData] = useState({ thali_no: '', email: user?.email })
-  const [snackDefaults, setSnackDefaults] = useState(null)
-  const [surveySubmitted, setSurveySubmitted] = useState(false)
-  const { autoSaveStatus } = useSurveyAutoSave()
-  const saveTimerRef = useRef(null)
-  const justLoadedRef = useRef(false)
-
-  const [editResponseMode, setEditResponseMode] = useState(false)
-  const initialLoadRef = useRef(true)
-  // Review step: once the user fills the final slot (Saturday dinner) they land
-  // on a review screen (day list with ✏️ Edit) instead of jumping straight to
-  // Submit — so they can go back and change any day before submitting.
-  const [reviewMode, setReviewMode] = useState(false)
-
-  // ── NEW UX STATE ──
-  const [showIntro, setShowIntro] = useState(false)
-  const [errorToast, setErrorToast] = useState(null)
-  const [syncMsg, setSyncMsg] = useState(null)
-  const [showSuccess, setShowSuccess] = useState(false)
-  const [viewDay, setViewDay] = useState(DAYS[0])
-  // Premium submit-result popup: exact status shown when the final submit
-  // button is hit — filled (success celebration), missing slots, or an error.
-  const [submitResult, setSubmitResult] = useState(null)
-  // Day-scoped flow (opened from a Survey-page day card): first show the
-  // Lunch/Dinner picker, then the chosen meal's dish-card editor.
-  const [mealPicked, setMealPicked] = useState(false)
+  const T = useMemo(() => buildTheme(appT), [appT])
 
   const currentWeekId = getSurveyTargetWeek(appSettings)
-  const currentDay = DAYS[currentDayIndex]
-  const currentDayLower = (currentDay || '').toLowerCase()
-  const menu = weeklyMenu[currentDayLower] || weeklyMenu[currentDay] || { lunch: [], dinner: [] }
+  const weeklyMenuRaw = useWeeklyMenu(currentWeekId)
+
+  // Resolve initial day index robustly (case-insensitive)
+  const initialDayIndex = useMemo(() => {
+    if (!initialDay) return 0
+    const idx = DAYS.findIndex(d => d.toLowerCase() === String(initialDay).toLowerCase())
+    return idx !== -1 ? idx : 0
+  }, [initialDay])
+
+  const [currentDayIndex, setCurrentDayIndex] = useState(initialDayIndex)
+  const [lunchWantsFood, setLunchWantsFood] = useState(null)   // null | true | false
+  const [dinnerWantsFood, setDinnerWantsFood] = useState(null) // null | true | false
+  const [lunchResponses, setLunchResponses] = useState({})
+  const [dinnerResponses, setDinnerResponses] = useState({})
+  const [existingData, setExistingData] = useState(null)
+  const [userData, setUserData] = useState({ thali_no: '', email: user?.email || '' })
+  const [snackDefaults, setSnackDefaults] = useState(null)
+  const [dataLoaded, setDataLoaded] = useState(false)
+  const [surveySubmitted, setSurveySubmitted] = useState(false)
+  const [showIntro, setShowIntro] = useState(false)
+  const [showSuccess, setShowSuccess] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [errorToast, setErrorToast] = useState(null)
+  const [syncMsg, setSyncMsg] = useState(null)
+  const [submitResult, setSubmitResult] = useState(null)
+
+  const dinnerCardRef = useRef(null)
+  const bottomNavRef = useRef(null)
+  const modalTopRef = useRef(null)
+
+  // Computed day info
+  const currentDay = DAYS[currentDayIndex] || 'monday'
+  const currentDayName = cap(currentDay)
   const dayKey = currentDay.substring(0, 3).toLowerCase()
-  const mealKey = currentMeal === 'lunch' ? 'l' : 'd'
-  const isMealEditable = canEditMeal(currentDay, currentWeekId, currentMeal, appSettings, user?.id)
+
+  // Build menu dishes for the active day.
+  // NOTE: values here MUST be referentially stable across renders — unstable
+  // arrays feed into populateDay's useCallback, whose effect calls setState,
+  // which would cause an infinite "Maximum update depth exceeded" loop.
+  const menu = useMemo(
+    () => weeklyMenuRaw?.[currentDay] || weeklyMenuRaw?.[cap(currentDay)] || { lunch: [], dinner: [] },
+    [weeklyMenuRaw, currentDay]
+  )
+  const lunchDishes = useMemo(
+    () => (menu.lunch?.length ? menu.lunch : getSlotDishes(existingData, currentDay, 'lunch', parseDishes(DEFAULT_MENU[currentDay]?.lunch))),
+    [menu, existingData, currentDay]
+  )
+  const dinnerDishes = useMemo(
+    () => (menu.dinner?.length ? menu.dinner : getSlotDishes(existingData, currentDay, 'dinner', parseDishes(DEFAULT_MENU[currentDay]?.dinner))),
+    [menu, existingData, currentDay]
+  )
+
+  const slotList = useMemo(() => DAYS.flatMap(d => [{ day: d, meal: 'lunch' }, { day: d, meal: 'dinner' }]), [])
+
+  // Permissions
   const surveyOpen = isSurveyOpen(appSettings, user?.id)
-  const isEditable = surveyOpen || isMealEditable
+  const lunchEditable = canEditMeal(currentDay, currentWeekId, 'lunch', appSettings)
+  const dinnerEditable = canEditMeal(currentDay, currentWeekId, 'dinner', appSettings)
+  const dayEditable = surveyOpen || lunchEditable || dinnerEditable
 
-  // ── Post-submit edit gating — weekly OR daily (separate, not merged) ──
-  const wholeWeekEditable = surveyOpen
-  const dayCanBeEdited = (dayName) => {
-    if (surveyOpen) return true
-    return canEditMeal(dayName, currentWeekId, 'lunch', appSettings) || canEditMeal(dayName, currentWeekId, 'dinner', appSettings)
-  }
-  const getWindowHint = () => {
-    const label = getSurveyWindowLabel(appSettings)
-    return `Whole-week window: ${label}. After that, daily lunch/dinner edits follow per-meal windows.`
-  }
+  // Validation helpers
+  const isDishAnswered = useCallback((dish, val, isCount) => {
+    if (isRotiItem(dish)) return val === 'yes' || val === 'no'
+    if (isCount) return val === 'no' || (val && typeof val === 'object' && val.status === 'yes' && val.value > 0)
+    return typeof val === 'number'
+  }, [])
 
-  const slotList = useMemo(() => DAYS.flatMap(day => [{ day, meal:'lunch'}, { day, meal:'dinner'}]), [])
+  const isLunchComplete = lunchWantsFood === false
+    || (lunchWantsFood === true && lunchDishes.length === 0)
+    || (lunchWantsFood === true && lunchDishes.length > 0 && lunchDishes.every((dish, idx) =>
+      isDishAnswered(dish, lunchResponses[dish], isCountInput(appSettings, currentDay, 'lunch', idx))
+    ))
 
-  const dayIndices = useMemo(() => [...new Set(slotList.map(s => DAYS.indexOf(s.day)))], [slotList])
-  const totalSlots = slotList.length
-  const currentSlot = Math.max(0, slotList.findIndex(s => s.day === currentDay && s.meal === currentMeal))
-  const isLast = currentSlot === slotList.length - 1
-  
-  const sourceDataForDishes = existingData
-  const defMenu = DEFAULT_MENU[currentDayLower] || {}
-  const defMealDishes = defMenu[currentMeal]
-    ? (Array.isArray(defMenu[currentMeal]) ? defMenu[currentMeal] : String(defMenu[currentMeal]).split(',').map(s => s.trim()).filter(Boolean))
-    : []
-  const liveDishes = (menu[currentMeal] && menu[currentMeal].length > 0) ? menu[currentMeal] : []
-  const dishes = liveDishes.length > 0 ? liveDishes : getSlotDishes(sourceDataForDishes, currentDay, currentMeal, defMealDishes)
-  const hasDishes = dishes.length > 0
-  const allDishesAnswered = wantsFood && dishes.every(dish => {
-    const resp = responses[dish]
-    if (isRotiItem(dish)) return resp === 'yes' || resp === 'no'
-    if (isCountInput(appSettings, currentDay, currentMeal, dishes.indexOf(dish))) {
-      return resp === 'no' || (resp && resp.status === 'yes' && resp.value > 0)
-    }
-    return typeof resp === 'number'
-  })
+  const isDinnerComplete = dinnerWantsFood === false
+    || (dinnerWantsFood === true && dinnerDishes.length === 0)
+    || (dinnerWantsFood === true && dinnerDishes.length > 0 && dinnerDishes.every((dish, idx) =>
+      isDishAnswered(dish, dinnerResponses[dish], isCountInput(appSettings, currentDay, 'dinner', idx))
+    ))
 
-  // A day counts as complete only when EVERY meal in the week is saved.
-  const dayStatusSummary = DAYS.map((day) => {
-    const dk = day.substring(0, 3).toLowerCase()
-    const daySlots = slotList.filter(s => s.day === day)
-    if (daySlots.length === 0) return 'pending'
-    const statuses = daySlots.map(s => {
-      const mk = s.meal === 'lunch' ? 'l' : 'd'
-      return existingData?.[`${dk}_${mk}_status`]
-    })
-    if (statuses.every(Boolean)) return 'complete'
-    if (statuses.some(Boolean)) return 'partial'
-    return 'pending'
-  })
+  const isDayComplete = lunchWantsFood !== null && dinnerWantsFood !== null && isLunchComplete && isDinnerComplete
 
-  // Post-submit edits are always allowed: once the full week is submitted the user
-  // may open ANY day and re-edit any meal, as often as they like. slotLocked still
-  // guards fresh fills outside the survey/edit windows.
-
-  // Weekly fill/resume: unlocked when weekly window OR daily meal window open (separate)
-  // Post-submit edit: unlocked when weekly OR daily meal window open
-  const slotLocked = surveySubmitted ? (!wholeWeekEditable && !isMealEditable) : !isEditable
-
-
-  // ── ESCAPE KEY TO CLOSE ──
+  // ── Escape key ──
   useEffect(() => {
-    const handleKey = (e) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
+    const h = (e) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
   }, [onClose])
 
-  // If both weekly and daily windows close while mid-edit, drop back
-  useEffect(() => {
-    if (surveySubmitted && editResponseMode && !wholeWeekEditable && !isMealEditable) {
-      setEditResponseMode(false)
-      setWantsFood(null)
-      setResponses({})
-    }
-  }, [surveySubmitted, editResponseMode, wholeWeekEditable, isMealEditable])
+  // ── Auto-dismiss toasts ──
+  useEffect(() => { if (!errorToast) return; const t = setTimeout(() => setErrorToast(null), 4000); return () => clearTimeout(t) }, [errorToast])
+  useEffect(() => { if (!syncMsg) return; const t = setTimeout(() => setSyncMsg(null), 2400); return () => clearTimeout(t) }, [syncMsg])
 
-  // ── AUTO-CLEAR ERROR TOAST ──
-  useEffect(() => {
-    if (!errorToast) return
-    const t = setTimeout(() => setErrorToast(null), 4000)
-    return () => clearTimeout(t)
-  }, [errorToast])
-
-  // ── AUTO-CLEAR "Synced ✓" FEEDBACK ──
-  useEffect(() => {
-    if (!syncMsg) return
-    const t = setTimeout(() => setSyncMsg(null), 2200)
-    return () => clearTimeout(t)
-  }, [syncMsg])
-
-  const positionedOnOpenRef = useRef(false)
-
-  const loadExisting = useCallback(async () => {
+  // ── Load existing data + profile ──
+  const loadData = useCallback(async () => {
     try {
       if (user?.id) {
-        const { data: u } = await supabase.from('user_stats').select('thali_number, email, snack_defaults').eq('user_id', user.id).maybeSingle()
+        const { data: u } = await supabase.from('user_stats').select('thali_number,email,snack_defaults').eq('user_id', user.id).maybeSingle()
         if (u) {
-          if (!userData.thali_no) setUserData({ thali_no: u.thali_number || '', email: u.email || user?.email })
-          const sd = u.snack_defaults || null
-          setSnackDefaults(prev => (prev || sd))
+          setUserData(prev => prev.thali_no ? prev : { thali_no: u.thali_number || '', email: u.email || user?.email || '' })
+          if (u.snack_defaults) setSnackDefaults(prev => prev || u.snack_defaults)
         }
       }
       const { data } = await fetchUserSurveyRow(user?.id, currentWeekId)
       setExistingData(data || null)
       setDataLoaded(true)
-      const allDone = slotList.every(slot => {
-        const dk = slot.day.substring(0, 3).toLowerCase()
-        const mk = slot.meal === 'lunch' ? 'l' : 'd'
-        return data?.[`${dk}_${mk}_status`]
-      })
       if (data) {
+        const allDone = slotList.every(slot => {
+          const dk = slot.day.substring(0, 3).toLowerCase()
+          const mk = slot.meal === 'lunch' ? 'l' : 'd'
+          return data[`${dk}_${mk}_status`]
+        })
         setSurveySubmitted(allDone)
-      } else {
-        setSurveySubmitted(false)
       }
-    } catch { setDataLoaded(true) }
+    } catch {
+      setDataLoaded(true)
+    }
   }, [user?.id, currentWeekId, slotList])
 
-  useEffect(() => { loadExisting() }, [loadExisting])
+  useEffect(() => { loadData() }, [loadData])
 
-  // ── Single initial positioning on open ──
-  // Positions the modal onto the first granted/unanswered slot ONCE when opened.
-  // Never re-runs on state changes or background syncs so the user is never yanked away.
-  useEffect(() => {
-    if (!dataLoaded || positionedOnOpenRef.current || slotList.length === 0) return
-    positionedOnOpenRef.current = true
-
-    if (initialDay) {
-      const daySlot = slotList.find(s => s.day === initialDay)
-      if (daySlot) {
-        setCurrentDayIndex(DAYS.indexOf(daySlot.day))
-        setCurrentMeal(daySlot.meal)
-        setViewDay(daySlot.day)
-      } else {
-        const idx = DAYS.indexOf(initialDay)
-        if (idx !== -1) {
-          setCurrentDayIndex(idx)
-          setViewDay(initialDay)
-        }
-      }
-      return
-    }
-
-    // Find first slot missing a status
-    const missing = slotList.find(s => {
-      const dk = s.day.substring(0, 3).toLowerCase()
-      const mk = s.meal === 'lunch' ? 'l' : 'd'
-      return !existingData?.[`${dk}_${mk}_status`]
-    })
-    const target = missing || slotList[0]
-    setCurrentDayIndex(DAYS.indexOf(target.day))
-    setCurrentMeal(target.meal)
-    setViewDay(target.day)
-  }, [dataLoaded, slotList, existingData, initialDay])
-
-  // ── LIVE SYNC: the week's row changing anywhere is reflected in the open modal ──
+  // ── Live realtime sync ──
   useEffect(() => {
     if (!user?.id) return
-    const ch = supabase.channel(`survey-modal-sync-${user.id}-${currentWeekId}`)
-      .on('postgres_changes', {
-        event: '*', schema: 'public', table: 'survey_day_responses',
-        filter: `user_id=eq.${user.id}`,
-      }, async () => {
-        const { data } = await fetchUserSurveyRow(user?.id, currentWeekId)
-        if (data) setExistingData(data)
-      })
+    const ch = supabase.channel(`survey-sync-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses', filter: `user_id=eq.${user.id}` },
+        async () => {
+          const { data } = await fetchUserSurveyRow(user?.id, currentWeekId)
+          if (data) setExistingData(data)
+        })
       .subscribe()
-    return () => { supabase.removeChannel(ch) }
+    return () => supabase.removeChannel(ch)
   }, [user?.id, currentWeekId])
 
-  const populateFromExisting = useCallback(() => {
-    const sourceData = existingData
-    if (!sourceData) {
-      setWantsFood(null)
-      wantsFoodRef.current = null
-      setResponses({})
-      return
-    }
-    const statusKey = `${dayKey}_${mealKey}_status`
-    const status = sourceData[statusKey]
-    if (status) {
-      wantsFoodRef.current = status === 'Applied'
-      if (status === 'Applied') {
-        setWantsFood(true)
-        const defMenu = DEFAULT_MENU[currentDayLower] || {}
-        const defMealDishes = defMenu[currentMeal]
-          ? (Array.isArray(defMenu[currentMeal]) ? defMenu[currentMeal] : String(defMenu[currentMeal]).split(',').map(s => s.trim()).filter(Boolean))
-          : []
-        const live = (menu[currentMeal] && menu[currentMeal].length > 0) ? menu[currentMeal] : []
-        const activeDishes = live.length > 0 ? live : getSlotDishes(sourceData, currentDay, currentMeal, defMealDishes)
-        const dishRes = {}
-        activeDishes.forEach((dish, idx) => {
-          const val = sourceData[`${dayKey}_${mealKey}_dish_${idx + 1}`]
-          if (val !== undefined && val !== null) {
-            dishRes[dish] = normalizeDishValue(val, dish, isCountInput(appSettings, currentDay, currentMeal, idx))
-          } else {
-            if (isRotiItem(dish)) dishRes[dish] = 'yes'
-            else if (isCountInput(appSettings, currentDay, currentMeal, idx)) dishRes[dish] = { status: 'yes', value: 1 }
-            else dishRes[dish] = 100
-          }
-        })
-        setResponses(dishRes)
-      } else {
-        setWantsFood(false)
-        setResponses({})
-      }
-    } else {
-      setWantsFood(null)
-      wantsFoodRef.current = null
-      setResponses({})
-    }
-  }, [existingData, dayKey, mealKey, currentDay, currentMeal, currentDayLower, menu, appSettings])
-
-  // editResponseMode is included so that entering edit mode on the SAME day the
-  // user is currently viewing still repopulates the saved values.
+  // ── Fresh form, sequential flow ──
+  // Previous answers are NEVER prefilled — each day starts blank.
+  // On open, jump once to the first day that isn't fully answered yet,
+  // so the user fills Monday → Tuesday → … in order (Save & Continue
+  // only unlocks when the current day's Lunch + Dinner are complete).
+  const positionedRef = useRef(false)
   useEffect(() => {
-    if (dataLoaded) {
-      populateFromExisting()
-    }
-  }, [currentDayIndex, currentMeal, dataLoaded, editResponseMode, populateFromExisting])
+    if (!dataLoaded || positionedRef.current || initialDay) return
+    positionedRef.current = true
+    const firstIncomplete = DAYS.findIndex(d => {
+      const dk = d.substring(0, 3).toLowerCase()
+      return !existingData?.[`${dk}_l_status`] || !existingData?.[`${dk}_d_status`]
+    })
+    if (firstIncomplete !== -1) setCurrentDayIndex(firstIncomplete)
+  }, [dataLoaded, existingData, initialDay])
 
-  // ── Deep-link: when opened from a Survey-page day card, scope the modal to
-  // that day — first a Lunch/Dinner picker, then the chosen meal's editor. ──
+  // ── Show intro screen for first-timers ──
   useEffect(() => {
-    if (!dataLoaded) return
-    if (!initialDay) return
-    const idx = DAYS.indexOf(initialDay)
-    if (idx === -1) return
-    setCurrentDayIndex(idx)
-    setViewDay(initialDay)
-    if (initialMeal) {
-      setCurrentMeal(initialMeal)
-      setMealPicked(true)
-      if (surveySubmitted && (wholeWeekEditable || isMealEditable)) setEditResponseMode(true)
-    } else {
-      setMealPicked(false)
-      setEditResponseMode(false)
-    }
-  }, [dataLoaded, initialDay, initialMeal, surveySubmitted, wholeWeekEditable, isMealEditable])
-
-  // Day-scoped picker: choosing a meal opens that meal's dish-card editor.
-  const handlePickMeal = (meal) => {
-    setCurrentMeal(meal)
-    setMealPicked(true)
-    if (surveySubmitted && (wholeWeekEditable || canEditMeal(currentDay, currentWeekId, meal, appSettings))) setEditResponseMode(true)
-  }
-
-  // ── Show intro once per session if not submitted and no existing partial data ──
-  useEffect(() => {
-    if (initialDay) return  // deep-linked from a day card — go straight to that day
-    if (dataLoaded && !surveySubmitted && !existingData) {
-      const seen = localStorage.getItem('almawaid_survey_intro_seen')
-      if (!seen) {
-        setShowIntro(true)
-      }
-    }
+    if (initialDay || !dataLoaded || surveySubmitted || existingData) return
+    if (!localStorage.getItem('almawaid_survey_intro_seen')) setShowIntro(true)
   }, [dataLoaded, surveySubmitted, existingData, initialDay])
-  // Mark intro as seen when user starts survey
-  const handleStartSurvey = useCallback(() => {
-    try { localStorage.setItem('almawaid_survey_intro_seen', '1') } catch { return }
+
+  const handleStartSurvey = () => {
+    try { localStorage.setItem('almawaid_survey_intro_seen', '1') } catch { /* ignore */ }
     setShowIntro(false)
-  }, [])
-
-  // ── Restore the in-progress draft (fill flow only) ──
-  // Restores the slot the user left off on, even when earlier slots are already
-  // saved — only when that slot itself has no saved status yet.
-  // ── Restore from Supabase (no localStorage drafts) ──
-  useEffect(() => {
-    if (!dataLoaded) return
-    // No localStorage drafts — values come from existingData via populateFromExisting
-    initialLoadRef.current = false
-  }, [dataLoaded])
-
-  // ── Explicit save only ──
-  // The fill flow saves ONLY when the user taps "Save & Continue" / "Previous"
-  // or "Submit Weekly Survey". There is no background auto-save, so nothing is
-  // committed to the database (and no "Saving…" indicator flashes) until the
-  // user acts — the form never skips ahead on its own.
-
-  // ── Auto-save responses to localStorage as draft (fill flow only) ──
-  // While editing a submitted survey we must NOT overwrite the in-progress fill
-  // draft — post-submit edits are only persisted via the "Save Edit" button.
-  // The draft also stores wantsFood + the slot, so a stray close (✕/Escape)
-  // before "Save & Continue" never erases the slot the user was filling.
-  useEffect(() => {
-    if (wantsFood === null && Object.keys(responses).length === 0) return
-    if (initialLoadRef?.current) return
-    if (editResponseMode) return
-    const timer = setTimeout(() => {
-      // Drafts stored in Supabase — no localStorage auto-save needed
-    }, 800)
-    return () => clearTimeout(timer)
-  }, [responses, wantsFood, currentDay, currentMeal, editResponseMode])
-
-  // ── ALERT when not all dishes are selected / navigation guards ──
-  const guardAnswered = useCallback(() => {
-    if (wantsFood === true && !allDishesAnswered) {
-      window.alert('⚠️ Please answer all dishes above before moving on. Every dish needs your selection.')
-      return false
-    }
-    return true
-  }, [wantsFood, allDishesAnswered])
-
-  const saveCurrentIfNeeded = useCallback(async () => {
-    // Locked slots (edit window closed) can't be changed, and post-submit edit
-    // mode only persists via the explicit "Save Edit" button — never auto-save
-    // while just navigating between menus.
-    const curWants = wantsFoodRef.current !== null ? wantsFoodRef.current : wantsFood
-    if (curWants === null || loading || slotLocked || editResponseMode) return null
-    return saveCurrentSlot()
-  }, [wantsFood, loading, slotLocked, editResponseMode])
-
-  const moveToSlot = (slot, dir) => {
-    if (!slot) return
-    setAnimatingDayDir(dir)
-    setCurrentDayIndex(DAYS.indexOf(slot.day))
-    setCurrentMeal(slot.meal)
-    setViewDay(slot.day)
-    setWantsFood(null)
-    wantsFoodRef.current = null
-    setResponses({})
-    setTimeout(() => setAnimatingDayDir(null), 350)
+    if (user?.id && currentWeekId) beginSurvey(user.id, currentWeekId)
+    setCurrentDayIndex(0)
   }
 
-  const goToPrev = async () => {
-    if (currentSlot === 0) return
-    if (!slotLocked && !editResponseMode && !guardAnswered()) return
-    await saveCurrentIfNeeded()
-    // Post-submit edit mode keeps editing the previous slot; fill/browse moves
-    // plainly (lock guards are skipped so saved slots stay readable).
-    setEditResponseMode(editResponseMode)
-    if (currentSlot > 0) {
-      moveToSlot(slotList[currentSlot - 1], 'left')
-    }
-  }
-
-  const goToNext = async () => {
-    if (isLast) return
-    if (!slotLocked && !editResponseMode && !guardAnswered()) return
-    const saveResult = await saveCurrentIfNeeded()
-    const latestData = saveResult?.refreshed || existingData
-    // Day-card gate: the current day's card must have BOTH meals answered and
-    // synced before advancing to the next day — no skipping half-finished days.
-    if (!slotLocked && !editResponseMode && currentMeal === 'dinner') {
-      const next = slotList[currentSlot + 1]
-      if (next && next.day !== currentDay) {
-        const dayHasLunch = slotList.some(s => s.day === currentDay && s.meal === 'lunch')
-        const dayHasDinner = slotList.some(s => s.day === currentDay && s.meal === 'dinner')
-        if (dayHasLunch && dayHasDinner) {
-          const dk = currentDay.substring(0, 3).toLowerCase()
-          const lunchStatus = latestData?.[`${dk}_l_status`]
-          const dinnerStatus = latestData?.[`${dk}_d_status`]
-          if (!lunchStatus || !dinnerStatus) {
-            window.alert("⚠️ Please complete this day's card — both Lunch and Dinner must be answered before moving on.")
-            return
-          }
-        }
-      }
-    }
-    // Post-submit edit mode keeps editing the previous slot; fill/browse moves
-    // plainly (lock guards are skipped so saved slots stay readable).
-    setEditResponseMode(editResponseMode)
-    if (currentSlot < slotList.length - 1) {
-      moveToSlot(slotList[currentSlot + 1], 'right')
-    }
-  }
-
-  const buildUpdateObj = (isEdit = false) => {
-    const isWants = wantsFoodRef.current !== null ? wantsFoodRef.current : wantsFood
-    const status = isWants ? 'Applied' : 'Skipped'
-    const targetDishes = dishes && dishes.length > 0 ? dishes : Object.keys(responses)
-    const updateObj = {
+  // ── Build payload for saving ──
+  const buildPayload = useCallback(() => {
+    const lStatus = lunchWantsFood === true ? 'Applied' : lunchWantsFood === false ? 'Skipped' : null
+    const dStatus = dinnerWantsFood === true ? 'Applied' : dinnerWantsFood === false ? 'Skipped' : null
+    const payload = {
       user_id: user?.id, week_id: currentWeekId, day: dayKey,
       thali_number: userData.thali_no, email: userData.email || '',
       updated_at: new Date().toISOString(),
-      dish_snapshot: mergeDishSnapshot(existingData, currentDay, currentMeal, targetDishes),
     }
-    updateObj[`${dayKey}_${mealKey}_status`] = status
-    const currentEditCount = existingData?.edit_metadata?.[`${dayKey}_${mealKey}`] || 0
-    const editMeta = { ...(existingData?.edit_metadata || {}), [`${dayKey}_${mealKey}`]: currentEditCount + 1 }
-    // Display marker for the submitted-view badge — informational only, never a gate.
-    if (isEdit) editMeta[`${dayKey}_${mealKey}_edited`] = true
-    updateObj.edit_metadata = editMeta
-    if (status === 'Applied') {
-      targetDishes.forEach((dish, idx) => {
-        const val = responses[dish]
-        const isCount = isCountInput(appSettings, currentDay, currentMeal, idx)
+    let snap = mergeDishSnapshot(existingData, currentDay, 'lunch', lunchDishes)
+    snap = mergeDishSnapshot({ dish_snapshot: snap }, currentDay, 'dinner', dinnerDishes)
+    payload.dish_snapshot = snap
+    if (lStatus) payload[`${dayKey}_l_status`] = lStatus
+    if (dStatus) payload[`${dayKey}_d_status`] = dStatus
+    if (lStatus === 'Applied') {
+      lunchDishes.forEach((dish, idx) => {
+        const val = lunchResponses[dish]
         if (val !== undefined && val !== null) {
-          updateObj[`${dayKey}_${mealKey}_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCount)
+          payload[`${dayKey}_l_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCountInput(appSettings, currentDay, 'lunch', idx))
         }
       })
     }
-    return updateObj
-  }
+    if (dStatus === 'Applied') {
+      dinnerDishes.forEach((dish, idx) => {
+        const val = dinnerResponses[dish]
+        if (val !== undefined && val !== null) {
+          payload[`${dayKey}_d_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCountInput(appSettings, currentDay, 'dinner', idx))
+        }
+      })
+    }
+    return payload
+  }, [lunchWantsFood, dinnerWantsFood, user?.id, currentWeekId, dayKey, userData, existingData, currentDay, lunchDishes, dinnerDishes, lunchResponses, dinnerResponses, appSettings])
 
-  // Re-read the week's row after a write so every reader in the modal
-  // (day list, review, day-card gate) sees the freshly committed values.
-  const refetchExisting = async () => {
-    const { data: refreshed } = await fetchUserSurveyRow(user?.id, currentWeekId)
-    if (refreshed) setExistingData(refreshed)
-    return refreshed || null
-  }
-
-  const saveAndLockEdit = async () => {
-    if (wantsFoodRef.current === null && wantsFood === null) return
-    if (loading) return
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+  const saveCurrentDay = async () => {
+    if (loading) return false
+    if (lunchWantsFood === null && dinnerWantsFood === null) return true // nothing to save yet
     setLoading(true)
     try {
-      const { error } = await submitSurveyRow(buildUpdateObj(true))
+      const { error } = await submitSurveyRow(buildPayload())
       if (error) throw error
-      await refetchExisting()
-      setSyncMsg(`Synced ✓ ${dayKey} ${mealKey}`)
-      setEditResponseMode(false)
-      setViewDay(currentDay)
+      const { data: fresh } = await fetchUserSurveyRow(user?.id, currentWeekId)
+      if (fresh) setExistingData(fresh)
+      setSyncMsg(`Saved ${currentDayName}`)
+      return true
     } catch (err) {
-      console.error('Save edit error:', err)
-      setErrorToast(`Failed to save edit: ${err?.message || 'Please try again.'} Your answer is kept locally and the team has been notified.`)
-    } finally { setLoading(false) }
-  }
-
-  const saveCurrentSlot = async () => {
-    const curWants = wantsFoodRef.current !== null ? wantsFoodRef.current : wantsFood
-    if (curWants === null) return null
-    if (loading) return null
-    setLoading(true)
-    try {
-      const { error } = await submitSurveyRow(buildUpdateObj(false))
-      if (error) throw error
-      const refreshed = await refetchExisting()
-      setSyncMsg(`Synced ✓ ${dayKey} ${mealKey}`)
-      return { status, refreshed }
-    } catch (err) {
-      console.error('Save error:', err)
-      setErrorToast(`Failed to save: ${err?.message || 'Your draft is preserved locally.'} The team has been notified.`)
-      return null
-    } finally { setLoading(false) }
-  }
-
-  // ── DIRECT WEEKLY SUBMIT (no separate review screen) ──
-  const finalizeSubmit = async () => {
-    setLoading(true)
-    setErrorToast(null)
-    try {
-      // Survey submitted — survey_day_responses is the single source of truth
-      setSurveySubmitted(true)
-      setReviewMode(false)
-      setShowSuccess(true)
-      setTimeout(() => { setShowSuccess(false) }, 2400)
-    } catch (e) {
-      console.error('Confirm submit error:', e)
-      setErrorToast('Something went wrong. Please try again.')
+      setErrorToast(`Save failed: ${err?.message || 'Please try again.'}`)
+      return false
     } finally {
       setLoading(false)
     }
   }
 
+  // ── Lunch opt-in/skip handlers ──
+  // NOTE: opting in does NOT prefill any dish — user answers each dish fresh.
+  const handleOptInLunch = () => {
+    setLunchWantsFood(true)
+  }
+
+  const handleSkipLunch = () => {
+    setLunchWantsFood(false)
+    setLunchResponses({})
+    setTimeout(() => dinnerCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 180)
+  }
+
+  // ── Dinner opt-in/skip handlers ──
+  const handleOptInDinner = () => {
+    setDinnerWantsFood(true)
+  }
+
+  const handleSkipDinner = () => {
+    setDinnerWantsFood(false)
+    setDinnerResponses({})
+    setTimeout(() => bottomNavRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 180)
+  }
+
+  // ── Dish response handlers ──
+  const handleLunchDish = useCallback((dish, val) => {
+    setLunchResponses(prev => {
+      const next = { ...prev, [dish]: val }
+      // auto-scroll to dinner when lunch is complete
+      if (dinnerWantsFood === null) {
+        const done = lunchDishes.every((d, i) => isDishAnswered(d, next[d], isCountInput(appSettings, currentDay, 'lunch', i)))
+        if (done) setTimeout(() => dinnerCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 320)
+      }
+      return next
+    })
+  }, [lunchDishes, dinnerWantsFood, appSettings, currentDay, isDishAnswered])
+
+  const handleDinnerDish = useCallback((dish, val) => {
+    setDinnerResponses(prev => {
+      const next = { ...prev, [dish]: val }
+      // auto-scroll to save button when dinner is complete
+      const done = dinnerDishes.every((d, i) => isDishAnswered(d, next[d], isCountInput(appSettings, currentDay, 'dinner', i)))
+      if (done) setTimeout(() => bottomNavRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 320)
+      return next
+    })
+  }, [dinnerDishes, appSettings, currentDay, isDishAnswered])
+
+  // ── Select/clear all helpers ──
+  const selectAll = (meal) => {
+    const dishes = meal === 'lunch' ? lunchDishes : dinnerDishes
+    const res = {}
+    dishes.forEach((d, idx) => {
+      if (isRotiItem(d)) res[d] = 'yes'
+      else if (isCountInput(appSettings, currentDay, meal, idx)) {
+        const mx = snackDefaults?.[`dish_${idx + 1}`] ?? 99
+        res[d] = mx === 0 ? 'no' : { status: 'yes', value: 1 }
+      } else res[d] = 100
+    })
+    if (meal === 'lunch') {
+      setLunchResponses(prev => ({ ...prev, ...res }))
+      if (dinnerWantsFood === null) setTimeout(() => dinnerCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 250)
+    } else {
+      setDinnerResponses(prev => ({ ...prev, ...res }))
+      setTimeout(() => bottomNavRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 250)
+    }
+  }
+
+  const clearAll = (meal) => {
+    const dishes = meal === 'lunch' ? lunchDishes : dinnerDishes
+    const res = {}
+    dishes.forEach((d, idx) => {
+      if (isRotiItem(d)) res[d] = 'no'
+      else if (isCountInput(appSettings, currentDay, meal, idx)) res[d] = 'no'
+      else res[d] = 0
+    })
+    if (meal === 'lunch') setLunchResponses(prev => ({ ...prev, ...res }))
+    else setDinnerResponses(prev => ({ ...prev, ...res }))
+  }
+
+  // ── Navigation ──
+  const goToNextDay = async () => {
+    if (currentDayIndex >= DAYS.length - 1) return
+    if (!isDayComplete) { setErrorToast(`Complete both Lunch & Dinner for ${currentDayName} first.`); return }
+    await saveCurrentDay()
+    setCurrentDayIndex(prev => prev + 1)
+    setLunchWantsFood(null); setDinnerWantsFood(null)
+    setLunchResponses({}); setDinnerResponses({})
+    setTimeout(() => modalTopRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+  }
+
+  const goToPrevDay = async () => {
+    if (currentDayIndex <= 0) return
+    if (isDayComplete) await saveCurrentDay()
+    setCurrentDayIndex(prev => prev - 1)
+    setLunchWantsFood(null); setDinnerWantsFood(null)
+    setLunchResponses({}); setDinnerResponses({})
+    setTimeout(() => modalTopRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+  }
+
+  // ── Submit (Saturday) ──
   const handleSubmitWeekly = async () => {
-    // From the review screen there is no single "current" slot to validate —
-    // the missing-slot check below catches anything still unfilled.
-    if (!reviewMode) {
-      if (wantsFood === null) {
-        setSubmitResult({ type: 'missing', title: '⚠️ This slot is not answered', message: 'Please choose Yes or No for this meal before submitting.' })
-        return
-      }
-      if (wantsFood === true && !allDishesAnswered) {
-        setSubmitResult({ type: 'missing', title: '⚠️ Not every dish is answered', message: 'Please answer all the dishes for this meal before submitting your weekly survey.' })
-        return
-      }
-    }
-    await saveCurrentSlot()
-    let fresh
-    try {
-      const { data: normalData } = await fetchUserSurveyRow(user?.id, currentWeekId)
-      fresh = normalData
-    } catch (e) {
-      console.error('Re-fetch error:', e)
-      setSubmitResult({ type: 'error', title: '❌ Something went wrong', message: e?.message || 'Could not verify your saved answers. Your answers are kept locally — please try again.' })
-      return
-    }
+    if (!isDayComplete) { setErrorToast(`Complete both Lunch & Dinner for ${currentDayName} first.`); return }
+    const saved = await saveCurrentDay()
+    if (!saved) return
+    // Verify all 12 slots are filled
+    const { data: fresh } = await fetchUserSurveyRow(user?.id, currentWeekId)
     if (fresh) setExistingData(fresh)
     const missing = slotList.filter(slot => {
       const dk = slot.day.substring(0, 3).toLowerCase()
       const mk = slot.meal === 'lunch' ? 'l' : 'd'
-      return !(fresh?.[`${dk}_${mk}_status`])
+      return !fresh?.[`${dk}_${mk}_status`]
     })
     if (missing.length > 0) {
-      setSubmitResult({
-        type: 'missing',
-        title: '⚠️ Survey not fully filled',
-        message: `Your survey is missing ${missing.length} slot${missing.length === 1 ? '' : 's'} before it can be submitted. Fill them first, then tap Submit again.`,
-        missingSlots: missing,
-        filled: slotList.length - missing.length,
-        total: slotList.length,
-      })
+      setSubmitResult({ type: 'missing', title: '⚠️ Survey incomplete', message: `${missing.length} slot${missing.length > 1 ? 's' : ''} still need filling.`, missingSlots: missing })
       return
     }
+    setLoading(true)
     try {
-      await finalizeSubmit()
-    } catch (e) {
-      console.error('Confirm submit error:', e)
-      setSubmitResult({ type: 'error', title: '❌ Something went wrong', message: e?.message || 'Your survey could not be submitted. Your answers are kept locally — please try again.' })
-    }
+      setSurveySubmitted(true)
+      setShowSuccess(true)
+      setTimeout(() => { setShowSuccess(false); onClose() }, 2600)
+    } finally { setLoading(false) }
   }
 
-  // ── REVIEW STEP: reached from the final slot (Saturday dinner). Saves the
-  // current slot first, then shows the day list with ✏️ Edit so the user can
-  // go back and review/change any day. Submit lives on the review screen. ──
-  const openReview = async () => {
-    if (loading) return
-    if (!guardAnswered()) return
-    await saveCurrentSlot()
-    setReviewMode(true)
-    setEditResponseMode(false)
-  }
-
-  // Return from the review screen back to the last slot of the fill flow.
-  const backToFilling = () => {
-    setReviewMode(false)
-    setEditResponseMode(false)
-    const last = slotList[slotList.length - 1]
-    setCurrentDayIndex(DAYS.indexOf(last.day))
-    setCurrentMeal(last.meal)
-  }
-
-  // ── BATCH SELECT / CLEAR ALL ──
-  const selectAllDishes = useCallback(() => {
-    const newResponses = {}
-    dishes.forEach((dish, idx) => {
-      if (isRotiItem(dish)) {
-        newResponses[dish] = 'yes'
-      } else if (isCountInput(appSettings, currentDay, currentMeal, idx)) {
-        newResponses[dish] = { status: 'yes', value: Math.min(snackDefaults?.[`dish_${idx + 1}`] ?? 1, 1) }
-      } else {
-        newResponses[dish] = 100
-      }
-    })
-    setResponses(prev => ({ ...prev, ...newResponses }))
-  }, [dishes, appSettings, currentDay, currentMeal, snackDefaults])
-
-  const clearAllDishes = useCallback(() => {
-    const newResponses = {}
-    dishes.forEach((dish, idx) => {
-      if (isRotiItem(dish)) {
-        newResponses[dish] = 'no'
-      } else if (isCountInput(appSettings, currentDay, currentMeal, idx)) {
-        newResponses[dish] = 'no'
-      } else {
-        newResponses[dish] = 0
-      }
-    })
-    setResponses(prev => ({ ...prev, ...newResponses }))
-  }, [dishes, appSettings, currentDay, currentMeal])
-
-  const [animatingDayDir, setAnimatingDayDir] = useState(null)
-
-  // ── DAY MEAL PICKER: shown when a Survey-page day card is tapped. Only this
-  // day's two meals are offered — picking one opens its dish-card editor. ──
-  const MealPicker = () => {
-    const meals = ['lunch', 'dinner'].filter(m => slotList.some(s => s.day === currentDay && s.meal === m))
-    return (
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <div style={{
-            width: 46, height: 46, borderRadius: 15, flexShrink: 0,
-            background: THEME.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 20, fontWeight: 800, color: '#000', fontFamily: "'Playfair Display',serif",
-            boxShadow: `0 8px 20px ${THEME.accentBg}`,
-          }}>
-            {currentDay.charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: THEME.text, fontFamily: "'Playfair Display',serif", textTransform: 'capitalize' }}>{currentDay}</div>
-            <div style={{ fontSize: 11, color: THEME.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 2 }}>Choose a meal to plan or edit</div>
-          </div>
-        </div>
-
-        {meals.length === 0 ? (
-          <div style={{ padding: 18, borderRadius: 14, background: THEME.cardActive, border: `1px solid ${THEME.border}`, textAlign: 'center' }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: THEME.textSub, fontFamily: "'DM Sans',sans-serif" }}>🔒 No meals granted</div>
-            <div style={{ fontSize: 12, color: THEME.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 4 }}>This day is outside the access granted to you by the admin.</div>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {meals.map(m => {
-              const dk = currentDay.substring(0, 3).toLowerCase()
-              const mk = m === 'lunch' ? 'l' : 'd'
-              const mStatus = existingData?.[`${dk}_${mk}_status`]
-              const applied = mStatus === 'Applied'
-              const skipped = mStatus === 'Skipped'
-              const editableMeal = canEditMeal(currentDay, currentWeekId, m, appSettings, user?.id)
-              const locked = surveySubmitted ? (!wholeWeekEditable && !editableMeal) : (!surveyOpen && !editableMeal)
-              const statusColor = applied ? THEME.yesColor : skipped ? THEME.noColor : THEME.textSub
-              const statusLabel = applied ? 'Saved' : skipped ? 'Skipped' : 'Not filled'
-              return (
-                <button
-                  key={m}
-                  onClick={() => handlePickMeal(m)}
-                  style={{
-                    width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                    padding: 16, borderRadius: 16, cursor: 'pointer',
-                    background: THEME.rowBg,
-                    border: `1.5px solid ${THEME.border}`,
-                    color: THEME.text, textAlign: 'left', fontFamily: "'DM Sans',sans-serif",
-                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = THEME.accent; e.currentTarget.style.background = THEME.rowBgHover; e.currentTarget.style.transform = 'translateY(-1px)' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = THEME.border; e.currentTarget.style.background = THEME.rowBg; e.currentTarget.style.transform = 'translateY(0)' }}
-                >
-                  <div style={{
-                    width: 46, height: 46, borderRadius: 14, flexShrink: 0,
-                    background: THEME.accentGrad,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 19,
-                    boxShadow: `0 8px 20px ${THEME.accentBg}`,
-                  }}>
-                    {m === 'lunch' ? '☀️' : '🌙'}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 800, textTransform: 'capitalize', fontFamily: "'DM Sans',sans-serif" }}>{m}</div>
-                    <div style={{ fontSize: 11, color: statusColor, fontWeight: 800, marginTop: 3, fontFamily: "'DM Sans',sans-serif" }}>
-                      {applied ? '✓' : skipped ? '✕' : '○'} {statusLabel}
-                    </div>
-                  </div>
-                  <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4, color: THEME.accent, fontSize: 11.5, fontWeight: 900, fontFamily: "'DM Sans',sans-serif" }}>
-                    {locked ? 'View' : 'Edit'} <ChevronRight size={15} />
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // ── LUNCH/DINNER selector for the day currently being edited ──
-  const MealSwitcher = () => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
-      <div style={{ fontSize: 10, fontWeight: 800, color: THEME.textSub, textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: "'DM Sans',sans-serif", whiteSpace: 'nowrap' }}>
-        {initialDay ? 'Meal' : 'Editing'}
-      </div>
-      <div style={{ flex: 1, display: 'flex', gap: 6, padding: 4, borderRadius: 14, background: THEME.softBg, border: `1px solid ${THEME.softBorder}` }}>
-        {['lunch', 'dinner'].filter(m => slotList.some(s => s.day === currentDay && s.meal === m)).map(m => {
-          const isActive = m === currentMeal
-          const dk = currentDay.substring(0, 3).toLowerCase()
-          const mk = m === 'lunch' ? 'l' : 'd'
-          const mStatus = existingData?.[`${dk}_${mk}_status`]
-          const mApplied = mStatus === 'Applied'
-          const mSkipped = mStatus === 'Skipped'
-          return (
-            <button
-              key={m}
-              onClick={() => { setCurrentMeal(m); setWantsFood(null); wantsFoodRef.current = null; setResponses({}) }}
-              style={{
-                flex: 1, padding: '9px 12px', borderRadius: 10,
-                border: `1.5px solid ${isActive ? THEME.accent : 'transparent'}`,
-                background: isActive ? `linear-gradient(135deg, ${THEME.accentBg}, rgba(212,175,55,0.05))` : 'transparent',
-                color: isActive ? THEME.accent : THEME.textSub,
-                fontSize: 12, fontWeight: 800, cursor: 'pointer',
-                fontFamily: "'DM Sans',sans-serif", transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                boxShadow: isActive ? `0 4px 12px ${THEME.accentBg}` : 'none',
-              }}
-            >
-              {m === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}
-              {mApplied && <span style={{ fontSize: 9, color: THEME.yesColor }}>✓</span>}
-              {mSkipped && <span style={{ fontSize: 9, color: THEME.noColor }}>✕</span>}
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-
-  // ── DAY LIST: vertical rows (Monday on top, Tuesday below, …) each with its
-  // own status and an Edit option. Editing is live while the weekly survey window
-  // is open; afterwards each meal follows the daily lunch/dinner edit windows. ──
-  const DayList = () => (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: THEME.textSub, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span>📅 Your Week — tap Edit to change a day</span>
-        <span style={{ fontSize: 9, color: THEME.accent, fontWeight: 700 }}>✏️ Edit</span>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {dayIndices.map(idx => {
-          const day = DAYS[idx]
-          const summary = dayStatusSummary[idx]
-          const isComplete = summary === 'complete'
-          const isPartial = summary === 'partial'
-          const isActive = day === viewDay
-          const editable = dayCanBeEdited(day)
-          const firstSlot = slotList.find(s => s.day === day) || slotList[0]
-          const mealsInFlow = slotList.filter(s => s.day === day).length
-          const statusIcon = isComplete ? '✓✓' : isPartial ? '◐' : '○'
-          const statusColor = isComplete ? THEME.yesColor : isPartial ? '#FF9800' : THEME.textSub
-          return (
-            <div
-              key={day}
-              onClick={() => setViewDay(day)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 9, padding: '9px 11px',
-                borderRadius: 12, cursor: 'pointer',
-                background: isActive ? 'linear-gradient(135deg, rgba(212,175,55,0.12), rgba(212,175,55,0.03))' : THEME.card,
-                border: `1.5px solid ${isActive ? THEME.accent : THEME.border}`,
-                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                boxShadow: isActive ? `0 3px 12px ${THEME.accentBg}` : 'none',
-              }}
-            >
-              <div style={{
-                width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-                background: isActive ? THEME.accentBg : THEME.cardActive,
-                border: `1px solid ${isActive ? THEME.accent : THEME.border}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 14, fontWeight: 800, color: isActive ? THEME.accent : THEME.textSub,
-                fontFamily: "'Playfair Display',serif",
-              }}>
-                {day.charAt(0)}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: THEME.text, fontFamily: "'Playfair Display',serif" }}>{day}</div>
-                <div style={{ fontSize: 11, color: THEME.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ color: statusColor, fontWeight: 800 }}>{statusIcon}</span>
-                  <span>{isComplete ? (mealsInFlow > 1 ? 'Both meals saved' : 'Meal saved') : isPartial ? 'Partially filled' : 'Not filled'}</span>
-                </div>
-              </div>
-              {editable ? (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    startEditSlot(day, firstSlot?.meal || 'lunch')
-                  }}
-                  style={{
-                    padding: '8px 14px', borderRadius: 10, flexShrink: 0,
-                    border: `1.5px solid ${THEME.accent}`, background: THEME.accentBg, color: THEME.accent,
-                    fontSize: 11.5, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif",
-                    transition: 'all 0.2s',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = THEME.accentGrad; e.currentTarget.style.color = '#000' }}
-                  onMouseLeave={e => { e.currentTarget.style.background = THEME.accentBg; e.currentTarget.style.color = THEME.accent }}
-                >✏️ Edit</button>
-              ) : (
-                <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                  <div style={{
-                    padding: '8px 12px', borderRadius: 10,
-                    border: `1px solid ${THEME.border}`, background: THEME.softBg,
-                    color: THEME.textSub, fontSize: 10.5, fontWeight: 700, fontFamily: "'DM Sans',sans-serif",
-                    display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap',
-                  }}>
-                    🔒 Window closed
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-      <div style={{ marginTop: 10, fontSize: 10.5, color: THEME.textSub, fontFamily: "'DM Sans',sans-serif", lineHeight: 1.5, opacity: 0.9 }}>
-        {getWindowHint()}
-      </div>
-    </div>
-  )
-
-  const [animatingDish, setAnimatingDish] = useState(null)
-  const [, setAnimatingOpt] = useState(null)
-
-  const handleDishResponse = useCallback((dish, value) => {
-    setAnimatingDish(dish)
-    setAnimatingOpt(value)
-    setTimeout(() => setAnimatingDish(null), 400)
-    setTimeout(() => setAnimatingOpt(null), 600)
-    setResponses(prev => ({ ...prev, [dish]: value }))
-  }, [])
-
-  const DishSelector = ({ dish, idx, maxCount }) => {
-    const isRoti = isRotiItem(dish)
-    const isCount = !isRoti && isCountInput(appSettings, currentDay, currentMeal, idx)
-    const resp = responses[dish]
-    const isAnimating = animatingDish === dish
-
-    // ── Premium selected-state helpers ──
-    const optGrad = (color) => `linear-gradient(145deg, ${color}2e 0%, ${color}0f 55%, ${color}05 100%)`
-    const optShadow = (color) => `0 6px 20px ${color}40, inset 0 1px 0 rgba(255,255,255,0.12)`
-    const sheen = (
-      <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '52%', background: 'linear-gradient(180deg, rgba(255,255,255,0.16), transparent)', pointerEvents: 'none', borderRadius: 'inherit' }} />
-    )
-    const checkBadge = (color, size = 18) => (
-      <span style={{
-        position: 'absolute', top: 5, right: 5, width: size, height: size, borderRadius: '50%',
-        background: color, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        boxShadow: `0 2px 10px ${color}70`, zIndex: 2,
-        animation: 'surveyBadgePop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)',
-      }}>
-        <span style={{ fontSize: size * 0.62, fontWeight: 900, color: '#0d0d1a', lineHeight: 1 }}>✓</span>
-      </span>
-    )
-    const statusPill = (label, color) => (
-      <span style={{
-        fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em',
-        padding: '3px 10px', borderRadius: 100, whiteSpace: 'nowrap',
-        background: `${color}1a`, color,
-        border: `1px solid ${color}55`,
-        animation: 'surveyBadgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
-      }}>{label}</span>
-    )
-
-    if (isRoti) {
-      const sel = resp
-      const selColor = sel === 'yes' ? THEME.yesColor : sel === 'no' ? THEME.noColor : null
-      return (
-        <div style={{
-          marginBottom: 6, padding: '10px 12px', borderRadius: 12,
-          position: 'relative', overflow: 'hidden',
-          background: sel ? `linear-gradient(145deg, ${selColor}1a, ${THEME.card})` : THEME.card,
-          border: `1.5px solid ${sel ? selColor : THEME.border}`,
-          boxShadow: sel ? `0 6px 18px ${selColor}18` : 'none',
-          transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-          animation: isAnimating ? 'surveyPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
-        }}>
-          {sel && (
-            <div style={{ position: 'absolute', top: -20, right: -20, width: 90, height: 90, borderRadius: '50%', background: selColor, filter: 'blur(36px)', opacity: 0.14, pointerEvents: 'none' }} />
-          )}
-          <div style={{ position: 'relative', zIndex: 1 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: THEME.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</div>
-              {sel && statusPill(sel === 'yes' ? '✅ Selected' : '❌ Skipped', selColor)}
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {['yes', 'no'].map(opt => {
-                const isSelected = sel === opt
-                const isYes = opt === 'yes'
-                const color = isYes ? THEME.yesColor : THEME.noColor
-                return (
-                  <button
-                    key={opt}
-                    onClick={() => handleDishResponse(dish, opt)}
-                    style={{
-                      flex: 1, padding: '13px 8px', borderRadius: 12,
-                      border: `1.5px solid ${isSelected ? color : THEME.border}`,
-                      background: isSelected ? optGrad(color) : 'transparent',
-                      color: isSelected ? color : THEME.textSub,
-                      fontSize: 13, fontWeight: 800, cursor: 'pointer',
-                      fontFamily: "'DM Sans',sans-serif",
-                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                      transform: isSelected ? 'scale(1.03) translateY(-1px)' : 'scale(1)',
-                      boxShadow: isSelected ? optShadow(color) : 'none',
-                      letterSpacing: '0.02em',
-                      position: 'relative',
-                      overflow: 'hidden',
-                    }}
-                    onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.background = `${color}0d`; e.currentTarget.style.borderColor = `${color}55` } }}
-                    onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = THEME.border } }}
-                  >
-                    {isSelected && sheen}
-                    {isSelected && checkBadge(color)}
-                    {opt === 'yes' ? '✅ Yes, please' : '❌ No, skip'}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        </div>
-      )
-    }
-
-    if (isCount) {
-      const isYes = resp && resp.status === 'yes'
-      const isSkipped = resp === 'no'
-      const value = resp?.value || 0
-      const maxVal = maxCount != null ? maxCount : 99
-      const atMax = value >= maxVal
-      const showToggle = resp === undefined || resp === null
-      const selColor = isYes ? THEME.yesColor : isSkipped ? THEME.noColor : null
-      return (
-        <div style={{
-          marginBottom: 6, padding: '10px 12px', borderRadius: 12,
-          position: 'relative', overflow: 'hidden',
-          background: selColor ? `linear-gradient(145deg, ${selColor}1a, ${THEME.card})` : THEME.card,
-          border: `1.5px solid ${selColor || THEME.border}`,
-          boxShadow: selColor ? `0 6px 18px ${selColor}18` : 'none',
-          transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-          animation: isAnimating ? 'surveyPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
-        }}>
-          {selColor && (
-            <div style={{ position: 'absolute', top: -20, right: -20, width: 90, height: 90, borderRadius: '50%', background: selColor, filter: 'blur(36px)', opacity: 0.14, pointerEvents: 'none' }} />
-          )}
-          <div style={{ position: 'relative', zIndex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: THEME.text, marginBottom: 8, fontFamily: "'DM Sans',sans-serif", display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-              <span>{dish}</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {isYes && statusPill(`✅ ${value} ${value === 1 ? 'person' : 'persons'}`, THEME.yesColor)}
-                {isSkipped && statusPill('❌ Skipped', THEME.noColor)}
-                {maxCount != null && <span style={{ fontSize: 10, color: THEME.textSub, fontWeight: 700, background: THEME.cardActive, padding: '2px 8px', borderRadius: 6 }}>Max: {maxCount}</span>}
-              </span>
-            </div>
-            {showToggle ? (
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => handleDishResponse(dish, { status: 'yes', value: Math.min(maxVal, 1) })}
-                  style={{
-                    flex: 1, padding: '12px 8px', borderRadius: 12,
-                    border: `1.5px solid ${THEME.yesColor}`, background: optGrad(THEME.yesColor), color: THEME.yesColor,
-                    fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif",
-                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                    boxShadow: `0 6px 18px ${THEME.yesColor}30`,
-                    position: 'relative', overflow: 'hidden',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.02)' }}
-                  onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
-                >
-                  {sheen}
-                  ✅ Yes
-                </button>
-                <button onClick={() => handleDishResponse(dish, 'no')}
-                  style={{
-                    flex: 1, padding: '12px 8px', borderRadius: 12,
-                    border: `1.5px solid ${THEME.noColor}`, background: optGrad(THEME.noColor), color: THEME.noColor,
-                    fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif",
-                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                    position: 'relative', overflow: 'hidden',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.02)' }}
-                  onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
-                >
-                  {sheen}
-                  ❌ No
-                </button>
-              </div>
-            ) : isSkipped ? (
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <div style={{
-                  padding: '8px 16px', borderRadius: 10, background: optGrad(THEME.noColor),
-                  border: `1px solid ${THEME.noColor}50`, color: THEME.noColor,
-                  fontSize: 13, fontWeight: 800, fontFamily: "'DM Sans',sans-serif",
-                }}>❌ Skipped</div>
-                <button onClick={() => handleDishResponse(dish, { status: 'yes', value: Math.min(maxVal, 1) })}
-                  style={{
-                    marginLeft: 'auto', padding: '10px 20px', borderRadius: 12,
-                    border: `1.5px solid ${THEME.accent}`, background: `linear-gradient(145deg, ${THEME.accent}22, transparent)`,
-                    color: THEME.accent, fontSize: 13, fontWeight: 800,
-                    cursor: 'pointer', fontFamily: "'DM Sans',sans-serif",
-                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                    boxShadow: `0 4px 14px ${THEME.accent}22`,
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = THEME.accentGrad; e.currentTarget.style.color = '#000' }}
-                  onMouseLeave={e => { e.currentTarget.style.background = `linear-gradient(145deg, ${THEME.accent}22, transparent)`; e.currentTarget.style.color = THEME.accent }}
-                >✅ Add back</button>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  background: `linear-gradient(145deg, ${THEME.yesColor}1f, ${THEME.card})`, borderRadius: 14,
-                  padding: '6px 8px', border: `1px solid ${THEME.yesColor}40`,
-                  boxShadow: `0 4px 16px ${THEME.yesColor}18`,
-                }}>
-                  <button onClick={() => handleDishResponse(dish, { status: 'yes', value: Math.max(0, value - 1) })}
-                    style={{
-                      width: 48, height: 48, borderRadius: 12,
-                      border: `1px solid ${THEME.yesColor}50`, background: THEME.inputBg,
-                      color: THEME.text, cursor: 'pointer', fontSize: 26, fontWeight: 800,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      transition: 'all 0.2s', fontFamily: 'inherit', touchAction: 'manipulation',
-                      minWidth: 48, WebkitTapHighlightColor: 'transparent',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.background = THEME.yesBg }}
-                    onMouseLeave={e => { e.currentTarget.style.background = THEME.inputBg }}
-                  >−</button>
-                  <div style={{ textAlign: 'center', minWidth: 60 }}>
-                    <div style={{ fontSize: 30, fontWeight: 900, color: THEME.yesColor, lineHeight: 1, fontFamily: "'DM Sans',sans-serif", textShadow: `0 0 14px ${THEME.yesColor}66` }}>{value}</div>
-                    <div style={{ fontSize: 9, color: THEME.textSub, fontWeight: 700, fontFamily: "'DM Sans',sans-serif" }}>{value === 1 ? 'person' : 'persons'}</div>
-                  </div>
-                  <button onClick={() => { if (!atMax) handleDishResponse(dish, { status: 'yes', value: Math.min(maxVal, value + 1) }) }}
-                    style={{
-                      width: 48, height: 48, borderRadius: 12,
-                      border: `1px solid ${atMax ? THEME.noColor + '40' : THEME.yesColor + '50'}`, background: THEME.inputBg,
-                      color: atMax ? THEME.textSub : THEME.text,
-                      cursor: atMax ? 'not-allowed' : 'pointer', fontSize: 26, fontWeight: 800,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      opacity: atMax ? 0.4 : 1, transition: 'all 0.2s', fontFamily: 'inherit',
-                      touchAction: 'manipulation', minWidth: 48, WebkitTapHighlightColor: 'transparent',
-                    }}
-                    onMouseEnter={e => { if (!atMax) e.currentTarget.style.background = THEME.yesBg }}
-                    onMouseLeave={e => { if (!atMax) e.currentTarget.style.background = THEME.inputBg }}
-                  >+</button>
-                </div>
-                <button onClick={() => handleDishResponse(dish, 'no')}
-                  style={{
-                    padding: '10px 18px', borderRadius: 12, border: `1.5px solid ${THEME.noColor}50`,
-                    background: 'transparent', color: THEME.noColor,
-                    fontSize: 12, fontWeight: 800, cursor: 'pointer',
-                    fontFamily: "'DM Sans',sans-serif", transition: 'all 0.2s',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = THEME.noBg }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-                >❌ Skip</button>
-              </div>
-            )}
-          </div>
-        </div>
-      )
-    }
-
-    const pctColor = getPctColor(resp)
-    const hasResp = resp !== undefined && resp !== null
-    const selColor = pctColor || THEME.accent
-    return (
-      <div style={{
-        marginBottom: 6, padding: '10px 12px', borderRadius: 12,
-        position: 'relative', overflow: 'hidden',
-        background: hasResp ? `linear-gradient(145deg, ${selColor}1a, ${THEME.card})` : THEME.card,
-        border: `1.5px solid ${hasResp ? selColor : THEME.border}`,
-        boxShadow: hasResp ? `0 6px 18px ${selColor}18` : 'none',
-        transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-        animation: isAnimating ? 'surveyPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)' : undefined,
-      }}>
-        {hasResp && (
-          <div style={{ position: 'absolute', top: -20, right: -20, width: 90, height: 90, borderRadius: '50%', background: selColor, filter: 'blur(36px)', opacity: 0.14, pointerEvents: 'none' }} />
-        )}
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: THEME.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</div>
-            {hasResp && statusPill(`${resp}% selected`, selColor)}
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {[0, 25, 50, 75, 100].map(pct => {
-              const pc = getPctColor(pct)
-              const isSelected = resp === pct
-              const color = pc || THEME.accent
-              return (
-                <button
-                  key={pct}
-                  onClick={() => handleDishResponse(dish, pct)}
-                  style={{
-                    flex: 1, padding: '13px 4px', borderRadius: 12,
-                    border: `1.5px solid ${isSelected ? color : THEME.border}`,
-                    background: isSelected ? optGrad(color) : 'transparent',
-                    color: isSelected ? color : THEME.textSub,
-                    fontSize: 12, fontWeight: 800, cursor: 'pointer',
-                    fontFamily: "'DM Sans',sans-serif",
-                    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                    transform: isSelected ? 'scale(1.06) translateY(-1px)' : 'scale(1)',
-                    boxShadow: isSelected ? optShadow(color) : 'none',
-                    letterSpacing: '0.02em',
-                    position: 'relative',
-                    overflow: 'hidden',
-                  }}
-                  onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.background = `${color}0d`; e.currentTarget.style.borderColor = `${color}55` } }}
-                  onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = THEME.border } }}
-                >
-                  {isSelected && sheen}
-                  {pct === 0 ? '0%' : pct + '%'}
-                  {isSelected && checkBadge(color, 16)}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // ── SUBMITTED VIEW: days UI box + side edit response ──
-  const startEditSlot = (day, meal = 'lunch') => {
-    const idx = DAYS.indexOf(day)
-    if (idx !== -1) setCurrentDayIndex(idx)
-    setCurrentMeal(meal)
-    setViewDay(day)
-    setMealPicked(true)
-    setEditResponseMode(true)
-    setAnimatingDayDir(null)
-  }
-
-  const SubmittedView = () => (
-    <div>
-      <div style={{
-        padding: 18, borderRadius: 16, textAlign: 'center', marginBottom: 16,
-        background: 'linear-gradient(135deg, rgba(76,175,80,0.14), rgba(76,175,80,0.03))',
-        border: `1.5px solid #4CAF50`,
-        animation: 'surveyFadeIn 0.4s ease-out',
-      }}>
-        <div style={{ fontSize: 17, fontWeight: 800, color: '#4CAF50', marginBottom: 4, fontFamily: "'DM Sans',sans-serif" }}>
-          ✅ Weekly Survey Submitted
-        </div>
-        <div style={{ fontSize: 12.5, color: THEME.textSub, fontFamily: "'DM Sans',sans-serif", lineHeight: 1.5 }}>
-          {'Your meal plan for this week is locked in. Select any day below to view or edit.'}
-        </div>
-      </div>
-
-      {/* Day list — vertical rows (Monday on top, Tuesday below…), each with its own Edit */}
-      <DayList />
-
-      {/* Detail for selected day with Edit buttons */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {['lunch', 'dinner'].map(meal => {
-          const dk = viewDay.substring(0, 3).toLowerCase()
-          const mk = meal === 'lunch' ? 'l' : 'd'
-          const status = existingData?.[`${dk}_${mk}_status`]
-          const isApplied = status === 'Applied' || status === 'opted_in'
-          const isSkipped = status === 'Skipped' || status === 'opted_out'
-          const viewDayMenu = weeklyMenu[viewDay.toLowerCase()] || weeklyMenu[viewDay] || {}
-          const dishList = getSlotDishes(existingData, viewDay, meal, viewDayMenu[meal] || [])
-          const editedAfterSubmit = existingData?.edit_metadata?.[`${dk}_${mk}_edited`] || false
-          const appliedCount = dishList.filter((_, i) => {
-            const v = existingData?.[`${dk}_${mk}_dish_${i + 1}`]
-            return v !== undefined && v !== null && v !== 'No' && v !== 'no'
-          }).length
-          const editableMeal = wholeWeekEditable || canEditMeal(viewDay, currentWeekId, meal, appSettings, user?.id)
-          return (
-            <div key={meal} style={{
-              padding: 14, borderRadius: 14,
-              background: isApplied
-                ? 'linear-gradient(135deg, rgba(76,175,80,0.08), rgba(76,175,80,0.02))'
-                : isSkipped
-                  ? 'linear-gradient(135deg, rgba(244,67,54,0.06), rgba(244,67,54,0.01))'
-                  : THEME.cardActive,
-              border: `1.5px solid ${isApplied ? '#4CAF50' : isSkipped ? '#F4433660' : THEME.border}`,
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, gap: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: isApplied ? '#4CAF50' : isSkipped ? '#F44336' : THEME.textSub, fontFamily: "'DM Sans',sans-serif" }}>
-                  {meal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}
-                  <span style={{ marginLeft: 8, fontSize: 10, opacity: 0.75 }}>
-                    {isApplied ? `✅ ${appliedCount} item${appliedCount === 1 ? '' : 's'}` : isSkipped ? '❌ Skipped' : '○ Not filled'}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {editedAfterSubmit && <span style={{ fontSize: 10, color: THEME.textSub, fontWeight: 700, fontFamily: "'DM Sans',sans-serif" }}>✏️ Edited</span>}
-                  <button
-                    onClick={() => startEditSlot(viewDay, meal)}
-                    style={{
-                      padding: '8px 14px', borderRadius: 10, border: `1.5px solid ${THEME.accent}`,
-                      background: THEME.accentBg, color: THEME.accent,
-                      fontSize: 11.5, fontWeight: 800, cursor: 'pointer',
-                      fontFamily: "'DM Sans',sans-serif",
-                    }}
-                  >
-                    ✏️ Edit {meal === 'lunch' ? 'Lunch' : 'Dinner'}
-                  </button>
-                </div>
-              </div>
-              {isApplied && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {dishList.length > 0 ? dishList.map((dish, i) => {
-                    const v = existingData?.[`${dk}_${mk}_dish_${i + 1}`]
-                    const isCount = isCountInput(appSettings, viewDay, meal, i)
-                    const isRoti = isRotiItem(dish)
-                    const skipped = v === undefined || v === null || v === 'No' || v === 'no'
-                    const isPct = !skipped && !isCount && !isRoti && (typeof v === 'number' || String(v).endsWith('%'))
-                    return (
-                      <span key={i} style={{
-                        fontSize: 10, fontWeight: 700, fontFamily: "'DM Sans',sans-serif",
-                        color: skipped ? THEME.noColor : isRoti ? '#4CAF50' : THEME.accent,
-                        background: skipped ? THEME.noBg : isRoti ? 'rgba(76,175,80,0.12)' : THEME.accentBg,
-                        padding: '3px 8px', borderRadius: 6,
-                      }}>
-                        {dish}: <strong>{skipped ? '❌' : isRoti ? '✅' : isCount ? `${v} ppl` : isPct ? `${v}%` : v}</strong>
-                      </span>
-                    )
-                  }) : <span style={{ fontSize: 11, color: THEME.textSub, fontStyle: 'italic', fontFamily: "'DM Sans',sans-serif" }}>Menu being prepared</span>}
-                </div>
-              )}
-              {isSkipped && (
-                <div style={{ fontSize: 11, color: THEME.noColor, fontFamily: "'DM Sans',sans-serif", opacity: 0.85 }}>
-                  No meal this slot.
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-
-  // ── REVIEW SCREEN: shown once the final slot is filled — the whole week is
-  // listed with ✏️ Edit on every day, so the user can go back and change any
-  // day before tapping Submit Weekly Survey. ──
-  const ReviewView = () => {
-    // Progress across all 6 days.
-    const completed = dayIndices.filter(idx => dayStatusSummary[idx] === 'complete').length
-    const total = dayIndices.length
-    const pct = Math.round((completed / total) * 100)
-    const allFilled = completed === total
-    return (
-      <div>
-        {/* Banner */}
-        <div style={{
-          padding: 18, borderRadius: 16, textAlign: 'center', marginBottom: 16,
-          background: allFilled
-            ? 'linear-gradient(135deg, rgba(76,175,80,0.14), rgba(76,175,80,0.03))'
-            : 'linear-gradient(135deg, rgba(255,152,0,0.12), rgba(255,152,0,0.02))',
-          border: `1.5px solid ${allFilled ? '#4CAF50' : 'rgba(255,152,0,0.55)'}`,
-          animation: 'surveyFadeIn 0.4s ease-out',
-        }}>
-          <div style={{ fontSize: 17, fontWeight: 800, color: allFilled ? '#4CAF50' : '#FF9800', marginBottom: 4, fontFamily: "'DM Sans',sans-serif" }}>
-            {allFilled ? '✅ Week filled — review your choices' : '📋 Review your week'}
-          </div>
-          <div style={{ fontSize: 12.5, color: THEME.textSub, fontFamily: "'DM Sans',sans-serif", lineHeight: 1.5 }}>
-            {allFilled
-              ? 'Everything is saved. Tap ✏️ Edit on any day to go back and change it before submitting.'
-              : `You've filled ${completed} of ${total} day${total === 1 ? '' : 's'} — tap ✏️ Edit on a day to complete or change it.`}
-          </div>
-        </div>
-
-        {/* Progress */}
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-            <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: THEME.textSub, fontFamily: "'DM Sans',sans-serif" }}>Weekly Progress</span>
-            <span style={{ fontSize: 12, fontWeight: 900, color: THEME.accent, fontFamily: "'DM Sans',sans-serif" }}>{completed} / {total} days · {pct}%</span>
-          </div>
-          <div style={{ height: 9, borderRadius: 100, background: THEME.inputBg, border: `1px solid ${THEME.border}`, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${pct}%`, background: THEME.accentGrad, borderRadius: 100, transition: 'width 0.9s cubic-bezier(0.4, 0, 0.2, 1)', boxShadow: `0 0 14px ${THEME.accent}80` }} />
-          </div>
-        </div>
-
-        <DayList />
-
-        {/* Nav: back to the fill flow + final submit */}
-        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button onClick={backToFilling} style={{
-            padding: '12px 20px', borderRadius: 12, border: `1px solid ${THEME.border}`, background: 'transparent',
-            color: THEME.textSub, cursor: 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif"
-          }}><ChevronLeft size={16} /> Back to filling</button>
-          <button onClick={handleSubmitWeekly} disabled={loading} style={{
-            marginLeft: 'auto', padding: '12px 24px', borderRadius: 12, border: 'none',
-            background: loading ? THEME.border : THEME.accentGrad,
-            color: loading ? 'rgba(0,0,0,0.3)' : '#000',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            fontSize: 13, fontWeight: 900, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif",
-            boxShadow: loading ? 'none' : `0 8px 20px ${THEME.accentBg}`,
-            opacity: loading ? 0.6 : 1, transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-          }}
-            onMouseEnter={e => { if (!loading) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 12px 28px ${THEME.accentBg}` } }}
-            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = loading ? 'none' : `0 8px 20px ${THEME.accentBg}` }}
-          >{loading ? 'Submitting...' : '✅ Submit Weekly Survey'}</button>
-        </div>
-      </div>
-    )
-  }
-
-  // ── LOCKED SLOT VIEW: shown when a slot already has a saved response but the
-  // edit window is closed — the response stays readable (read-only) and the user
-  // can still move between menus via the nav row. ──
-  const LockedSlotView = () => {
-    const savedStatus = existingData?.[`${dayKey}_${mealKey}_status`]
-    const isApplied = savedStatus === 'Applied'
-    const dishList = getSlotDishes(existingData, currentDay, currentMeal, menu[currentMeal] || [])
-    const fmtVal = (v, isCount, isRoti) => {
-      if (v === undefined || v === null) return null
-      if (v === 'No' || v === 'no') return '❌'
-      if (isRoti) return '✅'
-      if (isCount) return `${v} ppl`
-      if (typeof v === 'number') return `${v}%`
-      if (typeof v === 'string' && v.endsWith('%')) return v
-      return String(v)
-    }
-    return (
-      <div style={{
-        marginBottom: 16, padding: 14, borderRadius: 14,
-        background: isApplied
-          ? 'linear-gradient(135deg, rgba(76,175,80,0.08), rgba(76,175,80,0.02))'
-          : 'linear-gradient(135deg, rgba(244,67,54,0.06), rgba(244,67,54,0.01))',
-        border: `1.5px solid ${isApplied ? '#4CAF50' : '#F4433660'}`,
-        fontFamily: "'DM Sans',sans-serif",
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 13, fontWeight: 800, color: isApplied ? '#4CAF50' : '#F44336' }}>
-            {isApplied ? '✅ Your saved response' : '❌ Skipped — no meal this slot'}
-          </span>
-          <span style={{ fontSize: 9.5, fontWeight: 700, color: THEME.textSub, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-            🔒 read-only · window closed
-          </span>
-        </div>
-        {isApplied && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {dishList.length > 0 ? dishList.map((dish, i) => {
-              const v = existingData?.[`${dayKey}_${mealKey}_dish_${i + 1}`]
-              const isCount = isCountInput(appSettings, currentDay, currentMeal, i)
-              const isRoti = isRotiItem(dish)
-              const skipped = v === undefined || v === null || v === 'No' || v === 'no'
-              return (
-                <span key={i} style={{
-                  fontSize: 10, fontWeight: 700,
-                  color: skipped ? THEME.noColor : isRoti ? '#4CAF50' : THEME.accent,
-                  background: skipped ? THEME.noBg : isRoti ? 'rgba(76,175,80,0.12)' : THEME.accentBg,
-                  padding: '3px 8px', borderRadius: 6,
-                }}>
-                  {dish}: <strong>{skipped ? '❌' : fmtVal(v, isCount, isRoti)}</strong>
-                </span>
-              )
-            }) : <span style={{ fontSize: 11, color: THEME.textSub, fontStyle: 'italic' }}>Menu being prepared</span>}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // ── LOADING SKELETON SCREEN ──
-  if (!dataLoaded) {
-    return (
-      <div
-        onClick={onClose}
-        style={{
-          position: 'fixed', inset: 0, zIndex: 10001,
-          background: THEME.overlay,
-          backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: 'clamp(10px, 3vw, 28px)',
-          animation: 'surveyBackdropIn 0.3s ease-out',
-        }}
-      >
-        <div
-          onClick={e => e.stopPropagation()}
-          style={{
-            background: THEME.modalBg,
-            borderRadius: 24, padding: 'clamp(18px, 3vw, 26px)',
-            maxWidth: 680, width: '100%',
-            border: `1.5px solid ${THEME.modalBorder}`,
-            boxShadow: '0 30px 80px rgba(0,0,0,0.55)',
-            position: 'relative'
-          }}
-        >
-          <style>{SURVEY_STYLES}</style>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: THEME.text }}>Loading Weekly Survey…</div>
-            <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.06)', border: `1px solid ${THEME.border}`, borderRadius: 8, width: 28, height: 28, color: THEME.textSub, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={14} /></button>
-          </div>
-          {[1, 2, 3].map(i => <SkeletonDish key={i} theme={THEME} />)}
-        </div>
-      </div>
-    )
-  }
-
+  // ────────────────────────────────────────────────────────────────
   // ── INTRO SCREEN ──
-  if (showIntro && !surveySubmitted) {
+  // ────────────────────────────────────────────────────────────────
+  if (showIntro) {
     return (
-      <div
-        onClick={onClose}
-        style={{
-          position: 'fixed', inset: 0, zIndex: 10001,
-          background: THEME.overlay,
-          backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: 'clamp(10px, 3vw, 28px)',
-          animation: 'surveyBackdropIn 0.3s ease-out',
-        }}
-      >
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 10001, background: T.overlay, backdropFilter: 'blur(14px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(10px,3vw,28px)' }}>
         <style>{SURVEY_STYLES}</style>
-        <div
-          onClick={e => e.stopPropagation()}
-          style={{
-            background: THEME.modalBg,
-            borderRadius: 24, padding: 'clamp(20px, 4vw, 32px)',
-            maxWidth: 680, width: '100%',
-            border: `1.5px solid ${THEME.modalBorder}`,
-            boxShadow: '0 30px 80px rgba(0,0,0,0.55)',
-            position: 'relative', textAlign: 'center',
-            maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto'
-          }}
-        >
-          <button onClick={onClose} style={{ position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,0.06)', border: `1px solid ${THEME.border}`, borderRadius: 8, width: 32, height: 32, color: THEME.textSub, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={16} /></button>
-          <div style={{ position: 'absolute', top: -40, right: -40, width: 140, height: 140, background: THEME.accentGrad, borderRadius: '50%', filter: 'blur(60px)', opacity: 0.08, pointerEvents: 'none' }} />
-
-          {/* Icon */}
-          <div style={{
-            width: 64, height: 64, borderRadius: 20,
-            background: THEME.accentBg, border: `1.5px solid ${THEME.accent}`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto 16px', animation: 'surveyPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)'
-          }}>
-            <span style={{ fontSize: 28 }}>📋</span>
-          </div>
-
-          <h2 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 800, color: THEME.text, fontFamily: "'Playfair Display',serif" }}>
-            Weekly Meal Plan
-          </h2>
-          <p style={{ margin: '0 0 18px', fontSize: 13, color: THEME.textSub, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>
-            Fill in your preferences for the coming week — it takes about <strong style={{ color: THEME.accent }}>2–3 minutes</strong>.
-          </p>
-
-          {/* Steps */}
+        <div onClick={e => e.stopPropagation()} style={{ background: T.modalBg, borderRadius: 24, padding: 'clamp(22px,4vw,34px)', maxWidth: 580, width: '100%', border: `1.5px solid ${T.modalBorder}`, boxShadow: '0 30px 80px rgba(0,0,0,0.55)', position: 'relative', textAlign: 'center', animation: 'surveyModalIn 0.35s ease-out' }}>
+          <button onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, background: T.softBg, border: `1px solid ${T.border}`, borderRadius: 8, width: 32, height: 32, color: T.textSub, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={16} /></button>
+          <div style={{ width: 64, height: 64, borderRadius: 20, background: T.accentBg, border: `1.5px solid ${T.accent}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 28 }}>📋</div>
+          <h2 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 800, color: T.text, fontFamily: "'Playfair Display',serif" }}>Weekly Meal Survey</h2>
+          <p style={{ margin: '0 0 20px', fontSize: 13, color: T.textSub, lineHeight: 1.65, fontFamily: "'DM Sans',sans-serif" }}>Fill meal preferences for each day — Monday through Saturday.</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22, textAlign: 'left' }}>
-            {[
-              { icon: '📅', text: `${totalSlots} slots to fill — Mon lunch through Sat dinner` },
-              { icon: '💾', text: 'Auto-saves as you go — resume where you left off' },
-              { icon: '✏️', text: 'Review your week before submitting — tap Edit to change any day' },
-              { icon: '✅', text: 'Save & Continue to move to the next meal' },
-            ].map((item, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: 0, animation: `surveyFadeIn 0.4s ease-out ${0.2 + i * 0.1}s forwards` }}>
-                <div style={{ width: 28, height: 28, borderRadius: 8, background: THEME.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>{item.icon}</div>
-                <span style={{ fontSize: 12, color: THEME.textSub, fontFamily: "'DM Sans',sans-serif", lineHeight: 1.4 }}>{item.text}</span>
+            {[['☀️', 'Lunch & Dinner shown together for each day'], ['⏩', 'Auto-scrolls Lunch → Dinner when complete'], ['💾', 'Save & Continue day by day Mon → Sat'], ['✅', 'Submit on Saturday to lock your week']].map(([icon, text], i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, background: T.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</div>
+                <span style={{ fontSize: 12.5, color: T.textSub, fontFamily: "'DM Sans',sans-serif" }}>{text}</span>
               </div>
             ))}
           </div>
-
-          <button
-            onClick={handleStartSurvey}
-            style={{
-              width: '100%', padding: '14px', borderRadius: 14, border: 'none',
-              background: THEME.accentGrad, color: '#000', cursor: 'pointer',
-              fontSize: 15, fontWeight: 900, fontFamily: "'DM Sans',sans-serif",
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              boxShadow: `0 8px 24px ${THEME.accentBg}`,
-              transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-            }}
-          >
+          <button onClick={handleStartSurvey} type="button" style={{ width: '100%', padding: '14px', borderRadius: 14, border: 'none', background: T.accentGrad, color: '#000', cursor: 'pointer', fontSize: 15, fontWeight: 900, fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
             Start Survey <Play size={16} />
           </button>
         </div>
@@ -1533,549 +620,223 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     )
   }
 
-  // ── SUCCESS CELEBRATION SCREEN ──
+  // ── SUCCESS ──
   if (showSuccess) {
     return (
-      <>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center', background: T.successOverlay, backdropFilter: 'blur(20px)' }}>
         <style>{SURVEY_STYLES}</style>
-        <div style={{ position: 'fixed', inset: 0, zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center', background: THEME.successOverlay, backdropFilter: 'blur(20px)', padding: 20 }}>
-          <div style={{ textAlign: 'center', animation: 'surveySuccess 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
-            {/* Animated checkmark */}
-            <div style={{
-              width: 80, height: 80, borderRadius: '50%',
-              background: 'linear-gradient(135deg, #4CAF50, #2E7D32)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 20px',
-              boxShadow: '0 0 60px rgba(76,175,80,0.4)',
-              animation: 'surveyGlow 2s ease-in-out infinite',
-            }}>
-              <Check size={40} color="#fff" strokeWidth={3} />
-            </div>
-            <h2 style={{ margin: '0 0 8px', fontSize: 26, fontWeight: 800, color: '#4CAF50', fontFamily: "'Playfair Display',serif" }}>
-              Survey Submitted!
-            </h2>
-            <p style={{ margin: '0 0 6px', fontSize: 14, color: THEME.textSub, fontFamily: "'DM Sans',sans-serif" }}>
-              Your meal plan for this week is locked in. Shukran!
-            </p>
-            <p style={{ margin: 0, fontSize: 11, color: THEME.textSub, opacity: 0.7, fontFamily: "'DM Sans',sans-serif" }}>
-              You can still edit any response below.
-            </p>
+        <div style={{ textAlign: 'center', animation: 'surveySuccess 0.6s ease-out' }}>
+          <div style={{ width: 84, height: 84, borderRadius: '50%', background: 'linear-gradient(135deg,#4CAF50,#2E7D32)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', boxShadow: '0 0 60px rgba(76,175,80,0.4)', animation: 'surveyGlow 2s ease-in-out infinite' }}>
+            <Check size={44} color="#fff" strokeWidth={3} />
           </div>
+          <h2 style={{ margin: '0 0 8px', fontSize: 28, fontWeight: 800, color: '#4CAF50', fontFamily: "'Playfair Display',serif" }}>Survey Submitted!</h2>
+          <p style={{ margin: 0, fontSize: 14, color: T.textSub, fontFamily: "'DM Sans',sans-serif" }}>Your meal plan is locked in. Shukran! 🤲</p>
         </div>
-      </>
+      </div>
     )
   }
 
+  // ────────────────────────────────────────────────────────────────
+  // ── MAIN MODAL ──
+  // ────────────────────────────────────────────────────────────────
   return (
-    <>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 10001, background: T.overlay, backdropFilter: 'blur(14px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(10px,3vw,24px)', overflowY: 'auto' }}>
       <style>{SURVEY_STYLES}</style>
-      {/* ── POP-UP OVERLAY: the survey now opens as a centered modal, so clicking
-          Edit / Start never forces the user to scroll the page. ── */}
-      <div
-        onClick={onClose}
-        style={{
-          position: 'fixed', inset: 0, zIndex: 10001,
-          background: THEME.overlay,
-          backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: 'clamp(10px, 3vw, 28px)', overflowY: 'auto',
-          animation: 'surveyBackdropIn 0.3s ease-out',
-        }}
-      >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: THEME.modalBg,
-          borderRadius: 20, padding: 'clamp(12px, 2.5vw, 18px)',
-          maxWidth: 720, width: '100%', boxSizing: 'border-box',
-          border: `1.5px solid ${THEME.modalBorder}`,
-          boxShadow: '0 30px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(212,175,55,0.07), inset 0 1px 0 rgba(255,255,255,0.06)',
-          position: 'relative', overflowX: 'hidden', overflowY: 'auto',
-          maxHeight: 'calc(100dvh - 32px)',
-          animation: 'surveyModalIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)',
-        }}
-      >
-        {/* ── LOADING OVERLAY ── */}
-        {loading && !showSuccess && (
-          <div style={{
-            position: 'absolute', inset: 0, zIndex: 999, borderRadius: 28,
-            background: THEME.loadingOverlay, backdropFilter: 'blur(8px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12
-          }}>
-            <div style={{
-              width: 40, height: 40, borderRadius: '50%',
-              border: '3px solid', borderColor: `${THEME.accent} transparent ${THEME.accent} ${THEME.accent}`,
-              animation: 'spin 0.8s linear infinite',
-            }} />
-            <div style={{ fontSize: 13, color: THEME.accent, fontWeight: 700, fontFamily: "'DM Sans',sans-serif" }}>
-              Saving your plan…
-            </div>
+      <div onClick={e => e.stopPropagation()} style={{ background: T.modalBg, borderRadius: 24, padding: 'clamp(14px,3vw,22px)', maxWidth: 740, width: '100%', boxSizing: 'border-box', border: `1.5px solid ${T.modalBorder}`, boxShadow: '0 30px 80px rgba(0,0,0,0.55)', position: 'relative', overflowX: 'hidden', overflowY: 'auto', maxHeight: 'calc(100dvh - 28px)', animation: 'surveyModalIn 0.35s ease-out' }}>
+
+        <div ref={modalTopRef} />
+
+        {/* Loading overlay */}
+        {loading && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 999, borderRadius: 24, background: T.loadingOverlay, backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
+            <div style={{ width: 40, height: 40, borderRadius: '50%', border: `3px solid`, borderColor: `${T.accent} transparent ${T.accent} ${T.accent}`, animation: 'spin 0.8s linear infinite' }} />
+            <div style={{ fontSize: 13, color: T.accent, fontWeight: 700, fontFamily: "'DM Sans',sans-serif" }}>Saving…</div>
           </div>
         )}
 
-        {/* ── ERROR TOAST ── */}
+        {/* Error Toast */}
         {errorToast && (
-          <div style={{
-            position: 'absolute', top: 12, left: 12, right: 12, zIndex: 998,
-            padding: '12px 16px', borderRadius: 12,
-            background: 'linear-gradient(135deg, rgba(244,67,54,0.15), rgba(244,67,54,0.05))',
-            border: `1px solid ${THEME.noColor}60`,
-            display: 'flex', alignItems: 'center', gap: 10,
-            animation: 'surveyFadeIn 0.3s ease-out',
-            backdropFilter: 'blur(10px)',
-          }}>
-            <AlertTriangle size={18} color={THEME.noColor} />
-            <span style={{ flex: 1, fontSize: 12, color: THEME.text, fontFamily: "'DM Sans',sans-serif", fontWeight: 500 }}>{errorToast}</span>
-            <button onClick={() => setErrorToast(null)} style={{
-              background: 'rgba(255,255,255,0.1)', border: 'none', color: THEME.textSub,
-              cursor: 'pointer', padding: 4, borderRadius: 6, display: 'flex'
-            }}>
-              <X size={14} />
-            </button>
+          <div style={{ position: 'absolute', top: 12, left: 12, right: 12, zIndex: 998, padding: '12px 16px', borderRadius: 12, background: 'rgba(244,67,54,0.15)', border: `1px solid ${T.noColor}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <AlertTriangle size={18} color={T.noColor} />
+            <span style={{ flex: 1, fontSize: 12, color: T.text, fontFamily: "'DM Sans',sans-serif" }}>{errorToast}</span>
+            <button onClick={() => setErrorToast(null)} style={{ background: 'transparent', border: 'none', color: T.textSub, cursor: 'pointer' }}><X size={14} /></button>
           </div>
         )}
 
-        <div style={{ position: 'absolute', top: -40, right: -40, width: 140, height: 140, background: THEME.accentGrad, borderRadius: '50%', filter: 'blur(60px)', opacity: 0.08 }} />
-
-        {/* ── HEADER ── */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, position: 'relative', zIndex: 1 }}>
+        {/* ── Header ── */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <div>
-            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: THEME.accent, fontFamily: "'DM Sans',sans-serif", marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-              Weekly Survey
-              {!surveySubmitted && !initialDay && (
-                <span style={{
-                  fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 6,
-                  background: THEME.accentBg, color: THEME.accent
-                }}>
-                  Slot {currentSlot + 1}/{totalSlots}
-                </span>
-              )}
-            </div>
-            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: THEME.text, fontFamily: "'Playfair Display',serif" }}>
-              {initialDay && !mealPicked
-                ? `${currentDay} • Pick a meal`
-                : surveySubmitted && !editResponseMode
-                  ? 'Your Submitted Plan'
-                  : editResponseMode
-                    ? `Edit ${currentDay} • ${currentMeal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}`
-                    : `${currentDay} • ${currentMeal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}`}
-            </h2>
+            <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: T.accent, fontFamily: "'DM Sans',sans-serif", marginBottom: 2 }}>Weekly Survey</div>
+            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: T.text, fontFamily: "'Playfair Display',serif" }}>📅 {currentDayName}</h2>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {autoSaveStatus === 'saving' && (
-              <span style={{
-                fontSize: 11, color: THEME.accent, fontWeight: 700,
-                fontFamily: "'DM Sans',sans-serif",
-                display: 'flex', alignItems: 'center', gap: 4,
-              }}>
-                <span style={{
-                  width: 10, height: 10, borderRadius: '50%',
-                  border: '2px solid', borderColor: `${THEME.accent} transparent ${THEME.accent} ${THEME.accent}`,
-                  animation: 'spin 0.8s linear infinite',
-                  display: 'inline-block',
-                }} />
-                Saving…
-              </span>
-            )}
-            {autoSaveStatus === 'saved' && (
-              <span style={{
-                fontSize: 11, color: THEME.yesColor, fontWeight: 700,
-                fontFamily: "'DM Sans',sans-serif",
-                display: 'flex', alignItems: 'center', gap: 4,
-                animation: 'surveyPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              }}>
-                <span style={{ fontSize: 13 }}>✓</span>
-                Saved
-              </span>
-            )}
-            {syncMsg && (
-              <span style={{
-                fontSize: 11, color: THEME.yesColor, fontWeight: 700,
-                fontFamily: "'DM Sans',sans-serif",
-                display: 'flex', alignItems: 'center', gap: 4,
-                animation: 'surveyPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              }}>
-                <span style={{ fontSize: 13 }}>✓</span>
-                {syncMsg}
-              </span>
-            )}
-            <button onClick={onClose} style={{ background: THEME.softBg, border: 'none', cursor: 'pointer', padding: 10, borderRadius: 10, color: THEME.textSub, display: 'flex', transition: 'all 0.2s' }}
-              onMouseEnter={e => { e.currentTarget.style.background = THEME.cardActive; e.currentTarget.style.color = THEME.text }}
-              onMouseLeave={e => { e.currentTarget.style.background = THEME.softBg; e.currentTarget.style.color = THEME.textSub }}
-            >
-              <X size={18} />
-            </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {syncMsg && <span style={{ fontSize: 11, color: T.yesColor, fontWeight: 800, fontFamily: "'DM Sans',sans-serif" }}>✓ {syncMsg}</span>}
+            <button onClick={onClose} style={{ background: T.softBg, border: 'none', cursor: 'pointer', padding: 8, borderRadius: 10, color: T.textSub, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={18} /></button>
           </div>
         </div>
 
-        {initialDay && !mealPicked ? (
-          <MealPicker />
-        ) : surveySubmitted && !editResponseMode ? (
-          <SubmittedView />
-        ) : reviewMode && !editResponseMode ? (
-          <ReviewView />
-        ) : (
-          <>
-            {/* Editing a submitted (or reviewed) day: day list on top for switching
-                days, then the lunch/dinner routine for the selected day */}
-            {(surveySubmitted || reviewMode) && editResponseMode ? (
-              <div style={{ marginBottom: 16 }}>
-                {!initialDay && (
-                  <>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: THEME.textSub, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span>📅 Your Week</span>
-                      <button onClick={() => { setEditResponseMode(false); setViewDay(currentDay) }}
-                        style={{
-                          background: 'transparent', border: 'none', cursor: 'pointer',
-                          color: THEME.accent, fontSize: 10, fontWeight: 800,
-                          fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', gap: 4,
-                        }}>
-                        <ChevronLeft size={12} /> {reviewMode ? 'Back to review' : 'Back to plan'}
-                      </button>
-                    </div>
-                    <DayList />
-                  </>
-                )}
-                {/* Lunch/Dinner routine for the day being edited */}
-                <MealSwitcher />
-              </div>
-            ) : !surveySubmitted && initialDay ? (
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: THEME.textSub, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif" }}>
-                    📅 Day {DAYS.indexOf(currentDay) + 1} of {DAYS.length} — {currentDay}
-                  </div>
-                  <div style={{ fontSize: 10, color: THEME.accent, fontWeight: 800, fontFamily: "'DM Sans',sans-serif" }}>
-                    Fill in order · Mon → Sat
-                  </div>
-                </div>
-                <MealSwitcher />
-              </div>
-            ) : !surveySubmitted && !reviewMode ? (
-              /* During the fill flow the day tabs are hidden — the week is filled
-                 in order (Mon → Sat) using the Previous / Save & Continue buttons.
-                 Day tabs only appear in the review step or after submitting. */
-              <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: THEME.textSub, textTransform: 'uppercase', letterSpacing: '0.1em', fontFamily: "'DM Sans',sans-serif" }}>
-                  📅 Day {DAYS.indexOf(currentDay) + 1} of {DAYS.length} — {currentDay}
-                </div>
-                <div style={{ fontSize: 10, color: THEME.accent, fontWeight: 800, fontFamily: "'DM Sans',sans-serif" }}>
-                  Fill in order · Mon → Sat
-                </div>
-              </div>
-            ) : null}
+        {/* Day info strip */}
+        <div style={{ padding: '8px 12px', borderRadius: 10, background: T.softBg, border: `1px solid ${T.softBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: T.textSub, fontFamily: "'DM Sans',sans-serif" }}>Day {currentDayIndex + 1} of 6 • {currentDayName}</span>
+          <span style={{ fontSize: 11, fontWeight: 800, color: isDayComplete ? T.yesColor : T.accent, fontFamily: "'DM Sans',sans-serif" }}>{isDayComplete ? '✅ Day complete' : '☀️ Lunch + 🌙 Dinner'}</span>
+        </div>
 
-            {/* ── Slide transition wrapper ── */}
-            <div key={`${currentDayIndex}-${currentMeal}${editResponseMode ? '-edit' : ''}`} style={{
-              animation: animatingDayDir === 'right' ? 'surveySlideIn 0.35s cubic-bezier(0.4, 0, 0.2, 1)' :
-                         animatingDayDir === 'left' ? 'surveySlideIn 0.35s cubic-bezier(0.4, 0, 0.2, 1)' : undefined,
-            }}>
-
-            {slotLocked && <div style={{ padding: 16, borderRadius: 12, background: THEME.accentBg, border: `1px solid ${THEME.accent}`, marginBottom: 16 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: THEME.accent, marginBottom: 4, fontFamily: "'DM Sans',sans-serif" }}>🔒 Not Currently Bookable</div>
-                <div style={{ fontSize: 12, color: THEME.textSub, fontFamily: "'DM Sans',sans-serif" }}>
-                  {appSettings.survey_msg || `The survey window is currently closed. Opens ${getSurveyWindowLabel(appSettings)}.`}
-                </div>
-              </div>}
-
-            {/* An Applied/Skipped slot that can't be edited right now is still
-                readable — show exactly what was saved instead of a blank lock. */}
-            {slotLocked && existingData?.[`${dayKey}_${mealKey}_status`] && <LockedSlotView />}
-
-            {!hasDishes && !slotLocked && !surveySubmitted && !editResponseMode && (
-              <div style={{ marginBottom: 16, padding: 16, borderRadius: 12, background: THEME.cardActive, border: `1px solid ${THEME.border}`, textAlign: 'center' }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: THEME.textSub, marginBottom: 4, fontFamily: "'DM Sans',sans-serif" }}>
-                  📋 Menu not yet available
-                </div>
-                <div style={{ fontSize: 12, color: THEME.textSub, fontFamily: "'DM Sans',sans-serif" }}>
-                  This meal slot will be skipped. You can update it later when the menu is ready.
-                </div>
-              </div>
-            )}
-
-            {/* Meal Opt-in Selection */}
-            {!slotLocked && (
-              <div style={{
-                marginBottom: 16, padding: '16px 18px', borderRadius: 16,
-                background: 'linear-gradient(135deg, rgba(212,175,55,0.08), rgba(184,134,11,0.02))',
-                border: `1px solid ${THEME.accent}`
-              }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: THEME.text, marginBottom: 12, fontFamily: "'Playfair Display',serif" }}>
-                  {wantsFood === true
-                    ? `Planning ${currentMeal} for ${currentDay}`
-                    : wantsFood === false
-                      ? `You currently skip ${currentMeal} on ${currentDay}`
-                      : `Would you like ${currentMeal} on ${currentDay}?`}
-                </div>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      wantsFoodRef.current = true
-                      setWantsFood(true)
-                      setResponses(prev => {
-                        const updated = { ...prev }
-                        dishes.forEach((d, idx) => {
-                          if (updated[d] === undefined || updated[d] === null) {
-                            if (isRotiItem(d)) updated[d] = 'yes'
-                            else if (isCountInput(appSettings, currentDay, currentMeal, idx)) updated[d] = { status: 'yes', value: 1 }
-                            else updated[d] = 100
-                          }
-                        })
-                        return updated
-                      })
-                    }}
-                    style={{
-                      flex: 1, padding: '12px 14px', borderRadius: 12,
-                      border: `2px solid ${wantsFood === true ? THEME.yesColor : THEME.border}`,
-                      background: wantsFood === true ? THEME.yesBg : 'rgba(76,175,80,0.05)',
-                      color: THEME.yesColor, cursor: 'pointer',
-                      fontSize: 14, fontWeight: 800, fontFamily: "'DM Sans',sans-serif",
-                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                      transform: wantsFood === true ? 'scale(1.02)' : 'scale(1)',
-                      boxShadow: wantsFood === true ? `0 4px 16px ${THEME.yesColor}30` : 'none',
-                    }}
-                  >
-                    ✅ Yes, I want food
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      wantsFoodRef.current = false
-                      setWantsFood(false)
-                      if (editResponseMode) { await saveAndLockEdit() }
-                    }}
-                    style={{
-                      flex: 1, padding: '12px 14px', borderRadius: 12,
-                      border: `2px solid ${wantsFood === false ? THEME.noColor : THEME.border}`,
-                      background: wantsFood === false ? THEME.noBg : 'rgba(244,67,54,0.05)',
-                      color: THEME.noColor, cursor: 'pointer',
-                      fontSize: 14, fontWeight: 800, fontFamily: "'DM Sans',sans-serif",
-                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                      transform: wantsFood === false ? 'scale(1.02)' : 'scale(1)',
-                      boxShadow: wantsFood === false ? `0 4px 16px ${THEME.noColor}30` : 'none',
-                    }}
-                  >
-                    ❌ No, I'll skip
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Dish portion selectors — visible as soon as wantsFood is true */}
-            {wantsFood === true && !slotLocked && (
+        {/* ── LUNCH CARD ── */}
+        <div ref={null} style={{ marginBottom: 14, padding: '16px 18px', borderRadius: 18, background: lunchWantsFood === true ? `linear-gradient(145deg,${T.accentBg},${T.card})` : T.card, border: `1.5px solid ${lunchWantsFood === true ? T.accent : lunchWantsFood === false ? T.noColor + '60' : T.border}`, boxShadow: lunchWantsFood === true ? `0 8px 24px ${T.accentBg}` : 'none', transition: 'all 0.28s' }}>
+          {/* Lunch Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: T.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Sun size={18} color={T.accent} /></div>
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: THEME.accent, fontFamily: "'DM Sans',sans-serif" }}>
-                    {editResponseMode ? `Edit your portions for ${currentMeal}` : `Select your portions for ${currentMeal}`}
-                  </div>
-                  {/* ── BATCH SELECT / CLEAR ALL ── */}
-                  {hasDishes && !editResponseMode && (
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button type="button" onClick={selectAllDishes} style={{
-                        padding: '6px 12px', borderRadius: 8, border: `1px solid ${THEME.accent}`,
-                        background: THEME.accentBg, color: THEME.accent, fontSize: 11, fontWeight: 700,
-                        cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.2s'
-                      }}
-                        onMouseEnter={e => { e.currentTarget.style.background = THEME.accentGrad; e.currentTarget.style.color = '#000' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = THEME.accentBg; e.currentTarget.style.color = THEME.accent }}
-                      >Select All</button>
-                      <button type="button" onClick={clearAllDishes} style={{
-                        padding: '6px 12px', borderRadius: 8, border: `1px solid ${THEME.border}`,
-                        background: 'transparent', color: THEME.textSub, fontSize: 11, fontWeight: 700,
-                        cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.2s'
-                      }}
-                        onMouseEnter={e => { e.currentTarget.style.borderColor = THEME.noColor; e.currentTarget.style.color = THEME.noColor }}
-                        onMouseLeave={e => { e.currentTarget.style.borderColor = THEME.border; e.currentTarget.style.color = THEME.textSub }}
-                      >Clear All</button>
-                    </div>
-                  )}
+                <div style={{ fontSize: 15, fontWeight: 800, color: T.text, fontFamily: "'Playfair Display',serif" }}>☀️ {currentDayName} Lunch</div>
+                <div style={{ fontSize: 11, color: T.textSub, fontFamily: "'DM Sans',sans-serif" }}>{lunchWantsFood === null ? `Would you like Lunch?` : lunchWantsFood ? 'Selecting dishes…' : 'Lunch skipped'}</div>
+              </div>
+            </div>
+            {lunchWantsFood !== null && (
+              <span style={{ fontSize: 10.5, fontWeight: 900, padding: '3px 10px', borderRadius: 100, background: lunchWantsFood ? T.yesBg : T.noBg, color: lunchWantsFood ? T.yesColor : T.noColor, border: `1px solid ${lunchWantsFood ? T.yesColor : T.noColor}50` }}>
+                {lunchWantsFood ? (isLunchComplete ? '✅ Complete' : '⏳ In progress') : '❌ Skipped'}
+              </span>
+            )}
+          </div>
+
+          {/* Lunch YES/NO choice */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: lunchWantsFood === true ? 14 : 0 }}>
+            <button type="button" onClick={handleOptInLunch}
+              style={{ flex: 1, padding: '13px 14px', borderRadius: 12, border: `2px solid ${lunchWantsFood === true ? T.yesColor : T.border}`, background: lunchWantsFood === true ? T.yesBg : 'rgba(76,175,80,0.05)', color: T.yesColor, cursor: 'pointer', fontSize: 13.5, fontWeight: 800, fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: lunchWantsFood === true ? 'scale(1.01)' : 'scale(1)', boxShadow: lunchWantsFood === true ? `0 4px 16px ${T.yesColor}30` : 'none' }}>
+              ✅ Yes, I want food
+            </button>
+            <button type="button" onClick={handleSkipLunch}
+              style={{ flex: 1, padding: '13px 14px', borderRadius: 12, border: `2px solid ${lunchWantsFood === false ? T.noColor : T.border}`, background: lunchWantsFood === false ? T.noBg : 'rgba(244,67,54,0.05)', color: T.noColor, cursor: 'pointer', fontSize: 13.5, fontWeight: 800, fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: lunchWantsFood === false ? 'scale(1.01)' : 'scale(1)' }}>
+              ❌ No, I'll skip
+            </button>
+          </div>
+
+          {/* Lunch Dishes */}
+          {lunchWantsFood === true && (
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.border}`, animation: 'surveyFadeIn 0.3s ease-out' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: T.accent, fontFamily: "'DM Sans',sans-serif" }}>Lunch Dishes</span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button type="button" onClick={() => selectAll('lunch')} style={{ padding: '4px 10px', borderRadius: 8, border: `1px solid ${T.accent}`, background: T.accentBg, color: T.accent, fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>All Yes</button>
+                  <button type="button" onClick={() => clearAll('lunch')} style={{ padding: '4px 10px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.textSub, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Clear</button>
                 </div>
-                <div style={{ marginBottom: 16 }}>
-                  {hasDishes ? dishes.map((dish, idx) => (
-                    <DishSelector key={dish + idx} dish={dish} idx={idx} maxCount={snackDefaults?.[`dish_${idx + 1}`] ?? null} />
-                  )) : <div style={{ padding: 16, textAlign: 'center', color: THEME.textSub, fontSize: 13, fontStyle: 'italic' }}>Menu being prepared...</div>}
+              </div>
+              {lunchDishes.length > 0
+                ? lunchDishes.map((dish, idx) => (
+                  <DishRow key={`lunch-${dish}-${idx}`} dish={dish} idx={idx} mealType="lunch" value={lunchResponses[dish]} onChange={handleLunchDish} T={T} appSettings={appSettings} currentDay={currentDay} snackDefaults={snackDefaults} />
+                ))
+                : <div style={{ padding: 14, textAlign: 'center', color: T.textSub, fontSize: 12.5, fontStyle: 'italic' }}>📋 Lunch menu being prepared…</div>
+              }
+            </div>
+          )}
+        </div>
+
+        {/* ── DINNER CARD — revealed only after Lunch is finished ── */}
+        {(lunchWantsFood === false || isLunchComplete) && (
+          <div ref={dinnerCardRef} style={{ marginBottom: 18, padding: '16px 18px', borderRadius: 18, background: dinnerWantsFood === true ? `linear-gradient(145deg,rgba(139,92,246,0.07),${T.card})` : T.card, border: `1.5px solid ${dinnerWantsFood === true ? 'rgba(139,92,246,0.4)' : dinnerWantsFood === false ? T.noColor + '60' : T.border}`, boxShadow: dinnerWantsFood === true ? '0 8px 24px rgba(139,92,246,0.12)' : 'none', transition: 'all 0.28s', animation: 'surveyFadeIn 0.35s ease-out' }}>
+            {/* Dinner Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Moon size={18} color="#a78bfa" /></div>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: T.text, fontFamily: "'Playfair Display',serif" }}>🌙 {currentDayName} Dinner</div>
+                  <div style={{ fontSize: 11, color: T.textSub, fontFamily: "'DM Sans',sans-serif" }}>{dinnerWantsFood === null ? `Would you like Dinner?` : dinnerWantsFood ? 'Selecting dishes…' : 'Dinner skipped'}</div>
                 </div>
-                {wantsFood && !allDishesAnswered && !editResponseMode && (
-                  <div style={{
-                    marginBottom: 16, padding: '11px 14px', borderRadius: 12,
-                    background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)',
-                    color: '#f59e0b', fontSize: 12, fontWeight: 600,
-                    display: 'flex', alignItems: 'center', gap: 8, fontFamily: "'DM Sans',sans-serif"
-                  }}>
-                    <span style={{ fontSize: 13 }}>⚠️</span>
-                    <span>Please answer all items above to continue — the Save & Continue button will save your answers once every dish is filled.</span>
+              </div>
+              {dinnerWantsFood !== null && (
+                <span style={{ fontSize: 10.5, fontWeight: 900, padding: '3px 10px', borderRadius: 100, background: dinnerWantsFood ? T.yesBg : T.noBg, color: dinnerWantsFood ? T.yesColor : T.noColor, border: `1px solid ${dinnerWantsFood ? T.yesColor : T.noColor}50` }}>
+                  {dinnerWantsFood ? (isDinnerComplete ? '✅ Complete' : '⏳ In progress') : '❌ Skipped'}
+                </span>
+              )}
+            </div>
+
+            {/* Dinner YES/NO choice */}
+            <div style={{ display: 'flex', gap: 10, marginBottom: dinnerWantsFood === true ? 14 : 0 }}>
+              <button type="button" onClick={handleOptInDinner}
+                style={{ flex: 1, padding: '13px 14px', borderRadius: 12, border: `2px solid ${dinnerWantsFood === true ? T.yesColor : T.border}`, background: dinnerWantsFood === true ? T.yesBg : 'rgba(76,175,80,0.05)', color: T.yesColor, cursor: 'pointer', fontSize: 13.5, fontWeight: 800, fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: dinnerWantsFood === true ? 'scale(1.01)' : 'scale(1)', boxShadow: dinnerWantsFood === true ? `0 4px 16px ${T.yesColor}30` : 'none' }}>
+                ✅ Yes, I want food
+              </button>
+              <button type="button" onClick={handleSkipDinner}
+                style={{ flex: 1, padding: '13px 14px', borderRadius: 12, border: `2px solid ${dinnerWantsFood === false ? T.noColor : T.border}`, background: dinnerWantsFood === false ? T.noBg : 'rgba(244,67,54,0.05)', color: T.noColor, cursor: 'pointer', fontSize: 13.5, fontWeight: 800, fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: dinnerWantsFood === false ? 'scale(1.01)' : 'scale(1)' }}>
+                ❌ No, I'll skip
+              </button>
+            </div>
+
+            {/* Dinner Dishes */}
+            {dinnerWantsFood === true && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.border}`, animation: 'surveyFadeIn 0.3s ease-out' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: T.accent, fontFamily: "'DM Sans',sans-serif" }}>Dinner Dishes</span>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button type="button" onClick={() => selectAll('dinner')} style={{ padding: '4px 10px', borderRadius: 8, border: `1px solid ${T.accent}`, background: T.accentBg, color: T.accent, fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>All Yes</button>
+                    <button type="button" onClick={() => clearAll('dinner')} style={{ padding: '4px 10px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.textSub, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Clear</button>
                   </div>
-                )}
-                {editResponseMode && (
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    <button onClick={saveAndLockEdit} disabled={loading} style={{
-                      marginLeft: 'auto', padding: '12px 24px', borderRadius: 12, border: 'none',
-                      background: THEME.accentGrad, color: '#000', cursor: loading ? 'not-allowed' : 'pointer', fontSize: 13,
-                      fontWeight: 900, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif",
-                      boxShadow: `0 8px 20px ${THEME.accentBg}`, opacity: loading ? 0.6 : 1
-                    }}>{loading ? 'Saving...' : '💾 Save Edit'}</button>
-                    <button onClick={() => { setEditResponseMode(false); populateFromExisting() }} style={{
-                      padding: '12px 20px', borderRadius: 12, border: `1px solid ${THEME.border}`, background: 'transparent',
-                      color: THEME.textSub, cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: "'DM Sans',sans-serif"
-                    }}>Cancel</button>
-                  </div>
-                )}
+                </div>
+                {dinnerDishes.length > 0
+                  ? dinnerDishes.map((dish, idx) => (
+                    <DishRow key={`dinner-${dish}-${idx}`} dish={dish} idx={idx} mealType="dinner" value={dinnerResponses[dish]} onChange={handleDinnerDish} T={T} appSettings={appSettings} currentDay={currentDay} snackDefaults={snackDefaults} />
+                  ))
+                  : <div style={{ padding: 14, textAlign: 'center', color: T.textSub, fontSize: 12.5, fontStyle: 'italic' }}>📋 Dinner menu being prepared…</div>
+                }
               </div>
             )}
-            </div>{/* ── End slide transition wrapper ── */}
-
-            {/* ── NAVIGATION: Previous / Save & Continue / Review — the week is
-                filled in order (Mon → Sat); no day tabs and no auto-save. On the
-                final slot the primary action opens the Review step. ── */}
-            {!reviewMode && !(surveySubmitted && !editResponseMode) && (
-              <div style={{ display: 'flex', gap: 8, marginTop: 8, position: 'relative', zIndex: 1 }}>
-                {currentSlot > 0 && (
-                  <button onClick={goToPrev} style={{
-                    padding: '12px 20px', borderRadius: 12, border: `1px solid ${THEME.border}`, background: 'transparent',
-                    color: THEME.textSub, cursor: 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif"
-                  }}><ChevronLeft size={16} /> Previous</button>
-                )}
-
-                {!isLast && wantsFood !== null && !slotLocked && !editResponseMode && (
-                  <button onClick={goToNext} disabled={loading}
-                    style={{
-                      marginLeft: currentSlot > 0 ? 'auto' : 0, padding: '12px 22px', borderRadius: 12, border: 'none',
-                      background: loading ? THEME.border : THEME.accentGrad, color: loading ? 'rgba(0,0,0,0.3)' : '#000',
-                      cursor: loading ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 900,
-                      display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif",
-                      boxShadow: loading ? 'none' : `0 8px 20px ${THEME.accentBg}`,
-                      opacity: loading ? 0.6 : 1, transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                    }}
-                    onMouseEnter={e => { if (!loading) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 12px 28px ${THEME.accentBg}` } }}
-                    onMouseLeave={e => { if (!loading) { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 8px 20px ${THEME.accentBg}` } }}
-                  >💾 Save & Continue <ChevronRight size={16} /></button>
-                )}
-
-                {/* When the slot is locked (window closed) or being edited, the
-                    nav still moves between menus — browsing never requires the
-                    slot to be currently bookable. */}
-                {!isLast && (slotLocked || editResponseMode) && (
-                  <button onClick={goToNext}
-                    style={{
-                      marginLeft: currentSlot > 0 ? 'auto' : 0, padding: '12px 22px', borderRadius: 12,
-                      border: `1px solid ${THEME.border}`, background: 'transparent',
-                      color: THEME.text, cursor: 'pointer', fontSize: 13, fontWeight: 800,
-                      display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif",
-                    }}
-                  >Next menu <ChevronRight size={16} /></button>
-                )}
-
-                {isLast && !slotLocked && !surveySubmitted && (
-                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    {initialDay ? (
-                      <button onClick={handleSubmitWeekly}
-                        disabled={loading}
-                        style={{
-                          padding: '12px 24px', borderRadius: 12, border: 'none',
-                          background: loading ? THEME.border : THEME.accentGrad,
-                          color: loading ? 'rgba(0,0,0,0.3)' : '#000',
-                          cursor: loading ? 'not-allowed' : 'pointer',
-                          fontSize: 13, fontWeight: 900, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif",
-                          boxShadow: loading ? 'none' : `0 8px 20px ${THEME.accentBg}`,
-                          opacity: loading ? 0.6 : 1,
-                          transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                        }}
-                        onMouseEnter={e => { if (!loading) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 12px 28px ${THEME.accentBg}` } }}
-                        onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = loading ? 'none' : `0 8px 20px ${THEME.accentBg}` }}
-                      >{loading ? 'Submitting...' : '✅ Submit Weekly Survey'}</button>
-                    ) : (
-                      <button onClick={openReview}
-                        disabled={loading}
-                        style={{
-                          padding: '12px 22px', borderRadius: 12, border: 'none',
-                          background: loading ? THEME.border : THEME.accentGrad,
-                          color: loading ? 'rgba(0,0,0,0.3)' : '#000',
-                          cursor: loading ? 'not-allowed' : 'pointer',
-                          fontSize: 13, fontWeight: 900, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif",
-                          boxShadow: loading ? 'none' : `0 8px 20px ${THEME.accentBg}`,
-                          opacity: loading ? 0.6 : 1,
-                          transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                        }}
-                        onMouseEnter={e => { if (!loading) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = `0 12px 28px ${THEME.accentBg}` } }}
-                        onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = loading ? 'none' : `0 8px 20px ${THEME.accentBg}` }}
-                      >{loading ? 'Saving...' : '📋 Review & Submit'} <ChevronRight size={16} /></button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </>
+          </div>
         )}
-      </div>
-      </div>
 
-      {/* ── PREMIUM SUBMIT-RESULT POPUP: exact status when the final submit
-          button is hit — missing slots or a save error. Success uses the
-          dedicated celebration screen above. ── */}
-      {submitResult && (
-        <>
-          <style>{SURVEY_STYLES}</style>
-          <div style={{
-            position: 'fixed', inset: 0, zIndex: 10002,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(5,5,10,0.85)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-            padding: 20, animation: 'surveyBackdropIn 0.3s ease-out',
-          }}>
-            <div style={{
-              background: THEME.modalBg,
-              borderRadius: 24, padding: '28px 24px', width: '100%', maxWidth: 420, boxSizing: 'border-box',
-              border: `1.5px solid ${submitResult.type === 'missing' ? 'rgba(255,152,0,0.55)' : 'rgba(244,67,54,0.55)'}`,
-              boxShadow: '0 30px 80px rgba(0,0,0,0.55)',
-              textAlign: 'center',
-              animation: 'surveyModalIn 0.38s cubic-bezier(0.34, 1.56, 0.64, 1)',
-            }}>
-              <div style={{
-                width: 72, height: 72, borderRadius: '50%', margin: '0 auto 16px',
-                background: submitResult.type === 'missing'
-                  ? 'linear-gradient(135deg, #FF9800, #F57C00)'
-                  : 'linear-gradient(135deg, #F44336, #D32F2F)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: `0 0 40px ${submitResult.type === 'missing' ? 'rgba(255,152,0,0.4)' : 'rgba(244,67,54,0.4)'}`,
-                animation: 'surveyPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              }}>
-                <span style={{ fontSize: 32 }}>{submitResult.type === 'missing' ? '⚠️' : '❌'}</span>
-              </div>
-              <h3 style={{ margin: '0 0 8px', fontSize: 19, fontWeight: 800, color: submitResult.type === 'missing' ? '#FF9800' : '#F44336', fontFamily: "'Playfair Display',serif" }}>
-                {submitResult.title}
-              </h3>
-              <p style={{ margin: '0 0 10px', fontSize: 13, color: THEME.textSub, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>
-                {submitResult.message}
-              </p>
-              {submitResult.missingSlots && submitResult.missingSlots.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginBottom: 6 }}>
+        {/* Incomplete warning */}
+        {!isDayComplete && (lunchWantsFood !== null || dinnerWantsFood !== null) && (
+          <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', color: '#f59e0b', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, fontFamily: "'DM Sans',sans-serif" }}>
+            {!isLunchComplete
+              ? `⚠️ Finish ${currentDayName} Lunch first — Dinner will appear after.`
+              : `⚠️ Complete Dinner for ${currentDayName} before proceeding.`}
+          </div>
+        )}
+
+        {/* ── NAV BUTTONS ── */}
+        <div ref={bottomNavRef} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {currentDayIndex > 0 && (
+            <button type="button" onClick={goToPrevDay} style={{ padding: '12px 18px', borderRadius: 12, border: `1px solid ${T.border}`, background: 'transparent', color: T.textSub, cursor: 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif" }}>
+              <ChevronLeft size={16} /> {cap(DAYS[currentDayIndex - 1]).substring(0, 3)}
+            </button>
+          )}
+
+          {currentDayIndex < DAYS.length - 1 ? (
+            <button type="button" onClick={goToNextDay} disabled={loading || !isDayComplete}
+              style={{ marginLeft: currentDayIndex > 0 ? 'auto' : undefined, flex: currentDayIndex === 0 ? 1 : undefined, padding: '13px 22px', borderRadius: 12, border: 'none', background: isDayComplete && !loading ? T.accentGrad : T.border, color: isDayComplete && !loading ? '#000' : 'rgba(0,0,0,0.35)', cursor: isDayComplete && !loading ? 'pointer' : 'not-allowed', fontSize: 13.5, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif", boxShadow: isDayComplete ? `0 8px 20px ${T.accentBg}` : 'none', opacity: isDayComplete ? 1 : 0.65, transition: 'all 0.25s' }}>
+              💾 Save & Continue to {cap(DAYS[currentDayIndex + 1])} <ChevronRight size={16} />
+            </button>
+          ) : (
+            <button type="button" onClick={handleSubmitWeekly} disabled={loading || !isDayComplete}
+              style={{ marginLeft: currentDayIndex > 0 ? 'auto' : undefined, flex: currentDayIndex === 0 ? 1 : undefined, padding: '14px 24px', borderRadius: 12, border: 'none', background: isDayComplete && !loading ? 'linear-gradient(135deg,#10b981,#059669)' : T.border, color: isDayComplete && !loading ? '#fff' : 'rgba(0,0,0,0.35)', cursor: isDayComplete && !loading ? 'pointer' : 'not-allowed', fontSize: 14, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: "'DM Sans',sans-serif", boxShadow: isDayComplete ? '0 8px 24px rgba(16,185,129,0.35)' : 'none', opacity: isDayComplete ? 1 : 0.65, transition: 'all 0.25s' }}>
+              {loading ? 'Submitting…' : '✅ Submit Weekly Survey'}
+            </button>
+          )}
+        </div>
+
+        {/* ── Submit result popup ── */}
+        {submitResult && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 10002, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(5,5,10,0.88)', backdropFilter: 'blur(20px)', padding: 20 }}>
+            <div style={{ background: T.modalBg, borderRadius: 22, padding: '28px 22px', width: '100%', maxWidth: 400, border: `1.5px solid rgba(255,152,0,0.4)`, textAlign: 'center', animation: 'surveyModalIn 0.3s ease-out' }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+              <h3 style={{ margin: '0 0 8px', fontSize: 17, fontWeight: 800, color: '#FF9800', fontFamily: "'Playfair Display',serif" }}>{submitResult.title}</h3>
+              <p style={{ margin: '0 0 14px', fontSize: 13, color: T.textSub, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>{submitResult.message}</p>
+              {submitResult.missingSlots && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginBottom: 14 }}>
                   {submitResult.missingSlots.map(s => (
-                    <span key={`${s.day}-${s.meal}`} style={{
-                      fontSize: 10, fontWeight: 800, padding: '3px 10px', borderRadius: 100,
-                      background: 'rgba(255,152,0,0.12)', color: '#FF9800', border: '1px solid rgba(255,152,0,0.3)',
-                      fontFamily: "'DM Sans',sans-serif",
-                    }}>{s.day.substring(0, 3).toUpperCase()} {s.meal}</span>
+                    <span key={`${s.day}-${s.meal}`} style={{ fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 100, background: 'rgba(255,152,0,0.12)', color: '#FF9800' }}>
+                      {cap(s.day).substring(0, 3)} {s.meal}
+                    </span>
                   ))}
                 </div>
               )}
-              {submitResult.filled !== undefined && (
-                <div style={{ fontSize: 12, fontWeight: 800, color: THEME.text, fontFamily: "'DM Sans',sans-serif", marginBottom: 14 }}>
-                  Filled <span style={{ color: submitResult.type === 'missing' ? '#FF9800' : '#F44336' }}>{submitResult.filled}</span> of {submitResult.total} slot{submitResult.total === 1 ? '' : 's'}
-                </div>
-              )}
-              <button onClick={() => setSubmitResult(null)} style={{
-                width: '100%', padding: 14, borderRadius: 14, border: 'none',
-                background: submitResult.type === 'missing' ? 'linear-gradient(135deg, #FF9800, #F57C00)' : 'linear-gradient(135deg, #F44336, #D32F2F)',
-                color: '#fff', fontSize: 14, fontWeight: 900, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", marginTop: 16,
-                boxShadow: `0 8px 24px ${submitResult.type === 'missing' ? 'rgba(255,152,0,0.35)' : 'rgba(244,67,54,0.35)'}`,
-              }}>
-                {submitResult.type === 'missing' ? 'Fill Missing Slots' : 'Try Again'}
+              <button type="button" onClick={() => setSubmitResult(null)} style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', background: '#FF9800', color: '#fff', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>
+                Got it, I'll fix it
               </button>
             </div>
           </div>
-        </>
-      )}
-    </>
+        )}
+
+      </div>
+    </div>
   )
 }

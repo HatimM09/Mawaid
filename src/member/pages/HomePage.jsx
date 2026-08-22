@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { QrCode, Sun, Moon, Clock, ChevronRight, Utensils, Star, Check, ClipboardList } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/firebaseClient'
@@ -14,7 +14,7 @@ import { isSurveyOpen, canEditMeal, getEditWindow } from '../survey'
 import { Card, Btn, Avatar } from '../ui'
 import { fetchUserSurveyRow } from '../../lib/surveyRows'
 
-export default function HomePage({ appSettings = {}, onGoToSurvey }) {
+export default function HomePage({ appSettings = {} }) {
   const t = useTheme()
   const { user } = useAuth()
 
@@ -97,7 +97,7 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
       setShowDailyEditCard(false)
       setDailyEditMealInfo(null)
     }
-  }, [appSettings, user, weeklyMenu, todayKey, wasEditPromptShown])
+  }, [user, weeklyMenu, todayKey, wasEditPromptShown, appSettings])
 
   const closeDailyEditCard = useCallback((markDone = true) => {
     if (markDone && dailyEditMealInfo) {
@@ -127,9 +127,11 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
   const loadData = useCallback(async () => {
     try {
       const weekId = getSurveyTargetWeek(appSettings)
+      const calWeek = getCalendarWeekDate()
       const [{ data: profile }, { data: existingFb }, surveyData] = await Promise.all([
         supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle(),
-        supabase.from('daily_feedback').select('*').eq('user_id', user.id).eq('day', todayKey).maybeSingle(),
+        // Feedback renews weekly: scope to this week's rows only
+        supabase.from('daily_feedback').select('*').eq('user_id', user.id).eq('day', todayKey).eq('week_id', calWeek).maybeSingle(),
         // Survey responses now live in survey_day_responses (merged flat shape)
         fetchUserSurveyRow(user.id, weekId).then(r => r.data),
       ])
@@ -183,13 +185,13 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
     setFeedbackError('')
     try {
       const { error: dbErr } = await supabase.from('daily_feedback').upsert([{
-        user_id: user.id, day: todayKey,
+        user_id: user.id, day: todayKey, week_id: getCalendarWeekDate(),
         lunch_stars: lunchStars || null, lunch_emoji: lunchStars ? STAR_LABELS[lunchStars] : null,
         dinner_stars: dinnerStars || null, dinner_emoji: dinnerStars ? STAR_LABELS[dinnerStars] : null,
         lunch_comment: lunchComment.trim() || null,
         dinner_comment: dinnerComment.trim() || null,
         created_at: new Date().toISOString()
-      }], { onConflict: 'user_id,day' })
+      }], { onConflict: 'user_id,day,week_id' })
       if (dbErr) throw dbErr
       setFeedbackSubmitted({ lunch: !!lunchStars, dinner: !!dinnerStars })
 
@@ -228,7 +230,7 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
     } finally { setSubmittingFeedback(false) }
   }
 
-  const calendarWeek = getCalendarWeekDate()
+const calendarWeek = getCalendarWeekDate()
 
   // Time-window lunch/dinner quick-edit: only shown while a meal's edit window is live
   const currentMealInfo = weeklyMenu ? getCardMealInfo(weeklyMenu, appSettings) : null
@@ -236,9 +238,17 @@ export default function HomePage({ appSettings = {}, onGoToSurvey }) {
     ? currentMealInfo
     : null
 
-  // Weekly survey notice — only shown while the Survey tab is actually visible
-  // (survey open / override), so it never points to a missing tab.
-  const surveyTabVisible = isSurveyOpen(appSettings, user?.id)
+  // Check if any meal is editable (for override users) - memoized to prevent recalculation
+  const isAnyMealEditable = useMemo(() =>
+    DAYS.some(d =>
+      canEditMeal(d, calendarWeek, 'lunch', appSettings) ||
+      canEditMeal(d, calendarWeek, 'dinner', appSettings)
+    ),
+    [calendarWeek, appSettings]
+  )
+
+  // Weekly survey notice — show when survey window is open OR user has override access
+  const surveyTabVisible = isSurveyOpen(appSettings, user?.id) || isAnyMealEditable
 
   if (!weeklyMenu || statsLoading) return <HomePageSkeleton />
 
