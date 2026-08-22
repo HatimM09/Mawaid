@@ -50,7 +50,7 @@ export function flattenDayRows(rows) {
       if (row.submitted_at && (!flat.submitted_at || row.submitted_at > flat.submitted_at)) {
         flat.submitted_at = row.submitted_at
       }
-      if (row.updated_at && (!flat.updated_at || row.updated_at > row.updated_at)) {
+      if (row.updated_at && (!flat.updated_at || row.updated_at > flat.updated_at)) {
         flat.updated_at = row.updated_at
       }
       if (row.created_at && (!flat.created_at || row.created_at < flat.created_at)) {

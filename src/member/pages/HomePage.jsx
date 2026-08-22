@@ -122,7 +122,7 @@ export default function HomePage({ appSettings = {} }) {
   const [dinnerStars, setDinnerStars] = useState(0)
   const [lunchComment, setLunchComment] = useState('')
   const [dinnerComment, setDinnerComment] = useState('')
-  const STAR_LABELS = { 1: 'ðŸ˜ž Poor', 2: 'ðŸ˜ Fair', 3: 'ðŸ™‚ Good', 4: 'ðŸ˜„ Great', 5: 'ðŸ¤© Excellent' }
+  const STAR_LABELS = { 1: '😞 Poor', 2: '😐 Fair', 3: '🙂 Good', 4: '😄 Great', 5: '🤩 Excellent' }
 
   const loadData = useCallback(async () => {
     try {
@@ -461,7 +461,7 @@ const calendarWeek = getCalendarWeekDate()
                   <label htmlFor={`${meal}Comment`} style={{ display: 'block', fontSize: 10, fontWeight: 800, color: t.textSub, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{meal === 'lunch' ? 'Lunch' : 'Dinner'} Comment</label>
                   {submitted ? (
                     <div style={{ padding: '12px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.03)', border: `1px solid ${t.border}`, color: t.textSub, fontSize: 13, minHeight: 60, boxSizing: 'border-box', fontStyle: 'italic' }}>
-                      {meal === 'lunch' ? lunchComment || 'â€”' : dinnerComment || 'â€”'}
+                      {meal === 'lunch' ? lunchComment || '—' : dinnerComment || '—'}
                     </div>
                   ) : (
                     <textarea

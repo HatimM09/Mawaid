@@ -127,13 +127,14 @@ export default function DailySurveyTracking() {
       const buildDishMap = (dayName, mealName, fallbackList) => {
         const mk = mealName === 'lunch' ? 'l' : 'd'
         const dk = String(dayName || day).substring(0, 3).toLowerCase()
-        // Prefer the LIVE weekly menu first (admin can update dish names any
-        // time — tracking must always reflect the current menu), then fall
-        // back to the member's saved dish_snapshot.
+        // Prefer the member's saved dish_snapshot FIRST — it is exactly what
+        // they rated against, so responses always line up with the right dish
+        // names even if the admin edits the menu afterwards. Fall back to the
+        // LIVE weekly menu for members who have not filled yet.
         const snapshotList = getSlotDishes(row, dayName, mealName, null)
         const menuList = Array.isArray(fallbackList) ? fallbackList.filter(Boolean) : []
-        const dishList = menuList.length ? menuList
-          : (snapshotList && snapshotList.length ? snapshotList : null)
+        const dishList = snapshotList && snapshotList.length ? snapshotList
+          : (menuList.length ? menuList : null)
         const names = dishList && dishList.length
           ? dishList
           : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => row && row[`${dk}_${mk}_dish_${i + 1}`] !== undefined && row[`${dk}_${mk}_dish_${i + 1}`] !== null && row[`${dk}_${mk}_dish_${i + 1}`] !== '')
@@ -372,12 +373,13 @@ setLoadError(null)
       const buildDishMap = (r, dayName, mealName, fallbackList) => {
         const mk = mealName === 'lunch' ? 'l' : 'd'
         const dk = String(dayName || day).substring(0, 3).toLowerCase()
-        // Prefer the LIVE weekly menu first (always reflects admin's latest
-        // dish names), then the member's saved dish_snapshot as fallback.
+        // Prefer the member's saved dish_snapshot FIRST (what they actually
+        // rated against — stays correctly synced even if the menu changes
+        // later), then the LIVE weekly menu for members who haven't filled.
         const snapshotList = getSlotDishes(r, dayName, mealName, null)
         const menuList = Array.isArray(fallbackList) ? fallbackList.filter(Boolean) : []
-        const dishList = menuList.length ? menuList
-          : (snapshotList && snapshotList.length ? snapshotList : null)
+        const dishList = snapshotList && snapshotList.length ? snapshotList
+          : (menuList.length ? menuList : null)
         const names = dishList && dishList.length
           ? dishList
           : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => r && r[`${dk}_${mk}_dish_${i + 1}`] !== undefined && r[`${dk}_${mk}_dish_${i + 1}`] !== null && r[`${dk}_${mk}_dish_${i + 1}`] !== '')
@@ -486,9 +488,6 @@ setLoadError(null)
     // REALTIME SUBSCRIPTION — watch tables so saves appear live
     const surveySub = supabase
       .channel('survey_tracking')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => {
-        load(true)
-      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => {
         load(true)
       })
