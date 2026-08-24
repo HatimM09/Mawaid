@@ -112,6 +112,25 @@ export default function AutomationPage() {
   const [broadcastBody, setBroadcastBody] = useState('')
   const [broadcasting, setBroadcasting] = useState(false)
 
+  // Migration state
+  const [migrating, setMigrating] = useState(false)
+  const [migrateResult, setMigrateResult] = useState(null)
+
+  const handleMigrateFlatData = async () => {
+    if (migrating) return
+    setMigrating(true)
+    setMigrateResult(null)
+    try {
+      const { data, error } = await supabase.rpc('migrate_all_flat_responses_to_day_responses')
+      if (error) throw error
+      setMigrateResult({ success: true, message: `✅ Survey migration completed successfully! Source rows: ${data?.source_flat_rows ?? 0}, Total day responses: ${data?.total_day_response_rows ?? 0}` })
+    } catch (e) {
+      setMigrateResult({ success: false, message: `Migration error: ${e.message || 'Please run migration SQL in Supabase'}` })
+    } finally {
+      setMigrating(false)
+    }
+  }
+
   // Analytics
   const [scheduledCount, setScheduledCount] = useState(0)
   const [pendingSurveyCount, setPendingSurveyCount] = useState(0)
@@ -717,6 +736,37 @@ export default function AutomationPage() {
               style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.border}`, color: T.text, fontSize: 13, outline: 'none' }}
             />
           </div>
+
+          {/* Database Migration & Parity Tool */}
+          <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: T.text, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Shield size={14} color={T.accent} />
+                Flat Responses → Day Responses Database Sync
+              </div>
+              <div style={{ fontSize: 11, color: T.textSub, marginTop: 2 }}>
+                Migrates all historical survey submissions from flat tables into canonical <code>survey_day_responses</code> without data loss or mismatch.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleMigrateFlatData}
+              disabled={migrating}
+              style={{
+                padding: '8px 16px', borderRadius: 8, border: `1px solid ${T.border}`,
+                background: T.inputBg, color: T.accent, fontSize: 11.5, fontWeight: 800,
+                cursor: migrating ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              <RefreshCw size={13} style={{ animation: migrating ? 'spin 1s linear infinite' : 'none' }} />
+              {migrating ? 'Migrating…' : 'Sync All Survey Responses'}
+            </button>
+          </div>
+          {migrateResult && (
+            <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 8, background: migrateResult.success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${migrateResult.success ? '#10b981' : '#ef4444'}`, color: migrateResult.success ? '#10b981' : '#ef4444', fontSize: 11.5, fontWeight: 700 }}>
+              {migrateResult.message}
+            </div>
+          )}
         </AdminCard>
       )}
 

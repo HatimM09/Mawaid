@@ -196,7 +196,11 @@ export default function SurveyAccuracyPage() {
   // ── Per-member accuracy rows ──
   const rows = useMemo(() => {
     const subMap = {}
-    ;(submissions || []).forEach(s => { subMap[s.user_id] = s })
+    ;(submissions || []).forEach(s => {
+      if (s.user_id) subMap[s.user_id] = s
+      if (s.thali_number) subMap[`thali_${String(s.thali_number).trim()}`] = s
+      if (s.email) subMap[`email_${s.email.toLowerCase().trim()}`] = s
+    })
 
     const errMap = {}
     ;(writeErrors || []).forEach(e => {
@@ -214,7 +218,7 @@ export default function SurveyAccuracyPage() {
     const weekStart = new Date(weekId + 'T00:00:00')
 
     return (users || []).map(u => {
-      const normalRow = subMap[u.user_id]
+      const normalRow = subMap[u.user_id] || (u.thali_number && subMap[`thali_${String(u.thali_number).trim()}`]) || (u.email && subMap[`email_${u.email.toLowerCase().trim()}`])
       const row = normalRow || null
       const hasOverride = false
       const reqs = reqByUser[u.user_id] || []

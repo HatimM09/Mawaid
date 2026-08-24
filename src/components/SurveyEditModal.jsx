@@ -3,6 +3,8 @@ import { X, Save } from 'lucide-react'
 import SurveyEditCard from './SurveyEditCard'
 import { supabase } from '../lib/firebaseClient'
 import { THEMES } from '../admin/ui'
+import { getSurveyTargetWeek, DAY_KEYS } from '../common/utils'
+import { submitSurveyRow } from '../lib/submitSurvey'
 
 /**
  * SurveyEditModal - Modal for editing survey responses
@@ -76,45 +78,46 @@ export default function SurveyEditModal({
     setSuccess('')
 
     try {
-      const { user } = await supabase.auth.getUser()
-      const currentWeekId = new Date().toISOString().split('T')[0] // Get current week
-      
+      const { data: authData } = await supabase.auth.getUser()
+      const user = authData?.user
+      if (!user) throw new Error('User not authenticated')
+
+      const currentWeekId = getSurveyTargetWeek(appSettings)
+      const dayIdx = new Date().getDay()
+      const dayKey = DAY_KEYS[dayIdx > 0 && dayIdx <= 6 ? dayIdx - 1 : 0]
+      const mealKey = 'l' // lunch
+
       // Prepare update object
       const updateObj = {
         user_id: user.id,
         week_id: currentWeekId,
-        thali_number: editingResponses.userData.thali_no,
-        email: editingResponses.userData.email,
+        day: dayKey,
+        thali_number: editingResponses.userData?.thali_no,
+        email: editingResponses.userData?.email,
         updated_at: new Date().toISOString()
       }
 
-      // Add status and responses for current meal
-      const dayKey = new Date().toISOString().split('T')[0].toLowerCase().slice(0, 3)
-      const mealKey = 'l' // Assuming lunch for now
       updateObj[`${dayKey}_${mealKey}_status`] = 'Applied'
 
       // Add dish responses
-      Object.entries(editingResponses.responses).forEach(([dish, response]) => {
-        const dishIndex = parseInt(dish.split('_')[1]) - 1 // Convert dish_1 to index 0
+      Object.entries(editingResponses.responses || {}).forEach(([dish, response]) => {
+        const dishIndex = parseInt(dish.split('_')[1], 10) - 1
         const colName = `${dayKey}_${mealKey}_dish_${dishIndex + 1}`
         
         if (response === 'no') {
           updateObj[colName] = 'No'
-        } else if (response.status === 'yes') {
+        } else if (response && response.status === 'yes') {
           updateObj[colName] = String(response.value)
         } else if (typeof response === 'number') {
           updateObj[colName] = String(response)
-        } else {
-          updateObj[colName] = response
+        } else if (response) {
+          updateObj[colName] = String(response)
         }
       })
 
-      // Save to database (survey_day_responses is the single source of truth)
-      const { error: upsertError } = await supabase
-        .from('survey_day_responses')
-        .upsert([updateObj], { onConflict: 'user_id,week_id,day' })
-
-      if (upsertError) throw upsertError
+      // Save to database (survey_day_responses)
+      const { error: saveError } = await submitSurveyRow(updateObj)
+      if (saveError) throw saveError
 
       // Call onSave callback if provided
       if (onSave) {
@@ -125,7 +128,7 @@ export default function SurveyEditModal({
       setTimeout(() => {
         onClose()
         setSuccess('')
-      }, 2000)
+      }, 1500)
 
     } catch (err) {
       setError('Error saving survey: ' + err.message)

@@ -7,7 +7,7 @@ import { DAYS, getSurveyTargetWeek } from '../common/utils'
 import { DEFAULT_MENU } from '../common/constants'
 import {
   isRotiItem, isCountInput, canEditMeal, isSurveyOpen,
-  denormalizeDishValue, getPctColor,
+  normalizeDishValue, denormalizeDishValue, getPctColor,
   mergeDishSnapshot, getSlotDishes,
 } from '../hooks/useSurvey'
 import { submitSurveyRow, beginSurvey } from '../lib/submitSurvey'
@@ -254,7 +254,24 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
   const appT = useTheme()
   const T = useMemo(() => buildTheme(appT), [appT])
 
-  const currentWeekId = getSurveyTargetWeek(appSettings)
+  const [liveAppSettings, setLiveAppSettings] = useState(appSettings || {})
+
+  // Hydrate app settings from Supabase if not provided or empty
+  useEffect(() => {
+    if (appSettings && Object.keys(appSettings).length > 0) {
+      setLiveAppSettings(appSettings)
+    } else {
+      supabase.from('app_settings').select('*').then(({ data }) => {
+        if (data && data.length) {
+          const s = {}
+          data.forEach(r => { if (r && r.key) s[r.key] = r.value })
+          setLiveAppSettings(s)
+        }
+      }).catch(() => {})
+    }
+  }, [appSettings])
+
+  const currentWeekId = useMemo(() => getSurveyTargetWeek(liveAppSettings), [liveAppSettings])
   const weeklyMenuRaw = useWeeklyMenu(currentWeekId)
 
   // Resolve initial day index robustly (case-insensitive)
@@ -291,28 +308,26 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
   const dayKey = currentDay.substring(0, 3).toLowerCase()
 
   // Build menu dishes for the active day.
-  // NOTE: values here MUST be referentially stable across renders — unstable
-  // arrays feed into populateDay's useCallback, whose effect calls setState,
-  // which would cause an infinite "Maximum update depth exceeded" loop.
+  // Use exact weekly_menu rows, fallback to snapshot from existing survey response.
   const menu = useMemo(
-    () => weeklyMenuRaw?.[currentDay] || weeklyMenuRaw?.[cap(currentDay)] || { lunch: [], dinner: [] },
-    [weeklyMenuRaw, currentDay]
+    () => weeklyMenuRaw?.[currentDay] || weeklyMenuRaw?.[cap(currentDay)] || weeklyMenuRaw?.[dayKey] || { lunch: [], dinner: [] },
+    [weeklyMenuRaw, currentDay, dayKey]
   )
   const lunchDishes = useMemo(
-    () => (menu.lunch?.length ? menu.lunch : getSlotDishes(existingData, currentDay, 'lunch', parseDishes(DEFAULT_MENU[currentDay]?.lunch))),
+    () => (menu.lunch?.length ? menu.lunch : getSlotDishes(existingData, currentDay, 'lunch', [])),
     [menu, existingData, currentDay]
   )
   const dinnerDishes = useMemo(
-    () => (menu.dinner?.length ? menu.dinner : getSlotDishes(existingData, currentDay, 'dinner', parseDishes(DEFAULT_MENU[currentDay]?.dinner))),
+    () => (menu.dinner?.length ? menu.dinner : getSlotDishes(existingData, currentDay, 'dinner', [])),
     [menu, existingData, currentDay]
   )
 
   const slotList = useMemo(() => DAYS.flatMap(d => [{ day: d, meal: 'lunch' }, { day: d, meal: 'dinner' }]), [])
 
   // Permissions
-  const surveyOpen = isSurveyOpen(appSettings, user?.id)
-  const lunchEditable = canEditMeal(currentDay, currentWeekId, 'lunch', appSettings)
-  const dinnerEditable = canEditMeal(currentDay, currentWeekId, 'dinner', appSettings)
+  const surveyOpen = isSurveyOpen(liveAppSettings, user?.id)
+  const lunchEditable = canEditMeal(currentDay, currentWeekId, 'lunch', liveAppSettings)
+  const dinnerEditable = canEditMeal(currentDay, currentWeekId, 'dinner', liveAppSettings)
   const dayEditable = surveyOpen || lunchEditable || dinnerEditable
 
   // Validation helpers
@@ -325,13 +340,13 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
   const isLunchComplete = lunchWantsFood === false
     || (lunchWantsFood === true && lunchDishes.length === 0)
     || (lunchWantsFood === true && lunchDishes.length > 0 && lunchDishes.every((dish, idx) =>
-      isDishAnswered(dish, lunchResponses[dish], isCountInput(appSettings, currentDay, 'lunch', idx))
+      isDishAnswered(dish, lunchResponses[dish], isCountInput(liveAppSettings, currentDay, 'lunch', idx))
     ))
 
   const isDinnerComplete = dinnerWantsFood === false
     || (dinnerWantsFood === true && dinnerDishes.length === 0)
     || (dinnerWantsFood === true && dinnerDishes.length > 0 && dinnerDishes.every((dish, idx) =>
-      isDishAnswered(dish, dinnerResponses[dish], isCountInput(appSettings, currentDay, 'dinner', idx))
+      isDishAnswered(dish, dinnerResponses[dish], isCountInput(liveAppSettings, currentDay, 'dinner', idx))
     ))
 
   const isDayComplete = lunchWantsFood !== null && dinnerWantsFood !== null && isLunchComplete && isDinnerComplete
@@ -388,11 +403,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     return () => supabase.removeChannel(ch)
   }, [user?.id, currentWeekId])
 
-  // ── Fresh form, sequential flow ──
-  // Previous answers are NEVER prefilled — each day starts blank.
-  // On open, jump once to the first day that isn't fully answered yet,
-  // so the user fills Monday → Tuesday → … in order (Save & Continue
-  // only unlocks when the current day's Lunch + Dinner are complete).
+  // ── Sequential flow: jump once to first incomplete day for new surveys ──
   const positionedRef = useRef(false)
   useEffect(() => {
     if (!dataLoaded || positionedRef.current || initialDay) return
@@ -403,6 +414,49 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     })
     if (firstIncomplete !== -1) setCurrentDayIndex(firstIncomplete)
   }, [dataLoaded, existingData, initialDay])
+
+  // ── Prefill active day choices from survey_day_responses for editing & continuation ──
+  useEffect(() => {
+    if (!existingData) return
+    const lVal = existingData[`${dayKey}_l_status`]
+    const dVal = existingData[`${dayKey}_d_status`]
+
+    if (lVal === 'Applied' || lVal === 'opted_in') {
+      setLunchWantsFood(true)
+      const lMap = {}
+      lunchDishes.forEach((dish, idx) => {
+        const raw = existingData[`${dayKey}_l_dish_${idx + 1}`]
+        if (raw !== undefined && raw !== null && raw !== '') {
+          lMap[dish] = normalizeDishValue(raw, dish, isCountInput(liveAppSettings, currentDay, 'lunch', idx))
+        }
+      })
+      setLunchResponses(lMap)
+    } else if (lVal === 'Skipped' || lVal === 'opted_out') {
+      setLunchWantsFood(false)
+      setLunchResponses({})
+    } else {
+      setLunchWantsFood(null)
+      setLunchResponses({})
+    }
+
+    if (dVal === 'Applied' || dVal === 'opted_in') {
+      setDinnerWantsFood(true)
+      const dMap = {}
+      dinnerDishes.forEach((dish, idx) => {
+        const raw = existingData[`${dayKey}_d_dish_${idx + 1}`]
+        if (raw !== undefined && raw !== null && raw !== '') {
+          dMap[dish] = normalizeDishValue(raw, dish, isCountInput(liveAppSettings, currentDay, 'dinner', idx))
+        }
+      })
+      setDinnerResponses(dMap)
+    } else if (dVal === 'Skipped' || dVal === 'opted_out') {
+      setDinnerWantsFood(false)
+      setDinnerResponses({})
+    } else {
+      setDinnerWantsFood(null)
+      setDinnerResponses({})
+    }
+  }, [existingData, dayKey, currentDay, currentDayIndex, lunchDishes, dinnerDishes, liveAppSettings])
 
   // ── Show intro screen for first-timers ──
   useEffect(() => {
@@ -435,7 +489,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
       lunchDishes.forEach((dish, idx) => {
         const val = lunchResponses[dish]
         if (val !== undefined && val !== null) {
-          payload[`${dayKey}_l_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCountInput(appSettings, currentDay, 'lunch', idx))
+          payload[`${dayKey}_l_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCountInput(liveAppSettings, currentDay, 'lunch', idx))
         }
       })
     }
@@ -443,12 +497,11 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
       dinnerDishes.forEach((dish, idx) => {
         const val = dinnerResponses[dish]
         if (val !== undefined && val !== null) {
-          payload[`${dayKey}_d_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCountInput(appSettings, currentDay, 'dinner', idx))
+          payload[`${dayKey}_d_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCountInput(liveAppSettings, currentDay, 'dinner', idx))
         }
       })
     }
-    return payload
-  }, [lunchWantsFood, dinnerWantsFood, user?.id, currentWeekId, dayKey, userData, existingData, currentDay, lunchDishes, dinnerDishes, lunchResponses, dinnerResponses, appSettings])
+  }, [lunchWantsFood, dinnerWantsFood, user?.id, currentWeekId, dayKey, userData, existingData, currentDay, lunchDishes, dinnerDishes, lunchResponses, dinnerResponses, liveAppSettings])
 
   const saveCurrentDay = async () => {
     if (loading) return false
@@ -470,7 +523,6 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
   }
 
   // ── Lunch opt-in/skip handlers ──
-  // NOTE: opting in does NOT prefill any dish — user answers each dish fresh.
   const handleOptInLunch = () => {
     setLunchWantsFood(true)
   }
@@ -498,22 +550,22 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
       const next = { ...prev, [dish]: val }
       // auto-scroll to dinner when lunch is complete
       if (dinnerWantsFood === null) {
-        const done = lunchDishes.every((d, i) => isDishAnswered(d, next[d], isCountInput(appSettings, currentDay, 'lunch', i)))
+        const done = lunchDishes.every((d, i) => isDishAnswered(d, next[d], isCountInput(liveAppSettings, currentDay, 'lunch', i)))
         if (done) setTimeout(() => dinnerCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 320)
       }
       return next
     })
-  }, [lunchDishes, dinnerWantsFood, appSettings, currentDay, isDishAnswered])
+  }, [lunchDishes, dinnerWantsFood, liveAppSettings, currentDay, isDishAnswered])
 
   const handleDinnerDish = useCallback((dish, val) => {
     setDinnerResponses(prev => {
       const next = { ...prev, [dish]: val }
       // auto-scroll to save button when dinner is complete
-      const done = dinnerDishes.every((d, i) => isDishAnswered(d, next[d], isCountInput(appSettings, currentDay, 'dinner', i)))
+      const done = dinnerDishes.every((d, i) => isDishAnswered(d, next[d], isCountInput(liveAppSettings, currentDay, 'dinner', i)))
       if (done) setTimeout(() => bottomNavRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 320)
       return next
     })
-  }, [dinnerDishes, appSettings, currentDay, isDishAnswered])
+  }, [dinnerDishes, liveAppSettings, currentDay, isDishAnswered])
 
   // ── Select/clear all helpers ──
   const selectAll = (meal) => {
@@ -521,7 +573,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     const res = {}
     dishes.forEach((d, idx) => {
       if (isRotiItem(d)) res[d] = 'yes'
-      else if (isCountInput(appSettings, currentDay, meal, idx)) {
+      else if (isCountInput(liveAppSettings, currentDay, meal, idx)) {
         const mx = snackDefaults?.[`dish_${idx + 1}`] ?? 99
         res[d] = mx === 0 ? 'no' : { status: 'yes', value: 1 }
       } else res[d] = 100
@@ -540,7 +592,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     const res = {}
     dishes.forEach((d, idx) => {
       if (isRotiItem(d)) res[d] = 'no'
-      else if (isCountInput(appSettings, currentDay, meal, idx)) res[d] = 'no'
+      else if (isCountInput(liveAppSettings, currentDay, meal, idx)) res[d] = 'no'
       else res[d] = 0
     })
     if (meal === 'lunch') setLunchResponses(prev => ({ ...prev, ...res }))
@@ -553,8 +605,6 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     if (!isDayComplete) { setErrorToast(`Complete both Lunch & Dinner for ${currentDayName} first.`); return }
     await saveCurrentDay()
     setCurrentDayIndex(prev => prev + 1)
-    setLunchWantsFood(null); setDinnerWantsFood(null)
-    setLunchResponses({}); setDinnerResponses({})
     setTimeout(() => modalTopRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }
 
@@ -562,8 +612,6 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     if (currentDayIndex <= 0) return
     if (isDayComplete) await saveCurrentDay()
     setCurrentDayIndex(prev => prev - 1)
-    setLunchWantsFood(null); setDinnerWantsFood(null)
-    setLunchResponses({}); setDinnerResponses({})
     setTimeout(() => modalTopRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
   }
 
@@ -723,7 +771,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
               </div>
               {lunchDishes.length > 0
                 ? lunchDishes.map((dish, idx) => (
-                  <DishRow key={`lunch-${dish}-${idx}`} dish={dish} idx={idx} mealType="lunch" value={lunchResponses[dish]} onChange={handleLunchDish} T={T} appSettings={appSettings} currentDay={currentDay} snackDefaults={snackDefaults} />
+                  <DishRow key={`lunch-${dish}-${idx}`} dish={dish} idx={idx} mealType="lunch" value={lunchResponses[dish]} onChange={handleLunchDish} T={T} appSettings={liveAppSettings} currentDay={currentDay} snackDefaults={snackDefaults} />
                 ))
                 : <div style={{ padding: 14, textAlign: 'center', color: T.textSub, fontSize: 12.5, fontStyle: 'italic' }}>📋 Lunch menu being prepared…</div>
               }
@@ -774,7 +822,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
                 </div>
                 {dinnerDishes.length > 0
                   ? dinnerDishes.map((dish, idx) => (
-                    <DishRow key={`dinner-${dish}-${idx}`} dish={dish} idx={idx} mealType="dinner" value={dinnerResponses[dish]} onChange={handleDinnerDish} T={T} appSettings={appSettings} currentDay={currentDay} snackDefaults={snackDefaults} />
+                    <DishRow key={`dinner-${dish}-${idx}`} dish={dish} idx={idx} mealType="dinner" value={dinnerResponses[dish]} onChange={handleDinnerDish} T={T} appSettings={liveAppSettings} currentDay={currentDay} snackDefaults={snackDefaults} />
                   ))
                   : <div style={{ padding: 14, textAlign: 'center', color: T.textSub, fontSize: 12.5, fontStyle: 'italic' }}>📋 Dinner menu being prepared…</div>
                 }

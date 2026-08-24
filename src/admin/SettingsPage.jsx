@@ -99,10 +99,19 @@ const parseMenuCSV = (text) => {
   return { columns, byMeal }
 }
 
+const BLANK_MENU = {
+  monday: { lunch: '', dinner: '', ar: 'الإثنين' },
+  tuesday: { lunch: '', dinner: '', ar: 'الثلاثاء' },
+  wednesday: { lunch: '', dinner: '', ar: 'الأربعاء' },
+  thursday: { lunch: '', dinner: '', ar: 'الخميس' },
+  friday: { lunch: '', dinner: '', ar: 'الجمعة' },
+  saturday: { lunch: '', dinner: '', ar: 'السبت' },
+}
+
 const capDay = (d) => d ? d.charAt(0).toUpperCase() + d.slice(1) : d
 
 // Build a ready-to-edit template seeded with the current/default menu
-const buildMenuCSVTemplate = (seed = DEFAULT_MENU) => {
+const buildMenuCSVTemplate = (seed = BLANK_MENU) => {
   const dayKeys = DAYS
   const mk = m => m.charAt(0).toUpperCase() + m.slice(1)
   const headers = dayKeys.flatMap(d => [`${mk(d)} Lunch`, `${mk(d)} Dinner`])
@@ -113,7 +122,7 @@ const buildMenuCSVTemplate = (seed = DEFAULT_MENU) => {
 }
 
 export default function SettingsPage() {
-  const [menu, setMenu]         = useState(DEFAULT_MENU)
+  const [menu, setMenu]         = useState(BLANK_MENU)
   const [helpline, setHelpline] = useState('')
   const [loading, setLoading]   = useState(true)
   const [saving, setSaving]     = useState(false)
@@ -269,7 +278,7 @@ export default function SettingsPage() {
           commit(() => setMenu(formatted))
           commit(() => setPublishAt(hasPublishAt ? new Date(hasPublishAt).toISOString().slice(0, 16) : ''))
         } else {
-          commit(() => setMenu(DEFAULT_MENU))
+          commit(() => setMenu(BLANK_MENU))
           commit(() => setPublishAt(''))
         }
         setHasDraft(false)
@@ -308,7 +317,7 @@ export default function SettingsPage() {
         setMenu(formatted)
         setPublishAt(hasPublishAt ? new Date(hasPublishAt).toISOString().slice(0, 16) : '')
       } else {
-        setMenu(DEFAULT_MENU)
+        setMenu(BLANK_MENU)
         setPublishAt('')
       }
       dirtyRef.current = false
@@ -891,6 +900,13 @@ export default function SettingsPage() {
                       if (menuErr) {
                         setMsg({ text: `Publish failed (menu): ${menuErr.message}`, type: 'error' })
                       } else {
+                        // Automatically delete previous weeks' menus to keep database clean and prevent wrong menu glitches
+                        try {
+                          await supabase.from('weekly_menu').delete().lt('week_start', targetWeek)
+                        } catch (pruneErr) {
+                          console.warn('Old weekly_menu pruning failed:', pruneErr)
+                        }
+
                         await supabase.from('app_settings').delete().eq('key', 'draft_data')
                         setHasDraft(false)
                         const publishingLiveWeek = targetWeek === calendarWeek

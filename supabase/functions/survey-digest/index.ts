@@ -79,15 +79,18 @@ serve(async (req) => {
       if (!users?.length) return new Response(JSON.stringify({ ok: true, sent: 0 }), { status: 200, headers })
 
       const userIds = users.map(u => u.user_id)
-      const { data: submissions } = await supabase
-        .from('survey_submissions_flat')
-        .select('user_id, ' + statusField)
+      const mealStatusField = mealType === 'l' ? 'l_status' : 'd_status'
+
+      const { data: dayResponses } = await supabase
+        .from('survey_day_responses')
+        .select(`user_id, ${mealStatusField}`)
         .eq('week_id', weekId)
+        .eq('day', dk)
         .in('user_id', userIds)
 
       const submittedIds = new Set(
-        (submissions || [])
-          .filter(s => s[statusField])
+        (dayResponses || [])
+          .filter(s => s[mealStatusField])
           .map(s => s.user_id)
       )
 
@@ -134,20 +137,22 @@ serve(async (req) => {
       if (!dayName) return new Response(JSON.stringify({ ok: true, skipped: true }), { status: 200, headers })
 
       const dk = dayName.substring(0, 3).toLowerCase()
-      const { data: subs } = await supabase
-        .from('survey_submissions_flat')
-        .select(`${dk}_l_status, ${dk}_d_status`)
+      const { data: dayResponses } = await supabase
+        .from('survey_day_responses')
+        .select('l_status, d_status')
         .eq('week_id', weekId)
+        .eq('day', dk)
 
       let lunchApplied = 0, lunchSkipped = 0, lunchPending = 0
       let dinnerApplied = 0, dinnerSkipped = 0, dinnerPending = 0
 
-      for (const s of subs || []) {
-        if (s[`${dk}_l_status`] === 'Applied') lunchApplied++
-        else if (s[`${dk}_l_status`] === 'Skipped') lunchSkipped++
+      for (const s of dayResponses || []) {
+        if (s.l_status === 'Applied' || s.l_status === 'opted_in') lunchApplied++
+        else if (s.l_status === 'Skipped' || s.l_status === 'opted_out') lunchSkipped++
         else lunchPending++
-        if (s[`${dk}_d_status`] === 'Applied') dinnerApplied++
-        else if (s[`${dk}_d_status`] === 'Skipped') dinnerSkipped++
+
+        if (s.d_status === 'Applied' || s.d_status === 'opted_in') dinnerApplied++
+        else if (s.d_status === 'Skipped' || s.d_status === 'opted_out') dinnerSkipped++
         else dinnerPending++
       }
 

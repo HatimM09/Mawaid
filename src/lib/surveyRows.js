@@ -23,8 +23,11 @@ function parseMetaJson(val) {
 export function flattenDayRows(rows) {
   const byUser = {}
   for (const row of rows || []) {
-    if (!row || !row.day || !DAY_KEYS.includes(row.day)) continue
-    const key = `${row.user_id}|${row.week_id}`
+    if (!row || !row.day) continue
+    const rawDay = String(row.day).trim().toLowerCase()
+    const normDay = rawDay.length > 3 ? rawDay.substring(0, 3) : rawDay
+    if (!DAY_KEYS.includes(normDay)) continue
+    const key = `${row.user_id || row.thali_number}|${row.week_id}`
     let flat = byUser[key]
     if (!flat) {
       flat = byUser[key] = {
@@ -60,7 +63,7 @@ export function flattenDayRows(rows) {
     for (const [k, v] of Object.entries(row)) {
       if (META.has(k)) continue
       if (k === 'l_status' || k === 'd_status' || /^[ld]_dish_\d+$/.test(k)) {
-        flat[`${row.day}_${k}`] = v
+        flat[`${normDay}_${k}`] = v
       } else {
         flat[k] = v
       }
@@ -75,17 +78,31 @@ export function flattenDayRow(rows) {
   return list.length ? list[0] : null
 }
 
-// Load one member's flat row for a week. Reads only survey_day_responses;
-// no legacy flat table fallback in the core path.
+// Load one member's flat row for a week. Reads survey_day_responses with fallback to survey_submissions_flat.
 export async function fetchUserSurveyRow(userId, weekId) {
   const { data: dayData, error: dayErr } = await supabase
     .from('survey_day_responses')
     .select('*')
     .eq('user_id', userId)
     .eq('week_id', weekId)
-  if (dayErr) return { data: null, error: dayErr }
-  const flat = flattenDayRow(dayData)
-  return { data: flat || null, error: null }
+
+  if (dayData && dayData.length > 0) {
+    const flat = flattenDayRow(dayData)
+    if (flat) return { data: flat, error: null }
+  }
+
+  // Fallback to survey_submissions_flat in case old app submitted there
+  try {
+    const { data: flatData } = await supabase
+      .from('survey_submissions_flat')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('week_id', weekId)
+      .maybeSingle()
+    if (flatData) return { data: flatData, error: null }
+  } catch {}
+
+  return { data: null, error: dayErr || null }
 }
 
 // Load the member's MOST RECENT week (latest week_id with any saved day).
@@ -96,25 +113,74 @@ export async function fetchLatestUserSurveyRow(userId) {
     .eq('user_id', userId)
     .order('week_id', { ascending: false })
     .limit(1)
-  if (weeksErr) return { data: null, error: weeksErr }
+
   const latest = weeks && weeks.length ? weeks[0].week_id : null
   if (latest) return fetchUserSurveyRow(userId, latest)
+
+  try {
+    const { data: flatWeeks } = await supabase
+      .from('survey_submissions_flat')
+      .select('week_id')
+      .eq('user_id', userId)
+      .order('week_id', { ascending: false })
+      .limit(1)
+    const flatLatest = flatWeeks && flatWeeks.length ? flatWeeks[0].week_id : null
+    if (flatLatest) return fetchUserSurveyRow(userId, flatLatest)
+  } catch {}
+
   return { data: null, error: null }
 }
 
 // Load every member's row for a week (or all weeks when omitted).
-// Live day rows only — no legacy flat table fallback.
 export async function fetchWeekRows(weekId) {
-  const { data, error } = await supabase
+  const { data: dayData, error: dayErr } = await supabase
     .from('survey_day_responses')
     .select('*')
     .eq('week_id', weekId)
-  if (error) return { data: null, error }
-  return { data: flattenDayRows(data), error: null }
+
+  let flatFallback = []
+  try {
+    const { data: flatRows } = await supabase
+      .from('survey_submissions_flat')
+      .select('*')
+      .eq('week_id', weekId)
+    if (flatRows) flatFallback = flatRows
+  } catch {}
+
+  const dayFlats = flattenDayRows(dayData || [])
+  const seenKeys = new Set(dayFlats.map(r => r.user_id || r.thali_number))
+
+  const merged = [...dayFlats]
+  for (const f of flatFallback) {
+    const key = f.user_id || f.thali_number
+    if (!seenKeys.has(key)) {
+      merged.push(f)
+      seenKeys.add(key)
+    } else {
+      const existing = merged.find(m => (m.user_id && m.user_id === f.user_id) || (m.thali_number && String(m.thali_number) === String(f.thali_number)))
+      if (existing) {
+        DAY_KEYS.forEach(dk => {
+          ;['l', 'd'].forEach(mk => {
+            const stKey = `${dk}_${mk}_status`
+            if (!existing[stKey] && f[stKey]) {
+              existing[stKey] = f[stKey]
+              for (let i = 1; i <= 5; i++) {
+                const dishKey = `${dk}_${mk}_dish_${i}`
+                if (existing[dishKey] === undefined && f[dishKey] !== undefined) {
+                  existing[dishKey] = f[dishKey]
+                }
+              }
+            }
+          })
+        })
+      }
+    }
+  }
+
+  return { data: merged, error: null }
 }
 
 // Admin: erase one member's lunch or dinner for a single day.
-// Only clears survey_day_responses — no legacy flat mirror update needed.
 export async function eraseSurveySlot(userId, weekId, day, meal) {
   const dayKey = (day || '').substring(0, 3).toLowerCase()
   try {
@@ -130,16 +196,15 @@ export async function eraseSurveySlot(userId, weekId, day, meal) {
     console.warn('[eraseSurveySlot] RPC exception, falling back to direct update:', e)
   }
 
-  // Direct Supabase fallback — only survey_day_responses
+  // Direct Supabase fallback
   try {
     const mealPrefix = meal === 'dinner' ? 'd' : 'l'
-    
     const dayUpdates = { [`${mealPrefix}_status`]: null }
     for (let i = 1; i <= 5; i++) {
       dayUpdates[`${mealPrefix}_dish_${i}`] = null
     }
     dayUpdates.updated_at = new Date().toISOString()
-    
+
     const { error: dayErr } = await supabase
       .from('survey_day_responses')
       .update(dayUpdates)
@@ -157,9 +222,47 @@ export async function eraseSurveySlot(userId, weekId, day, meal) {
 
 // Load all rows for all users (used by admin grids).
 export async function fetchAllUserRows() {
-  const { data, error } = await supabase
+  const { data: dayData, error: dayErr } = await supabase
     .from('survey_day_responses')
     .select('*')
-  if (error) return { data: null, error }
-  return { data: flattenDayRows(data), error: null }
+
+  let flatFallback = []
+  try {
+    const { data: flatRows } = await supabase
+      .from('survey_submissions_flat')
+      .select('*')
+    if (flatRows) flatFallback = flatRows
+  } catch {}
+
+  const dayFlats = flattenDayRows(dayData || [])
+  const seenKeys = new Set(dayFlats.map(r => `${r.user_id || r.thali_number}|${r.week_id}`))
+
+  const merged = [...dayFlats]
+  for (const f of flatFallback) {
+    const key = `${f.user_id || f.thali_number}|${f.week_id}`
+    if (!seenKeys.has(key)) {
+      merged.push(f)
+      seenKeys.add(key)
+    } else {
+      const existing = merged.find(m => `${m.user_id || m.thali_number}|${m.week_id}` === key)
+      if (existing) {
+        DAY_KEYS.forEach(dk => {
+          ;['l', 'd'].forEach(mk => {
+            const stKey = `${dk}_${mk}_status`
+            if (!existing[stKey] && f[stKey]) {
+              existing[stKey] = f[stKey]
+              for (let i = 1; i <= 5; i++) {
+                const dishKey = `${dk}_${mk}_dish_${i}`
+                if (existing[dishKey] === undefined && f[dishKey] !== undefined) {
+                  existing[dishKey] = f[dishKey]
+                }
+              }
+            }
+          })
+        })
+      }
+    }
+  }
+
+  return { data: merged, error: null }
 }

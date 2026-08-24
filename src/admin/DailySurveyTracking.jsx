@@ -269,6 +269,10 @@ export default function DailySurveyTracking() {
             await supabase.from('survey_day_responses').delete().eq('week_id', ow)
           }
         }
+        // Prune previous weeks' weekly_menu rows
+        try {
+          await supabase.from('weekly_menu').delete().lt('week_start', currentWeek)
+        } catch {}
       } catch (e) { console.warn('Cleanup error:', e) }
 
       // Load app settings (dish input config, survey open hour, status, user overrides)
@@ -431,22 +435,49 @@ setLoadError(null)
       }
       setDisplayMenu(menuForDay)
 
+      const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+
+      const matchUserRow = (r, u) => {
+        if (!r || !u) return false
+        if (r.user_id && u.user_id && r.user_id === u.user_id) return true
+        if (r.thali_number && u.thali_number) {
+          const ctR = cleanThali(r.thali_number)
+          const ctU = cleanThali(u.thali_number)
+          if (ctR && ctU && ctR === ctU) return true
+        }
+        if (r.email && u.email && r.email.toLowerCase().trim() === u.email.toLowerCase().trim()) return true
+        return false
+      }
+
       const results = (users || []).map(u => {
-        // Use the first (most recent) merged row from survey_day_responses
-        const row = ((allRows || []).find(r => r.user_id === u.user_id) || {})
-        let resp = row
-        if (weekFilter === 'all') {
-          // Prefer the CALENDAR week's row when the selected day belongs to it
-          // (daily edits live there); otherwise fall back to the latest week.
-          const cal = getCalendarWeekDate()
-          const preferCal = dayBelongsToCalendarWeek(day) && cal !== surveyWeekId()
-          const candidates = (allRows || []).filter(r => r.user_id === u.user_id)
-          const recent = candidates.sort((a, b) =>
-            (b.week_id || '').localeCompare(a.week_id || '')
-          )[0]
-          resp = (preferCal ? candidates.find(r => r.week_id === cal) : null) || recent || row
+        const candidates = (allRows || []).filter(r => matchUserRow(r, u))
+
+        let resp = {}
+        const dayKey = day.substring(0, 3).toLowerCase()
+        const mealKey = meal === 'lunch' ? 'l' : 'd'
+        const statusKey = `${dayKey}_${mealKey}_status`
+
+        if (weekFilter !== 'all') {
+          resp = candidates.find(r => r.week_id === weekFilter) || candidates[0] || {}
         } else {
-          resp = (allRows || []).find(r => r.user_id === u.user_id && r.week_id === weekFilter) || row
+          const cal = getCalendarWeekDate()
+          const target = targetWeekId || surveyWeekId()
+
+          // Find candidate rows that actually have an answered status for this day+meal
+          const answered = candidates.filter(r => r && r[statusKey])
+          if (answered.length > 0) {
+            const calMatch = answered.find(r => r.week_id === cal)
+            const targetMatch = answered.find(r => r.week_id === target)
+            const latestAnswered = [...answered].sort((a, b) => (b.week_id || '').localeCompare(a.week_id || ''))[0]
+            resp = (dayBelongsToCalendarWeek(day) ? (calMatch || targetMatch) : (targetMatch || calMatch)) || latestAnswered || {}
+          } else {
+            // Check any row with ANY day answered
+            const anyAnswered = candidates.filter(r => {
+              return DAY_KEYS.some(dk => r && (r[`${dk}_l_status`] || r[`${dk}_d_status`]))
+            })
+            const latestAny = [...(anyAnswered.length ? anyAnswered : candidates)].sort((a, b) => (b.week_id || '').localeCompare(a.week_id || ''))[0]
+            resp = latestAny || {}
+          }
         }
         const dayKeyLower = day.toLowerCase()
         const dayMenu = menuForDay[dayKeyLower] || menuForDay[day] || {}

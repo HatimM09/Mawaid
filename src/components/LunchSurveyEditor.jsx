@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react'
 import LunchSurveyEditCard from './LunchSurveyEditCard'
 import { supabase } from '../lib/firebaseClient'
 import { THEMES } from '../admin/ui'
-import { getSurveyTargetWeek } from '../common/utils'
+import { getSurveyTargetWeek, DAY_KEYS } from '../common/utils'
+import { submitSurveyRow } from '../lib/submitSurvey'
 
 /**
  * LunchSurveyEditor - Direct editing interface for lunch survey responses
@@ -66,10 +67,11 @@ export default function LunchSurveyEditor({
         .eq('day', today)
         .maybeSingle()
 
-      // Load weekly menu
+      // Load weekly menu for the active week
       const { data: menuData } = await supabase
         .from('weekly_menu')
         .select('*')
+        .eq('week_start', currentWeekId)
         .order('day_name', { ascending: true })
 
       // Process menu data
@@ -136,19 +138,24 @@ export default function LunchSurveyEditor({
 
   const saveSurveyResponse = async (dish, response) => {
     try {
-      const { user } = await supabase.auth.getUser()
+      const { data: authData } = await supabase.auth.getUser()
+      const user = authData?.user
+      if (!user) return
+
       const currentWeekId = getSurveyTargetWeek(appSettings)
-      const today = new Date().toISOString().split('T')[0].toLowerCase().slice(0, 3)
+      const dayIdx = new Date().getDay()
+      const today = DAY_KEYS[dayIdx > 0 && dayIdx <= 6 ? dayIdx - 1 : 0]
       const mealKey = 'l'
       
       // Get dish number
-      const dishNumber = parseInt(dish.split('_')[1])
+      const dishNumber = parseInt(dish.split('_')[1], 10)
       const colName = `${today}_${mealKey}_dish_${dishNumber}`
 
       // Prepare update object
       const updateObj = {
         user_id: user.id,
         week_id: currentWeekId,
+        day: today,
         updated_at: new Date().toISOString(),
         [`${today}_${mealKey}_status`]: 'Applied'
       }
@@ -156,18 +163,16 @@ export default function LunchSurveyEditor({
       // Convert response to database format
       if (response === 'no') {
         updateObj[colName] = 'No'
-      } else if (response.status === 'yes') {
+      } else if (response && response.status === 'yes') {
         updateObj[colName] = String(response.value)
       } else if (typeof response === 'number') {
         updateObj[colName] = String(response)
-      } else {
-        updateObj[colName] = response
+      } else if (response) {
+        updateObj[colName] = String(response)
       }
 
-      // Save to database (survey_day_responses is the single source of truth)
-      await supabase
-        .from('survey_day_responses')
-        .upsert([updateObj], { onConflict: 'user_id,week_id,day' })
+      // Save to database (survey_day_responses)
+      await submitSurveyRow(updateObj)
 
     } catch (err) {
       console.error('Error saving response:', err)
@@ -180,41 +185,45 @@ export default function LunchSurveyEditor({
     setSuccess('')
 
     try {
-      const { user } = await supabase.auth.getUser()
+      const { data: authData } = await supabase.auth.getUser()
+      const user = authData?.user
+      if (!user) throw new Error('User not authenticated')
+
       const currentWeekId = getSurveyTargetWeek(appSettings)
-      const today = new Date().toISOString().split('T')[0].toLowerCase().slice(0, 3)
+      const dayIdx = new Date().getDay()
+      const today = DAY_KEYS[dayIdx > 0 && dayIdx <= 6 ? dayIdx - 1 : 0]
       const mealKey = 'l'
 
       // Prepare update object
       const updateObj = {
         user_id: user.id,
         week_id: currentWeekId,
-        thali_number: surveyData.userData.thali_no,
-        email: surveyData.userData.email,
+        day: today,
+        thali_number: surveyData.userData?.thali_no,
+        email: surveyData.userData?.email,
         [`${today}_${mealKey}_status`]: 'Applied',
         updated_at: new Date().toISOString()
       }
 
       // Add all dish responses
-      Object.entries(surveyData.responses).forEach(([dish, response]) => {
-        const dishNumber = parseInt(dish.split('_')[1])
+      Object.entries(surveyData.responses || {}).forEach(([dish, response]) => {
+        const dishNumber = parseInt(dish.split('_')[1], 10)
         const colName = `${today}_${mealKey}_dish_${dishNumber}`
         
         if (response === 'no') {
           updateObj[colName] = 'No'
-        } else if (response.status === 'yes') {
+        } else if (response && response.status === 'yes') {
           updateObj[colName] = String(response.value)
         } else if (typeof response === 'number') {
           updateObj[colName] = String(response)
-        } else {
-          updateObj[colName] = response
+        } else if (response) {
+          updateObj[colName] = String(response)
         }
       })
 
-      // Save to database (survey_day_responses is the single source of truth)
-      await supabase
-        .from('survey_day_responses')
-        .upsert([updateObj], { onConflict: 'user_id,week_id,day' })
+      // Save to database (survey_day_responses)
+      const { error: saveError } = await submitSurveyRow(updateObj)
+      if (saveError) throw saveError
 
       setSuccess('Survey responses updated successfully!')
 

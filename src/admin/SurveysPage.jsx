@@ -222,15 +222,19 @@ export default function SurveysPage() {
         prevWeek.setDate(prevWeek.getDate() - 7)
         const cutoff = prevWeek.toISOString().split('T')[0]
         const { data: oldRows } = await supabase
-          .from('survey_submissions_flat')
+          .from('survey_day_responses')
           .select('week_id').lt('week_id', cutoff)
         if (oldRows && oldRows.length) {
           const oldWeeks = [...new Set(oldRows.map(r => r.week_id))].filter(Boolean)
           for (const ow of oldWeeks) {
             await supabase.from('survey_day_responses').delete().eq('week_id', ow)
-            await supabase.from('survey_submissions_flat').delete().eq('week_id', ow)
+            try { await supabase.from('survey_submissions_flat').delete().eq('week_id', ow) } catch {}
           }
         }
+        // Prune previous weeks' weekly_menu rows
+        try {
+          await supabase.from('weekly_menu').delete().lt('week_start', currentWeek)
+        } catch {}
       } catch (e) { console.warn('Cleanup error:', e) }
 
       // Load full app_settings so week matches member side (dynamic day/time + force status)
@@ -250,7 +254,12 @@ export default function SurveysPage() {
       // Attach user_stats for the UI (name, thali number)
       const { data: userStatsRows } = await supabase.from('user_stats').select('*')
       const statsMap = new Map((userStatsRows || []).map(u => [u.user_id, u]))
-      const merged = (rows || []).map(r => ({ ...r, user_stats: statsMap.get(r.user_id) || null }))
+      const thaliMap = new Map((userStatsRows || []).filter(u => u.thali_number).map(u => [String(u.thali_number).trim(), u]))
+      const emailMap = new Map((userStatsRows || []).filter(u => u.email).map(u => [u.email.toLowerCase().trim(), u]))
+      const merged = (rows || []).map(r => ({
+        ...r,
+        user_stats: statsMap.get(r.user_id) || (r.thali_number && thaliMap.get(String(r.thali_number).trim())) || (r.email && emailMap.get(r.email.toLowerCase().trim())) || null
+      }))
       merged.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))
 
       // Collect distinct week_ids for the filter

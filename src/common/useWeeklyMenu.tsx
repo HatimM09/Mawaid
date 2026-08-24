@@ -4,21 +4,23 @@ import { supabase } from '../lib/firebaseClient';
 import { getSurveyTargetWeek } from './utils';
 import { queryKeys } from '../lib/queryClient';
 
-const formatMenu = (rows: any[], weekId: string) => {
-  const filtered = rows.filter(row => {
-    if (row.week_start !== weekId) return false;
-    if (row.publish_at && new Date(row.publish_at).getTime() > Date.now()) return false;
-    return true;
-  });
+const formatMenu = (rows: any[], weekId?: string) => {
+  const filtered = weekId ? rows.filter(row => row && row.week_start === weekId) : rows;
+  const targetRows = filtered.length > 0 ? filtered : rows;
   const formatted: any = {};
-  filtered.forEach(row => {
-    const dayKey = row.day_name.toLowerCase();
-    formatted[dayKey] = {
-      en: row.day_name,
-      ar: row.day_ar,
+  targetRows.forEach(row => {
+    if (!row || !row.day_name) return;
+    const rawName = String(row.day_name).trim();
+    const dayKey = rawName.toLowerCase();
+    const menuObj = {
+      en: rawName,
+      ar: row.day_ar || '',
       lunch: row.lunch ? row.lunch.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
       dinner: row.dinner ? row.dinner.split(',').map((s: string) => s.trim()).filter(Boolean) : []
     };
+    formatted[dayKey] = menuObj;
+    formatted[rawName] = menuObj;
+    formatted[dayKey.slice(0, 3)] = menuObj;
   });
   return formatted;
 };
@@ -29,7 +31,24 @@ const fetchWeeklyMenu = async (weekStart: string): Promise<any> => {
     .select('*')
     .eq('week_start', weekStart);
   if (error) throw error;
-  return formatMenu(data || [], weekStart);
+
+  if (data && data.length > 0) {
+    return formatMenu(data, weekStart);
+  }
+
+  // Fallback: If no rows found for the requested target week, query the most recent published menu
+  const { data: fallbackData } = await supabase
+    .from('weekly_menu')
+    .select('*')
+    .order('week_start', { ascending: false })
+    .limit(7);
+
+  if (fallbackData && fallbackData.length > 0) {
+    const latestWeek = fallbackData[0].week_start;
+    return formatMenu(fallbackData, latestWeek);
+  }
+
+  return {};
 };
 
 /**
