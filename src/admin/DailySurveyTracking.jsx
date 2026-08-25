@@ -13,7 +13,7 @@ import {
   SectionHeader, Modal, PackingTVView, fmtDate, ErrorBanner
 } from './ui'
 
-import { getSurveyTargetWeek, getCalendarWeekDate, dayBelongsToCalendarWeek, DAYS, toLocalDateStr, isStoppedOnDay } from '../common/utils'
+import { getSurveyTargetWeek, getCalendarWeekDate, dayBelongsToCalendarWeek, DAYS, DAY_KEYS, toLocalDateStr, isStoppedOnDay } from '../common/utils'
 import { getPctColor, getSlotDishes } from '../hooks/useSurvey'
 import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot } from '../lib/surveyRows'
 
