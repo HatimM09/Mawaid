@@ -80,6 +80,20 @@ const SURVEY_STYLES = `
 @keyframes surveyFadeIn { 0%{opacity:0;transform:translateY(8px)} 100%{opacity:1;transform:translateY(0)} }
 `
 
+const createInitialWeekData = () => {
+  const initial = {}
+  DAYS.forEach(day => {
+    const dk = day.substring(0, 3).toLowerCase()
+    initial[dk] = {
+      lunchWantsFood: null,
+      lunchResponses: {},
+      dinnerWantsFood: null,
+      dinnerResponses: {}
+    }
+  })
+  return initial
+}
+
 // ────────────────────────────────────────────────────────────────────
 // DishRow — defined OUTSIDE the main component so it is stable across
 // renders and never gets unmounted/remounted on state changes.
@@ -96,11 +110,6 @@ function DishRow({ dish, idx, mealType, value, onChange, T, appSettings, current
 
   const Sheen = () => (
     <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,0.14),transparent)', pointerEvents: 'none', borderRadius: 'inherit' }} />
-  )
-  const CheckBadge = ({ color, size = 18 }) => (
-    <span style={{ position: 'absolute', top: 5, right: 5, width: size, height: size, borderRadius: '50%', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 2px 10px ${color}70`, zIndex: 2, animation: 'surveyBadgePop 0.3s ease' }}>
-      <span style={{ fontSize: size * 0.6, fontWeight: 900, color: '#0d0d1a', lineHeight: 1 }}>✓</span>
-    </span>
   )
   const StatusPill = ({ label, color }) => (
     <span style={{ fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '3px 10px', borderRadius: 100, whiteSpace: 'nowrap', background: `${color}1a`, color, border: `1px solid ${color}55`, animation: 'surveyBadgePop 0.3s ease' }}>{label}</span>
@@ -126,10 +135,9 @@ function DishRow({ dish, idx, mealType, value, onChange, T, appSettings, current
                   key={opt}
                   type="button"
                   onClick={() => onChange(dish, opt)}
-                  style={{ flex: 1, padding: '13px 8px', borderRadius: 12, border: `1.5px solid ${isSel ? color : T.border}`, background: isSel ? optGrad(color) : 'transparent', color: isSel ? color : T.textSub, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: isSel ? 'scale(1.02)' : 'scale(1)', boxShadow: isSel ? optShadow(color) : 'none', position: 'relative', overflow: 'hidden' }}
+                  style={{ flex: 1, minHeight: 44, padding: '12px 8px', borderRadius: 12, border: `1.5px solid ${isSel ? color : T.border}`, background: isSel ? optGrad(color) : 'transparent', color: isSel ? color : T.textSub, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: isSel ? 'scale(1.02)' : 'scale(1)', boxShadow: isSel ? optShadow(color) : 'none', position: 'relative', overflow: 'hidden', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
                 >
                   {isSel && <Sheen />}
-                  {isSel && <CheckBadge color={color} />}
                   {opt === 'yes' ? '✅ Yes, please' : '❌ No, skip'}
                 </button>
               )
@@ -165,11 +173,11 @@ function DishRow({ dish, idx, mealType, value, onChange, T, appSettings, current
           {showInitial && (
             <div style={{ display: 'flex', gap: 10 }}>
               <button type="button" onClick={() => onChange(dish, { status: 'yes', value: Math.max(1, Math.min(maxVal || 99, 1)) })}
-                style={{ flex: 1, padding: '12px 8px', borderRadius: 12, border: `1.5px solid ${T.yesColor}`, background: optGrad(T.yesColor), color: T.yesColor, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', boxShadow: `0 6px 18px ${T.yesColor}30`, position: 'relative', overflow: 'hidden' }}>
+                style={{ flex: 1, minHeight: 44, padding: '12px 8px', borderRadius: 12, border: `1.5px solid ${T.yesColor}`, background: optGrad(T.yesColor), color: T.yesColor, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', boxShadow: `0 6px 18px ${T.yesColor}30`, position: 'relative', overflow: 'hidden', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
                 <Sheen />✅ Yes, I want
               </button>
               <button type="button" onClick={() => onChange(dish, 'no')}
-                style={{ flex: 1, padding: '12px 8px', borderRadius: 12, border: `1.5px solid ${T.noColor}`, background: optGrad(T.noColor), color: T.noColor, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', position: 'relative', overflow: 'hidden' }}>
+                style={{ flex: 1, minHeight: 44, padding: '12px 8px', borderRadius: 12, border: `1.5px solid ${T.noColor}`, background: optGrad(T.noColor), color: T.noColor, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', position: 'relative', overflow: 'hidden', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
                 <Sheen />❌ No, skip
               </button>
             </div>
@@ -179,7 +187,7 @@ function DishRow({ dish, idx, mealType, value, onChange, T, appSettings, current
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <div style={{ padding: '9px 16px', borderRadius: 10, background: optGrad(T.noColor), border: `1px solid ${T.noColor}50`, color: T.noColor, fontSize: 13, fontWeight: 800, fontFamily: "'DM Sans',sans-serif" }}>❌ Skipped</div>
               <button type="button" onClick={() => onChange(dish, { status: 'yes', value: Math.max(1, Math.min(maxVal || 99, 1)) })}
-                style={{ marginLeft: 'auto', padding: '10px 20px', borderRadius: 12, border: `1.5px solid ${T.accent}`, background: `linear-gradient(145deg,${T.accentBg},transparent)`, color: T.accent, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>
+                style={{ marginLeft: 'auto', minHeight: 42, padding: '10px 20px', borderRadius: 12, border: `1.5px solid ${T.accent}`, background: `linear-gradient(145deg,${T.accentBg},transparent)`, color: T.accent, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
                 ✅ Add back
               </button>
             </div>
@@ -204,7 +212,7 @@ function DishRow({ dish, idx, mealType, value, onChange, T, appSettings, current
                 </button>
               </div>
               <button type="button" onClick={() => onChange(dish, 'no')}
-                style={{ marginLeft: 'auto', padding: '11px 18px', borderRadius: 12, border: `1.5px solid ${T.noColor}50`, background: 'transparent', color: T.noColor, fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>
+                style={{ marginLeft: 'auto', minHeight: 42, padding: '11px 18px', borderRadius: 12, border: `1.5px solid ${T.noColor}50`, background: 'transparent', color: T.noColor, fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
                 ❌ Skip
               </button>
             </div>
@@ -233,10 +241,9 @@ function DishRow({ dish, idx, mealType, value, onChange, T, appSettings, current
             const color = pc || T.accent
             return (
               <button key={pct} type="button" onClick={() => onChange(dish, pct)}
-                style={{ flex: 1, padding: '13px 4px', borderRadius: 12, border: `1.5px solid ${isSel ? color : T.border}`, background: isSel ? optGrad(color) : 'transparent', color: isSel ? color : T.textSub, fontSize: 12.5, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: isSel ? 'scale(1.04)' : 'scale(1)', boxShadow: isSel ? optShadow(color) : 'none', letterSpacing: '0.02em', position: 'relative', overflow: 'hidden' }}>
+                style={{ flex: 1, minHeight: 44, padding: '12px 2px', borderRadius: 12, border: `1.5px solid ${isSel ? color : T.border}`, background: isSel ? optGrad(color) : 'transparent', color: isSel ? color : T.textSub, fontSize: 13, fontWeight: isSel ? 900 : 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.2s ease', transform: isSel ? 'scale(1.03)' : 'scale(1)', boxShadow: isSel ? optShadow(color) : 'none', letterSpacing: '0.01em', position: 'relative', overflow: 'hidden', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
                 {isSel && <Sheen />}
                 {pct === 0 ? '0%' : pct + '%'}
-                {isSel && <CheckBadge color={color} size={16} />}
               </button>
             )
           })}
@@ -267,7 +274,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
           data.forEach(r => { if (r && r.key) s[r.key] = r.value })
           setLiveAppSettings(s)
         }
-      }).catch(() => {})
+      }).catch(() => { })
     }
   }, [appSettings])
 
@@ -282,10 +289,11 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
   }, [initialDay])
 
   const [currentDayIndex, setCurrentDayIndex] = useState(initialDayIndex)
-  const [lunchWantsFood, setLunchWantsFood] = useState(null)   // null | true | false
-  const [dinnerWantsFood, setDinnerWantsFood] = useState(null) // null | true | false
-  const [lunchResponses, setLunchResponses] = useState({})
-  const [dinnerResponses, setDinnerResponses] = useState({})
+  
+  // Unified 6-day state so user responses are preserved in memory across days and syncs
+  const [weekData, setWeekData] = useState(createInitialWeekData)
+  const dirtyDaysRef = useRef(new Set())
+
   const [existingData, setExistingData] = useState(null)
   const [userData, setUserData] = useState({ thali_no: '', email: user?.email || '' })
   const [snackDefaults, setSnackDefaults] = useState(null)
@@ -300,15 +308,23 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
 
   const dinnerCardRef = useRef(null)
   const bottomNavRef = useRef(null)
-  const modalTopRef = useRef(null)
+  const modalScrollRef = useRef(null)
 
   // Computed day info
   const currentDay = DAYS[currentDayIndex] || 'monday'
   const currentDayName = cap(currentDay)
   const dayKey = currentDay.substring(0, 3).toLowerCase()
 
+  // Active day choices
+  const currentDayState = weekData[dayKey] || {
+    lunchWantsFood: null,
+    lunchResponses: {},
+    dinnerWantsFood: null,
+    dinnerResponses: {}
+  }
+  const { lunchWantsFood, lunchResponses, dinnerWantsFood, dinnerResponses } = currentDayState
+
   // Build menu dishes for the active day.
-  // Use exact weekly_menu rows, fallback to snapshot from existing survey response.
   const menu = useMemo(
     () => weeklyMenuRaw?.[currentDay] || weeklyMenuRaw?.[cap(currentDay)] || weeklyMenuRaw?.[dayKey] || { lunch: [], dinner: [] },
     [weeklyMenuRaw, currentDay, dayKey]
@@ -362,6 +378,64 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
   useEffect(() => { if (!errorToast) return; const t = setTimeout(() => setErrorToast(null), 4000); return () => clearTimeout(t) }, [errorToast])
   useEffect(() => { if (!syncMsg) return; const t = setTimeout(() => setSyncMsg(null), 2400); return () => clearTimeout(t) }, [syncMsg])
 
+  // Hydrate weekData from server row for untouched days
+  const hydrateWeekData = useCallback((row) => {
+    if (!row) return
+    setWeekData(prev => {
+      const next = { ...prev }
+      DAYS.forEach(d => {
+        const dk = d.substring(0, 3).toLowerCase()
+        // Skip days that the user has actively touched in this session
+        if (dirtyDaysRef.current.has(dk)) return
+
+        const lVal = row[`${dk}_l_status`]
+        const dVal = row[`${dk}_d_status`]
+        const dayMenu = weeklyMenuRaw?.[d] || weeklyMenuRaw?.[cap(d)] || weeklyMenuRaw?.[dk] || { lunch: [], dinner: [] }
+        const lDishes = dayMenu.lunch?.length ? dayMenu.lunch : getSlotDishes(row, d, 'lunch', [])
+        const dDishes = dayMenu.dinner?.length ? dayMenu.dinner : getSlotDishes(row, d, 'dinner', [])
+
+        const dayEntry = { ...next[dk] }
+
+        if (lVal === 'Applied' || lVal === 'opted_in') {
+          dayEntry.lunchWantsFood = true
+          const lMap = {}
+          lDishes.forEach((dish, idx) => {
+            const raw = row[`${dk}_l_dish_${idx + 1}`]
+            if (raw !== undefined && raw !== null && raw !== '') {
+              lMap[dish] = normalizeDishValue(raw, dish, isCountInput(liveAppSettings, d, 'lunch', idx))
+            } else {
+              lMap[dish] = isRotiItem(dish) ? 'yes' : isCountInput(liveAppSettings, d, 'lunch', idx) ? { status: 'yes', value: 1 } : 100
+            }
+          })
+          dayEntry.lunchResponses = lMap
+        } else if (lVal === 'Skipped' || lVal === 'opted_out') {
+          dayEntry.lunchWantsFood = false
+          dayEntry.lunchResponses = {}
+        }
+
+        if (dVal === 'Applied' || dVal === 'opted_in') {
+          dayEntry.dinnerWantsFood = true
+          const dMap = {}
+          dDishes.forEach((dish, idx) => {
+            const raw = row[`${dk}_d_dish_${idx + 1}`]
+            if (raw !== undefined && raw !== null && raw !== '') {
+              dMap[dish] = normalizeDishValue(raw, dish, isCountInput(liveAppSettings, d, 'dinner', idx))
+            } else {
+              dMap[dish] = isRotiItem(dish) ? 'yes' : isCountInput(liveAppSettings, d, 'dinner', idx) ? { status: 'yes', value: 1 } : 100
+            }
+          })
+          dayEntry.dinnerResponses = dMap
+        } else if (dVal === 'Skipped' || dVal === 'opted_out') {
+          dayEntry.dinnerWantsFood = false
+          dayEntry.dinnerResponses = {}
+        }
+
+        next[dk] = dayEntry
+      })
+      return next
+    })
+  }, [weeklyMenuRaw, liveAppSettings])
+
   // ── Load existing data + profile ──
   const loadData = useCallback(async () => {
     try {
@@ -376,6 +450,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
       setExistingData(data || null)
       setDataLoaded(true)
       if (data) {
+        hydrateWeekData(data)
         const allDone = slotList.every(slot => {
           const dk = slot.day.substring(0, 3).toLowerCase()
           const mk = slot.meal === 'lunch' ? 'l' : 'd'
@@ -386,7 +461,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     } catch {
       setDataLoaded(true)
     }
-  }, [user?.id, currentWeekId, slotList])
+  }, [user?.id, currentWeekId, slotList, hydrateWeekData])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -397,11 +472,14 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
       .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses', filter: `user_id=eq.${user.id}` },
         async () => {
           const { data } = await fetchUserSurveyRow(user?.id, currentWeekId)
-          if (data) setExistingData(data)
+          if (data) {
+            setExistingData(data)
+            hydrateWeekData(data)
+          }
         })
       .subscribe()
     return () => supabase.removeChannel(ch)
-  }, [user?.id, currentWeekId])
+  }, [user?.id, currentWeekId, hydrateWeekData])
 
   // ── Sequential flow: jump once to first incomplete day for new surveys ──
   const positionedRef = useRef(false)
@@ -414,49 +492,6 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     })
     if (firstIncomplete !== -1) setCurrentDayIndex(firstIncomplete)
   }, [dataLoaded, existingData, initialDay])
-
-  // ── Prefill active day choices from survey_day_responses for editing & continuation ──
-  useEffect(() => {
-    if (!existingData) return
-    const lVal = existingData[`${dayKey}_l_status`]
-    const dVal = existingData[`${dayKey}_d_status`]
-
-    if (lVal === 'Applied' || lVal === 'opted_in') {
-      setLunchWantsFood(true)
-      const lMap = {}
-      lunchDishes.forEach((dish, idx) => {
-        const raw = existingData[`${dayKey}_l_dish_${idx + 1}`]
-        if (raw !== undefined && raw !== null && raw !== '') {
-          lMap[dish] = normalizeDishValue(raw, dish, isCountInput(liveAppSettings, currentDay, 'lunch', idx))
-        }
-      })
-      setLunchResponses(lMap)
-    } else if (lVal === 'Skipped' || lVal === 'opted_out') {
-      setLunchWantsFood(false)
-      setLunchResponses({})
-    } else {
-      setLunchWantsFood(null)
-      setLunchResponses({})
-    }
-
-    if (dVal === 'Applied' || dVal === 'opted_in') {
-      setDinnerWantsFood(true)
-      const dMap = {}
-      dinnerDishes.forEach((dish, idx) => {
-        const raw = existingData[`${dayKey}_d_dish_${idx + 1}`]
-        if (raw !== undefined && raw !== null && raw !== '') {
-          dMap[dish] = normalizeDishValue(raw, dish, isCountInput(liveAppSettings, currentDay, 'dinner', idx))
-        }
-      })
-      setDinnerResponses(dMap)
-    } else if (dVal === 'Skipped' || dVal === 'opted_out') {
-      setDinnerWantsFood(false)
-      setDinnerResponses({})
-    } else {
-      setDinnerWantsFood(null)
-      setDinnerResponses({})
-    }
-  }, [existingData, dayKey, currentDay, currentDayIndex, lunchDishes, dinnerDishes, liveAppSettings])
 
   // ── Show intro screen for first-timers ──
   useEffect(() => {
@@ -471,49 +506,79 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     setCurrentDayIndex(0)
   }
 
-  // ── Build payload for saving ──
-  const buildPayload = useCallback(() => {
-    const lStatus = lunchWantsFood === true ? 'Applied' : lunchWantsFood === false ? 'Skipped' : null
-    const dStatus = dinnerWantsFood === true ? 'Applied' : dinnerWantsFood === false ? 'Skipped' : null
+  // ── Build payload for saving a specific day ──
+  const buildPayloadForDay = useCallback((targetDayIdx) => {
+    const tDay = DAYS[targetDayIdx] || currentDay
+    const tDayKey = tDay.substring(0, 3).toLowerCase()
+    const tState = weekData[tDayKey] || {}
+    const tMenu = weeklyMenuRaw?.[tDay] || weeklyMenuRaw?.[cap(tDay)] || weeklyMenuRaw?.[tDayKey] || { lunch: [], dinner: [] }
+    const tLunchDishes = tMenu.lunch?.length ? tMenu.lunch : getSlotDishes(existingData, tDay, 'lunch', [])
+    const tDinnerDishes = tMenu.dinner?.length ? tMenu.dinner : getSlotDishes(existingData, tDay, 'dinner', [])
+
+    const lStatus = tState.lunchWantsFood === true ? 'Applied' : tState.lunchWantsFood === false ? 'Skipped' : null
+    const dStatus = tState.dinnerWantsFood === true ? 'Applied' : tState.dinnerWantsFood === false ? 'Skipped' : null
+
     const payload = {
-      user_id: user?.id, week_id: currentWeekId, day: dayKey,
-      thali_number: userData.thali_no, email: userData.email || '',
+      user_id: user?.id,
+      week_id: currentWeekId,
+      day: tDayKey,
+      thali_number: userData.thali_no,
+      email: userData.email || '',
       updated_at: new Date().toISOString(),
     }
-    let snap = mergeDishSnapshot(existingData, currentDay, 'lunch', lunchDishes)
-    snap = mergeDishSnapshot({ dish_snapshot: snap }, currentDay, 'dinner', dinnerDishes)
-    payload.dish_snapshot = snap
-    if (lStatus) payload[`${dayKey}_l_status`] = lStatus
-    if (dStatus) payload[`${dayKey}_d_status`] = dStatus
-    if (lStatus === 'Applied') {
-      lunchDishes.forEach((dish, idx) => {
-        const val = lunchResponses[dish]
-        if (val !== undefined && val !== null) {
-          payload[`${dayKey}_l_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCountInput(liveAppSettings, currentDay, 'lunch', idx))
-        }
-      })
-    }
-    if (dStatus === 'Applied') {
-      dinnerDishes.forEach((dish, idx) => {
-        const val = dinnerResponses[dish]
-        if (val !== undefined && val !== null) {
-          payload[`${dayKey}_d_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCountInput(liveAppSettings, currentDay, 'dinner', idx))
-        }
-      })
-    }
-    return payload
-  }, [lunchWantsFood, dinnerWantsFood, user?.id, currentWeekId, dayKey, userData, existingData, currentDay, lunchDishes, dinnerDishes, lunchResponses, dinnerResponses, liveAppSettings])
 
-  const saveCurrentDay = async () => {
+    let snap = mergeDishSnapshot(existingData, tDay, 'lunch', tLunchDishes)
+    snap = mergeDishSnapshot({ dish_snapshot: snap }, tDay, 'dinner', tDinnerDishes)
+    payload.dish_snapshot = snap
+
+    if (lStatus) payload[`${tDayKey}_l_status`] = lStatus
+    if (dStatus) payload[`${tDayKey}_d_status`] = dStatus
+
+    if (lStatus === 'Applied') {
+      tLunchDishes.forEach((dish, idx) => {
+        const val = tState.lunchResponses?.[dish]
+        const isCount = isCountInput(liveAppSettings, tDay, 'lunch', idx)
+        if (val !== undefined && val !== null) {
+          payload[`${tDayKey}_l_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCount)
+        } else {
+          payload[`${tDayKey}_l_dish_${idx + 1}`] = isRotiItem(dish) ? 'Yes' : isCount ? '1' : '100%'
+        }
+      })
+    }
+
+    if (dStatus === 'Applied') {
+      tDinnerDishes.forEach((dish, idx) => {
+        const val = tState.dinnerResponses?.[dish]
+        const isCount = isCountInput(liveAppSettings, tDay, 'dinner', idx)
+        if (val !== undefined && val !== null) {
+          payload[`${tDayKey}_d_dish_${idx + 1}`] = denormalizeDishValue(val, dish, isCount)
+        } else {
+          payload[`${tDayKey}_d_dish_${idx + 1}`] = isRotiItem(dish) ? 'Yes' : isCount ? '1' : '100%'
+        }
+      })
+    }
+
+    return payload
+  }, [currentDay, weekData, weeklyMenuRaw, existingData, user?.id, currentWeekId, userData, liveAppSettings])
+
+  const saveDay = async (targetDayIdx) => {
     if (loading) return false
-    if (lunchWantsFood === null && dinnerWantsFood === null) return true // nothing to save yet
+    const tDay = DAYS[targetDayIdx] || currentDay
+    const tDayKey = tDay.substring(0, 3).toLowerCase()
+    const tState = weekData[tDayKey]
+    if (!tState || (tState.lunchWantsFood === null && tState.dinnerWantsFood === null)) {
+      return true // nothing to save
+    }
+
     setLoading(true)
     try {
-      const { error } = await submitSurveyRow(buildPayload())
+      const payload = buildPayloadForDay(targetDayIdx)
+      const { error } = await submitSurveyRow(payload)
       if (error) throw error
+      dirtyDaysRef.current.delete(tDayKey)
       const { data: fresh } = await fetchUserSurveyRow(user?.id, currentWeekId)
       if (fresh) setExistingData(fresh)
-      setSyncMsg(`Saved ${currentDayName}`)
+      setSyncMsg(`Saved ${cap(tDay)}`)
       return true
     } catch (err) {
       setErrorToast(`Save failed: ${err?.message || 'Please try again.'}`)
@@ -525,51 +590,96 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
 
   // ── Lunch opt-in/skip handlers ──
   const handleOptInLunch = () => {
-    setLunchWantsFood(true)
+    dirtyDaysRef.current.add(dayKey)
+    setWeekData(prev => {
+      const nextDay = { ...prev[dayKey], lunchWantsFood: true }
+      const lMap = { ...nextDay.lunchResponses }
+      lunchDishes.forEach((d, idx) => {
+        if (lMap[d] === undefined || lMap[d] === null) {
+          if (isRotiItem(d)) lMap[d] = 'yes'
+          else if (isCountInput(liveAppSettings, currentDay, 'lunch', idx)) {
+            const mx = snackDefaults?.[`dish_${idx + 1}`] ?? 99
+            lMap[d] = mx === 0 ? 'no' : { status: 'yes', value: 1 }
+          } else {
+            lMap[d] = 100
+          }
+        }
+      })
+      nextDay.lunchResponses = lMap
+      return { ...prev, [dayKey]: nextDay }
+    })
   }
 
   const handleSkipLunch = () => {
-    setLunchWantsFood(false)
-    setLunchResponses({})
-    setTimeout(() => dinnerCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 180)
+    dirtyDaysRef.current.add(dayKey)
+    setWeekData(prev => ({
+      ...prev,
+      [dayKey]: { ...prev[dayKey], lunchWantsFood: false, lunchResponses: {} }
+    }))
+    setTimeout(() => {
+      dinnerCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }, 180)
   }
 
   // ── Dinner opt-in/skip handlers ──
   const handleOptInDinner = () => {
-    setDinnerWantsFood(true)
+    dirtyDaysRef.current.add(dayKey)
+    setWeekData(prev => {
+      const nextDay = { ...prev[dayKey], dinnerWantsFood: true }
+      const dMap = { ...nextDay.dinnerResponses }
+      dinnerDishes.forEach((d, idx) => {
+        if (dMap[d] === undefined || dMap[d] === null) {
+          if (isRotiItem(d)) dMap[d] = 'yes'
+          else if (isCountInput(liveAppSettings, currentDay, 'dinner', idx)) {
+            const mx = snackDefaults?.[`dish_${idx + 1}`] ?? 99
+            dMap[d] = mx === 0 ? 'no' : { status: 'yes', value: 1 }
+          } else {
+            dMap[d] = 100
+          }
+        }
+      })
+      nextDay.dinnerResponses = dMap
+      return { ...prev, [dayKey]: nextDay }
+    })
   }
 
   const handleSkipDinner = () => {
-    setDinnerWantsFood(false)
-    setDinnerResponses({})
-    setTimeout(() => bottomNavRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 180)
+    dirtyDaysRef.current.add(dayKey)
+    setWeekData(prev => ({
+      ...prev,
+      [dayKey]: { ...prev[dayKey], dinnerWantsFood: false, dinnerResponses: {} }
+    }))
+    setTimeout(() => {
+      bottomNavRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }, 180)
   }
 
   // ── Dish response handlers ──
   const handleLunchDish = useCallback((dish, val) => {
-    setLunchResponses(prev => {
-      const next = { ...prev, [dish]: val }
-      // auto-scroll to dinner when lunch is complete
-      if (dinnerWantsFood === null) {
-        const done = lunchDishes.every((d, i) => isDishAnswered(d, next[d], isCountInput(liveAppSettings, currentDay, 'lunch', i)))
-        if (done) setTimeout(() => dinnerCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 320)
+    dirtyDaysRef.current.add(dayKey)
+    setWeekData(prev => ({
+      ...prev,
+      [dayKey]: {
+        ...prev[dayKey],
+        lunchResponses: { ...prev[dayKey]?.lunchResponses, [dish]: val }
       }
-      return next
-    })
-  }, [lunchDishes, dinnerWantsFood, liveAppSettings, currentDay, isDishAnswered])
+    }))
+  }, [dayKey])
 
   const handleDinnerDish = useCallback((dish, val) => {
-    setDinnerResponses(prev => {
-      const next = { ...prev, [dish]: val }
-      // auto-scroll to save button when dinner is complete
-      const done = dinnerDishes.every((d, i) => isDishAnswered(d, next[d], isCountInput(liveAppSettings, currentDay, 'dinner', i)))
-      if (done) setTimeout(() => bottomNavRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 320)
-      return next
-    })
-  }, [dinnerDishes, liveAppSettings, currentDay, isDishAnswered])
+    dirtyDaysRef.current.add(dayKey)
+    setWeekData(prev => ({
+      ...prev,
+      [dayKey]: {
+        ...prev[dayKey],
+        dinnerResponses: { ...prev[dayKey]?.dinnerResponses, [dish]: val }
+      }
+    }))
+  }, [dayKey])
 
   // ── Select/clear all helpers ──
   const selectAll = (meal) => {
+    dirtyDaysRef.current.add(dayKey)
     const dishes = meal === 'lunch' ? lunchDishes : dinnerDishes
     const res = {}
     dishes.forEach((d, idx) => {
@@ -579,16 +689,20 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
         res[d] = mx === 0 ? 'no' : { status: 'yes', value: 1 }
       } else res[d] = 100
     })
-    if (meal === 'lunch') {
-      setLunchResponses(prev => ({ ...prev, ...res }))
-      if (dinnerWantsFood === null) setTimeout(() => dinnerCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 250)
-    } else {
-      setDinnerResponses(prev => ({ ...prev, ...res }))
-      setTimeout(() => bottomNavRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 250)
-    }
+    setWeekData(prev => ({
+      ...prev,
+      [dayKey]: {
+        ...prev[dayKey],
+        [meal === 'lunch' ? 'lunchResponses' : 'dinnerResponses']: {
+          ...prev[dayKey]?.[meal === 'lunch' ? 'lunchResponses' : 'dinnerResponses'],
+          ...res
+        }
+      }
+    }))
   }
 
   const clearAll = (meal) => {
+    dirtyDaysRef.current.add(dayKey)
     const dishes = meal === 'lunch' ? lunchDishes : dinnerDishes
     const res = {}
     dishes.forEach((d, idx) => {
@@ -596,32 +710,58 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
       else if (isCountInput(liveAppSettings, currentDay, meal, idx)) res[d] = 'no'
       else res[d] = 0
     })
-    if (meal === 'lunch') setLunchResponses(prev => ({ ...prev, ...res }))
-    else setDinnerResponses(prev => ({ ...prev, ...res }))
+    setWeekData(prev => ({
+      ...prev,
+      [dayKey]: {
+        ...prev[dayKey],
+        [meal === 'lunch' ? 'lunchResponses' : 'dinnerResponses']: {
+          ...prev[dayKey]?.[meal === 'lunch' ? 'lunchResponses' : 'dinnerResponses'],
+          ...res
+        }
+      }
+    }))
   }
 
   // ── Navigation ──
+  const handleSelectDay = async (targetIdx) => {
+    if (targetIdx === currentDayIndex || targetIdx < 0 || targetIdx >= DAYS.length) return
+    if (dirtyDaysRef.current.has(dayKey) || lunchWantsFood !== null || dinnerWantsFood !== null) {
+      await saveDay(currentDayIndex)
+    }
+    setCurrentDayIndex(targetIdx)
+    modalScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   const goToNextDay = async () => {
     if (currentDayIndex >= DAYS.length - 1) return
-    if (!isDayComplete) { setErrorToast(`Complete both Lunch & Dinner for ${currentDayName} first.`); return }
-    await saveCurrentDay()
+    if (!isDayComplete) {
+      setErrorToast(`Complete both Lunch & Dinner for ${currentDayName} first.`)
+      return
+    }
+    await saveDay(currentDayIndex)
     setCurrentDayIndex(prev => prev + 1)
-    setTimeout(() => modalTopRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+    modalScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const goToPrevDay = async () => {
     if (currentDayIndex <= 0) return
-    if (isDayComplete) await saveCurrentDay()
+    if (isDayComplete || dirtyDaysRef.current.has(dayKey)) {
+      await saveDay(currentDayIndex)
+    }
     setCurrentDayIndex(prev => prev - 1)
-    setTimeout(() => modalTopRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+    modalScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  // ── Submit (Saturday) ──
+  // ── Submit Weekly (Saturday or Full Submit) ──
   const handleSubmitWeekly = async () => {
-    if (!isDayComplete) { setErrorToast(`Complete both Lunch & Dinner for ${currentDayName} first.`); return }
-    const saved = await saveCurrentDay()
+    if (!isDayComplete) {
+      setErrorToast(`Complete both Lunch & Dinner for ${currentDayName} first.`)
+      return
+    }
+    const saved = await saveDay(currentDayIndex)
     if (!saved) return
-    // Verify all 12 slots are filled
+
+    // Verify all 12 slots across the week
     const { data: fresh } = await fetchUserSurveyRow(user?.id, currentWeekId)
     if (fresh) setExistingData(fresh)
     const missing = slotList.filter(slot => {
@@ -629,10 +769,17 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
       const mk = slot.meal === 'lunch' ? 'l' : 'd'
       return !fresh?.[`${dk}_${mk}_status`]
     })
+
     if (missing.length > 0) {
-      setSubmitResult({ type: 'missing', title: '⚠️ Survey incomplete', message: `${missing.length} slot${missing.length > 1 ? 's' : ''} still need filling.`, missingSlots: missing })
+      setSubmitResult({
+        type: 'missing',
+        title: '⚠️ Survey incomplete',
+        message: `${missing.length} slot${missing.length > 1 ? 's' : ''} still need filling before final locking.`,
+        missingSlots: missing
+      })
       return
     }
+
     setLoading(true)
     try {
       if (user?.id && currentWeekId) {
@@ -645,13 +792,15 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
       }
       setSurveySubmitted(true)
       setShowSuccess(true)
-      setTimeout(() => { setShowSuccess(false); onClose() }, 2600)
+      setTimeout(() => { setShowSuccess(false); onClose() }, 2400)
     } catch (e) {
-      console.warn('handleSubmitWeekly stamp failed:', e)
+      console.warn('handleSubmitWeekly stamp fallback:', e)
       setSurveySubmitted(true)
       setShowSuccess(true)
-      setTimeout(() => { setShowSuccess(false); onClose() }, 2600)
-    } finally { setLoading(false) }
+      setTimeout(() => { setShowSuccess(false); onClose() }, 2400)
+    } finally {
+      setLoading(false)
+    }
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -662,7 +811,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 10001, background: T.overlay, backdropFilter: 'blur(14px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(10px,3vw,28px)' }}>
         <style>{SURVEY_STYLES}</style>
         <div onClick={e => e.stopPropagation()} style={{ background: T.modalBg, borderRadius: 24, padding: 'clamp(22px,4vw,34px)', maxWidth: 580, width: '100%', border: `1.5px solid ${T.modalBorder}`, boxShadow: '0 30px 80px rgba(0,0,0,0.55)', position: 'relative', textAlign: 'center', animation: 'surveyModalIn 0.35s ease-out' }}>
-          <button onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, background: T.softBg, border: `1px solid ${T.border}`, borderRadius: 8, width: 32, height: 32, color: T.textSub, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={16} /></button>
+          <button onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, background: T.softBg, border: `1px solid ${T.border}`, borderRadius: 8, width: 32, height: 32, color: T.textSub, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation' }}><X size={16} /></button>
           <div style={{ width: 64, height: 64, borderRadius: 20, background: T.accentBg, border: `1.5px solid ${T.accent}`, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 28 }}>📋</div>
           <h2 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 800, color: T.text, fontFamily: "'Playfair Display',serif" }}>Weekly Meal Survey</h2>
           <p style={{ margin: '0 0 20px', fontSize: 13, color: T.textSub, lineHeight: 1.65, fontFamily: "'DM Sans',sans-serif" }}>Fill meal preferences for each day — Monday through Saturday.</p>
@@ -674,7 +823,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
               </div>
             ))}
           </div>
-          <button onClick={handleStartSurvey} type="button" style={{ width: '100%', padding: '14px', borderRadius: 14, border: 'none', background: T.accentGrad, color: '#000', cursor: 'pointer', fontSize: 15, fontWeight: 900, fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <button onClick={handleStartSurvey} type="button" style={{ width: '100%', minHeight: 48, padding: '14px', borderRadius: 14, border: 'none', background: T.accentGrad, color: '#000', cursor: 'pointer', fontSize: 15, fontWeight: 900, fontFamily: "'DM Sans',sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, touchAction: 'manipulation' }}>
             Start Survey <Play size={16} />
           </button>
         </div>
@@ -682,7 +831,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     )
   }
 
-  // ── SUCCESS ──
+  // ── SUCCESS SCREEN ──
   if (showSuccess) {
     return (
       <div style={{ position: 'fixed', inset: 0, zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center', background: T.successOverlay, backdropFilter: 'blur(20px)' }}>
@@ -702,12 +851,28 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
   // ── MAIN MODAL ──
   // ────────────────────────────────────────────────────────────────
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 10001, background: T.overlay, backdropFilter: 'blur(14px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(10px,3vw,24px)', overflowY: 'auto' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 10001, background: T.overlay, backdropFilter: 'blur(14px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(8px,2.5vw,20px)', overflowY: 'auto' }}>
       <style>{SURVEY_STYLES}</style>
-      <div onClick={e => e.stopPropagation()} style={{ background: T.modalBg, borderRadius: 24, padding: 'clamp(14px,3vw,22px)', maxWidth: 740, width: '100%', boxSizing: 'border-box', border: `1.5px solid ${T.modalBorder}`, boxShadow: '0 30px 80px rgba(0,0,0,0.55)', position: 'relative', overflowX: 'hidden', overflowY: 'auto', maxHeight: 'calc(100dvh - 28px)', animation: 'surveyModalIn 0.35s ease-out' }}>
-
-        <div ref={modalTopRef} />
-
+      <div
+        ref={modalScrollRef}
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: T.modalBg,
+          borderRadius: 24,
+          padding: 'clamp(14px,3vw,22px)',
+          maxWidth: 740,
+          width: '100%',
+          boxSizing: 'border-box',
+          border: `1.5px solid ${T.modalBorder}`,
+          boxShadow: '0 30px 80px rgba(0,0,0,0.55)',
+          position: 'relative',
+          overflowX: 'hidden',
+          overflowY: 'auto',
+          maxHeight: 'calc(100dvh - 24px)',
+          WebkitOverflowScrolling: 'touch',
+          animation: 'surveyModalIn 0.35s ease-out'
+        }}
+      >
         {/* Loading overlay */}
         {loading && (
           <div style={{ position: 'absolute', inset: 0, zIndex: 999, borderRadius: 24, background: T.loadingOverlay, backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
@@ -718,10 +883,10 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
 
         {/* Error Toast */}
         {errorToast && (
-          <div style={{ position: 'absolute', top: 12, left: 12, right: 12, zIndex: 998, padding: '12px 16px', borderRadius: 12, background: 'rgba(244,67,54,0.15)', border: `1px solid ${T.noColor}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ position: 'sticky', top: 0, zIndex: 998, marginBottom: 12, padding: '12px 16px', borderRadius: 12, background: 'rgba(244,67,54,0.15)', border: `1px solid ${T.noColor}`, display: 'flex', alignItems: 'center', gap: 10 }}>
             <AlertTriangle size={18} color={T.noColor} />
             <span style={{ flex: 1, fontSize: 12, color: T.text, fontFamily: "'DM Sans',sans-serif" }}>{errorToast}</span>
-            <button onClick={() => setErrorToast(null)} style={{ background: 'transparent', border: 'none', color: T.textSub, cursor: 'pointer' }}><X size={14} /></button>
+            <button onClick={() => setErrorToast(null)} style={{ background: 'transparent', border: 'none', color: T.textSub, cursor: 'pointer', touchAction: 'manipulation' }}><X size={14} /></button>
           </div>
         )}
 
@@ -733,25 +898,63 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {syncMsg && <span style={{ fontSize: 11, color: T.yesColor, fontWeight: 800, fontFamily: "'DM Sans',sans-serif" }}>✓ {syncMsg}</span>}
-            <button onClick={onClose} style={{ background: T.softBg, border: 'none', cursor: 'pointer', padding: 8, borderRadius: 10, color: T.textSub, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={18} /></button>
+            <button onClick={onClose} style={{ background: T.softBg, border: 'none', cursor: 'pointer', padding: 8, borderRadius: 10, color: T.textSub, display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation' }}><X size={18} /></button>
           </div>
         </div>
 
-        {/* Day info strip */}
-        <div style={{ padding: '8px 12px', borderRadius: 10, background: T.softBg, border: `1px solid ${T.softBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 6 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: T.textSub, fontFamily: "'DM Sans',sans-serif" }}>Day {currentDayIndex + 1} of 6 • {currentDayName}</span>
-          <span style={{ fontSize: 11, fontWeight: 800, color: isDayComplete ? T.yesColor : T.accent, fontFamily: "'DM Sans',sans-serif" }}>{isDayComplete ? '✅ Day complete' : '☀️ Lunch + 🌙 Dinner'}</span>
+        {/* ── Day Navigation Tabs ── */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 14, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'none' }}>
+          {DAYS.map((d, idx) => {
+            const dk = d.substring(0, 3).toLowerCase()
+            const isCur = idx === currentDayIndex
+            const dayLocal = weekData[dk]
+            const isDoneLocal = dayLocal && dayLocal.lunchWantsFood !== null && dayLocal.dinnerWantsFood !== null
+            const isDoneServer = existingData && existingData[`${dk}_l_status`] && existingData[`${dk}_d_status`]
+            const isDone = isDoneLocal || isDoneServer
+
+            return (
+              <button
+                key={d}
+                type="button"
+                onClick={() => handleSelectDay(idx)}
+                style={{
+                  flex: 1,
+                  minWidth: 50,
+                  minHeight: 46,
+                  padding: '9px 4px',
+                  borderRadius: 12,
+                  border: `1.5px solid ${isCur ? T.accent : isDone ? T.yesColor + '60' : T.border}`,
+                  background: isCur ? (T.accentBg || 'rgba(212,175,55,0.12)') : isDone ? 'rgba(76,175,80,0.08)' : T.card,
+                  color: isCur ? T.accent : isDone ? T.yesColor : T.textSub,
+                  fontSize: 12,
+                  fontWeight: isCur ? 900 : 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 3,
+                  transition: 'all 0.2s',
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: 'transparent',
+                  boxShadow: isCur ? `0 4px 14px ${T.accentBg}` : 'none',
+                }}
+              >
+                <span>{cap(d).substring(0, 3)}</span>
+                <span style={{ fontSize: 10, fontWeight: 900 }}>{isDone ? '✓' : `D${idx + 1}`}</span>
+              </button>
+            )
+          })}
         </div>
 
         {/* ── LUNCH CARD ── */}
-        <div ref={null} style={{ marginBottom: 14, padding: '16px 18px', borderRadius: 18, background: lunchWantsFood === true ? `linear-gradient(145deg,${T.accentBg},${T.card})` : T.card, border: `1.5px solid ${lunchWantsFood === true ? T.accent : lunchWantsFood === false ? T.noColor + '60' : T.border}`, boxShadow: lunchWantsFood === true ? `0 8px 24px ${T.accentBg}` : 'none', transition: 'all 0.28s' }}>
+        <div style={{ marginBottom: 14, padding: '16px 18px', borderRadius: 18, background: lunchWantsFood === true ? `linear-gradient(145deg,${T.accentBg},${T.card})` : T.card, border: `1.5px solid ${lunchWantsFood === true ? T.accent : lunchWantsFood === false ? T.noColor + '60' : T.border}`, boxShadow: lunchWantsFood === true ? `0 8px 24px ${T.accentBg}` : 'none', transition: 'all 0.28s' }}>
           {/* Lunch Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ width: 34, height: 34, borderRadius: 10, background: T.accentBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Sun size={18} color={T.accent} /></div>
               <div>
                 <div style={{ fontSize: 15, fontWeight: 800, color: T.text, fontFamily: "'Playfair Display',serif" }}>☀️ {currentDayName} Lunch</div>
-                <div style={{ fontSize: 11, color: T.textSub, fontFamily: "'DM Sans',sans-serif" }}>{lunchWantsFood === null ? `Would you like Lunch?` : lunchWantsFood ? 'Selecting dishes…' : 'Lunch skipped'}</div>
+                <div style={{ fontSize: 11, color: T.textSub, fontFamily: "'DM Sans',sans-serif" }}>{lunchWantsFood === null ? `Would you like Lunch?` : lunchWantsFood ? 'Dishes selected' : 'Lunch skipped'}</div>
               </div>
             </div>
             {lunchWantsFood !== null && (
@@ -764,11 +967,11 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
           {/* Lunch YES/NO choice */}
           <div style={{ display: 'flex', gap: 10, marginBottom: lunchWantsFood === true ? 14 : 0 }}>
             <button type="button" onClick={handleOptInLunch}
-              style={{ flex: 1, padding: '13px 14px', borderRadius: 12, border: `2px solid ${lunchWantsFood === true ? T.yesColor : T.border}`, background: lunchWantsFood === true ? T.yesBg : 'rgba(76,175,80,0.05)', color: T.yesColor, cursor: 'pointer', fontSize: 13.5, fontWeight: 800, fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: lunchWantsFood === true ? 'scale(1.01)' : 'scale(1)', boxShadow: lunchWantsFood === true ? `0 4px 16px ${T.yesColor}30` : 'none' }}>
+              style={{ flex: 1, minHeight: 46, padding: '13px 14px', borderRadius: 12, border: `2px solid ${lunchWantsFood === true ? T.yesColor : T.border}`, background: lunchWantsFood === true ? T.yesBg : 'rgba(76,175,80,0.05)', color: T.yesColor, cursor: 'pointer', fontSize: 13.5, fontWeight: 800, fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: lunchWantsFood === true ? 'scale(1.01)' : 'scale(1)', boxShadow: lunchWantsFood === true ? `0 4px 16px ${T.yesColor}30` : 'none', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
               ✅ Yes, I want food
             </button>
             <button type="button" onClick={handleSkipLunch}
-              style={{ flex: 1, padding: '13px 14px', borderRadius: 12, border: `2px solid ${lunchWantsFood === false ? T.noColor : T.border}`, background: lunchWantsFood === false ? T.noBg : 'rgba(244,67,54,0.05)', color: T.noColor, cursor: 'pointer', fontSize: 13.5, fontWeight: 800, fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: lunchWantsFood === false ? 'scale(1.01)' : 'scale(1)' }}>
+              style={{ flex: 1, minHeight: 46, padding: '13px 14px', borderRadius: 12, border: `2px solid ${lunchWantsFood === false ? T.noColor : T.border}`, background: lunchWantsFood === false ? T.noBg : 'rgba(244,67,54,0.05)', color: T.noColor, cursor: 'pointer', fontSize: 13.5, fontWeight: 800, fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: lunchWantsFood === false ? 'scale(1.01)' : 'scale(1)', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
               ❌ No, I'll skip
             </button>
           </div>
@@ -779,8 +982,8 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <span style={{ fontSize: 13, fontWeight: 800, color: T.accent, fontFamily: "'DM Sans',sans-serif" }}>Lunch Dishes</span>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <button type="button" onClick={() => selectAll('lunch')} style={{ padding: '4px 10px', borderRadius: 8, border: `1px solid ${T.accent}`, background: T.accentBg, color: T.accent, fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>All Yes</button>
-                  <button type="button" onClick={() => clearAll('lunch')} style={{ padding: '4px 10px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.textSub, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Clear</button>
+                  <button type="button" onClick={() => selectAll('lunch')} style={{ minHeight: 32, padding: '4px 10px', borderRadius: 8, border: `1px solid ${T.accent}`, background: T.accentBg, color: T.accent, fontSize: 11, fontWeight: 800, cursor: 'pointer', touchAction: 'manipulation' }}>All Yes</button>
+                  <button type="button" onClick={() => clearAll('lunch')} style={{ minHeight: 32, padding: '4px 10px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.textSub, fontSize: 11, fontWeight: 700, cursor: 'pointer', touchAction: 'manipulation' }}>Clear</button>
                 </div>
               </div>
               {lunchDishes.length > 0
@@ -793,83 +996,81 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
           )}
         </div>
 
-        {/* ── DINNER CARD — revealed only after Lunch is finished ── */}
-        {(lunchWantsFood === false || isLunchComplete) && (
-          <div ref={dinnerCardRef} style={{ marginBottom: 18, padding: '16px 18px', borderRadius: 18, background: dinnerWantsFood === true ? `linear-gradient(145deg,rgba(139,92,246,0.07),${T.card})` : T.card, border: `1.5px solid ${dinnerWantsFood === true ? 'rgba(139,92,246,0.4)' : dinnerWantsFood === false ? T.noColor + '60' : T.border}`, boxShadow: dinnerWantsFood === true ? '0 8px 24px rgba(139,92,246,0.12)' : 'none', transition: 'all 0.28s', animation: 'surveyFadeIn 0.35s ease-out' }}>
-            {/* Dinner Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Moon size={18} color="#a78bfa" /></div>
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: T.text, fontFamily: "'Playfair Display',serif" }}>🌙 {currentDayName} Dinner</div>
-                  <div style={{ fontSize: 11, color: T.textSub, fontFamily: "'DM Sans',sans-serif" }}>{dinnerWantsFood === null ? `Would you like Dinner?` : dinnerWantsFood ? 'Selecting dishes…' : 'Dinner skipped'}</div>
-                </div>
+        {/* ── DINNER CARD ── */}
+        <div ref={dinnerCardRef} style={{ marginBottom: 18, padding: '16px 18px', borderRadius: 18, background: dinnerWantsFood === true ? `linear-gradient(145deg,rgba(139,92,246,0.07),${T.card})` : T.card, border: `1.5px solid ${dinnerWantsFood === true ? 'rgba(139,92,246,0.4)' : dinnerWantsFood === false ? T.noColor + '60' : T.border}`, boxShadow: dinnerWantsFood === true ? '0 8px 24px rgba(139,92,246,0.12)' : 'none', transition: 'all 0.28s' }}>
+          {/* Dinner Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(139,92,246,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Moon size={18} color="#a78bfa" /></div>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: T.text, fontFamily: "'Playfair Display',serif" }}>🌙 {currentDayName} Dinner</div>
+                <div style={{ fontSize: 11, color: T.textSub, fontFamily: "'DM Sans',sans-serif" }}>{dinnerWantsFood === null ? `Would you like Dinner?` : dinnerWantsFood ? 'Dishes selected' : 'Dinner skipped'}</div>
               </div>
-              {dinnerWantsFood !== null && (
-                <span style={{ fontSize: 10.5, fontWeight: 900, padding: '3px 10px', borderRadius: 100, background: dinnerWantsFood ? T.yesBg : T.noBg, color: dinnerWantsFood ? T.yesColor : T.noColor, border: `1px solid ${dinnerWantsFood ? T.yesColor : T.noColor}50` }}>
-                  {dinnerWantsFood ? (isDinnerComplete ? '✅ Complete' : '⏳ In progress') : '❌ Skipped'}
-                </span>
-              )}
             </div>
-
-            {/* Dinner YES/NO choice */}
-            <div style={{ display: 'flex', gap: 10, marginBottom: dinnerWantsFood === true ? 14 : 0 }}>
-              <button type="button" onClick={handleOptInDinner}
-                style={{ flex: 1, padding: '13px 14px', borderRadius: 12, border: `2px solid ${dinnerWantsFood === true ? T.yesColor : T.border}`, background: dinnerWantsFood === true ? T.yesBg : 'rgba(76,175,80,0.05)', color: T.yesColor, cursor: 'pointer', fontSize: 13.5, fontWeight: 800, fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: dinnerWantsFood === true ? 'scale(1.01)' : 'scale(1)', boxShadow: dinnerWantsFood === true ? `0 4px 16px ${T.yesColor}30` : 'none' }}>
-                ✅ Yes, I want food
-              </button>
-              <button type="button" onClick={handleSkipDinner}
-                style={{ flex: 1, padding: '13px 14px', borderRadius: 12, border: `2px solid ${dinnerWantsFood === false ? T.noColor : T.border}`, background: dinnerWantsFood === false ? T.noBg : 'rgba(244,67,54,0.05)', color: T.noColor, cursor: 'pointer', fontSize: 13.5, fontWeight: 800, fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: dinnerWantsFood === false ? 'scale(1.01)' : 'scale(1)' }}>
-                ❌ No, I'll skip
-              </button>
-            </div>
-
-            {/* Dinner Dishes */}
-            {dinnerWantsFood === true && (
-              <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.border}`, animation: 'surveyFadeIn 0.3s ease-out' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <span style={{ fontSize: 13, fontWeight: 800, color: T.accent, fontFamily: "'DM Sans',sans-serif" }}>Dinner Dishes</span>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button type="button" onClick={() => selectAll('dinner')} style={{ padding: '4px 10px', borderRadius: 8, border: `1px solid ${T.accent}`, background: T.accentBg, color: T.accent, fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>All Yes</button>
-                    <button type="button" onClick={() => clearAll('dinner')} style={{ padding: '4px 10px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.textSub, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Clear</button>
-                  </div>
-                </div>
-                {dinnerDishes.length > 0
-                  ? dinnerDishes.map((dish, idx) => (
-                    <DishRow key={`dinner-${dish}-${idx}`} dish={dish} idx={idx} mealType="dinner" value={dinnerResponses[dish]} onChange={handleDinnerDish} T={T} appSettings={liveAppSettings} currentDay={currentDay} snackDefaults={snackDefaults} />
-                  ))
-                  : <div style={{ padding: 14, textAlign: 'center', color: T.textSub, fontSize: 12.5, fontStyle: 'italic' }}>📋 Dinner menu being prepared…</div>
-                }
-              </div>
+            {dinnerWantsFood !== null && (
+              <span style={{ fontSize: 10.5, fontWeight: 900, padding: '3px 10px', borderRadius: 100, background: dinnerWantsFood ? T.yesBg : T.noBg, color: dinnerWantsFood ? T.yesColor : T.noColor, border: `1px solid ${dinnerWantsFood ? T.yesColor : T.noColor}50` }}>
+                {dinnerWantsFood ? (isDinnerComplete ? '✅ Complete' : '⏳ In progress') : '❌ Skipped'}
+              </span>
             )}
           </div>
-        )}
+
+          {/* Dinner YES/NO choice */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: dinnerWantsFood === true ? 14 : 0 }}>
+            <button type="button" onClick={handleOptInDinner}
+              style={{ flex: 1, minHeight: 46, padding: '13px 14px', borderRadius: 12, border: `2px solid ${dinnerWantsFood === true ? T.yesColor : T.border}`, background: dinnerWantsFood === true ? T.yesBg : 'rgba(76,175,80,0.05)', color: T.yesColor, cursor: 'pointer', fontSize: 13.5, fontWeight: 800, fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: dinnerWantsFood === true ? 'scale(1.01)' : 'scale(1)', boxShadow: dinnerWantsFood === true ? `0 4px 16px ${T.yesColor}30` : 'none', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
+              ✅ Yes, I want food
+            </button>
+            <button type="button" onClick={handleSkipDinner}
+              style={{ flex: 1, minHeight: 46, padding: '13px 14px', borderRadius: 12, border: `2px solid ${dinnerWantsFood === false ? T.noColor : T.border}`, background: dinnerWantsFood === false ? T.noBg : 'rgba(244,67,54,0.05)', color: T.noColor, cursor: 'pointer', fontSize: 13.5, fontWeight: 800, fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: dinnerWantsFood === false ? 'scale(1.01)' : 'scale(1)', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
+              ❌ No, I'll skip
+            </button>
+          </div>
+
+          {/* Dinner Dishes */}
+          {dinnerWantsFood === true && (
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${T.border}`, animation: 'surveyFadeIn 0.3s ease-out' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: T.accent, fontFamily: "'DM Sans',sans-serif" }}>Dinner Dishes</span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button type="button" onClick={() => selectAll('dinner')} style={{ minHeight: 32, padding: '4px 10px', borderRadius: 8, border: `1px solid ${T.accent}`, background: T.accentBg, color: T.accent, fontSize: 11, fontWeight: 800, cursor: 'pointer', touchAction: 'manipulation' }}>All Yes</button>
+                  <button type="button" onClick={() => clearAll('dinner')} style={{ minHeight: 32, padding: '4px 10px', borderRadius: 8, border: `1px solid ${T.border}`, background: 'transparent', color: T.textSub, fontSize: 11, fontWeight: 700, cursor: 'pointer', touchAction: 'manipulation' }}>Clear</button>
+                </div>
+              </div>
+              {dinnerDishes.length > 0
+                ? dinnerDishes.map((dish, idx) => (
+                  <DishRow key={`dinner-${dish}-${idx}`} dish={dish} idx={idx} mealType="dinner" value={dinnerResponses[dish]} onChange={handleDinnerDish} T={T} appSettings={liveAppSettings} currentDay={currentDay} snackDefaults={snackDefaults} />
+                ))
+                : <div style={{ padding: 14, textAlign: 'center', color: T.textSub, fontSize: 12.5, fontStyle: 'italic' }}>📋 Dinner menu being prepared…</div>
+              }
+            </div>
+          )}
+        </div>
 
         {/* Incomplete warning */}
         {!isDayComplete && (lunchWantsFood !== null || dinnerWantsFood !== null) && (
           <div style={{ marginBottom: 14, padding: '10px 14px', borderRadius: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', color: '#f59e0b', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, fontFamily: "'DM Sans',sans-serif" }}>
             {!isLunchComplete
-              ? `⚠️ Finish ${currentDayName} Lunch first — Dinner will appear after.`
-              : `⚠️ Complete Dinner for ${currentDayName} before proceeding.`}
+              ? `⚠️ Please select your preferences for Lunch.`
+              : `⚠️ Please select your preferences for Dinner.`}
           </div>
         )}
 
         {/* ── NAV BUTTONS ── */}
-        <div ref={bottomNavRef} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div ref={bottomNavRef} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', paddingBottom: 'calc(4px + env(safe-area-inset-bottom, 0px))' }}>
           {currentDayIndex > 0 && (
-            <button type="button" onClick={goToPrevDay} style={{ padding: '12px 18px', borderRadius: 12, border: `1px solid ${T.border}`, background: 'transparent', color: T.textSub, cursor: 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif" }}>
+            <button type="button" onClick={goToPrevDay} style={{ minHeight: 46, padding: '12px 18px', borderRadius: 12, border: `1px solid ${T.border}`, background: 'transparent', color: T.textSub, cursor: 'pointer', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif", touchAction: 'manipulation' }}>
               <ChevronLeft size={16} /> {cap(DAYS[currentDayIndex - 1]).substring(0, 3)}
             </button>
           )}
 
           {currentDayIndex < DAYS.length - 1 ? (
             <button type="button" onClick={goToNextDay} disabled={loading || !isDayComplete}
-              style={{ marginLeft: currentDayIndex > 0 ? 'auto' : undefined, flex: currentDayIndex === 0 ? 1 : undefined, padding: '13px 22px', borderRadius: 12, border: 'none', background: isDayComplete && !loading ? T.accentGrad : T.border, color: isDayComplete && !loading ? '#000' : 'rgba(0,0,0,0.35)', cursor: isDayComplete && !loading ? 'pointer' : 'not-allowed', fontSize: 13.5, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif", boxShadow: isDayComplete ? `0 8px 20px ${T.accentBg}` : 'none', opacity: isDayComplete ? 1 : 0.65, transition: 'all 0.25s' }}>
+              style={{ marginLeft: currentDayIndex > 0 ? 'auto' : undefined, flex: currentDayIndex === 0 ? 1 : undefined, minHeight: 48, padding: '13px 22px', borderRadius: 12, border: 'none', background: isDayComplete && !loading ? T.accentGrad : T.border, color: isDayComplete && !loading ? '#000' : 'rgba(0,0,0,0.35)', cursor: isDayComplete && !loading ? 'pointer' : 'not-allowed', fontSize: 13.5, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontFamily: "'DM Sans',sans-serif", boxShadow: isDayComplete ? `0 8px 20px ${T.accentBg}` : 'none', opacity: isDayComplete ? 1 : 0.65, transition: 'all 0.25s', touchAction: 'manipulation' }}>
               💾 Save & Continue to {cap(DAYS[currentDayIndex + 1])} <ChevronRight size={16} />
             </button>
           ) : (
             <button type="button" onClick={handleSubmitWeekly} disabled={loading || !isDayComplete}
-              style={{ marginLeft: currentDayIndex > 0 ? 'auto' : undefined, flex: currentDayIndex === 0 ? 1 : undefined, padding: '14px 24px', borderRadius: 12, border: 'none', background: isDayComplete && !loading ? 'linear-gradient(135deg,#10b981,#059669)' : T.border, color: isDayComplete && !loading ? '#fff' : 'rgba(0,0,0,0.35)', cursor: isDayComplete && !loading ? 'pointer' : 'not-allowed', fontSize: 14, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: "'DM Sans',sans-serif", boxShadow: isDayComplete ? '0 8px 24px rgba(16,185,129,0.35)' : 'none', opacity: isDayComplete ? 1 : 0.65, transition: 'all 0.25s' }}>
+              style={{ marginLeft: currentDayIndex > 0 ? 'auto' : undefined, flex: currentDayIndex === 0 ? 1 : undefined, minHeight: 48, padding: '14px 24px', borderRadius: 12, border: 'none', background: isDayComplete && !loading ? 'linear-gradient(135deg,#10b981,#059669)' : T.border, color: isDayComplete && !loading ? '#fff' : 'rgba(0,0,0,0.35)', cursor: isDayComplete && !loading ? 'pointer' : 'not-allowed', fontSize: 14, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: "'DM Sans',sans-serif", boxShadow: isDayComplete ? '0 8px 24px rgba(16,185,129,0.35)' : 'none', opacity: isDayComplete ? 1 : 0.65, transition: 'all 0.25s', touchAction: 'manipulation' }}>
               {loading ? 'Submitting…' : '✅ Submit Weekly Survey'}
             </button>
           )}
@@ -891,7 +1092,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
                   ))}
                 </div>
               )}
-              <button type="button" onClick={() => setSubmitResult(null)} style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', background: '#FF9800', color: '#fff', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>
+              <button type="button" onClick={() => setSubmitResult(null)} style={{ width: '100%', minHeight: 44, padding: '12px', borderRadius: 12, border: 'none', background: '#FF9800', color: '#fff', fontSize: 13.5, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", touchAction: 'manipulation' }}>
                 Got it, I'll fix it
               </button>
             </div>

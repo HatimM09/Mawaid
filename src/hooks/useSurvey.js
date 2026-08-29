@@ -146,7 +146,7 @@ export const isCountInput = (appSettings, dayName, meal, idx) => {
       if (types && types[idx]) return types[idx] === 'count'
     }
   } catch { }
-  return meal === 'lunch' && idx <= 3
+  return false
 }
 
 export const normalizeDishValue = (val, dish, isCount) => {
@@ -157,6 +157,9 @@ export const normalizeDishValue = (val, dish, isCount) => {
     if (typeof val === 'object' && val?.status) return val
     const n = parseInt(val)
     return isNaN(n) ? 'no' : { status: 'yes', value: n }
+  }
+  if (typeof val === 'object' && val?.status) {
+    return val.status === 'yes' ? (val.value || 1) : 0
   }
   if (typeof val === 'string' && val.endsWith('%')) return parseInt(val) || 0
   const lv = String(val).toLowerCase()

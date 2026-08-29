@@ -89,20 +89,27 @@ export async function submitSurveyRow(payload) {
     return { data: null, error: err }
   }
 
+  const ALLOWED_COLUMNS = new Set([
+    'user_id', 'week_id', 'day', 'thali_number', 'email',
+    'l_status', 'l_dish_1', 'l_dish_2', 'l_dish_3', 'l_dish_4', 'l_dish_5',
+    'd_status', 'd_dish_1', 'd_dish_2', 'd_dish_3', 'd_dish_4', 'd_dish_5',
+    'dish_snapshot', 'edit_metadata', 'submitted_at', 'updated_at'
+  ])
+
   const dayRows = targetDays.map(day => {
-    const dayRow = { user_id: userId, week_id: weekId, day }
+    const rawRow = { user_id: userId, week_id: weekId, day }
     for (const k of Object.keys(payload)) {
       if (k.startsWith(day + '_')) {
-        dayRow[k.slice(day.length + 1)] = payload[k]
+        rawRow[k.slice(day.length + 1)] = payload[k]
       }
     }
     // Also support direct meal + status / dishValues format
     if (payload.meal && (payload.meal === 'lunch' || payload.meal === 'dinner')) {
       const mk = payload.meal === 'lunch' ? 'l' : 'd'
-      if (payload.status) dayRow[`${mk}_status`] = payload.status
+      if (payload.status) rawRow[`${mk}_status`] = payload.status
       if (payload.dishValues && typeof payload.dishValues === 'object') {
         for (const [dk, dv] of Object.entries(payload.dishValues)) {
-          dayRow[`${mk}_${dk}`] = dv
+          rawRow[`${mk}_${dk}`] = dv
         }
       }
     }
@@ -113,12 +120,20 @@ export async function submitSurveyRow(payload) {
     const updatedAt = payload.updated_at || payload.updatedAt || new Date().toISOString()
     const submittedAt = payload.submitted_at || payload.submittedAt
 
-    if (thaliNo !== undefined) dayRow.thali_number = thaliNo
-    if (email !== undefined) dayRow.email = email
-    if (dishSnapshot !== undefined) dayRow.dish_snapshot = dishSnapshot
-    if (editMetadata !== undefined) dayRow.edit_metadata = editMetadata
-    if (updatedAt !== undefined) dayRow.updated_at = updatedAt
-    if (submittedAt !== undefined) dayRow.submitted_at = submittedAt
+    if (thaliNo !== undefined) rawRow.thali_number = thaliNo
+    if (email !== undefined) rawRow.email = email
+    if (dishSnapshot !== undefined) rawRow.dish_snapshot = dishSnapshot
+    if (editMetadata !== undefined) rawRow.edit_metadata = editMetadata
+    if (updatedAt !== undefined) rawRow.updated_at = updatedAt
+    if (submittedAt !== undefined) rawRow.submitted_at = submittedAt
+
+    // Sanitize: ONLY include columns that actually exist in survey_day_responses
+    const dayRow = {}
+    for (const [k, v] of Object.entries(rawRow)) {
+      if (ALLOWED_COLUMNS.has(k) && v !== undefined) {
+        dayRow[k] = v
+      }
+    }
 
     return dayRow
   })
