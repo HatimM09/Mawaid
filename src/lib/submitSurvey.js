@@ -1,7 +1,7 @@
 // src/lib/submitSurvey.js
 // Single audited write path for member survey responses.
 import { supabase } from './firebaseClient'
-import { DAY_KEYS } from '../common/utils'
+import { DAY_KEYS, getSurveyTargetWeek } from '../common/utils'
 
 // Best-effort admin alert: a failed save must never be invisible.
 async function notifyAdmins(message) {
@@ -49,18 +49,33 @@ async function logClientWrite({ user_id, week_id, day, action = 'submit', payloa
  */
 export async function submitSurveyRow(payload) {
   if (!payload || typeof payload !== 'object') {
+    console.error('[submitSurvey] Received invalid payload:', payload)
     return { data: null, error: new Error('Invalid survey payload.') }
   }
 
-  const userId = payload.user_id || payload.userId
-  const weekId = payload.week_id || payload.weekId
+  let userId = payload.user_id || payload.userId
+  if (!userId) {
+    try {
+      const { data: authData } = await supabase.auth.getUser()
+      userId = authData?.user?.id
+    } catch {}
+  }
+  if (!userId) {
+    return { data: null, error: new Error('User not authenticated. Please refresh and sign in.') }
+  }
+
+  let weekId = payload.week_id || payload.weekId
+  if (!weekId) {
+    try { weekId = getSurveyTargetWeek() } catch {}
+  }
+
   const thaliLabel = typeof (payload.thali_number || payload.thaliNumber) === 'string' && (payload.thali_number || payload.thaliNumber)
     ? `Thali ${payload.thali_number || payload.thaliNumber}`
     : 'A member'
 
   // Identify all days represented in this payload
   let targetDays = []
-  const rawDay = (payload.day || '').toLowerCase()
+  const rawDay = (payload.day || '').trim().toLowerCase()
   const dayKey = rawDay.length > 3 ? rawDay.substring(0, 3) : rawDay
   if (dayKey && DAY_KEYS.includes(dayKey)) {
     targetDays = [dayKey]

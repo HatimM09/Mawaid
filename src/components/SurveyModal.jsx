@@ -501,6 +501,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
         }
       })
     }
+    return payload
   }, [lunchWantsFood, dinnerWantsFood, user?.id, currentWeekId, dayKey, userData, existingData, currentDay, lunchDishes, dinnerDishes, lunchResponses, dinnerResponses, liveAppSettings])
 
   const saveCurrentDay = async () => {
@@ -634,6 +635,19 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     }
     setLoading(true)
     try {
+      if (user?.id && currentWeekId) {
+        const nowIso = new Date().toISOString()
+        await supabase
+          .from('survey_day_responses')
+          .update({ submitted_at: nowIso, updated_at: nowIso })
+          .eq('user_id', user.id)
+          .eq('week_id', currentWeekId)
+      }
+      setSurveySubmitted(true)
+      setShowSuccess(true)
+      setTimeout(() => { setShowSuccess(false); onClose() }, 2600)
+    } catch (e) {
+      console.warn('handleSubmitWeekly stamp failed:', e)
       setSurveySubmitted(true)
       setShowSuccess(true)
       setTimeout(() => { setShowSuccess(false); onClose() }, 2600)

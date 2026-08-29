@@ -8,7 +8,7 @@ android {
   applicationId "com.almawaid.myapp"
   minSdkVersion rootProject.ext.minSdkVersion
   targetSdkVersion rootProject.ext.targetSdkVersion
-  versionCode 43
+  versionCode 44
   versionName "2.1.5"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
