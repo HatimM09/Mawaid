@@ -80,16 +80,16 @@ export default function SurveyPage({ appSettings = {} }) {
   const canOpenEditor = editable
   const isWeeklyComplete = completedMeals >= totalMeals
   const windowLabel = getSurveyWindowLabel(appSettings)
-  const actionLabel = isWeeklyComplete ? 'Survey Completed' : completedMeals === 0 ? 'Start Weekly Survey' : 'Resume Survey'
+  const actionLabel = isWeeklyComplete ? 'Weekly Survey Submitted & Locked' : completedMeals === 0 ? 'Start Weekly Survey' : 'Resume Survey'
 
   if (loading || !weeklyMenu) return <WeeklyMenuSkeleton />
 
-  const statusLabel = surveyOpen ? 'Survey Live' : isAnyMealEditable ? 'Edit Window Live' : isWeeklyComplete ? 'Completed — Locked' : 'Survey Closed'
-  const statusColor = surveyOpen ? '#10b981' : isAnyMealEditable ? '#FF9800' : isWeeklyComplete ? '#4CAF50' : t.textSub
-  const statusMsg = surveyOpen
-    ? `Survey is open • ${windowLabel} — new, partial resume & haven't filled can all submit.`
-    : isWeeklyComplete
-      ? 'Weekly survey completed. Main button is locked — use Edit below each day to tweak.'
+  const statusLabel = isWeeklyComplete ? 'Completed — Locked' : surveyOpen ? 'Survey Live' : isAnyMealEditable ? 'Edit Window Live' : 'Survey Closed'
+  const statusColor = isWeeklyComplete ? '#10b981' : surveyOpen ? '#10b981' : isAnyMealEditable ? '#FF9800' : t.textSub
+  const statusMsg = isWeeklyComplete
+    ? 'Weekly survey is completed and locked. You have submitted all 12 meal slots for this week.'
+    : surveyOpen
+      ? `Survey is open • ${windowLabel} — please complete all 12 meal slots.`
       : `Survey is closed. Opens ${windowLabel}.`
 
   const renderMealDishes = (day, meal, status) => {
@@ -286,7 +286,8 @@ export default function SurveyPage({ appSettings = {} }) {
 
               <div style={{ marginTop: 16 }}>
                 <button
-                  onClick={() => { setOpenDay(null); setOpenMeal(null); setShowSurvey(true) }}
+                  onClick={isWeeklyComplete ? undefined : () => { setOpenDay(null); setOpenMeal(null); setShowSurvey(true) }}
+                  disabled={isWeeklyComplete || !canOpenEditor}
                   type="button"
                   className="group"
                   style={{
@@ -295,23 +296,24 @@ export default function SurveyPage({ appSettings = {} }) {
                     color: isWeeklyComplete ? '#10b981' : canOpenEditor ? '#0a0a0a' : t.textSub,
                     fontSize: 14, fontWeight: 800,
                     border: `1px solid ${isWeeklyComplete ? 'rgba(16,185,129,0.3)' : canOpenEditor ? t.accentBorder : t.border}`,
-                    cursor: 'pointer',
+                    cursor: isWeeklyComplete ? 'default' : canOpenEditor ? 'pointer' : 'not-allowed',
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
                     transition: 'transform 0.45s cubic-bezier(0.32,0.72,0,1), box-shadow 0.45s ease',
                     fontFamily: "'Plus Jakarta Sans',sans-serif",
                     letterSpacing: '0.01em',
-                    boxShadow: canOpenEditor ? `0 10px 28px ${t.accent}28, inset 0 1px 0 rgba(255,255,255,0.22)` : 'none',
+                    boxShadow: !isWeeklyComplete && canOpenEditor ? `0 10px 28px ${t.accent}28, inset 0 1px 0 rgba(255,255,255,0.22)` : 'none',
+                    opacity: isWeeklyComplete ? 0.92 : canOpenEditor ? 1 : 0.65,
                   }}
-                  onMouseDown={e => { e.currentTarget.style.transform = 'scale(0.99)' }}
-                  onMouseUp={e => { e.currentTarget.style.transform = 'scale(1)' }}
-                  onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                  onMouseDown={e => { if (!isWeeklyComplete && canOpenEditor) e.currentTarget.style.transform = 'scale(0.99)' }}
+                  onMouseUp={e => { if (!isWeeklyComplete && canOpenEditor) e.currentTarget.style.transform = 'scale(1)' }}
+                  onMouseLeave={e => { if (!isWeeklyComplete && canOpenEditor) e.currentTarget.style.transform = 'scale(1)' }}
                 >
                   <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ width: 28, height: 28, borderRadius: 999, background: isWeeklyComplete ? 'rgba(16,185,129,0.18)' : canOpenEditor ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${isWeeklyComplete ? 'rgba(16,185,129,0.25)' : canOpenEditor ? 'rgba(0,0,0,0.08)' : t.border}` }}>
-                      {isWeeklyComplete ? <CheckCircle2 size={14} color="#10b981" /> : <ClipboardList size={14} color={canOpenEditor ? '#0a0a0a' : t.textSub} />}
+                      {isWeeklyComplete ? <Lock size={14} color="#10b981" /> : <ClipboardList size={14} color={canOpenEditor ? '#0a0a0a' : t.textSub} />}
                     </span>
                     {actionLabel}
-                    <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.7, letterSpacing: '0.06em' }}>• {windowLabel}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.7, letterSpacing: '0.06em' }}>• {isWeeklyComplete ? 'Submitted' : windowLabel}</span>
                   </span>
                   <span style={{
                     width: 44, height: 44, borderRadius: 999, flexShrink: 0,
@@ -320,8 +322,8 @@ export default function SurveyPage({ appSettings = {} }) {
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     border: `1px solid ${isWeeklyComplete ? 'rgba(16,185,129,0.25)' : canOpenEditor ? 'rgba(255,255,255,0.10)' : t.border}`,
                     transition: 'transform 0.45s cubic-bezier(0.32,0.72,0,1)'
-                  }} className="group-hover:translate-x-[2px]">
-                    <ArrowUpRight size={18} strokeWidth={2.2} />
+                  }} className={!isWeeklyComplete && canOpenEditor ? 'group-hover:translate-x-[2px]' : ''}>
+                    {isWeeklyComplete ? <CheckCircle2 size={18} color="#10b981" /> : <ArrowUpRight size={18} strokeWidth={2.2} />}
                   </span>
                  </button>
                </div>
@@ -426,8 +428,7 @@ export default function SurveyPage({ appSettings = {} }) {
               // through the main Start/Resume button in strict day order.
               const canEditLunch = canEditMeal(day, currentWeekId, 'lunch', appSettings)
               const canEditDinner = canEditMeal(day, currentWeekId, 'dinner', appSettings)
-              const windowOpen = surveyOpen || canEditLunch || canEditDinner
-              const canEditThisDay = isWeeklyComplete && windowOpen
+              const canEditThisDay = isWeeklyComplete && (canEditLunch || canEditDinner)
               const locked = !canEditThisDay
 
               return (

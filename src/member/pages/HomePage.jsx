@@ -26,7 +26,7 @@ export default function HomePage({ appSettings = {} }) {
   const [weeklySurveySubmitted, setWeeklySurveySubmitted] = useState(false)
   const todayKey = getTodayKey()
 
-  // Auto-edit card state â€” auto-popup when edit window opens
+  // Auto-edit card state — auto-popup when edit window opens
   const [showDailyEditCard, setShowDailyEditCard] = useState(false)
   const [dailyEditMealInfo, setDailyEditMealInfo] = useState(null)
   // Tracks cards the user opened manually (via the Quick Edit button) so the
@@ -143,13 +143,13 @@ export default function HomePage({ appSettings = {} }) {
         setLunchComment(existingFb.lunch_comment || '')
         setDinnerComment(existingFb.dinner_comment || '')
       }
-// Hide the weekly-survey notice once every EXPECTED meal is answered.
-      let expectedSlots = DAYS.flatMap(day => [{ day, meal: 'lunch' }, { day, meal: 'dinner' }])
-      const allDone = expectedSlots.every(slot => {
+      // Hide the weekly-survey notice once every EXPECTED meal is answered.
+      const expectedSlots = DAYS.flatMap(day => [{ day, meal: 'lunch' }, { day, meal: 'dinner' }])
+      const allDone = Boolean(surveyData && expectedSlots.every(slot => {
         const dk = slot.day.substring(0, 3).toLowerCase()
         const mk = slot.meal === 'lunch' ? 'l' : 'd'
-        return surveyData[`${dk}_${mk}_status`]
-      })
+        return Boolean(surveyData[`${dk}_${mk}_status`])
+      }))
       setWeeklySurveySubmitted(allDone)
     } catch { /* ignore */ }
     setStatsLoading(false)
@@ -207,11 +207,11 @@ export default function HomePage({ appSettings = {} }) {
             if (profile?.thali_number) userName += ` (#${profile.thali_number})`
           } catch { /* name is optional */ }
           const ratingParts = []
-          if (lunchStars) ratingParts.push(`Lunch: ${lunchStars}â˜…`)
-          if (dinnerStars) ratingParts.push(`Dinner: ${dinnerStars}â˜…`)
+          if (lunchStars) ratingParts.push(`Lunch: ${lunchStars}★`)
+          if (dinnerStars) ratingParts.push(`Dinner: ${dinnerStars}★`)
           await supabase.functions.invoke('send-push', {
             body: {
-              title: 'â­ New Daily Feedback',
+              title: '★ New Daily Feedback',
               body: `${userName} rated ${ratingParts.join(', ')}.`,
               target_type: 'admins',
               notify_in_app: true,
@@ -230,7 +230,7 @@ export default function HomePage({ appSettings = {} }) {
     } finally { setSubmittingFeedback(false) }
   }
 
-const calendarWeek = getCalendarWeekDate()
+  const calendarWeek = getCalendarWeekDate()
 
   // Time-window lunch/dinner quick-edit: only shown while a meal's edit window is live
   const currentMealInfo = weeklyMenu ? getCardMealInfo(weeklyMenu, appSettings) : null
@@ -407,8 +407,6 @@ const calendarWeek = getCalendarWeekDate()
         </div>
       )}
 
-
-
       {/* Daily Feedback Section */}
       <Card organic style={{ marginBottom: 24 }}>
         <div style={{ position: 'absolute', top: -30, right: -30, width: 150, height: 150, background: t.accentGrad, borderRadius: '50%', filter: 'blur(60px)', opacity: 0.12 }} />
@@ -498,4 +496,3 @@ const calendarWeek = getCalendarWeekDate()
     </main>
   )
 }
-

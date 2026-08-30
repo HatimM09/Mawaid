@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { X, ChevronLeft, ChevronRight, Check, AlertTriangle, Play, Sun, Moon } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, Check, AlertTriangle, Play, Sun, Moon, Lock } from 'lucide-react'
 import { supabase } from '../lib/firebaseClient'
 import { useAuth, useTheme } from '../admin/context'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
@@ -842,6 +842,37 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
           </div>
           <h2 style={{ margin: '0 0 8px', fontSize: 28, fontWeight: 800, color: '#4CAF50', fontFamily: "'Playfair Display',serif" }}>Survey Submitted!</h2>
           <p style={{ margin: 0, fontSize: 14, color: T.textSub, fontFamily: "'DM Sans',sans-serif" }}>Your meal plan is locked in. Shukran! 🤲</p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── LOCKED SCREEN (Full weekly survey already completed and submitted) ──
+  if (surveySubmitted && !initialDay) {
+    return (
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 10001, background: T.overlay, backdropFilter: 'blur(14px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(10px,3vw,28px)' }}>
+        <style>{SURVEY_STYLES}</style>
+        <div onClick={e => e.stopPropagation()} style={{ background: T.modalBg, borderRadius: 24, padding: 'clamp(24px,4vw,36px)', maxWidth: 540, width: '100%', border: `1.5px solid ${T.modalBorder}`, boxShadow: '0 30px 80px rgba(0,0,0,0.55)', position: 'relative', textAlign: 'center', animation: 'surveyModalIn 0.35s ease-out' }}>
+          <button onClick={onClose} style={{ position: 'absolute', top: 14, right: 14, background: T.softBg, border: `1px solid ${T.border}`, borderRadius: 8, width: 32, height: 32, color: T.textSub, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation' }}><X size={16} /></button>
+          <div style={{ width: 68, height: 68, borderRadius: 20, background: 'rgba(76,175,80,0.15)', border: '1.5px solid rgba(76,175,80,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', color: '#4CAF50' }}>
+            <Lock size={32} />
+          </div>
+          <h2 style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 800, color: T.text, fontFamily: "'Playfair Display',serif" }}>Weekly Survey Locked</h2>
+          <p style={{ margin: '0 0 20px', fontSize: 13.5, color: T.textSub, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>
+            You have already filled and submitted your full weekly survey for this week. No further survey submissions are permitted.
+          </p>
+          <div style={{ padding: '14px 18px', borderRadius: 16, background: 'rgba(76,175,80,0.08)', border: '1px solid rgba(76,175,80,0.25)', marginBottom: 22, textAlign: 'left' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <Check size={18} color="#4CAF50" strokeWidth={2.5} />
+              <span style={{ fontSize: 13, fontWeight: 800, color: '#4CAF50', fontFamily: "'DM Sans',sans-serif" }}>All 12 Meals Recorded & Locked</span>
+            </div>
+            <div style={{ fontSize: 12, color: T.textSub, fontFamily: "'DM Sans',sans-serif", lineHeight: 1.5 }}>
+              Your meal portion preferences are saved in the system. Shukran! 🤲
+            </div>
+          </div>
+          <button onClick={onClose} type="button" style={{ width: '100%', minHeight: 46, padding: '12px', borderRadius: 14, border: 'none', background: T.accentGrad, color: '#000', cursor: 'pointer', fontSize: 14, fontWeight: 900, fontFamily: "'DM Sans',sans-serif", touchAction: 'manipulation' }}>
+            Close
+          </button>
         </div>
       </div>
     )
