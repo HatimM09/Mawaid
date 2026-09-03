@@ -870,17 +870,6 @@ export default function SettingsPage() {
           </div>
         </AdminCard>
 
-        {/* Weekly Survey Submission Tracker */}
-        <AdminCard>
-          <SectionHeader>📋 Weekly Survey Submission</SectionHeader>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
-            <div style={{ flex: '1 1 180px', padding: '14px 16px', borderRadius: 12, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.3)' }}>
-              <div style={{ fontSize: 26, fontWeight: 900, color: '#34d399' }}>{weeklyTrack.loading ? '…' : weeklyTrack.submitted.length}</div>
-              <div style={{ fontSize: 11, color: T.textSub, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 2 }}>Submitted</div>
-            </div>
-            <div style={{ flex: '1 1 180px', padding: '14px 16px', borderRadius: 12, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)' }}>
-              <div style={{ fontSize: 26, fontWeight: 900, color: '#f87171' }}>{weeklyTrack.loading ? '…' : weeklyTrack.pending.length}</div>
-              <div style={{ fontSize: 11, color: T.textSub, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 2 }}>Pending</div>
         {/* Weekly Tracking */}
         <AdminCard>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
