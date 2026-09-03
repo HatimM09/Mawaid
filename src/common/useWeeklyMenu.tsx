@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/firebaseClient';
 import { getSurveyTargetWeek } from './utils';
 import { queryKeys } from '../lib/queryClient';
+import { DEFAULT_MENU } from './constants';
 
 const parseDishArray = (val: any): string[] => {
   if (!val) return [];
@@ -42,49 +43,84 @@ const formatMenu = (rows: any[], weekId?: string) => {
   return formatted;
 };
 
+const formatDefaultMenu = (defaultMenu: any, weekStart?: string) => {
+  const formatted: any = {};
+  Object.entries(defaultMenu || {}).forEach(([dayKey, val]: [string, any]) => {
+    const rawName = dayKey.charAt(0).toUpperCase() + dayKey.slice(1);
+    const menuObj = {
+      en: rawName,
+      ar: '',
+      lunch: parseDishArray(val.lunch),
+      dinner: parseDishArray(val.dinner),
+      week_start: weekStart || '',
+      publish_at: '',
+      isDefault: true,
+    };
+    formatted[dayKey.toLowerCase()] = menuObj;
+    formatted[rawName] = menuObj;
+    formatted[dayKey.toLowerCase().slice(0, 3)] = menuObj;
+    formatted[dayKey.toUpperCase()] = menuObj;
+  });
+  return formatted;
+};
+
+const hasDishes = (formatted: any) => {
+  if (!formatted) return false;
+  return Object.values(formatted).some((m: any) => (m?.lunch?.length || 0) > 0 || (m?.dinner?.length || 0) > 0);
+};
+
 const fetchWeeklyMenu = async (weekStart: string): Promise<any> => {
-  if (weekStart) {
-    const { data, error } = await supabase
-      .from('weekly_menu')
-      .select('*')
-      .eq('week_start', weekStart);
-    if (error) throw error;
+  try {
+    if (weekStart) {
+      const { data, error } = await supabase
+        .from('weekly_menu')
+        .select('*')
+        .eq('week_start', weekStart);
+      if (error) throw error;
 
-    if (data && data.length > 0) {
-      return formatMenu(data, weekStart);
+      if (data && data.length > 0) {
+        const formatted = formatMenu(data, weekStart);
+        if (hasDishes(formatted)) {
+          return formatted;
+        }
+      }
     }
+
+    // Fallback 1: Query the most recent published menu week with rows
+    const { data: latestRow } = await supabase
+      .from('weekly_menu')
+      .select('week_start')
+      .order('week_start', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestRow?.week_start) {
+      const { data: fallbackData } = await supabase
+        .from('weekly_menu')
+        .select('*')
+        .eq('week_start', latestRow.week_start);
+
+      if (fallbackData && fallbackData.length > 0) {
+        const formatted = formatMenu(fallbackData, latestRow.week_start);
+        if (hasDishes(formatted)) {
+          return formatted;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[useWeeklyMenu] Error fetching menu from Supabase, using default fallback:', err);
   }
 
-  // Fallback: If no rows found for the requested target week, query the most recent published menu week
-  const { data: latestRow } = await supabase
-    .from('weekly_menu')
-    .select('week_start')
-    .order('week_start', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (latestRow?.week_start) {
-    const { data: fallbackData } = await supabase
-      .from('weekly_menu')
-      .select('*')
-      .eq('week_start', latestRow.week_start);
-
-    if (fallbackData && fallbackData.length > 0) {
-      return formatMenu(fallbackData, latestRow.week_start);
-    }
-  }
-
-  return {};
+  // Fallback 2: Default hardcoded menu so UI never disappears or renders empty
+  return formatDefaultMenu(DEFAULT_MENU, weekStart);
 };
 
 /**
  * Hook to load the weekly menu.
  *
  * @param weekStart Which week's menu to load (YYYY-MM-DD of that week's Monday).
- *   Defaults to `getWeekDate()` (the survey week — NEXT week during the
- *   Saturday 8PM–Monday 11AM survey window). Pass `getCalendarWeekDate()`
- *   from menu-display surfaces (Menu page, Today's menu & feedback) so the
- *   CURRENT week's menu keeps showing even after next week is published.
+ *   Defaults to `getSurveyTargetWeek()` (the survey week).
+ *   Pass `getCalendarWeekDate()` from menu-display surfaces (Menu page, Today's menu).
  */
 export const useWeeklyMenu = (weekStart = getSurveyTargetWeek()) => {
   const queryClient = useQueryClient();
@@ -108,11 +144,13 @@ export const useWeeklyMenu = (weekStart = getSurveyTargetWeek()) => {
     const channel = supabase
       .channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'weekly_menu' }, () => {
-        if (!cancelled) queryClient.invalidateQueries({ queryKey });
+        if (!cancelled) {
+          queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] });
+        }
       })
       .subscribe((status) => {
         if ((status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') && !cancelled) {
-          setTimeout(() => queryClient.invalidateQueries({ queryKey }), 3000);
+          setTimeout(() => queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] }), 3000);
         }
       });
 
@@ -120,6 +158,7 @@ export const useWeeklyMenu = (weekStart = getSurveyTargetWeek()) => {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [queryClient, queryKey]);
+  }, [queryClient]);
+
   return menu;
 };

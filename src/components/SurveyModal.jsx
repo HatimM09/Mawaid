@@ -329,14 +329,24 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     () => weeklyMenuRaw?.[currentDay] || weeklyMenuRaw?.[cap(currentDay)] || weeklyMenuRaw?.[dayKey] || { lunch: [], dinner: [] },
     [weeklyMenuRaw, currentDay, dayKey]
   )
-  const lunchDishes = useMemo(
-    () => (menu.lunch?.length ? menu.lunch : getSlotDishes(existingData, currentDay, 'lunch', [])),
-    [menu, existingData, currentDay]
-  )
-  const dinnerDishes = useMemo(
-    () => (menu.dinner?.length ? menu.dinner : getSlotDishes(existingData, currentDay, 'dinner', [])),
-    [menu, existingData, currentDay]
-  )
+  const parseDefaultDishes = (str) => {
+    if (!str) return []
+    return str.split(',').map(s => s.trim()).filter(Boolean)
+  }
+
+  const lunchDishes = useMemo(() => {
+    if (menu.lunch?.length) return menu.lunch
+    const existing = getSlotDishes(existingData, currentDay, 'lunch', [])
+    if (existing?.length) return existing
+    return parseDefaultDishes(DEFAULT_MENU[dayKey]?.lunch)
+  }, [menu, existingData, currentDay, dayKey])
+
+  const dinnerDishes = useMemo(() => {
+    if (menu.dinner?.length) return menu.dinner
+    const existing = getSlotDishes(existingData, currentDay, 'dinner', [])
+    if (existing?.length) return existing
+    return parseDefaultDishes(DEFAULT_MENU[dayKey]?.dinner)
+  }, [menu, existingData, currentDay, dayKey])
 
   const slotList = useMemo(() => DAYS.flatMap(d => [{ day: d, meal: 'lunch' }, { day: d, meal: 'dinner' }]), [])
 

@@ -184,8 +184,8 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
                     <div style={{ fontSize: 18, fontWeight: 800, color: isExpanded ? t.accent : t.text, fontFamily: "'Playfair Display',serif" }}>
                       {day.charAt(0).toUpperCase() + day.slice(1)}
                     </div>
-                    <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 2, opacity: 0.7 }}>
-                      {menu.en || 'Special Menu Coming Soon'}
+                    <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 2, opacity: 0.85, maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {[...(menu.lunch || []), ...(menu.dinner || [])].slice(0, 3).join(' • ') || (menu.ar ? menu.ar : 'Special Menu Coming Soon')}
                     </div>
                   </div>
                 </div>

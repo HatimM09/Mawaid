@@ -664,6 +664,34 @@ export default function SettingsPage() {
                   )
                 })}
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const otherWeek = targetWeek === calendarWeek ? nextWeek : calendarWeek
+                  const otherLabel = targetWeek === calendarWeek ? 'Next Week' : 'This Week'
+                  if (window.confirm(`Copy current menu dishes to ${otherLabel} (${otherWeek})?`)) {
+                    const menuRows = Object.entries(menu).map(([day, val]) => ({
+                      day_name: day,
+                      week_start: otherWeek,
+                      day_ar: val.ar || '',
+                      lunch: val.lunch,
+                      dinner: val.dinner,
+                      publish_at: new Date().toISOString(),
+                    }))
+                    supabase.from('weekly_menu').upsert(menuRows, { onConflict: 'week_start,day_name' }).then(({ error }) => {
+                      if (error) setMsg({ text: `Copy failed: ${error.message}`, type: 'error' })
+                      else setMsg({ text: `✅ Successfully copied menu to ${otherLabel} (${otherWeek})! Both weeks now have dishes.`, type: 'success' })
+                    })
+                  }
+                }}
+                style={{
+                  padding: '7px 12px', borderRadius: 10, border: `1px solid ${T.border}`,
+                  background: 'rgba(255,255,255,0.04)', color: T.text, fontSize: 11, fontWeight: 700,
+                  cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6
+                }}
+              >
+                📋 Copy to {targetWeek === calendarWeek ? 'Next Week' : 'This Week'}
+              </button>
               <div style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 background: targetWeek === calendarWeek ? 'rgba(16,185,129,0.1)' : T.accentBg,
@@ -965,6 +993,35 @@ export default function SettingsPage() {
                   }}
                 >
                   <Clock size={14} /> Now
+                </Btn>
+                <Btn
+                  type="button"
+                  disabled={publishing}
+                  onClick={async () => {
+                    if (!window.confirm(`Publish this menu to BOTH This Week (${calendarWeek}) AND Next Week (${nextWeek})?`)) return
+                    setPublishing(true)
+                    setMsg({ text: '', type: 'success' })
+                    const publishTimestamp = new Date().toISOString()
+                    const rows1 = Object.entries(menu).map(([day, val]) => ({
+                      day_name: day, week_start: calendarWeek, day_ar: val.ar || '', lunch: val.lunch, dinner: val.dinner, publish_at: publishTimestamp,
+                    }))
+                    const rows2 = Object.entries(menu).map(([day, val]) => ({
+                      day_name: day, week_start: nextWeek, day_ar: val.ar || '', lunch: val.lunch, dinner: val.dinner, publish_at: publishTimestamp,
+                    }))
+                    const { error: err1 } = await supabase.from('weekly_menu').upsert(rows1, { onConflict: 'week_start,day_name' })
+                    const { error: err2 } = await supabase.from('weekly_menu').upsert(rows2, { onConflict: 'week_start,day_name' })
+                    setPublishing(false)
+                    if (err1 || err2) {
+                      setMsg({ text: `Publish error: ${(err1 || err2).message}`, type: 'error' })
+                    } else {
+                      await supabase.from('app_settings').delete().eq('key', 'draft_data')
+                      setHasDraft(false)
+                      setMsg({ text: `✅ Successfully published menu to BOTH This Week (${calendarWeek}) and Next Week (${nextWeek})!`, type: 'success' })
+                    }
+                  }}
+                  style={{ whiteSpace: 'nowrap', background: 'rgba(255,255,255,0.06)', border: `1px solid ${T.border}`, color: T.text }}
+                >
+                  Publish for Both Weeks
                 </Btn>
                 <Btn
                   type="button"

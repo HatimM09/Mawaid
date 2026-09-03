@@ -73,9 +73,8 @@ export const getSurveyTargetWeek = (surveyOpenHour = 20, forceOpen = false) => {
     const now = new Date()
     const day = now.getDay()
     const curDiff = now.getDate() - day + (day === 0 ? -6 : 1)
-    const curMonday = new Date(now)
-    curMonday.setDate(curDiff)
-    const curStr = curMonday.toISOString().split('T')[0]
+    const curMonday = new Date(now.getFullYear(), now.getMonth(), curDiff)
+    const curStr = toLocalDateStr(curMonday)
     const statusRaw = String(appSettings.survey_window_status ?? appSettings.survey_status ?? 'auto').toLowerCase().trim()
     const status = statusRaw === 'open' || statusRaw === 'closed' ? statusRaw : 'auto'
     let isOpen
@@ -84,9 +83,8 @@ export const getSurveyTargetWeek = (surveyOpenHour = 20, forceOpen = false) => {
     else isOpen = _isSurveyWindowOpen(appSettings, now)
     if (!isOpen) return curStr
     // window open → next week
-    const next = new Date(curMonday)
-    next.setDate(next.getDate() + 7)
-    return next.toISOString().split('T')[0]
+    const next = new Date(curMonday.getFullYear(), curMonday.getMonth(), curMonday.getDate() + 7)
+    return toLocalDateStr(next)
   }
   const now = new Date()
   const day = now.getDay()
@@ -98,8 +96,8 @@ export const getSurveyTargetWeek = (surveyOpenHour = 20, forceOpen = false) => {
   if (day === 0 || satShift) {
     diff += 7
   }
-  const monday = new Date(now.setDate(diff))
-  return monday.toISOString().split('T')[0]
+  const monday = new Date(now.getFullYear(), now.getMonth(), diff)
+  return toLocalDateStr(monday)
 }
 
 /**
@@ -113,8 +111,8 @@ export const getCalendarWeekDate = () => {
   const now = new Date()
   const day = now.getDay()
   const diff = now.getDate() - day + (day === 0 ? -6 : 1)
-  const monday = new Date(now.setDate(diff))
-  return monday.toISOString().split('T')[0]
+  const monday = new Date(now.getFullYear(), now.getMonth(), diff)
+  return toLocalDateStr(monday)
 }
 
 export const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
@@ -172,9 +170,10 @@ export const dayBelongsToCalendarWeek = (dayName) => {
 }
 
 export const addWeeks = (dateStr, weeks) => {
-  const date = new Date(dateStr)
-  date.setDate(date.getDate() + weeks * 7)
-  return date.toISOString().split('T')[0]
+  if (!dateStr) return ''
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(y, m - 1, d + weeks * 7)
+  return toLocalDateStr(date)
 }
 
 /**
