@@ -231,10 +231,6 @@ export default function SurveysPage() {
             try { await supabase.from('survey_submissions_flat').delete().eq('week_id', ow) } catch {}
           }
         }
-        // Prune previous weeks' weekly_menu rows
-        try {
-          await supabase.from('weekly_menu').delete().lt('week_start', currentWeek)
-        } catch {}
       } catch (e) { console.warn('Cleanup error:', e) }
 
       // Load full app_settings so week matches member side (dynamic day/time + force status)

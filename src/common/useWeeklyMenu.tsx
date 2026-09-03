@@ -4,6 +4,20 @@ import { supabase } from '../lib/firebaseClient';
 import { getSurveyTargetWeek } from './utils';
 import { queryKeys } from '../lib/queryClient';
 
+const parseDishArray = (val: any): string[] => {
+  if (!val) return [];
+  if (Array.isArray(val)) {
+    return val.map((s: any) => String(s || '').trim()).filter(Boolean);
+  }
+  if (typeof val === 'string') {
+    return val
+      .split(/[\n\r,;•|]+/)
+      .map((s: string) => s.trim().replace(/^["']+|["']+$/g, ''))
+      .filter(Boolean);
+  }
+  return [];
+};
+
 const formatMenu = (rows: any[], weekId?: string) => {
   const filtered = weekId ? rows.filter(row => row && row.week_start === weekId) : rows;
   const targetRows = filtered.length > 0 ? filtered : rows;
@@ -15,37 +29,49 @@ const formatMenu = (rows: any[], weekId?: string) => {
     const menuObj = {
       en: rawName,
       ar: row.day_ar || '',
-      lunch: row.lunch ? row.lunch.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
-      dinner: row.dinner ? row.dinner.split(',').map((s: string) => s.trim()).filter(Boolean) : []
+      lunch: parseDishArray(row.lunch),
+      dinner: parseDishArray(row.dinner),
+      week_start: row.week_start,
+      publish_at: row.publish_at,
     };
     formatted[dayKey] = menuObj;
     formatted[rawName] = menuObj;
     formatted[dayKey.slice(0, 3)] = menuObj;
+    formatted[dayKey.toUpperCase()] = menuObj;
   });
   return formatted;
 };
 
 const fetchWeeklyMenu = async (weekStart: string): Promise<any> => {
-  const { data, error } = await supabase
-    .from('weekly_menu')
-    .select('*')
-    .eq('week_start', weekStart);
-  if (error) throw error;
+  if (weekStart) {
+    const { data, error } = await supabase
+      .from('weekly_menu')
+      .select('*')
+      .eq('week_start', weekStart);
+    if (error) throw error;
 
-  if (data && data.length > 0) {
-    return formatMenu(data, weekStart);
+    if (data && data.length > 0) {
+      return formatMenu(data, weekStart);
+    }
   }
 
-  // Fallback: If no rows found for the requested target week, query the most recent published menu
-  const { data: fallbackData } = await supabase
+  // Fallback: If no rows found for the requested target week, query the most recent published menu week
+  const { data: latestRow } = await supabase
     .from('weekly_menu')
-    .select('*')
+    .select('week_start')
     .order('week_start', { ascending: false })
-    .limit(7);
+    .limit(1)
+    .maybeSingle();
 
-  if (fallbackData && fallbackData.length > 0) {
-    const latestWeek = fallbackData[0].week_start;
-    return formatMenu(fallbackData, latestWeek);
+  if (latestRow?.week_start) {
+    const { data: fallbackData } = await supabase
+      .from('weekly_menu')
+      .select('*')
+      .eq('week_start', latestRow.week_start);
+
+    if (fallbackData && fallbackData.length > 0) {
+      return formatMenu(fallbackData, latestRow.week_start);
+    }
   }
 
   return {};

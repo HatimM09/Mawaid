@@ -67,6 +67,9 @@ export const getSurveyTargetWeek = (surveyOpenHour = 20, forceOpen = false) => {
   // so fill/resume/edit lands in the week being planned; when closed we target current Monday.
   if (surveyOpenHour && typeof surveyOpenHour === 'object' && !Array.isArray(surveyOpenHour)) {
     const appSettings = surveyOpenHour
+    if (appSettings.survey_target_week && /^\d{4}-\d{2}-\d{2}$/.test(appSettings.survey_target_week)) {
+      return appSettings.survey_target_week
+    }
     const now = new Date()
     const day = now.getDay()
     const curDiff = now.getDate() - day + (day === 0 ? -6 : 1)

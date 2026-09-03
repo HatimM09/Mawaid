@@ -19,18 +19,35 @@ const formatWeekLabel = (weekStart) => {
 
 // ── CSV Menu Import helpers ──
 const DAY_ALIASES = {
-  monday: 'monday', mon: 'monday',
-  tuesday: 'tuesday', tue: 'tuesday', tues: 'tuesday',
-  wednesday: 'wednesday', wed: 'wednesday',
-  thursday: 'thursday', thu: 'thursday', thur: 'thursday',
-  friday: 'friday', fri: 'friday',
-  saturday: 'saturday', sat: 'saturday',
-  sunday: 'sunday', sun: 'sunday',
+  monday: 'monday', mon: 'monday', mo: 'monday',
+  tuesday: 'tuesday', tue: 'tuesday', tues: 'tuesday', tu: 'tuesday',
+  wednesday: 'wednesday', wed: 'wednesday', we: 'wednesday',
+  thursday: 'thursday', thu: 'thursday', thur: 'thursday', thurs: 'thursday', th: 'thursday',
+  friday: 'friday', fri: 'friday', fr: 'friday',
+  saturday: 'saturday', sat: 'saturday', sa: 'saturday',
+  sunday: 'sunday', sun: 'sunday', su: 'sunday',
 }
+
+const ARABIC_DAYS = {
+  monday: 'الإثنين',
+  tuesday: 'الثلاثاء',
+  wednesday: 'الأربعاء',
+  thursday: 'الخميس',
+  friday: 'الجمعة',
+  saturday: 'السبت',
+  sunday: 'الأحد',
+}
+
 const MAX_DISHES_PER_MEAL = 14
 
-// RFC-4180-ish parser (handles quoted cells, commas, CRLF)
+// RFC-4180 parser (handles quoted cells, commas, CRLF, semicolons, tabs)
 const parseCSVRows = (text) => {
+  if (!text) return []
+  // Auto-detect delimiter if predominantly semicolon or tab
+  const firstLine = text.split(/\r?\n/)[0] || ''
+  const delimiter = (firstLine.split(';').length > firstLine.split(',').length) ? ';' :
+                    (firstLine.split('\t').length > firstLine.split(',').length) ? '\t' : ','
+
   const rows = []
   let row = []
   let cur = ''
@@ -44,59 +61,149 @@ const parseCSVRows = (text) => {
       } else cur += c
     } else if (c === '"') {
       inQuotes = true
-    } else if (c === ',') {
+    } else if (c === delimiter) {
       row.push(cur); cur = ''
     } else if (c === '\n' || c === '\r') {
       if (c === '\r' && text[i + 1] === '\n') i++
       row.push(cur); cur = ''
-      if (row.some(x => x.trim() !== '')) rows.push(row)
+      if (row.some(x => String(x).trim() !== '')) rows.push(row)
       row = []
     } else cur += c
   }
   if (cur !== '' || row.length) {
     row.push(cur)
-    if (row.some(x => x.trim() !== '')) rows.push(row)
+    if (row.some(x => String(x).trim() !== '')) rows.push(row)
   }
   return rows
 }
 
-// Expected headers like "Monday Lunch", "Monday Dinner", "Tuesday Lunch", ...
+const cleanDishList = (dishes) => {
+  const result = []
+  dishes.forEach(d => {
+    if (!d) return
+    // Split on common list delimiters (newlines, commas, semicolons, bullets, slashes between words)
+    const pieces = String(d).split(/[\n\r\t;•|]+|,\s*|\s*\/\s*(?=[A-Za-z0-9])/)
+    pieces.forEach(p => {
+      let cleaned = p.trim().replace(/^[-*•–—\d.)\s]+/, '').trim()
+      cleaned = cleaned.replace(/^["']+|["']+$/g, '').trim()
+      if (cleaned.length > 0 && !result.includes(cleaned)) {
+        result.push(cleaned)
+      }
+    })
+  })
+  return result.slice(0, MAX_DISHES_PER_MEAL)
+}
+
+const matchDay = (str) => {
+  if (!str) return null
+  const s = String(str).toLowerCase().replace(/[^a-z]/g, '')
+  for (const [alias, canonical] of Object.entries(DAY_ALIASES)) {
+    if (s === alias || s.startsWith(alias)) return canonical
+  }
+  return null
+}
+
+const matchMeal = (str) => {
+  if (!str) return null
+  const s = String(str).toLowerCase()
+  if (/\b(lunch|l)\b/i.test(s) || s.includes('lunch')) return 'lunch'
+  if (/\b(dinner|d)\b/i.test(s) || s.includes('dinner')) return 'dinner'
+  return null
+}
+
+// Robust Multi-Format Menu CSV parser
 const parseMenuCSV = (text) => {
   const rows = parseCSVRows(text)
   if (!rows.length) return { columns: [], byMeal: {} }
-  const headers = rows[0].map(h => String(h).trim())
 
-  const columns = headers.map((h, idx) => {
-    const mealMatch = h.match(/\b(lunch|dinner)\b/i)
-    if (!mealMatch) return null
-    const meal = mealMatch[1].toLowerCase()
-    const dayPart = h.replace(/\b(lunch|dinner|menu)\b/ig, '').trim().toLowerCase()
-    const day = DAY_ALIASES[dayPart]
+  const byMeal = {}
+  DAYS.forEach(d => {
+    byMeal[`${d}_lunch`] = { day: d, meal: 'lunch', dishes: [] }
+    byMeal[`${d}_dinner`] = { day: d, meal: 'dinner', dishes: [] }
+  })
+
+  const headers = rows[0].map(h => String(h || '').trim())
+  
+  // Detection Strategy 1: Columnar format (e.g. "Monday Lunch", "Monday Dinner" / "Mon (Lunch)")
+  const columnarMatches = headers.map((h, idx) => {
+    const meal = matchMeal(h)
+    if (!meal) return null
+    // Extract day from the header
+    const cleanH = h.toLowerCase().replace(/\b(lunch|dinner|menu|items?|dishes?)\b/gi, '').trim()
+    const day = matchDay(cleanH)
     if (!day) return null
     return { day, meal, idx }
   }).filter(Boolean)
 
-  const byMeal = {}
-  columns.forEach(({ day, meal }, i) => {
-    const key = `${day}_${meal}`
-    byMeal[key] = { day, meal, dishes: [] }
-  })
-
-  rows.slice(1).forEach(row => {
-    columns.forEach(({ day, meal, idx }) => {
-      const cell = row[idx] || ''
-      ;(cell.split(/[;,\n]+/).map(s => s.trim()).filter(Boolean)).forEach(dish => {
-        byMeal[`${day}_${meal}`].dishes.push(dish)
+  if (columnarMatches.length >= 2) {
+    // Process Columnar CSV
+    rows.slice(1).forEach(row => {
+      columnarMatches.forEach(({ day, meal, idx }) => {
+        const cell = row[idx]
+        if (cell && String(cell).trim()) {
+          byMeal[`${day}_${meal}`].dishes.push(cell)
+        }
       })
     })
-  })
+  } else {
+    // Detection Strategy 2: Tabular format (e.g. Columns: Day, Lunch, Dinner or Day, Meal, Dishes)
+    let dayCol = -1
+    let lunchCol = -1
+    let dinnerCol = -1
+    let mealCol = -1
+    let dishCol = -1
 
-  // Cap dish count and de-duplicate
+    headers.forEach((h, idx) => {
+      const low = h.toLowerCase()
+      if (/^day\b|^day_name|^weekday/i.test(low)) dayCol = idx
+      else if (low === 'lunch' || low.includes('lunch')) lunchCol = idx
+      else if (low === 'dinner' || low.includes('dinner')) dinnerCol = idx
+      else if (low === 'meal' || low === 'meal_type') mealCol = idx
+      else if (low === 'dish' || low === 'dishes' || low === 'menu' || low === 'items') dishCol = idx
+    })
+
+    // If dayCol wasn't explicit, check if column 0 contains day names
+    if (dayCol === -1 && rows.length > 1) {
+      const col0Days = rows.slice(1, 5).filter(r => matchDay(r[0]))
+      if (col0Days.length > 0) dayCol = 0
+    }
+
+    if (dayCol !== -1 && lunchCol !== -1 && dinnerCol !== -1) {
+      // Row format: Day | Lunch dishes | Dinner dishes
+      rows.slice(1).forEach(row => {
+        const day = matchDay(row[dayCol])
+        if (!day) return
+        if (row[lunchCol]) byMeal[`${day}_lunch`].dishes.push(row[lunchCol])
+        if (row[dinnerCol]) byMeal[`${day}_dinner`].dishes.push(row[dinnerCol])
+      })
+    } else if (dayCol !== -1 && mealCol !== -1 && dishCol !== -1) {
+      // Row format: Day | Meal (lunch/dinner) | Dishes
+      rows.slice(1).forEach(row => {
+        const day = matchDay(row[dayCol])
+        const meal = matchMeal(row[mealCol])
+        if (!day || !meal) return
+        if (row[dishCol]) byMeal[`${day}_${meal}`].dishes.push(row[dishCol])
+      })
+    } else if (dayCol !== -1 && lunchCol !== -1) {
+      // At least Day and Lunch
+      rows.slice(1).forEach(row => {
+        const day = matchDay(row[dayCol])
+        if (!day) return
+        if (row[lunchCol]) byMeal[`${day}_lunch`].dishes.push(row[lunchCol])
+      })
+    }
+  }
+
+  // Clean, split, and deduplicate all dishes
+  const activeMeals = {}
   Object.keys(byMeal).forEach(key => {
-    byMeal[key].dishes = [...new Set(byMeal[key].dishes)].slice(0, MAX_DISHES_PER_MEAL)
+    byMeal[key].dishes = cleanDishList(byMeal[key].dishes)
+    if (byMeal[key].dishes.length > 0) {
+      activeMeals[key] = byMeal[key]
+    }
   })
 
-  return { columns, byMeal }
+  return { columns: columnarMatches, byMeal: activeMeals }
 }
 
 const BLANK_MENU = {
@@ -774,26 +881,33 @@ export default function SettingsPage() {
             <div style={{ flex: '1 1 180px', padding: '14px 16px', borderRadius: 12, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)' }}>
               <div style={{ fontSize: 26, fontWeight: 900, color: '#f87171' }}>{weeklyTrack.loading ? '…' : weeklyTrack.pending.length}</div>
               <div style={{ fontSize: 11, color: T.textSub, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 2 }}>Pending</div>
-            </div>
-            <div style={{ flex: '1 1 220px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 8 }}>
-              <div style={{ fontSize: 12, color: T.textSub, lineHeight: 1.5 }}>
-                Survey week: <strong style={{ color: T.accent }}>{weeklyTrack.weekStart ? new Date(weeklyTrack.weekStart + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</strong>
-              </div>
-              <Btn type="button" disabled={reminding || !weeklyTrack.pending.length || weeklyTrack.loading} onClick={sendReminders} style={{ padding: '10px 16px', fontSize: 13 }}>
-                <Send size={14} /> {reminding ? 'Sending reminders…' : `Send Reminder to ${weeklyTrack.pending.length} pending`}
+        {/* Weekly Tracking */}
+        <AdminCard>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <SectionHeader style={{ marginBottom: 0 }}>📊 Survey Submission Status ({targetWeek})</SectionHeader>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Btn type="button" size="sm" variant="outline" onClick={loadWeeklyTracking} disabled={weeklyTrack.loading}>
+                <RefreshCw size={13} className={weeklyTrack.loading ? 'spin' : ''} /> Refresh
               </Btn>
+              {weeklyTrack.pending.length > 0 && (
+                <Btn type="button" size="sm" onClick={sendWeeklyReminder} disabled={reminding}>
+                  <Send size={13} /> Remind {weeklyTrack.pending.length} Pending
+                </Btn>
+              )}
             </div>
           </div>
 
           {weeklyTrack.loading ? (
-            <div style={{ color: T.textSub, padding: '16px 0', textAlign: 'center' }}>Loading submissions…</div>
+            <div style={{ color: T.textSub, fontSize: 12, padding: '14px 0', textAlign: 'center' }}>Loading submission status…</div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
               {/* Submitted */}
               <div>
-                <div style={{ fontSize: 11, fontWeight: 800, color: '#34d399', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>✅ Submitted</div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#34d399', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  ✅ Submitted ({weeklyTrack.submitted.length})
+                </div>
                 {weeklyTrack.submitted.length === 0 ? (
-                  <div style={{ padding: '14px', borderRadius: 10, background: T.inputBg, color: T.textSub, fontSize: 12, textAlign: 'center' }}>No submissions yet.</div>
+                  <div style={{ padding: '14px', borderRadius: 10, background: T.inputBg, color: T.textSub, fontSize: 12, textAlign: 'center' }}>No submissions recorded yet for this week.</div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
                     {weeklyTrack.submitted.map(u => (
@@ -900,19 +1014,10 @@ export default function SettingsPage() {
                       if (menuErr) {
                         setMsg({ text: `Publish failed (menu): ${menuErr.message}`, type: 'error' })
                       } else {
-                        // Automatically delete previous weeks' menus to keep database clean and prevent wrong menu glitches
-                        try {
-                          await supabase.from('weekly_menu').delete().lt('week_start', targetWeek)
-                        } catch (pruneErr) {
-                          console.warn('Old weekly_menu pruning failed:', pruneErr)
-                        }
-
                         await supabase.from('app_settings').delete().eq('key', 'draft_data')
                         setHasDraft(false)
                         const publishingLiveWeek = targetWeek === calendarWeek
 
-                        // Only announce when the LIVE (current calendar) week is published —
-                        // the next week's menu reaches users through the survey form instead.
                         if (!isFuture && publishingLiveWeek) {
                           const { data: existingNotice } = await supabase
                             .from('notices').select('id').eq('type', 'menu')
@@ -924,7 +1029,7 @@ export default function SettingsPage() {
                                 message: `The menu for week of ${targetWeek} is now live! Check it out in the app.`,
                                 url: '/', type: 'menu',
                               })
-                            } catch (_) { /* notice insert is best-effort */ }
+                            } catch (_) { }
                           }
                           try {
                             await supabase.functions.invoke('send-push', {
@@ -943,9 +1048,6 @@ export default function SettingsPage() {
                         } else if (isFuture) {
                           setMsg({ text: `✅ Changes scheduled for ${new Date(publishAt).toLocaleString()}`, type: 'success' })
                         } else {
-                          // Next week's menu published — if the weekly survey is open,
-                          // notify members ONCE per week (dedup via app_settings marker)
-                          // so they come and fill their meal choices.
                           try {
                             const { data: surveyRows } = await supabase.from('app_settings').select('key,value')
                             const surveyCfg = {}

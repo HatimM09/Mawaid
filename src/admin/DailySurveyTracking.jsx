@@ -269,10 +269,6 @@ export default function DailySurveyTracking() {
             await supabase.from('survey_day_responses').delete().eq('week_id', ow)
           }
         }
-        // Prune previous weeks' weekly_menu rows
-        try {
-          await supabase.from('weekly_menu').delete().lt('week_start', currentWeek)
-        } catch {}
       } catch (e) { console.warn('Cleanup error:', e) }
 
       // Load app settings (dish input config, survey open hour, status, user overrides)

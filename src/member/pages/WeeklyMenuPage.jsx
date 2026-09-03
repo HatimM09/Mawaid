@@ -1,33 +1,54 @@
-import React, { useState, useEffect } from 'react'
-import { Utensils, Sun, Moon, ChevronDown } from 'lucide-react'
+import React, { useState, useEffect, useMemo } from 'react'
+import { Utensils, Sun, Moon, ChevronDown, Calendar } from 'lucide-react'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
-import { getCalendarWeekDate } from '../../common/utils'
+import { getCalendarWeekDate, addWeeks } from '../../common/utils'
 import { getSlotDishes } from '../../hooks/useSurvey'
 import { WeeklyMenuSkeleton } from '../../common/Skeleton'
 import { DAYS, getTodayKey } from '../constants'
 import { fetchUserSurveyRow } from '../../lib/surveyRows'
+import { supabase } from '../../lib/firebaseClient'
+
+const formatWeekSpan = (weekStart) => {
+  try {
+    const d = new Date(weekStart + 'T00:00:00')
+    const end = new Date(d)
+    end.setDate(end.getDate() + 5)
+    return `${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+  } catch {
+    return weekStart
+  }
+}
 
 export default function WeeklyMenuPage({ appSettings = {} }) {
   const t = useTheme()
-  // Menu page always shows CURRENT calendar week's menu (live after Mon 00:00).
-  // SurveyPage uses getSurveyTargetWeek(appSettings) to show NEXT week's menu during the window.
-  // This decouples CSV upload for next week (visible in survey early) from Menu visibility at Mon 00:00.
-  const currentWeekId = getCalendarWeekDate()
-  const weeklyMenu = useWeeklyMenu(currentWeekId)
+  const calendarWeekId = getCalendarWeekDate()
+  const nextWeekId = addWeeks(calendarWeekId, 1)
+  
+  const [selectedWeekId, setSelectedWeekId] = useState(calendarWeekId)
+  const weeklyMenu = useWeeklyMenu(selectedWeekId)
   const todayKey = getTodayKey()
   const [expandedDay, setExpandedDay] = useState(todayKey)
   const { user } = useAuth()
   const [userSurvey, setUserSurvey] = useState(null)
 
-  // Fetch user survey response — responses live in survey_day_responses
+  // Check if current calendar week has any dishes
+  const hasCurrentDishes = useMemo(() => {
+    if (!weeklyMenu) return false
+    return DAYS.some(d => (weeklyMenu[d]?.lunch?.length || 0) > 0 || (weeklyMenu[d]?.dinner?.length || 0) > 0)
+  }, [weeklyMenu])
+
+  // Fetch user survey response for the selected week
   useEffect(() => {
+    let active = true
     const fetchSurvey = async () => {
-      const { data: normal } = await fetchUserSurveyRow(user.id, currentWeekId)
-      setUserSurvey(normal)
+      if (!user?.id) return
+      const { data: normal } = await fetchUserSurveyRow(user.id, selectedWeekId)
+      if (active) setUserSurvey(normal || null)
     }
     fetchSurvey()
-  }, [user.id, currentWeekId])
+    return () => { active = false }
+  }, [user?.id, selectedWeekId])
 
   // Position-aware response lookup: when the row carries a dish_snapshot, the
   // value for a dish is read from the position the dish held when it was saved,
@@ -64,17 +85,53 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
         <div style={{ position: 'absolute', top: -40, right: -20, width: 140, height: 140, background: t.accentGrad, borderRadius: '50%', filter: 'blur(50px)', opacity: 0.15 }} />
 
         <div style={{ position: 'relative', zIndex: 2 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 14, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 16px rgba(0,0,0,0.2)' }}>
-              <Utensils size={20} color="#fff" />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 14, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 16px rgba(0,0,0,0.2)' }}>
+                <Utensils size={20} color="#fff" />
+              </div>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.2em', color: t.accent, textTransform: 'uppercase', fontFamily: "'DM Sans',sans-serif" }}>Culinary Journey</div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif" }}>Weekly Menu</div>
+              </div>
             </div>
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.2em', color: t.accent, textTransform: 'uppercase', fontFamily: "'DM Sans',sans-serif" }}>Culinary Journey</div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display',serif" }}>Weekly Menu</div>
+
+            {/* Week Switcher */}
+            <div style={{ display: 'inline-flex', background: t.inputBg, padding: 4, borderRadius: 14, border: `1px solid ${t.border}`, gap: 4 }}>
+              {[
+                { id: calendarWeekId, label: 'This Week' },
+                { id: nextWeekId, label: 'Next Week' },
+              ].map(opt => {
+                const active = selectedWeekId === opt.id
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setSelectedWeekId(opt.id)}
+                    style={{
+                      padding: '6px 12px', borderRadius: 10, border: 'none',
+                      background: active ? t.accentGrad : 'transparent',
+                      color: active ? '#000' : t.textSub,
+                      fontSize: 11, fontWeight: active ? 900 : 700, cursor: 'pointer',
+                      transition: 'all 0.2s', fontFamily: "'DM Sans', sans-serif",
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
-
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: t.textSub, fontFamily: "'DM Sans', sans-serif" }}>
+            <Calendar size={13} color={t.accent} />
+            <span>Week: <strong style={{ color: t.text }}>{formatWeekSpan(selectedWeekId)}</strong></span>
+            {!hasCurrentDishes && selectedWeekId === calendarWeekId && (
+              <span style={{ marginLeft: 'auto', fontSize: 10.5, color: t.accent, background: t.accentBg, padding: '2px 8px', borderRadius: 6, border: `1px solid ${t.border}` }}>
+                Previewing available menu
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
