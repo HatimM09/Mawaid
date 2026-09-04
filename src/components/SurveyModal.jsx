@@ -3,7 +3,7 @@ import { X, ChevronLeft, ChevronRight, Check, AlertTriangle, Play, Sun, Moon, Lo
 import { supabase } from '../lib/firebaseClient'
 import { useAuth, useTheme } from '../admin/context'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
-import { DAYS, getSurveyTargetWeek } from '../common/utils'
+import { DAYS, getSurveyTargetWeek, parseDishArray } from '../common/utils'
 import { DEFAULT_MENU } from '../common/constants'
 import {
   isRotiItem, isCountInput, canEditMeal, isSurveyOpen,
@@ -329,23 +329,18 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     () => weeklyMenuRaw?.[currentDay] || weeklyMenuRaw?.[cap(currentDay)] || weeklyMenuRaw?.[dayKey] || { lunch: [], dinner: [] },
     [weeklyMenuRaw, currentDay, dayKey]
   )
-  const parseDefaultDishes = (str) => {
-    if (!str) return []
-    return str.split(',').map(s => s.trim()).filter(Boolean)
-  }
-
   const lunchDishes = useMemo(() => {
     if (menu.lunch?.length) return menu.lunch
     const existing = getSlotDishes(existingData, currentDay, 'lunch', [])
     if (existing?.length) return existing
-    return parseDefaultDishes(DEFAULT_MENU[dayKey]?.lunch)
+    return parseDishArray(DEFAULT_MENU[dayKey]?.lunch)
   }, [menu, existingData, currentDay, dayKey])
 
   const dinnerDishes = useMemo(() => {
     if (menu.dinner?.length) return menu.dinner
     const existing = getSlotDishes(existingData, currentDay, 'dinner', [])
     if (existing?.length) return existing
-    return parseDefaultDishes(DEFAULT_MENU[dayKey]?.dinner)
+    return parseDishArray(DEFAULT_MENU[dayKey]?.dinner)
   }, [menu, existingData, currentDay, dayKey])
 
   const slotList = useMemo(() => DAYS.flatMap(d => [{ day: d, meal: 'lunch' }, { day: d, meal: 'dinner' }]), [])
@@ -401,8 +396,8 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
         const lVal = row[`${dk}_l_status`]
         const dVal = row[`${dk}_d_status`]
         const dayMenu = weeklyMenuRaw?.[d] || weeklyMenuRaw?.[cap(d)] || weeklyMenuRaw?.[dk] || { lunch: [], dinner: [] }
-        const lDishes = dayMenu.lunch?.length ? dayMenu.lunch : getSlotDishes(row, d, 'lunch', [])
-        const dDishes = dayMenu.dinner?.length ? dayMenu.dinner : getSlotDishes(row, d, 'dinner', [])
+        const lDishes = dayMenu.lunch?.length ? dayMenu.lunch : (getSlotDishes(row, d, 'lunch', []).length ? getSlotDishes(row, d, 'lunch', []) : parseDishArray(DEFAULT_MENU[dk]?.lunch))
+        const dDishes = dayMenu.dinner?.length ? dayMenu.dinner : (getSlotDishes(row, d, 'dinner', []).length ? getSlotDishes(row, d, 'dinner', []) : parseDishArray(DEFAULT_MENU[dk]?.dinner))
 
         const dayEntry = { ...next[dk] }
 
@@ -522,8 +517,8 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     const tDayKey = tDay.substring(0, 3).toLowerCase()
     const tState = weekData[tDayKey] || {}
     const tMenu = weeklyMenuRaw?.[tDay] || weeklyMenuRaw?.[cap(tDay)] || weeklyMenuRaw?.[tDayKey] || { lunch: [], dinner: [] }
-    const tLunchDishes = tMenu.lunch?.length ? tMenu.lunch : getSlotDishes(existingData, tDay, 'lunch', [])
-    const tDinnerDishes = tMenu.dinner?.length ? tMenu.dinner : getSlotDishes(existingData, tDay, 'dinner', [])
+    const tLunchDishes = tMenu.lunch?.length ? tMenu.lunch : (getSlotDishes(existingData, tDay, 'lunch', []).length ? getSlotDishes(existingData, tDay, 'lunch', []) : parseDishArray(DEFAULT_MENU[tDayKey]?.lunch))
+    const tDinnerDishes = tMenu.dinner?.length ? tMenu.dinner : (getSlotDishes(existingData, tDay, 'dinner', []).length ? getSlotDishes(existingData, tDay, 'dinner', []) : parseDishArray(DEFAULT_MENU[tDayKey]?.dinner))
 
     const lStatus = tState.lunchWantsFood === true ? 'Applied' : tState.lunchWantsFood === false ? 'Skipped' : null
     const dStatus = tState.dinnerWantsFood === true ? 'Applied' : tState.dinnerWantsFood === false ? 'Skipped' : null

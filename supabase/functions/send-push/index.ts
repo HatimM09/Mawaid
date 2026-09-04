@@ -134,21 +134,23 @@ serve(async (req) => {
       }
     }
 
-    // Resolve target user IDs
-    let targetUserIds: string[] = []
+    // Resolve target user IDs and push subscriptions
+    let allPushSubs: any[] = []
 
     if (user_id && target_type === 'specific') {
-      targetUserIds = [user_id]
+      const { data: subs } = await supabase.from('push_subscriptions').select('*').eq('user_id', user_id)
+      allPushSubs = subs || []
     } else if (target_type === 'admins') {
       const { data: admins } = await supabase.from('user_stats').select('user_id').eq('role', 'admin')
-      targetUserIds = admins?.map((a: any) => a.user_id).filter(Boolean) || []
+      const adminIds = admins?.map((a: any) => a.user_id).filter(Boolean) || []
+      if (adminIds.length > 0) {
+        const { data: subs } = await supabase.from('push_subscriptions').select('*').in('user_id', adminIds)
+        allPushSubs = subs || []
+      }
     } else {
-      const { data: subs } = await supabase.from('push_subscriptions').select('user_id').limit(5000)
-      targetUserIds = [...new Set(subs?.map((s: any) => s.user_id).filter(Boolean) || [])]
-    }
-
-    if (targetUserIds.length === 0) {
-      return new Response(JSON.stringify({ ok: true, sent: 0, message: 'No target users found' }), { status: 200, headers })
+      // All active subscribers
+      const { data: subs } = await supabase.from('push_subscriptions').select('*').limit(5000)
+      allPushSubs = subs || []
     }
 
     // ── In-app notification rows (Realtime toast + inbox) ──
@@ -163,7 +165,7 @@ serve(async (req) => {
           const { data: admins } = await supabase.from('user_stats').select('user_id').eq('role', 'admin')
           inAppIds = admins?.map((a: any) => a.user_id).filter(Boolean) || []
         } else {
-          const { data: members } = await supabase.from('user_stats').select('user_id').eq('role', 'member').limit(10000)
+          const { data: members } = await supabase.from('user_stats').select('user_id').limit(10000)
           inAppIds = members?.map((m: any) => m.user_id).filter(Boolean) || []
         }
         if (inAppIds.length) {
@@ -175,24 +177,13 @@ serve(async (req) => {
             type: type || 'info',
             sender_name: sender_name || 'Al-Mawaid',
           }))
-          await supabase.from('notifications').insert(rows)
+          for (let i = 0; i < rows.length; i += 200) {
+            await supabase.from('notifications').insert(rows.slice(i, i + 200))
+          }
         }
       } catch (e) {
         console.error('[send-push] In-app notification insert failed:', e)
       }
-    }
-
-    // Fetch subscriptions in chunks to avoid URL length limits
-    const CHUNK_SIZE = 100
-    let allPushSubs: any[] = []
-
-    for (let i = 0; i < targetUserIds.length; i += CHUNK_SIZE) {
-      const chunk = targetUserIds.slice(i, i + CHUNK_SIZE)
-      const { data: subs } = await supabase
-        .from('push_subscriptions')
-        .select('*')
-        .in('user_id', chunk)
-      if (subs?.length) allPushSubs.push(...subs)
     }
 
     if (allPushSubs.length === 0) {
@@ -361,7 +352,11 @@ async function sendFCMPush(fcmToken: string, title: string, body: string, url: s
         priority: 'high',
         notification: androidNotification,
       },
-      data: url ? { url } : undefined,
+      data: {
+        url: String(url || '/'),
+        title: String(title || 'Al-Mawaid'),
+        body: String(body || ''),
+      },
     },
   }
 

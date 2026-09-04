@@ -137,15 +137,11 @@ function subscribeRealtime(realtimeChannel, user, cancelledRef, retryCount = 0) 
       (payload) => {
         const { message, type, title, url, sender_name, silent } = payload.new
         if (silent) return // Skip toast for silent notifications
-        // Broadcasts are written to `notices` and surfaced by the global-notices
-        // realtime toast. The per-user `notifications` row would double the alert,
-        // so skip the toast for broadcast type.
-        if (type === 'broadcast') return
         // Dedup: skip if this notification was already shown
-        const dedupKey = `toast_${payload.new.id}`
+        const dedupKey = `toast_${payload.new.id || (title + '_' + message)}`
         if (sessionStorage.getItem(dedupKey)) return
         sessionStorage.setItem(dedupKey, '1')
-        setTimeout(() => { try { sessionStorage.removeItem(dedupKey) } catch {} }, 5000)
+        setTimeout(() => { try { sessionStorage.removeItem(dedupKey) } catch {} }, 6000)
         showToast({ title: title || 'Al-Mawaid', body: message, url, sender_name })
       }
     )
@@ -234,10 +230,17 @@ export default function PushManager() {
               }
             })
             PushNotifications.addListener('pushNotificationReceived', (n) => {
-              // Foreground native pushes are already surfaced by the in-app
-              // Supabase Realtime toasts (notices/notifications). Showing the
-              // toast here again would double the alert, so we only log.
               console.log('[PushManager] Native push received while foregrounded:', n?.title)
+              const notifTitle = n.title || n.data?.title || 'Al-Mawaid'
+              const notifBody = n.body || n.data?.body
+              const notifUrl = n.data?.url || '/profile/notifications'
+              const notifSender = n.data?.sender_name || 'Al-Mawaid'
+              const dedupKey = `toast_native_${notifTitle}_${notifBody}`
+              if (!sessionStorage.getItem(dedupKey)) {
+                sessionStorage.setItem(dedupKey, '1')
+                setTimeout(() => { try { sessionStorage.removeItem(dedupKey) } catch {} }, 6000)
+                showToast({ title: notifTitle, body: notifBody, url: notifUrl, sender_name: notifSender })
+              }
             })
             // ── Deep link: user taps notification → navigate to correct in-app page ──
             PushNotifications.addListener('pushNotificationActionPerformed', (action) => {

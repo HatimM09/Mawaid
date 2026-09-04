@@ -1,8 +1,8 @@
 // src/components/DailyEditCard.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { Sun, Moon, Check, X, Clock, Sparkles, Plus, Minus } from 'lucide-react'
+import { Sun, Moon, Check, X, Clock, Sparkles, Plus, Minus, RefreshCw } from 'lucide-react'
 import { useTheme, useAuth } from '../admin/context'
-import { getCalendarWeekDate, getOwningWeekId, getSurveyTargetWeek, dayBelongsToCalendarWeek } from '../common/utils'
+import { getCalendarWeekDate, getOwningWeekId, getSurveyTargetWeek, dayBelongsToCalendarWeek, parseDishArray } from '../common/utils'
 import { submitSurveyRow } from '../lib/submitSurvey'
 import {
   isRotiItem,
@@ -107,6 +107,7 @@ export default function DailyEditCard({
   const [userData, setUserData] = useState({ thali_no: '', email: user?.email })
   const [snackDefaults, setSnackDefaults] = useState(null)
   const [existingData, setExistingData] = useState(null)
+  const [fetchedDishes, setFetchedDishes] = useState(null)
 
   // Admin-assigned per-dish count limit (UsersPage → "default count"). Members
   // can only reduce these values — same rule as the weekly survey modal.
@@ -120,7 +121,7 @@ export default function DailyEditCard({
   const isLunch = mi.meal === 'lunch'
   const MealIcon = isLunch ? Sun : Moon
 
-  const liveDishes = mi.dishes || []
+  const liveDishes = (fetchedDishes && fetchedDishes.length > 0) ? fetchedDishes : (mi.dishes || [])
   const dishes = liveDishes.length > 0 ? liveDishes : getSlotDishes(existingData, mi.day, mi.meal, [])
 
   // Lock body scroll when modal is open on mobile
@@ -143,11 +144,33 @@ export default function DailyEditCard({
     return () => window.removeEventListener('keydown', handleKey)
   }, [isOpen, onClose])
 
-  // Load existing saved response from Supabase
-  const loadExisting = useCallback(async () => {
+  // Load existing saved response and fresh menu from Supabase
+  const loadExisting = useCallback(async (isManual = false) => {
     if (!user || !mi || !isOpen) return
     setLoading(true)
+    setSavedSuccess(false)
     try {
+      // 1. Fetch fresh dishes from weekly_menu for this specific week and day
+      let currentDishes = (fetchedDishes && fetchedDishes.length > 0) ? fetchedDishes : (mi.dishes || [])
+      try {
+        const { data: menuRow } = await supabase
+          .from('weekly_menu')
+          .select('day_name, lunch, dinner')
+          .eq('week_start', mi.weekId)
+          .ilike('day_name', mi.day)
+          .maybeSingle()
+        if (menuRow) {
+          const fresh = parseDishArray(mi.meal === 'lunch' ? menuRow.lunch : menuRow.dinner)
+          if (fresh.length > 0) {
+            currentDishes = fresh
+            setFetchedDishes(fresh)
+          }
+        }
+      } catch (menuErr) {
+        console.warn('[DailyEditCard] Menu fetch fallback:', menuErr)
+      }
+
+      // 2. Fetch user profile stats and latest survey row
       const [uRes, rowRes] = await Promise.all([
         supabase.from('user_stats').select('thali_number, email, snack_defaults').eq('user_id', user.id).maybeSingle(),
         fetchUserSurveyRow(user.id, mi.weekId)
@@ -164,7 +187,9 @@ export default function DailyEditCard({
       const row = rowRes.data
       setExistingData(row || null)
 
-      const activeDishes = (mi.dishes && mi.dishes.length > 0) ? mi.dishes : getSlotDishes(row, mi.day, mi.meal, [])
+      const activeDishes = (currentDishes && currentDishes.length > 0)
+        ? currentDishes
+        : getSlotDishes(row, mi.day, mi.meal, [])
 
       if (row) {
         const status = row[`${dayKey}_${mealKey}_status`]
@@ -200,7 +225,7 @@ export default function DailyEditCard({
     } finally {
       setLoading(false)
     }
-  }, [user?.id, mi.day, mi.meal, mi.weekId, dayKey, mealKey, isOpen, appSettings])
+  }, [user?.id, mi.day, mi.meal, mi.weekId, dayKey, mealKey, isOpen, appSettings, mi.dishes])
 
   useEffect(() => {
     if (isOpen) {
@@ -291,6 +316,12 @@ export default function DailyEditCard({
         @keyframes fadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        .spin {
+          animation: spin 0.8s linear infinite;
         }
       `}</style>
 
@@ -386,27 +417,51 @@ export default function DailyEditCard({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            type="button"
-            style={{
-              background: 'rgba(255,255,255,0.06)',
-              border: `1px solid ${t.border}`,
-              borderRadius: 10,
-              width: 32,
-              height: 32,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: t.textSub,
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              flexShrink: 0
-            }}
-            title="Close"
-          >
-            <X size={16} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <button
+              onClick={() => loadExisting(true)}
+              disabled={loading}
+              type="button"
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                border: `1px solid ${t.border}`,
+                borderRadius: 10,
+                width: 32,
+                height: 32,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: t.textSub,
+                cursor: loading ? 'wait' : 'pointer',
+                transition: 'all 0.2s'
+              }}
+              title="Refresh latest menu and choices"
+            >
+              <RefreshCw size={14} className={loading ? 'spin' : ''} />
+            </button>
+
+            <button
+              onClick={onClose}
+              type="button"
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                border: `1px solid ${t.border}`,
+                borderRadius: 10,
+                width: 32,
+                height: 32,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: t.textSub,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                flexShrink: 0
+              }}
+              title="Close"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         {/* Meal Opt-in Segmented Toggle */}

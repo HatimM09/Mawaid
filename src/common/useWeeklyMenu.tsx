@@ -1,23 +1,9 @@
 import { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/firebaseClient';
-import { getSurveyTargetWeek } from './utils';
+import { getSurveyTargetWeek, parseDishArray, DAYS } from './utils';
 import { queryKeys } from '../lib/queryClient';
 import { DEFAULT_MENU } from './constants';
-
-const parseDishArray = (val: any): string[] => {
-  if (!val) return [];
-  if (Array.isArray(val)) {
-    return val.map((s: any) => String(s || '').trim()).filter(Boolean);
-  }
-  if (typeof val === 'string') {
-    return val
-      .split(/[\n\r,;•|]+/)
-      .map((s: string) => s.trim().replace(/^["']+|["']+$/g, ''))
-      .filter(Boolean);
-  }
-  return [];
-};
 
 const formatMenu = (rows: any[], weekId?: string) => {
   const filtered = weekId ? rows.filter(row => row && row.week_start === weekId) : rows;
@@ -40,6 +26,27 @@ const formatMenu = (rows: any[], weekId?: string) => {
     formatted[dayKey.slice(0, 3)] = menuObj;
     formatted[dayKey.toUpperCase()] = menuObj;
   });
+
+  // Guarantee every day in DAYS has an entry so accessing menu[day].lunch never crashes
+  DAYS.forEach(d => {
+    const dk = d.toLowerCase();
+    if (!formatted[dk]) {
+      const capName = d.charAt(0).toUpperCase() + d.slice(1);
+      const emptyObj = {
+        en: capName,
+        ar: '',
+        lunch: [],
+        dinner: [],
+        week_start: weekId || '',
+        publish_at: '',
+      };
+      formatted[dk] = emptyObj;
+      formatted[capName] = emptyObj;
+      formatted[dk.slice(0, 3)] = emptyObj;
+      formatted[dk.toUpperCase()] = emptyObj;
+    }
+  });
+
   return formatted;
 };
 

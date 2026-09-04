@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react'
 import { AlertCircle, X, Maximize2, Minimize2, Trash2 } from 'lucide-react'
 import { eraseSurveySlot } from '../lib/surveyRows'
+import { isRotiItem } from '../hooks/useSurvey'
 
 export const T = {
   bg: 'var(--bg-deep)',
@@ -514,7 +515,7 @@ const pctColor = (val, isRoti, rotiVal) => {
   return { fill: '#10b981', border: '#10b981', bg: 'rgba(16,185,129,0.12)', badge: '#10b981', shadow: 'rgba(16,185,129,0.25)', text: '#fff', tagBg: 'rgba(16,185,129,0.2)', tagBorder: 'rgba(16,185,129,0.3)', tagColor: '#34d399' }
 }
 
-export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverride }) => {
+export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverride, dishInputConfig, onMealToggle, onResetAuto }) => {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isErasing, setIsErasing] = useState(false)
 
@@ -566,7 +567,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
   const dishEntries = Object.entries(dishes).filter(([k]) => k !== '_status')
   const total = dishEntries.length
 
-  const status = mealData?.status || 'Not Submitted'
+  const status = mealData?.status || user.status || 'Not Submitted'
 
   const isStopped = !!user.stopped
 
@@ -574,9 +575,6 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
   const mealIcons = { lunch: '☀️', dinner: '🌙' }
 
   // Admin: erase this member's displayed-meal response for the displayed day.
-  // Clears survey_day_responses + flat mirror via the erase_survey_slot RPC,
-  // AND survey_day_responses (granted slots) via erase_override_slot so
-  // no stale override answer survives the erase.
   const canErase = !!(user?.user_id && user?.week_id)
   const handleErase = async () => {
     if (!canErase || isErasing) return
@@ -596,29 +594,170 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
     }
   }
 
-  const getResponseStyle = (value) => {
-    if (value === null || value === undefined || value === '') {
-      return { bg: 'rgba(255,255,255,0.02)', border: 'rgba(255,255,255,0.06)', label: '—', labelColor: 'rgba(255,255,255,0.15)', glow: null, typeLabel: '', typeColor: 'transparent' }
-    }
-    const strVal = String(value).toLowerCase()
-    if (strVal === 'yes') {
-      return { bg: 'rgba(16, 185, 129, 0.08)', border: '#10b981', label: 'YES', labelColor: '#10b981', glow: 'rgba(16, 185, 129, 0.5)', typeLabel: 'ROTI', typeColor: '#10b981' }
-    }
-    if (strVal === 'no') {
-      return { bg: 'rgba(239, 68, 68, 0.08)', border: '#ef4444', label: 'NO', labelColor: '#ef4444', glow: 'rgba(239, 68, 68, 0.5)', typeLabel: 'ROTI', typeColor: '#ef4444' }
-    }
-    const num = parseInt(value) || 0
-    const isPercent = typeof value === 'string' && value.endsWith('%')
-    if (num > 0 || isPercent) {
+  const getResponseStyle = (dish, value, idx) => {
+    const isRoti = isRotiItem(dish || '')
+    const dishKey = (dish || '').toLowerCase().replace(/[^a-z0-9]/g, '_')
+    const slotKey = `${String(day || '').toLowerCase()}_${displayMeal}_${idx}`
+    const isCount = (dishInputConfig && (
+      dishInputConfig[slotKey] === 'count' ||
+      dishInputConfig[dishKey] === 'count' ||
+      dishInputConfig[dish] === 'count'
+    )) || (typeof value === 'object' && value?.status) || (typeof value === 'string' && /person|ppl/i.test(value))
+
+    // If meal is explicitly skipped
+    if (status === 'Skipped' || isStopped) {
       return {
-        bg: 'rgba(212, 175, 55, 0.06)', border: 'rgba(212, 175, 55, 0.5)',
-        label: isPercent ? (typeof value === 'string' ? value : `${num}%`) : `${num}`,
-        labelColor: '#ffffff', glow: 'rgba(212, 175, 55, 0.5)',
-        typeLabel: isPercent ? 'PCT' : 'COUNT',
-        typeColor: '#fcd34d'
+        bg: 'rgba(239, 68, 68, 0.05)',
+        border: 'rgba(239, 68, 68, 0.25)',
+        label: 'SKIP',
+        labelColor: '#ef4444',
+        glow: null,
+        typeLabel: isRoti ? 'ROTI' : isCount ? 'COUNT' : 'PORTION',
+        typeColor: '#ef4444'
       }
     }
-    return { bg: 'rgba(255,255,255,0.02)', border: 'rgba(255,255,255,0.06)', label: '0', labelColor: 'rgba(255,255,255,0.15)', glow: null, typeLabel: '', typeColor: 'transparent' }
+
+    if (value === null || value === undefined || value === '') {
+      return {
+        bg: 'rgba(255,255,255,0.02)',
+        border: 'rgba(255,255,255,0.08)',
+        label: '—',
+        labelColor: 'rgba(255,255,255,0.2)',
+        glow: null,
+        typeLabel: isRoti ? 'ROTI' : isCount ? 'COUNT' : 'PORTION',
+        typeColor: '#6b7280'
+      }
+    }
+
+    const strVal = String(typeof value === 'object' ? value.status : value).toLowerCase().trim()
+
+    // 1. ROTI ITEM
+    if (isRoti) {
+      if (strVal === 'yes') {
+        return {
+          bg: 'rgba(16, 185, 129, 0.12)',
+          border: '#10b981',
+          label: 'YES',
+          labelColor: '#10b981',
+          glow: 'rgba(16, 185, 129, 0.6)',
+          typeLabel: 'ROTI',
+          typeColor: '#10b981'
+        }
+      }
+      return {
+        bg: 'rgba(239, 68, 68, 0.08)',
+        border: '#ef4444',
+        label: 'NO',
+        labelColor: '#ef4444',
+        glow: 'rgba(239, 68, 68, 0.4)',
+        typeLabel: 'ROTI',
+        typeColor: '#ef4444'
+      }
+    }
+
+    // 2. COUNT ITEM
+    if (isCount) {
+      if (strVal === 'no' || value === 0 || (typeof value === 'object' && value.status === 'no')) {
+        return {
+          bg: 'rgba(239, 68, 68, 0.08)',
+          border: '#ef4444',
+          label: 'NO',
+          labelColor: '#ef4444',
+          glow: 'rgba(239, 68, 68, 0.4)',
+          typeLabel: 'COUNT',
+          typeColor: '#ef4444'
+        }
+      }
+      const countVal = typeof value === 'object' ? (value.value || 1) : (parseInt(value) || 0)
+      return {
+        bg: 'rgba(59, 130, 246, 0.12)',
+        border: '#3b82f6',
+        label: `${countVal} ${countVal === 1 ? 'PERSON' : 'PERSONS'}`,
+        labelColor: '#60a5fa',
+        glow: 'rgba(59, 130, 246, 0.6)',
+        typeLabel: 'COUNT',
+        typeColor: '#3b82f6'
+      }
+    }
+
+    // 3. PERCENTAGE / PORTION ITEM
+    if (strVal === 'no') {
+      return {
+        bg: 'rgba(239, 68, 68, 0.08)',
+        border: '#ef4444',
+        label: '0%',
+        labelColor: '#f87171',
+        glow: 'rgba(239, 68, 68, 0.3)',
+        typeLabel: 'PORTION',
+        typeColor: '#ef4444'
+      }
+    }
+    if (strVal === 'yes') {
+      return {
+        bg: 'rgba(16, 185, 129, 0.15)',
+        border: '#10b981',
+        label: '100%',
+        labelColor: '#34d399',
+        glow: 'rgba(16, 185, 129, 0.6)',
+        typeLabel: 'PORTION',
+        typeColor: '#10b981'
+      }
+    }
+
+    const n = parseInt(value) || 0
+    if (n === 0) {
+      return {
+        bg: 'rgba(239, 68, 68, 0.08)',
+        border: '#ef4444',
+        label: '0%',
+        labelColor: '#f87171',
+        glow: 'rgba(239, 68, 68, 0.3)',
+        typeLabel: 'PORTION',
+        typeColor: '#ef4444'
+      }
+    }
+    if (n <= 25) {
+      return {
+        bg: 'rgba(245, 158, 11, 0.12)',
+        border: '#f59e0b',
+        label: `${n}%`,
+        labelColor: '#fbbf24',
+        glow: 'rgba(245, 158, 11, 0.4)',
+        typeLabel: 'PORTION',
+        typeColor: '#f59e0b'
+      }
+    }
+    if (n <= 50) {
+      return {
+        bg: 'rgba(33, 150, 243, 0.12)',
+        border: '#2196f3',
+        label: `${n}%`,
+        labelColor: '#60a5fa',
+        glow: 'rgba(33, 150, 243, 0.5)',
+        typeLabel: 'PORTION',
+        typeColor: '#2196f3'
+      }
+    }
+    if (n <= 75) {
+      return {
+        bg: 'rgba(156, 163, 175, 0.12)',
+        border: '#9ca3af',
+        label: `${n}%`,
+        labelColor: '#e5e7eb',
+        glow: 'rgba(156, 163, 175, 0.4)',
+        typeLabel: 'PORTION',
+        typeColor: '#9ca3af'
+      }
+    }
+    return {
+      bg: 'rgba(16, 185, 129, 0.15)',
+      border: '#10b981',
+      label: `${n}%`,
+      labelColor: '#34d399',
+      glow: 'rgba(16, 185, 129, 0.6)',
+      typeLabel: 'PORTION',
+      typeColor: '#10b981'
+    }
   }
 
   return (
@@ -824,7 +963,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
             gridTemplateRows: total === 5 ? 'repeat(2, 1fr)' : undefined
           }}>
             {dishEntries.map(([dish, value], idx) => {
-              const style = getResponseStyle(value)
+              const style = getResponseStyle(dish, value, idx)
               const isActive = value !== null && value !== undefined
               
               return (
@@ -898,7 +1037,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
                   {/* Value — BRIGHT WHITE with colored glow, visible from 20+ feet */}
                   <div style={{
                     zIndex: 1,
-                    fontSize: 'clamp(48px, min(10vw, 13vh), 96px)',
+                    fontSize: String(style.label || '').length > 6 ? 'clamp(24px, min(5.5vw, 7.5vh), 54px)' : 'clamp(48px, min(10vw, 13vh), 96px)',
                     fontWeight: 900,
                     color: '#ffffff',
                     fontFamily: "'Space Grotesk', sans-serif",

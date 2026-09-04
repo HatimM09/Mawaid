@@ -321,6 +321,7 @@ export default function NotificationsAdminPage() {
               url: '/',
               image_url: form.media_url || undefined,
               sender_name: form.sender_name,
+              notify_in_app: true,
             }
           })
           if (pushError) throw pushError

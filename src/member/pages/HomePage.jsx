@@ -29,6 +29,7 @@ export default function HomePage({ appSettings = {} }) {
   // Auto-edit card state — auto-popup when edit window opens
   const [showDailyEditCard, setShowDailyEditCard] = useState(false)
   const [dailyEditMealInfo, setDailyEditMealInfo] = useState(null)
+  const [dailyEditKey, setDailyEditKey] = useState(0)
   // Tracks cards the user opened manually (via the Quick Edit button) so the
   // auto-window checker never force-closes them mid-edit (the "blinking" bug).
   const manualEditOpenRef = useRef(false)
@@ -49,6 +50,7 @@ export default function HomePage({ appSettings = {} }) {
   const openDailyEditCard = useCallback((mealInfo) => {
     manualEditOpenRef.current = true  // user-initiated — auto-checker must not close it
     setDailyEditMealInfo(mealInfo)
+    setDailyEditKey(prev => prev + 1)
     setShowDailyEditCard(true)
   }, [])
 
@@ -382,6 +384,7 @@ export default function HomePage({ appSettings = {} }) {
       {/* Daily Edit Modal Sheet Popup */}
       {showDailyEditCard && (dailyEditMealInfo || currentMealInfo) && (
         <DailyEditCard
+          key={`daily_edit_${dailyEditMealInfo?.day || currentMealInfo?.day}_${dailyEditMealInfo?.meal || currentMealInfo?.meal}_${dailyEditKey}`}
           weeklyMenu={weeklyMenu}
           mealInfo={dailyEditMealInfo || currentMealInfo}
           isOpen={showDailyEditCard}

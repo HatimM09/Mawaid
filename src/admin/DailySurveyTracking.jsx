@@ -13,8 +13,8 @@ import {
   SectionHeader, Modal, PackingTVView, fmtDate, ErrorBanner
 } from './ui'
 
-import { getSurveyTargetWeek, getCalendarWeekDate, dayBelongsToCalendarWeek, DAYS, DAY_KEYS, toLocalDateStr, isStoppedOnDay } from '../common/utils'
-import { getPctColor, getSlotDishes } from '../hooks/useSurvey'
+import { getSurveyTargetWeek, getCalendarWeekDate, dayBelongsToCalendarWeek, DAYS, DAY_KEYS, toLocalDateStr, isStoppedOnDay, parseDishArray } from '../common/utils'
+import { getPctColor, getSlotDishes, isRotiItem, isCountInput } from '../hooks/useSurvey'
 import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot } from '../lib/surveyRows'
 
 // Pick the stop request whose dates best describe the current stopped period
@@ -127,24 +127,22 @@ export default function DailySurveyTracking() {
       const buildDishMap = (dayName, mealName, fallbackList) => {
         const mk = mealName === 'lunch' ? 'l' : 'd'
         const dk = String(dayName || day).substring(0, 3).toLowerCase()
-        // Prefer the member's saved dish_snapshot FIRST — it is exactly what
-        // they rated against, so responses always line up with the right dish
-        // names even if the admin edits the menu afterwards. Fall back to the
-        // LIVE weekly menu for members who have not filled yet.
         const snapshotList = getSlotDishes(row, dayName, mealName, null)
         const menuList = Array.isArray(fallbackList) ? fallbackList.filter(Boolean) : []
-        const dishList = snapshotList && snapshotList.length ? snapshotList
-          : (menuList.length ? menuList : null)
-        const names = dishList && dishList.length
-          ? dishList
-          : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => row && row[`${dk}_${mk}_dish_${i + 1}`] !== undefined && row[`${dk}_${mk}_dish_${i + 1}`] !== null && row[`${dk}_${mk}_dish_${i + 1}`] !== '')
+        const allDishNames = Array.from(new Set([...menuList, ...(snapshotList || [])]))
+        const names = allDishNames.length ? allDishNames : (snapshotList || menuList)
         const result = {}
         result._status = row ? row[`${dk}_${mk}_status`] : null
-        names.forEach((d, i) => {
-          const val = row ? row[`${dk}_${mk}_dish_${i + 1}`] : null
+        names.forEach((d) => {
+          let pos = -1
+          if (snapshotList && snapshotList.includes(d)) {
+            pos = snapshotList.indexOf(d)
+          } else if (menuList.includes(d)) {
+            pos = menuList.indexOf(d)
+          }
+          const val = (row && pos >= 0) ? row[`${dk}_${mk}_dish_${pos + 1}`] : null
           if (val !== undefined && val !== null && val !== '') {
-            const rotiKw = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
-            if (rotiKw.some(k => d.toLowerCase().includes(k))) {
+            if (isRotiItem(d)) {
               result[d] = String(val).toLowerCase() === 'yes' ? 'yes' : 'no'
             } else {
               const lowerVal = String(val).toLowerCase()
@@ -165,8 +163,8 @@ export default function DailySurveyTracking() {
         ;(menuRows || []).forEach(r => {
           const k = String(r.day_name || '').toLowerCase()
           freshMenu[k] = {
-            lunch: r.lunch ? r.lunch.split(',').map(s => s.trim()).filter(Boolean) : [],
-            dinner: r.dinner ? r.dinner.split(',').map(s => s.trim()).filter(Boolean) : [],
+            lunch: parseDishArray(r.lunch),
+            dinner: parseDishArray(r.dinner),
           }
         })
       } catch {}
@@ -373,26 +371,25 @@ setLoadError(null)
       const buildDishMap = (r, dayName, mealName, fallbackList) => {
         const mk = mealName === 'lunch' ? 'l' : 'd'
         const dk = String(dayName || day).substring(0, 3).toLowerCase()
-        // Prefer the member's saved dish_snapshot FIRST (what they actually
-        // rated against — stays correctly synced even if the menu changes
-        // later), then the LIVE weekly menu for members who haven't filled.
         const snapshotList = getSlotDishes(r, dayName, mealName, null)
         const menuList = Array.isArray(fallbackList) ? fallbackList.filter(Boolean) : []
-        const dishList = snapshotList && snapshotList.length ? snapshotList
-          : (menuList.length ? menuList : null)
-        const names = dishList && dishList.length
-          ? dishList
-          : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => r && r[`${dk}_${mk}_dish_${i + 1}`] !== undefined && r[`${dk}_${mk}_dish_${i + 1}`] !== null && r[`${dk}_${mk}_dish_${i + 1}`] !== '')
+        const allDishNames = Array.from(new Set([...menuList, ...(snapshotList || [])]))
+        const names = allDishNames.length ? allDishNames : (snapshotList || menuList)
         const result = {}
         result._status = r ? r[`${dk}_${mk}_status`] : null
-        names.forEach((d, i) => {
-          const val = r ? r[`${dk}_${mk}_dish_${i + 1}`] : null
+
+        names.forEach((d) => {
+          let pos = -1
+          if (snapshotList && snapshotList.includes(d)) {
+            pos = snapshotList.indexOf(d)
+          } else if (menuList.includes(d)) {
+            pos = menuList.indexOf(d)
+          }
+          const val = (r && pos >= 0) ? r[`${dk}_${mk}_dish_${pos + 1}`] : null
           if (val !== undefined && val !== null && val !== '') {
-            const rotiKw = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
-            if (rotiKw.some(k => d.toLowerCase().includes(k))) {
+            if (isRotiItem(d)) {
               result[d] = String(val).toLowerCase() === 'yes' ? 'yes' : 'no'
             } else {
-              // Preserve raw value: "2" = count, "25%" = percentage, "yes"/"no" = roti/other
               const lowerVal = String(val).toLowerCase()
               if (lowerVal === 'yes' || lowerVal === 'no') result[d] = lowerVal
               else result[d] = val
@@ -405,9 +402,6 @@ setLoadError(null)
       }
 
       // Resolve the menu from the SAME week that owns the selected day.
-      // When the survey targets NEXT week but tracking shows today/tomorrow
-      // (calendar week), dish names must come from the calendar week's live
-      // menu — otherwise an admin's menu update shows as "previous menu".
       let menuForDay = weeklyMenu
       {
         const cal = getCalendarWeekDate()
@@ -421,8 +415,8 @@ setLoadError(null)
             menuRows.forEach(r => {
               const k = String(r.day_name || '').toLowerCase()
               m[k] = {
-                lunch: r.lunch ? r.lunch.split(',').map(s => s.trim()).filter(Boolean) : [],
-                dinner: r.dinner ? r.dinner.split(',').map(s => s.trim()).filter(Boolean) : [],
+                lunch: parseDishArray(r.lunch),
+                dinner: parseDishArray(r.dinner),
               }
             })
             menuForDay = m
@@ -514,8 +508,10 @@ setLoadError(null)
 
     // REALTIME SUBSCRIPTION — watch tables so saves appear live
     const surveySub = supabase
-      .channel('survey_tracking')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => {
+        load(true)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'weekly_menu' }, () => {
         load(true)
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, () => {
@@ -571,25 +567,68 @@ setLoadError(null)
   const noMembers = filtered.filter(u => u.status === 'Skipped')
   const noResponse = filtered.filter(u => !u.status)
 
-  const dishStats = {}
   const menuDishes = displayMenu[day]?.[meal] || weeklyMenu[day]?.[meal] || []
-  menuDishes.forEach(dish => {
-    dishStats[dish] = { total: 0, count: 0, yesNoCount: 0, yesCount: 0, isCount: false, isPct: false }
+  const dishStats = {}
+
+  // Initialize for all dishes in today's menu
+  menuDishes.forEach((dish, idx) => {
+    const isRoti = isRotiItem(dish)
+    const isCount = !isRoti && (getInputType(day, meal, idx) === 'count' || isCountInput(appSettings, day, meal, idx))
+    dishStats[dish] = {
+      dish,
+      isRoti,
+      isCount,
+      isPct: !isRoti && !isCount,
+      yesCount: 0,
+      noCount: 0,
+      totalCount: 0,
+      totalPct: 0,
+      validResponses: 0,
+    }
   })
+
   yesMembers.forEach(u => {
     Object.entries(u.dishResponses || {}).forEach(([dish, val]) => {
-      if (!dishStats[dish]) dishStats[dish] = { total: 0, count: 0, yesNoCount: 0, yesCount: 0, isCount: false, isPct: false }
-      if (val === 'yes' || val === 'no') {
-        dishStats[dish].yesNoCount++
-        if (val === 'yes') dishStats[dish].yesCount++
-      } else if (typeof val === 'string' && val.endsWith('%')) {
-        dishStats[dish].count++
-        dishStats[dish].total += (parseInt(val) || 0)
-        dishStats[dish].isPct = true
+      if (dish === '_status' || val === null || val === undefined || val === '') return
+
+      if (!dishStats[dish]) {
+        const isRoti = isRotiItem(dish)
+        const isCount = !isRoti && typeof val === 'string' && !val.endsWith('%') && !['yes', 'no'].includes(String(val).toLowerCase())
+        dishStats[dish] = {
+          dish,
+          isRoti,
+          isCount,
+          isPct: !isRoti && !isCount,
+          yesCount: 0,
+          noCount: 0,
+          totalCount: 0,
+          totalPct: 0,
+          validResponses: 0,
+        }
+      }
+
+      const stat = dishStats[dish]
+      const strVal = String(val).trim().toLowerCase()
+
+      if (stat.isRoti) {
+        if (strVal === 'yes') stat.yesCount++
+        else if (strVal === 'no') stat.noCount++
+        stat.validResponses++
+      } else if (stat.isCount) {
+        if (strVal !== 'no') {
+          const num = parseInt(val) || 0
+          stat.totalCount += num
+        }
+        stat.validResponses++
       } else {
-        dishStats[dish].count++
-        dishStats[dish].total += (parseInt(val) || 0)
-        dishStats[dish].isCount = true
+        // Percentage
+        if (strVal === 'no') {
+          stat.totalPct += 0
+        } else {
+          const pct = parseInt(val) || 0
+          stat.totalPct += pct
+        }
+        stat.validResponses++
       }
     })
   })
@@ -681,13 +720,27 @@ setLoadError(null)
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <div style={{ fontSize: 9, fontWeight: 800, color: T.textSub, letterSpacing: '0.05em', textTransform: 'uppercase', marginRight: 4 }}>Totals:</div>
               {Object.entries(dishStats).map(([dish, stat]) => {
-                const isYesNo = stat.yesNoCount > 0
-                const avgPct = stat.isPct && stat.count ? Math.round(stat.total / stat.count) : null
-                const displayVal = isYesNo
-                  ? `${stat.yesCount}/${stat.yesNoCount}`
-                  : (stat.isCount ? stat.total : (stat.count ? Math.round(stat.total / stat.count) : 0))
-                const unit = isYesNo ? 'yes' : (stat.isCount ? `person${stat.total === 1 ? '' : 's'}` : '%')
-                const statColor = avgPct !== null ? getPctColor(avgPct) : (isYesNo && stat.yesNoCount > 0 ? (stat.yesCount / stat.yesNoCount >= 0.5 ? '#4CAF50' : '#F44336') : T.accent)
+                let displayVal = ''
+                let unit = ''
+                let statColor = T.accent
+
+                if (stat.isRoti) {
+                  displayVal = `${stat.yesCount}/${stat.yesCount + stat.noCount}`
+                  unit = 'yes'
+                  const ratio = (stat.yesCount + stat.noCount > 0) ? (stat.yesCount / (stat.yesCount + stat.noCount)) : 0
+                  statColor = ratio >= 0.5 ? '#10b981' : '#ef4444'
+                } else if (stat.isCount) {
+                  displayVal = `${stat.totalCount}`
+                  unit = stat.totalCount === 1 ? 'person' : 'persons'
+                  statColor = stat.totalCount > 0 ? '#10b981' : T.textSub
+                } else {
+                  const denominator = yesMembers.length > 0 ? yesMembers.length : Math.max(1, stat.validResponses)
+                  const avgPct = Math.round(stat.totalPct / denominator)
+                  const portions = (stat.totalPct / 100).toFixed(1)
+                  displayVal = `${avgPct}% (${portions} thalis)`
+                  unit = ''
+                  statColor = getPctColor(avgPct) || T.accent
+                }
 
                 return (
                   <div key={dish} style={{
@@ -696,7 +749,7 @@ setLoadError(null)
                     borderRadius: 10, border: `1px solid ${statColor ? `${statColor}40` : T.border}`
                   }}>
                     <span style={{ fontSize: 10, fontWeight: 700, color: T.textSub, textTransform: 'uppercase' }}>{dish}</span>
-                    <span style={{ fontSize: 13, fontWeight: 900, color: statColor || T.accent }}>{displayVal}<span style={{ fontSize: 9, fontWeight: 700, color: T.textSub, marginLeft: 2 }}>{unit}</span></span>
+                    <span style={{ fontSize: 13, fontWeight: 900, color: statColor }}>{displayVal}{unit && <span style={{ fontSize: 9, fontWeight: 700, color: T.textSub, marginLeft: 2 }}>{unit}</span>}</span>
                   </div>
                 )
               })}
@@ -866,6 +919,7 @@ setLoadError(null)
           meal={meal}
           day={day} 
           onClose={() => setSelectedUser(null)}
+          dishInputConfig={dishInputConfig}
         />
       )}
 

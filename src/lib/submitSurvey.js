@@ -69,9 +69,19 @@ export async function submitSurveyRow(payload) {
     try { weekId = getSurveyTargetWeek() } catch {}
   }
 
-  const thaliLabel = typeof (payload.thali_number || payload.thaliNumber) === 'string' && (payload.thali_number || payload.thaliNumber)
-    ? `Thali ${payload.thali_number || payload.thaliNumber}`
-    : 'A member'
+  let thaliNo = payload.thali_number || payload.thaliNumber
+  let userEmail = payload.email
+  if (!thaliNo || !userEmail) {
+    try {
+      const { data: u } = await supabase.from('user_stats').select('thali_number, email').eq('user_id', userId).maybeSingle()
+      if (u) {
+        if (!thaliNo && u.thali_number) thaliNo = u.thali_number
+        if (!userEmail && u.email) userEmail = u.email
+      }
+    } catch {}
+  }
+
+  const thaliLabel = thaliNo ? `Thali ${thaliNo}` : 'A member'
 
   // Identify all days represented in this payload
   let targetDays = []
@@ -87,6 +97,15 @@ export async function submitSurveyRow(payload) {
     const err = new Error('Cannot determine the survey day for this save.')
     logClientWrite({ user_id: userId, week_id: weekId, day: null, action: 'submit', payload, status: 'error', error: err.message })
     return { data: null, error: err }
+  }
+
+  const normalizeStatus = (s) => {
+    if (!s) return null
+    const str = String(s).trim()
+    const lower = str.toLowerCase()
+    if (lower === 'applied' || lower === 'opted_in') return 'Applied'
+    if (lower === 'skipped' || lower === 'opted_out') return 'Skipped'
+    return str
   }
 
   const ALLOWED_COLUMNS = new Set([
@@ -113,15 +132,25 @@ export async function submitSurveyRow(payload) {
         }
       }
     }
-    const thaliNo = payload.thali_number || payload.thaliNumber
-    const email = payload.email
+
+    if (rawRow.l_status) rawRow.l_status = normalizeStatus(rawRow.l_status)
+    if (rawRow.d_status) rawRow.d_status = normalizeStatus(rawRow.d_status)
+
+    // If a meal is explicitly Skipped, safely clear dish columns so stale values do not persist
+    if (rawRow.l_status === 'Skipped') {
+      for (let i = 1; i <= 5; i++) rawRow[`l_dish_${i}`] = null
+    }
+    if (rawRow.d_status === 'Skipped') {
+      for (let i = 1; i <= 5; i++) rawRow[`d_dish_${i}`] = null
+    }
+
     const dishSnapshot = payload.dish_snapshot || payload.dishSnapshot
     const editMetadata = payload.edit_metadata || payload.editMetadata
     const updatedAt = payload.updated_at || payload.updatedAt || new Date().toISOString()
     const submittedAt = payload.submitted_at || payload.submittedAt
 
     if (thaliNo !== undefined) rawRow.thali_number = thaliNo
-    if (email !== undefined) rawRow.email = email
+    if (userEmail !== undefined) rawRow.email = userEmail
     if (dishSnapshot !== undefined) rawRow.dish_snapshot = dishSnapshot
     if (editMetadata !== undefined) rawRow.edit_metadata = editMetadata
     if (updatedAt !== undefined) rawRow.updated_at = updatedAt

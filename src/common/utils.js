@@ -273,3 +273,22 @@ export const isStoppedOnDay = (reqs, selDateStr, meal) => {
     })
   return stopped
 }
+
+/**
+ * Robustly parse dish values from string, array, or CSV/newline-separated lists.
+ * Handles commas, newlines, semicolons, bullets (•), and pipes (|).
+ */
+export const parseDishArray = (val) => {
+  if (!val) return []
+  if (Array.isArray(val)) {
+    return val.map(s => String(s || '').trim()).filter(Boolean)
+  }
+  if (typeof val === 'string') {
+    return val
+      .split(/[\n\r,;•|]+/)
+      .map(s => s.trim().replace(/^["']+|["']+$/g, ''))
+      .filter(Boolean)
+  }
+  return []
+}
+

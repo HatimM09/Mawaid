@@ -7,6 +7,7 @@ import { getSurveyTargetWeek, getCalendarWeekDate, addWeeks, DAYS } from '../com
 import { fetchWeekRows } from '../lib/surveyRows'
 import { DEFAULT_MENU } from '../common/constants'
 import { isSurveyOpen } from '../hooks/useSurvey'
+import { queryClient } from '../lib/queryClient'
 
 const formatWeekLabel = (weekStart) => {
   const d = new Date(weekStart + 'T00:00:00')
@@ -680,7 +681,10 @@ export default function SettingsPage() {
                     }))
                     supabase.from('weekly_menu').upsert(menuRows, { onConflict: 'week_start,day_name' }).then(({ error }) => {
                       if (error) setMsg({ text: `Copy failed: ${error.message}`, type: 'error' })
-                      else setMsg({ text: `✅ Successfully copied menu to ${otherLabel} (${otherWeek})! Both weeks now have dishes.`, type: 'success' })
+                      else {
+                        queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] })
+                        setMsg({ text: `✅ Successfully copied menu to ${otherLabel} (${otherWeek})! Both weeks now have dishes.`, type: 'success' })
+                      }
                     })
                   }
                 }}
@@ -1014,6 +1018,7 @@ export default function SettingsPage() {
                     if (err1 || err2) {
                       setMsg({ text: `Publish error: ${(err1 || err2).message}`, type: 'error' })
                     } else {
+                      queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] })
                       await supabase.from('app_settings').delete().eq('key', 'draft_data')
                       setHasDraft(false)
                       setMsg({ text: `✅ Successfully published menu to BOTH This Week (${calendarWeek}) and Next Week (${nextWeek})!`, type: 'success' })
@@ -1060,6 +1065,7 @@ export default function SettingsPage() {
                       if (menuErr) {
                         setMsg({ text: `Publish failed (menu): ${menuErr.message}`, type: 'error' })
                       } else {
+                        queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] })
                         await supabase.from('app_settings').delete().eq('key', 'draft_data')
                         setHasDraft(false)
                         const publishingLiveWeek = targetWeek === calendarWeek

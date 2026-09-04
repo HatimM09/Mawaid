@@ -6,7 +6,7 @@ import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { RefreshCw, Search, Filter, Utensils, Download, User as UserIcon, Calendar as CalendarIcon, Scan, X, Trash2 } from 'lucide-react'
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Grid, Modal, SectionHeader, SurveyResponseDisplay, PackingTVView, fmtDate, fmtDateTime, ErrorBanner } from './ui'
-import { getSurveyTargetWeek, DAYS, MEALS } from '../common/utils'
+import { getSurveyTargetWeek, DAYS, MEALS, parseDishArray } from '../common/utils'
 import { getSlotDishes } from '../hooks/useSurvey'
 import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot } from '../lib/surveyRows'
 import {
@@ -117,11 +117,16 @@ export default function SurveysPage() {
     const dk = dayName.substring(0, 3).toLowerCase()
     const mk = mealName === 'lunch' ? 'l' : 'd'
     const snapshotList = getSlotDishes(row, dayName, mealName, null)
-    const dishList = snapshotList && snapshotList.length ? snapshotList : (Array.isArray(fallbackList) && fallbackList.length ? fallbackList : [])
+    const menuList = Array.isArray(fallbackList) ? fallbackList.filter(Boolean) : []
+    const allDishNames = Array.from(new Set([...menuList, ...(snapshotList || [])]))
+    const dishList = allDishNames.length ? allDishNames : (snapshotList || menuList)
     const res = {}
     res._status = row ? row[`${dk}_${mk}_status`] : 'Not Submitted'
-    dishList.forEach((d, i) => {
-      const v = row ? row[`${dk}_${mk}_dish_${i + 1}`] : null
+    dishList.forEach((d) => {
+      let pos = -1
+      if (snapshotList && snapshotList.includes(d)) pos = snapshotList.indexOf(d)
+      else if (menuList.includes(d)) pos = menuList.indexOf(d)
+      const v = (row && pos >= 0) ? row[`${dk}_${mk}_dish_${pos + 1}`] : null
       if (v !== undefined && v !== null && v !== '') {
         const rotiKw = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
         if (rotiKw.some(k => d.toLowerCase().includes(k))) {
@@ -156,8 +161,8 @@ export default function SurveysPage() {
         ;(menuRows || []).forEach(r => {
           const k = String(r.day_name || '').toLowerCase()
           freshMenu[k] = {
-            lunch: r.lunch ? r.lunch.split(',').map(s => s.trim()).filter(Boolean) : [],
-            dinner: r.dinner ? r.dinner.split(',').map(s => s.trim()).filter(Boolean) : [],
+            lunch: parseDishArray(r.lunch),
+            dinner: parseDishArray(r.dinner),
           }
         })
       } catch {}
@@ -336,6 +341,9 @@ export default function SurveysPage() {
     const channel = supabase
       .channel('surveys-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => {
+        load(true)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'weekly_menu' }, () => {
         load(true)
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, () => {
@@ -576,6 +584,8 @@ export default function SurveysPage() {
         <PackingTVView 
           user={selectedUser} 
           meal={mealFilter}
+          day={dayFilter}
+          dishInputConfig={dishInputConfig}
           onClose={() => {
             setSelectedUser(null)
             setSearchParams({})

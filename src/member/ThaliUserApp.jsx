@@ -181,9 +181,6 @@ export default function ThaliUserApp() {
         if (seenNoticeIds.current.has(notice.id)) return
         seenNoticeIds.current.add(notice.id)
         try { localStorage.setItem('almawaid_seen_notices', JSON.stringify([...seenNoticeIds.current])) } catch { /* ignore */ }
-        // Skip if notice was created before the last read timestamp (already seen)
-        const lastRead = localStorage.getItem('almawaid_last_notice_read')
-        if (lastRead && new Date(notice.created_at).getTime() <= new Date(lastRead).getTime()) return
         let isForMe = !notice.target_user_id || notice.target_user_id === user?.id
 
         if (isForMe && notice.tone) {

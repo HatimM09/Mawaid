@@ -149,6 +149,12 @@ export const isCountInput = (appSettings, dayName, meal, idx) => {
   return false
 }
 
+export const getDishType = (dish, dayName, meal, idx, appSettings) => {
+  if (isRotiItem(dish)) return 'roti'
+  if (isCountInput(appSettings, dayName, meal, idx)) return 'count'
+  return 'percentage'
+}
+
 export const normalizeDishValue = (val, dish, isCount) => {
   if (val === undefined || val === null || val === '') return null
   if (isRotiItem(dish)) return String(val).toLowerCase() === 'yes' ? 'yes' : 'no'
