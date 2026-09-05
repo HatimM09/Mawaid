@@ -911,7 +911,7 @@ export default function SettingsPage() {
                 <RefreshCw size={13} className={weeklyTrack.loading ? 'spin' : ''} /> Refresh
               </Btn>
               {weeklyTrack.pending.length > 0 && (
-                <Btn type="button" size="sm" onClick={sendWeeklyReminder} disabled={reminding}>
+                <Btn type="button" size="sm" onClick={sendReminders} disabled={reminding}>
                   <Send size={13} /> Remind {weeklyTrack.pending.length} Pending
                 </Btn>
               )}

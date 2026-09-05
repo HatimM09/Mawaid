@@ -56,7 +56,7 @@ export default class ErrorBoundary extends Component {
           >
             Refresh Page
           </button>
-          {(typeof process === 'undefined' || process.env?.NODE_ENV !== 'production') && this.state.error && (
+          {import.meta.env.DEV && this.state.error && (
             <details style={{ marginTop: 32, maxWidth: 500, textAlign: 'left', color: 'rgba(250,243,224,0.4)', fontSize: 11 }}>
               <summary style={{ cursor: 'pointer', color: 'rgba(250,243,224,0.6)' }}>Error details</summary>
               <pre style={{ marginTop: 12, padding: 16, background: 'rgba(255,255,255,0.03)', borderRadius: 12, overflow: 'auto', maxHeight: 300 }}>
