@@ -508,6 +508,7 @@ setLoadError(null)
 
     // REALTIME SUBSCRIPTION — watch tables so saves appear live
     const surveySub = supabase
+      .channel('daily-survey-tracking')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => {
         load(true)
       })
