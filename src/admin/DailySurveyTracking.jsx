@@ -15,7 +15,7 @@ import {
 
 import { getSurveyTargetWeek, getCalendarWeekDate, dayBelongsToCalendarWeek, DAYS, DAY_KEYS, toLocalDateStr, isStoppedOnDay, parseDishArray } from '../common/utils'
 import { getPctColor, getSlotDishes, isRotiItem, isCountInput } from '../hooks/useSurvey'
-import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot } from '../lib/surveyRows'
+import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot, flattenDayRows } from '../lib/surveyRows'
 
 // Pick the stop request whose dates best describe the current stopped period
 // (prefer the newest stop that actually covers the day, else the newest stop).
@@ -82,19 +82,103 @@ export default function DailySurveyTracking() {
       
       const dayKey = day.substring(0, 3).toLowerCase()
       const mealKey = meal === 'lunch' ? 'l' : 'd'
+      const statusKey = `${dayKey}_${mealKey}_status`
       // Resolve the week that OWNS this day right now — daily edits made on
       // Home write to the calendar week for today/tomorrow, the survey target
       // week otherwise. Reading from the same week keeps tracking in sync.
       const calWeek = getCalendarWeekDate()
-      const weekId = (dayBelongsToCalendarWeek(day) && calWeek !== surveyWeekId())
+      const targetWeek = surveyWeekId()
+      const preferredWeekId = (dayBelongsToCalendarWeek(day) && calWeek !== targetWeek)
         ? calWeek
-        : surveyWeekId()
+        : targetWeek
 
-      const { data: row } = await fetchUserSurveyRow(userId, weekId)
+      // NOTE: must mirror the list `load()` resolution. The list searches ALL
+      // weeks and falls back to the latest answered row for this day+meal, so
+      // pinning the scan to a single week showed "no response" for members
+      // whose answer lives in the other week (e.g. daily-edit wrote to the
+      // calendar week while the tracker pointed at the target week).
+      let row = null
+      try {
+        const { data: dayRows } = await supabase
+          .from('survey_day_responses')
+          .select('*')
+          .eq('user_id', userId)
+        let flatFallback = []
+        try {
+          const { data: flatRows } = await supabase
+            .from('survey_submissions_flat')
+            .select('*')
+            .eq('user_id', userId)
+          if (flatRows) flatFallback = flatRows
+        } catch {}
+        let candidates = flattenDayRows(dayRows || [])
+        // Merge flat fallback for weeks missing from day rows (same as fetchAllUserRows)
+        for (const f of flatFallback) {
+          const key = `${f.user_id || f.thali_number}|${f.week_id}`
+          const existing = candidates.find(m => `${m.user_id || m.thali_number}|${m.week_id}` === key)
+          if (!existing) {
+            candidates.push(f)
+          } else {
+            DAY_KEYS.forEach(dk => {
+              ;['l', 'd'].forEach(mk => {
+                const stKey = `${dk}_${mk}_status`
+                if (!existing[stKey] && f[stKey]) {
+                  existing[stKey] = f[stKey]
+                  for (let i = 1; i <= 5; i++) {
+                    const dishKey = `${dk}_${mk}_dish_${i}`
+                    if (existing[dishKey] === undefined && f[dishKey] !== undefined) {
+                      existing[dishKey] = f[dishKey]
+                    }
+                  }
+                }
+              })
+            })
+          }
+        }
+        // Thali/email fallback: if this login has no rows under its user_id
+        // (e.g. re-created account), match the way the list does.
+        if (!candidates.length && (u.thali_number || u.email)) {
+          const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+          const ctU = cleanThali(u.thali_number)
+          const emU = String(u.email || '').toLowerCase().trim()
+          try {
+            const { data: allDay } = await supabase.from('survey_day_responses').select('*')
+            const matched = (allDay || []).filter(r => {
+              if (ctU && cleanThali(r.thali_number) && cleanThali(r.thali_number) === ctU) return true
+              if (emU && r.email && String(r.email).toLowerCase().trim() === emU) return true
+              return false
+            })
+            if (matched.length) candidates = flattenDayRows(matched)
+          } catch {}
+        }
+        const answered = candidates.filter(r => r && r[statusKey])
+        if (answered.length > 0) {
+          const calMatch = answered.find(r => r.week_id === calWeek)
+          const targetMatch = answered.find(r => r.week_id === targetWeek)
+          const preferredMatch = answered.find(r => r.week_id === preferredWeekId)
+          const latestAnswered = [...answered].sort((a, b) => (b.week_id || '').localeCompare(a.week_id || ''))[0]
+          row = preferredMatch || (dayBelongsToCalendarWeek(day) ? (calMatch || targetMatch) : (targetMatch || calMatch)) || latestAnswered || null
+        } else {
+          const anyAnswered = candidates.filter(r => DAY_KEYS.some(dk => r && (r[`${dk}_l_status`] || r[`${dk}_d_status`])))
+          const pool = anyAnswered.length ? anyAnswered : candidates
+          row = [...pool].sort((a, b) => (b.week_id || '').localeCompare(a.week_id || ''))[0] || null
+        }
+        // Final safety net: single-week direct fetch (covers RLS-restricted lists)
+        if (!row) {
+          const { data: single } = await fetchUserSurveyRow(userId, preferredWeekId)
+          if (single) row = single
+        }
+      } catch (e) {
+        console.warn('[processDirectScan] multi-week lookup failed, falling back:', e)
+        const { data: single } = await fetchUserSurveyRow(userId, preferredWeekId)
+        if (single) row = single
+      }
+      const weekId = row?.week_id || preferredWeekId
 
       // Check for an active stop-thali request covering this day+meal
+      // (same tracker-week date math as the list `load()` so stops agree)
       const dayIdx = DAYS.indexOf(day)
-      const trackingWeek = new Date(surveyWeekId() + 'T00:00:00')
+      const trackingWeek = new Date(targetWeek + 'T00:00:00')
       const selDate = new Date(trackingWeek)
       selDate.setDate(trackingWeek.getDate() + (dayIdx === -1 ? 0 : dayIdx))
       const selDateStr = toLocalDateStr(selDate)
@@ -156,10 +240,11 @@ export default function DailySurveyTracking() {
         return result
       }
 
-      // Fetch fresh weekly menu for this week to ensure dish names (not Dish1) even if hook stale
+      // Fetch fresh weekly menu for the TRACKER week (same as the list's
+      // menuForDay) so dish names line up with what the list shows.
       let freshMenu = {}
       try {
-        const { data: menuRows } = await supabase.from('weekly_menu').select('day_name,lunch,dinner').eq('week_start', weekId)
+        const { data: menuRows } = await supabase.from('weekly_menu').select('day_name,lunch,dinner').eq('week_start', preferredWeekId)
         ;(menuRows || []).forEach(r => {
           const k = String(r.day_name || '').toLowerCase()
           freshMenu[k] = {
@@ -167,11 +252,42 @@ export default function DailySurveyTracking() {
             dinner: parseDishArray(r.dinner),
           }
         })
+        // If the answer came from a different week, merge that week's menu too
+        // so snapshot-less dishes still resolve to names.
+        if (weekId !== preferredWeekId) {
+          const { data: rowWeekMenu } = await supabase.from('weekly_menu').select('day_name,lunch,dinner').eq('week_start', weekId)
+          ;(rowWeekMenu || []).forEach(r => {
+            const k = String(r.day_name || '').toLowerCase()
+            if (!freshMenu[k]) {
+              freshMenu[k] = {
+                lunch: parseDishArray(r.lunch),
+                dinner: parseDishArray(r.dinner),
+              }
+            }
+          })
+        }
       } catch {}
       const dayNameLower = day.toLowerCase()
       const dayMenu = freshMenu[dayNameLower] || weeklyMenu[dayNameLower] || weeklyMenu[day] || {}
       const lunchMap = buildDishMap(day, 'lunch', dayMenu.lunch || [])
       const dinnerMap = buildDishMap(day, 'dinner', dayMenu.dinner || [])
+      // Explicit per-dish COUNT vs PORTION map, resolved from the menu order
+      // (TV grid order can differ, so the TV view must not rely on grid idx).
+      const buildDishTypes = (mealName, menuList) => {
+        const types = {}
+        const list = Array.isArray(menuList) ? menuList.filter(Boolean) : []
+        const dishMap = mealName === 'lunch' ? lunchMap : dinnerMap
+        Object.keys(dishMap).filter(k => k !== '_status').forEach((d) => {
+          if (isRotiItem(d)) { types[d] = 'roti'; return }
+          let idx = list.indexOf(d)
+          if (idx === -1) idx = Object.keys(dishMap).filter(k => k !== '_status').indexOf(d)
+          types[d] = (getInputType(day, mealName, idx) === 'count' || isCountInput(appSettings, day, mealName, idx)) ? 'count' : 'percentage'
+        })
+        return types
+      }
+      const lunchTypes = buildDishTypes('lunch', dayMenu.lunch || [])
+      const dinnerTypes = buildDishTypes('dinner', dayMenu.dinner || [])
+      const curTypes = meal === 'lunch' ? lunchTypes : dinnerTypes
 
       setSelectedUser({
         ...u,
@@ -180,8 +296,9 @@ export default function DailySurveyTracking() {
         stopInfo,
         status: isStopped ? 'Skipped' : (meal === 'lunch' ? lunchMap._status : dinnerMap._status),
         dishResponses: buildDishMap(day, meal, dayMenu[meal] || []),
-        lunch: { status: isStopped ? 'Skipped' : lunchMap._status, dishes: lunchMap },
-        dinner: { status: isStopped ? 'Skipped' : dinnerMap._status, dishes: dinnerMap },
+        dishTypes: curTypes,
+        lunch: { status: isStopped ? 'Skipped' : lunchMap._status, dishes: lunchMap, dishTypes: lunchTypes },
+        dinner: { status: isStopped ? 'Skipped' : dinnerMap._status, dishes: dinnerMap, dishTypes: dinnerTypes },
         currentDay: day,
         currentMeal: meal
       })
@@ -478,6 +595,23 @@ setLoadError(null)
         const isStopped = !!stoppedInfo
         const baseStatus = buildCurMeal._status
         const isOverride = (resp && (resp._isOverride || resp.edit_metadata?.[`${dayKey}_${mealKey}_override`]))
+        // Per-dish COUNT vs PORTION map from the tracker's menu order, so the
+        // TV popup never guesses the type from the value or grid position.
+        const typesFor = (mealName, menuList) => {
+          const types = {}
+          const list = Array.isArray(menuList) ? menuList.filter(Boolean) : []
+          const dishMap = mealName === 'lunch' ? buildLunch : mealName === 'dinner' ? buildDinner : buildCurMeal
+          Object.keys(dishMap).filter(k => k !== '_status').forEach((d) => {
+            if (isRotiItem(d)) { types[d] = 'roti'; return }
+            let idx = list.indexOf(d)
+            if (idx === -1) idx = Object.keys(dishMap).filter(k => k !== '_status').indexOf(d)
+            types[d] = (getInputType(day, mealName, idx) === 'count' || isCountInput(settingsMap, day, mealName, idx)) ? 'count' : 'percentage'
+          })
+          return types
+        }
+        const lunchTypes = typesFor('lunch', dayMenu.lunch || [])
+        const dinnerTypes = typesFor('dinner', dayMenu.dinner || [])
+        const curTypes = meal === 'lunch' ? lunchTypes : dinnerTypes
         return { 
           ...u, 
           _isOverride: !!isOverride,
@@ -485,8 +619,9 @@ setLoadError(null)
           stopInfo: stoppedInfo || null,
           status: isStopped ? 'Skipped' : baseStatus,
           dishResponses: buildCurMeal,
-          lunch: { status: stoppedLunchMap[u.user_id] ? 'Skipped' : buildLunch._status, dishes: buildLunch },
-          dinner: { status: stoppedDinnerMap[u.user_id] ? 'Skipped' : buildDinner._status, dishes: buildDinner },
+          dishTypes: curTypes,
+          lunch: { status: stoppedLunchMap[u.user_id] ? 'Skipped' : buildLunch._status, dishes: buildLunch, dishTypes: lunchTypes },
+          dinner: { status: stoppedDinnerMap[u.user_id] ? 'Skipped' : buildDinner._status, dishes: buildDinner, dishTypes: dinnerTypes },
           currentDay: day,
           currentMeal: meal,
           week_id: resp ? resp.week_id : null,

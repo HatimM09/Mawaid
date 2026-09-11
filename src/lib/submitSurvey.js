@@ -187,20 +187,33 @@ export async function submitSurveyRow(payload) {
 /**
  * Create the week's six per-day rows the moment the survey is started
  * (clicking the survey button). Idempotent — safe to call repeatedly.
+ * Supports single weekId or array of weekIds for 2-week cadence.
  * @param {string} userId
- * @param {string} weekId
+ * @param {string|string[]} weekId
  */
 export async function beginSurvey(userId, weekId) {
   if (!userId || !weekId) return
+  const weekIds = Array.isArray(weekId) ? weekId.filter(Boolean) : [weekId]
+  if (!weekIds.length) return
   try {
-    // Seed per-day rows in survey_day_responses (used by admin tracker).
-    // Idempotent upsert with ignoreDuplicates.
+    const seedRows = weekIds.flatMap(wid => DAY_KEYS.map(day => ({ user_id: userId, week_id: wid, day })))
     const { error: seedErr } = await supabase
       .from('survey_day_responses')
-      .upsert(DAY_KEYS.map(day => ({ user_id: userId, week_id: weekId, day })),
-        { onConflict: 'user_id,week_id,day', ignoreDuplicates: true })
+      .upsert(seedRows, { onConflict: 'user_id,week_id,day', ignoreDuplicates: true })
     if (seedErr) console.warn('[submitSurvey] beginSurvey seed failed:', seedErr)
   } catch (e) {
     console.warn('[submitSurvey] beginSurvey failed:', e)
   }
+}
+
+// Batch helper for 2-week journey: save multiple day payloads in sequence (keeps logs per day)
+export async function submitSurveyRows(payloads) {
+  if (!Array.isArray(payloads) || !payloads.length) return { data: null, error: null }
+  const results = []
+  for (const p of payloads) {
+    const r = await submitSurveyRow(p)
+    results.push(r)
+    if (r.error) return r
+  }
+  return { data: results.flatMap(r => r.data || []), error: null }
 }

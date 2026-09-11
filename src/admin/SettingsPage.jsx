@@ -3,8 +3,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/firebaseClient'
 import { Save, RefreshCw, Calendar, Send, Clock, Trash2, Upload, Download, FileSpreadsheet } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Btn, Alert, Input, SectionHeader } from './ui'
-import { getSurveyTargetWeek, getCalendarWeekDate, addWeeks, DAYS } from '../common/utils'
-import { fetchWeekRows } from '../lib/surveyRows'
+import { getSurveyTargetWeek, getSurveyTargetWeeks, getSurveyCadence, getCalendarWeekDate, addWeeks, DAYS } from '../common/utils'
+import { fetchWeekRows, fetchWeekRowsMulti } from '../lib/surveyRows'
 import { DEFAULT_MENU } from '../common/constants'
 import { isSurveyOpen } from '../hooks/useSurvey'
 import { queryClient } from '../lib/queryClient'
@@ -243,13 +243,17 @@ export default function SettingsPage() {
   // during the Saturday window flows naturally.
   const calendarWeek = getCalendarWeekDate()
   const nextWeek = addWeeks(calendarWeek, 1)
+  const week2 = addWeeks(calendarWeek, 2)
   const [targetWeek, setTargetWeek] = useState(() => getSurveyTargetWeek())
+  const [surveyCadence, setSurveyCadence] = useState('1_week')
   const [publishAt, setPublishAt] = useState('')
   const [publishing, setPublishing] = useState(false)
   const [dishInputConfig, setDishInputConfig] = useState({})
   const [clearing, setClearing] = useState(false)
   const [hasDraft, setHasDraft] = useState(false)
   const [switchingWeek, setSwitchingWeek] = useState(false)
+  // Fortnight menu cache: weekId -> menu
+  const [fortnightCache, setFortnightCache] = useState({})
 
   // ── Weekly survey submission tracking + reminders ──
   const [weeklyTrack, setWeeklyTrack] = useState({ loading: false, submitted: [], pending: [], weekStart: '' })
@@ -334,6 +338,21 @@ export default function SettingsPage() {
 
   useEffect(() => { load() }, [])
 
+  // Keep cadence live (admin may flip it in Automation page)
+  useEffect(() => {
+    const ch = supabase.channel('settings-cadence')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings', filter: 'key=eq.survey_cadence' }, async (payload) => {
+        const v = payload?.new?.value || payload?.old?.value
+        if (v) setSurveyCadence(String(v).toLowerCase().includes('2') ? '2_weeks' : '1_week')
+      })
+      .subscribe()
+    // initial fetch
+    supabase.from('app_settings').select('value').eq('key', 'survey_cadence').maybeSingle().then(({ data }) => {
+      if (data?.value) setSurveyCadence(String(data.value).toLowerCase().includes('2') ? '2_weeks' : '1_week')
+    })
+    return () => supabase.removeChannel(ch)
+  }, [])
+
   const load = async (silent = false) => {
     // Silent (background realtime) refresh: skip the loading screen and never
     // overwrite state while the admin still has unsaved edits in progress.
@@ -403,11 +422,23 @@ export default function SettingsPage() {
   loadRef.current = load
 
   // ── SWITCH THE WEEK THE MENU EDITOR TARGETS ──
-  // Lets the admin prepare & publish NEXT week's menu on any day (even before
-  // Saturday 8PM) without touching the current week users still see.
+  // For 1-week: This Week vs Next Week. For 2-weeks (fortnight): This Week + Week 1 (W1) + Week 2 (W2) each gets its own CSV/menu, isolated by week_start.
+  // Cache current week's edits so switching W1 ↔ W2 doesn't discard unsaved fortnight drafts.
   const changeTargetWeek = async (week) => {
     if (week === targetWeek) return
-    if (dirtyRef.current && !window.confirm('You have unsaved edits in the current week. Switch and discard them?')) return
+    // stash current week into cache when in fortnight mode
+    if (surveyCadence === '2_weeks') {
+      setFortnightCache(prev => ({ ...prev, [targetWeek]: { menu, publishAt } }))
+    }
+    if (dirtyRef.current && surveyCadence !== '2_weeks' && !window.confirm('You have unsaved edits in the current week. Switch and discard them?')) return
+    // if fortnight, allow silent switch (cached) without confirm
+    if (surveyCadence === '2_weeks' && fortnightCache[week]) {
+      setTargetWeek(week)
+      setMenu(fortnightCache[week].menu || BLANK_MENU)
+      setPublishAt(fortnightCache[week].publishAt || '')
+      dirtyRef.current = true
+      return
+    }
     setSwitchingWeek(true)
     setTargetWeek(week)
     try {
@@ -425,8 +456,14 @@ export default function SettingsPage() {
         setMenu(formatted)
         setPublishAt(hasPublishAt ? new Date(hasPublishAt).toISOString().slice(0, 16) : '')
       } else {
-        setMenu(BLANK_MENU)
-        setPublishAt('')
+        // if cached fortnight draft exists for this week, prefer it
+        if (surveyCadence === '2_weeks' && fortnightCache[week]) {
+          setMenu(fortnightCache[week].menu || BLANK_MENU)
+          setPublishAt(fortnightCache[week].publishAt || '')
+        } else {
+          setMenu(BLANK_MENU)
+          setPublishAt('')
+        }
       }
       dirtyRef.current = false
       setHasDraft(false)
@@ -582,7 +619,7 @@ export default function SettingsPage() {
       } else {
         applyCSVMenu(byMeal)
         const total = keys.reduce((sum, k) => sum + byMeal[k].dishes.length, 0)
-        setCsvStatus({ type: 'success', text: `Imported ${keys.length} meals (${total} dishes). Auto-saved as draft — hit "Publish & Notify" when ready.` })
+        setCsvStatus({ type: 'success', text: `Imported ${keys.length} meals (${total} dishes) for ${targetWeek} (${targetWeek===calendarWeek?'This Week':targetWeek===nextWeek?(surveyCadence==='2_weeks'?'Week 1':'Next Week'):'Week 2'}). Auto-saved as draft — switch week to upload different CSV for the other week, then Publish.` })
       }
     } catch (e) {
       setCsvStatus({ type: 'error', text: `CSV parse failed: ${e.message}` })
@@ -612,39 +649,41 @@ export default function SettingsPage() {
 
   return (
     <PageWrap>
-      <PageTitle sub="Manage weekly menu, payment, and app configuration">Settings</PageTitle>
+      <PageTitle>Settings</PageTitle>
 
       <form onSubmit={save} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
         {/* Helpline Settings */}
         <AdminCard>
-          <SectionHeader>📞 Helpline Settings</SectionHeader>
+          <SectionHeader>📞 Helpline</SectionHeader>
           <div>
             <Input 
-              label="Al Mawaid Helpline Number (WhatsApp)" 
+              label="Helpline Number (WhatsApp)" 
               name="helpline"
               value={helpline} 
               onChange={e => { markDirty(); setHelpline(e.target.value) }} 
               placeholder="+91 98765 43210" 
             />
-            <p style={{ fontSize: 11, color: T.textSub, marginTop: 8 }}>
-              This number will be shown on the Khidmat team page for users to contact.
-            </p>
           </div>
         </AdminCard>
 
-        {/* Weekly Menu */}
+        {/* Weekly Menu — isolated per week_start; for 2-week cadence each week gets its own CSV/menu */}
         <AdminCard>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
-            <SectionHeader style={{ marginBottom: 0 }}>🍽️ Weekly Menu</SectionHeader>
+            <SectionHeader style={{ marginBottom: 0 }}>🍽️ Weekly Menu {surveyCadence==='2_weeks' && <span style={{ fontSize:11, fontWeight:800, padding:'3px 8px', borderRadius:999, background:'rgba(99,102,241,0.12)', border:'1px solid rgba(99,102,241,0.22)', color:'#818cf8', marginLeft:8 }}>FORTNIGHT — 2 separate CSVs</span>}</SectionHeader>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              {/* Menu target week selector — current vs next week */}
+              {/* Menu target week selector — supports 1-week (2 pills) and 2-weeks (3 pills: This + W1 + W2, each separate CSV) */}
               <div style={{
                 display: 'inline-flex', background: T.inputBg, padding: 4, borderRadius: 14,
                 border: `1px solid ${T.inputBorder}`, gap: 4,
               }}>
-                {[{ id: calendarWeek, label: `This Week · ${formatWeekLabel(calendarWeek)}` },
-                  { id: nextWeek, label: `Next Week · ${formatWeekLabel(nextWeek)}` }].map(opt => {
+                {(surveyCadence==='2_weeks'
+                  ? [{ id: calendarWeek, label: `This Week · ${formatWeekLabel(calendarWeek)}` },
+                     { id: nextWeek, label: `Week 1 · ${formatWeekLabel(nextWeek)}` },
+                     { id: week2, label: `Week 2 · ${formatWeekLabel(week2)}` }]
+                  : [{ id: calendarWeek, label: `This Week · ${formatWeekLabel(calendarWeek)}` },
+                     { id: nextWeek, label: `Next Week · ${formatWeekLabel(nextWeek)}` }]
+                ).map(opt => {
                   const active = targetWeek === opt.id
                   return (
                     <button
@@ -668,12 +707,16 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={() => {
-                  const otherWeek = targetWeek === calendarWeek ? nextWeek : calendarWeek
-                  const otherLabel = targetWeek === calendarWeek ? 'Next Week' : 'This Week'
-                  if (window.confirm(`Copy current menu dishes to ${otherLabel} (${otherWeek})?`)) {
+                  const opts = surveyCadence==='2_weeks'
+                    ? [{id:calendarWeek,l:'This Week'},{id:nextWeek,l:'Week 1'},{id:week2,l:'Week 2'}].filter(o=>o.id!==targetWeek)
+                    : [{id: targetWeek===calendarWeek?nextWeek:calendarWeek, l: targetWeek===calendarWeek?'Next Week':'This Week'}]
+                  // For fortnight, copy to next logical week; for single, copy to other
+                  const other = opts[0]
+                  if (!other) return
+                  if (window.confirm(`Copy current menu dishes to ${other.l} (${other.id})? This upserts weekly_menu for week_start=${other.id} only — the other week stays isolated.`)) {
                     const menuRows = Object.entries(menu).map(([day, val]) => ({
                       day_name: day,
-                      week_start: otherWeek,
+                      week_start: other.id,
                       day_ar: val.ar || '',
                       lunch: val.lunch,
                       dinner: val.dinner,
@@ -683,7 +726,7 @@ export default function SettingsPage() {
                       if (error) setMsg({ text: `Copy failed: ${error.message}`, type: 'error' })
                       else {
                         queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] })
-                        setMsg({ text: `✅ Successfully copied menu to ${otherLabel} (${otherWeek})! Both weeks now have dishes.`, type: 'success' })
+                        setMsg({ text: `✅ Copied menu to ${other.l} (${other.id}) — different CSV per week stays isolated by week_start.`, type: 'success' })
                       }
                     })
                   }
@@ -694,7 +737,7 @@ export default function SettingsPage() {
                   cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6
                 }}
               >
-                📋 Copy to {targetWeek === calendarWeek ? 'Next Week' : 'This Week'}
+                📋 Copy to {surveyCadence==='2_weeks' ? (targetWeek===calendarWeek? 'Week 1' : targetWeek===nextWeek ? 'Week 2' : 'This Week') : (targetWeek === calendarWeek ? 'Next Week' : 'This Week')}
               </button>
               <div style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -703,20 +746,24 @@ export default function SettingsPage() {
                 borderRadius: 8, padding: '4px 10px', fontSize: 11,
                 color: targetWeek === calendarWeek ? '#34d399' : T.accent,
               }}>
-                <Calendar size={12} /> {targetWeek === calendarWeek ? `Live now · ${targetWeek}` : `Survey week · ${targetWeek}`}
+                <Calendar size={12} /> {targetWeek === calendarWeek ? `Live now · ${targetWeek}` : surveyCadence==='2_weeks' && targetWeek===week2 ? `Survey Week 2 · ${targetWeek}` : `Survey week · ${targetWeek}`}
               </div>
             </div>
           </div>
 
-          {targetWeek !== calendarWeek && (
+          {surveyCadence==='2_weeks' ? (
             <div style={{
-              marginBottom: 18, padding: '12px 16px', borderRadius: 12, fontSize: 12, lineHeight: 1.6,
-              background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.25)', color: T.textSub,
+              marginBottom: 18, padding: '10px 14px', borderRadius: 10, fontSize: 12,
+              background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.20)', color: T.textSub,
             }}>
-              <strong style={{ color: '#a5b4fc' }}>Preparing next week's menu.</strong> This menu is shown to users in the{' '}
-              <strong style={{ color: T.text }}>weekly survey form</strong> so they can choose dishes.
-              Your members still see the <strong style={{ color: T.text }}>current week's menu</strong> on the Menu page and feedback
-              until the new week begins on <strong style={{ color: '#a5b4fc' }}>{new Date(nextWeek + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}</strong>.
+              Fortnight: upload CSV for <b style={{ color: T.text }}>Week 1</b> and <b style={{ color: T.text }}>Week 2</b> separately.
+            </div>
+          ) : targetWeek !== calendarWeek && (
+            <div style={{
+              marginBottom: 18, padding: '10px 14px', borderRadius: 10, fontSize: 12,
+              background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.20)', color: T.textSub,
+            }}>
+              Editing next week's survey menu.
             </div>
           )}
 
@@ -735,8 +782,8 @@ export default function SettingsPage() {
                 <span style={{ marginLeft: 'auto', fontSize: 11, color: '#34d399', whiteSpace: 'nowrap' }}>● Auto-saved {autoSavedAt.toLocaleTimeString()}</span>
               )}
             </div>
-            <p style={{ fontSize: 12, color: T.textSub, margin: '0 0 12px', lineHeight: 1.6 }}>
-              Upload a CSV whose headings are <strong style={{ color: '#c7d2fe' }}>Monday Lunch, Monday Dinner, Tuesday Lunch</strong> … The dishes under each heading auto-fill the matching day &amp; meal. Leave a cell empty when a meal is finished.
+            <p style={{ fontSize: 12, color: T.textSub, margin: '0 0 12px' }}>
+              CSV headings: <b style={{ color: '#c7d2fe' }}>Monday Lunch, Monday Dinner …</b> — uploads to <b>{targetWeek}</b> only.
             </p>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'stretch' }}>
               <button
@@ -791,6 +838,12 @@ export default function SettingsPage() {
                 {csvStatus.text}
               </div>
             )}
+          </div>
+
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', padding:'8px 10px', borderRadius:10, background:'rgba(255,255,255,0.03)', border:`1px solid ${T.border}`, fontSize:11 }}>
+            <span style={{ fontWeight:800, color:T.text }}>Per dish:</span>
+            <span style={{ padding:'3px 8px', borderRadius:999, background:T.accentBg, border:`1px solid ${T.accentBorder}`, color:T.accent, fontWeight:800 }}>123 = Count</span>
+            <span style={{ padding:'3px 8px', borderRadius:999, background:'rgba(16,185,129,0.12)', border:'1px solid rgba(16,185,129,0.25)', color:'#34d399', fontWeight:800 }}>% = Percentage</span>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>

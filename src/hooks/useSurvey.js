@@ -1,17 +1,21 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { DAYS, parseHm } from '../common/utils'
+import { DAYS, parseHm, getSurveyCadence, isTwoWeekCadence, getSurveyTotalSlots, getSurveyTargetWeeks, formatWeekRange } from '../common/utils'
 
 export const isRotiItem = (dish) => {
   const rotiKeywords = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
   return rotiKeywords.some(k => dish.toLowerCase().includes(k))
 }
 
+// Canonical percentage → color scale shared by member option buttons,
+// daily-edit buttons and the admin tracker totals. Each step has its own
+// distinct hue: red (none) → amber (quarter) → blue (half) →
+// cyan (three-quarter) → green (full). Grey is reserved for empty/inactive.
 export const getPctColor = (pct) => {
-  if (pct === 0) return '#F44336'
-  if (pct === 25) return '#FFC107'
-  if (pct === 50) return '#2196F3'
-  if (pct === 75) return '#9E9E9E'
-  if (pct === 100) return '#4CAF50'
+  if (pct === 0) return '#ef4444'
+  if (pct === 25) return '#f59e0b'
+  if (pct === 50) return '#3b82f6'
+  if (pct === 75) return '#22d3ee'
+  if (pct === 100) return '#10b981'
   return undefined
 }
 
@@ -189,6 +193,73 @@ export const denormalizeDishValue = (val, dish, isCount) => {
   if (typeof val === 'number') return `${val}%`
   if (typeof val === 'string' && val.endsWith('%')) return val
   return 'No'
+}
+
+// ── Survey cadence re-exports (so consumers import from one place) ──
+export { getSurveyCadence, isTwoWeekCadence, getSurveyTotalSlots, getSurveyTargetWeeks, formatWeekRange }
+
+// Count helpers for 1 vs 2 week progress
+export const countFilledSlots = (flatRow, weekIds) => {
+  if (!flatRow) return 0
+  const weeks = Array.isArray(weekIds) ? weekIds : [weekIds].filter(Boolean)
+  // flatRow may be single-week flat OR map weekId->flat or multi-week combined flat
+  // Detect shape: if flatRow has weekId-scoped keys like "2026-01-05_mon_l_status" we handle both
+  let total = 0
+  for (const wid of weeks) {
+    // try nested map
+    const row = flatRow[wid] ? flatRow[wid] : flatRow
+    if (!row) continue
+    // If row contains week-prefixed keys, count those; else count mon_ etc only when wid matches row.week_id
+    const isMultiKey = Object.keys(row).some(k => /^\d{4}-\d{2}-\d{2}_/.test(k))
+    if (isMultiKey) {
+      const prefix = `${wid}_`
+      for (const k of Object.keys(row)) {
+        if (k.startsWith(prefix) && k.endsWith('_status') && row[k]) total++
+      }
+    } else {
+      // single-week flat
+      if (weeks.length > 1 && row.week_id && row.week_id !== wid) continue
+      const DKS = ['mon','tue','wed','thu','fri','sat']
+      for (const dk of DKS) for (const mk of ['l','d']) if (row[`${dk}_${mk}_status`]) total++
+      if (weeks.length > 1) break // counted once already in multi-flat shape?
+    }
+  }
+  // If flatRow was a single combined object counting above would double count, so fallback simple scan:
+  if (weeks.length > 1 && total === 0 && flatRow) {
+    for (const k of Object.keys(flatRow)) {
+      if (/^\d{4}-\d{2}-\d{2}_[a-z]{3}_[ld]_status$/.test(k) && flatRow[k]) total++
+      else if (/^[a-z]{3}_[ld]_status$/.test(k) && flatRow[k]) total++
+    }
+    // dedup single-week keys when multi-week map not used: above counts 12 max, so for 2-week combined need per-week loop
+    if (total <= 12) {
+      // try per-day status embedded flat
+      return total
+    }
+  }
+  return total
+}
+
+// Simpler: compute from surveyData array map
+export const computeProgress = (appSettings, surveyDataMap) => {
+  const total = getSurveyTotalSlots(appSettings)
+  const filled = (() => {
+    if (!surveyDataMap) return 0
+    if (Array.isArray(surveyDataMap)) {
+      // array of flats
+      return surveyDataMap.reduce((n, row) => {
+        if (!row) return n
+        let c = 0
+        for (const dk of ['mon','tue','wed','thu','fri','sat']) for (const mk of ['l','d']) if (row[`${dk}_${mk}_status`]) c++
+        return n + c
+      }, 0)
+    }
+    if (typeof surveyDataMap === 'object') {
+      const rows = Object.values(surveyDataMap).filter(Boolean)
+      if (rows.length) return rows.reduce((n, row) => { let c=0; for(const dk of ['mon','tue','wed','thu','fri','sat']) for(const mk of ['l','d']) if(row[`${dk}_${mk}_status`]) c++; return n+c }, 0)
+    }
+    return 0
+  })()
+  return { filled, total, pct: total? Math.round(filled/total*100):0 }
 }
 
 // ── Dish-snapshot helpers ──

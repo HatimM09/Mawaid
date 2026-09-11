@@ -119,6 +119,48 @@ export const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'sa
 export const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat']
 export const MEALS = ['lunch', 'dinner']
 
+// ── Survey cadence (admin toggle: 1 week vs 2 weeks at once) ──
+export const SURVEY_CADENCE_ONE = '1_week'
+export const SURVEY_CADENCE_TWO = '2_weeks'
+
+export const getSurveyCadence = (appSettings = {}) => {
+  const raw = String(appSettings.survey_cadence || appSettings.surveyCadence || SURVEY_CADENCE_ONE).toLowerCase().trim()
+  if (raw === '2' || raw === '2_weeks' || raw === '2weeks' || raw === 'two' || raw === 'biweekly' || raw === 'fortnight') return SURVEY_CADENCE_TWO
+  return SURVEY_CADENCE_ONE
+}
+export const isTwoWeekCadence = (appSettings = {}) => getSurveyCadence(appSettings) === SURVEY_CADENCE_TWO
+export const getSurveyCadenceLabel = (appSettings = {}) => isTwoWeekCadence(appSettings) ? '2 Weeks (12 days)' : '1 Week (6 days)'
+export const getSurveyTotalSlots = (appSettings = {}) => isTwoWeekCadence(appSettings) ? 24 : 12
+
+/**
+ * Returns the ordered list of target week_ids (YYYY-MM-DD Mondays) the survey is planning.
+ * 1_week → [W1]   2_weeks → [W1, W2=W1+7d]
+ */
+export const getSurveyTargetWeeks = (appSettings = {}) => {
+  const w1 = getSurveyTargetWeek(appSettings)
+  if (!isTwoWeekCadence(appSettings)) return [w1]
+  const w2 = addWeeks(w1, 1)
+  return [w1, w2]
+}
+
+export const formatWeekRange = (weekId) => {
+  try {
+    const [y, m, d] = String(weekId).split('-').map(Number)
+    const start = new Date(y, m - 1, d)
+    const end = new Date(y, m - 1, d + 5)
+    const fmt = (dt) => dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+    return `${fmt(start)} — ${fmt(end)}`
+  } catch { return String(weekId || '') }
+}
+
+export const formatWeekShort = (weekId) => {
+  try {
+    const [y, m, d] = String(weekId).split('-').map(Number)
+    const dt = new Date(y, m - 1, d)
+    return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  } catch { return String(weekId || '') }
+}
+
 /**
  * Format a Date as the local calendar date YYYY-MM-DD.
  * Unlike date.toISOString().split('T')[0] this never shifts the date when the

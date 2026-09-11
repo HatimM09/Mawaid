@@ -9,8 +9,8 @@ import {
   Radio, Shield, Power, Eye, Info
 } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Btn, StatCard, Grid, Alert, SectionHeader, Modal } from './ui'
-import { getSurveyTargetWeek } from '../common/utils'
-import { fetchWeekRows } from '../lib/surveyRows'
+import { getSurveyTargetWeek, getSurveyTargetWeeks, getSurveyCadence, getSurveyTotalSlots, formatWeekRange } from '../common/utils'
+import { fetchWeekRows, fetchWeekRowsMulti } from '../lib/surveyRows'
 import { isSurveyOpen, getSurveyWindowConfig, getSurveyWindowLabel, getSurveyWindowStatus } from '../hooks/useSurvey'
 
 const DAYS_OPTIONS = [
@@ -81,6 +81,7 @@ export default function AutomationPage() {
 
   // Settings State
   const [settings, setSettings] = useState({})
+  const [surveyCadence, setSurveyCadence] = useState('1_week')
   const [surveyWindowStartDay, setSurveyWindowStartDay] = useState('saturday')
   const [surveyWindowStartTime, setSurveyWindowStartTime] = useState('20:00')
   const [surveyWindowEndDay, setSurveyWindowEndDay] = useState('monday')
@@ -150,6 +151,7 @@ export default function AutomationPage() {
       if (appSettings) {
         appSettings.forEach(row => { s[row.key] = row.value })
         setSettings(s)
+        setSurveyCadence(getSurveyCadence(s))
         setSurveyWindowStartDay((s.survey_window_start_day || 'saturday').toLowerCase())
         setSurveyWindowStartTime(s.survey_window_start_time || '20:00')
         setSurveyWindowEndDay((s.survey_window_end_day || 'monday').toLowerCase())
@@ -174,7 +176,8 @@ export default function AutomationPage() {
       const mealKey = today.getHours() < 15 ? 'l' : 'd'
       const statusField = `${dayKey}_${mealKey}_status`
       const isSunday = day === 0
-      const weekId = getSurveyTargetWeek(s)
+      const weekIds = getSurveyTargetWeeks(s)
+      const weekId = weekIds[0]
 
       const [
         { count: sc },
@@ -248,6 +251,9 @@ export default function AutomationPage() {
     setSaving(true); setMsg('')
     const nextSettings = { ...settings, [key]: value }
     setSettings(nextSettings)
+    if (key === 'survey_cadence') {
+      setSurveyCadence(value)
+    }
     if (key === 'survey_window_status') {
       setSurveyWindowStatus(value)
       setLiveSurveyStatus(computeLive(nextSettings))
@@ -273,6 +279,7 @@ export default function AutomationPage() {
   const saveAllTimings = async () => {
     setQuickSaving(true); setMsg('')
     const toSave = [
+      { key: 'survey_cadence', value: surveyCadence },
       { key: 'survey_window_status', value: surveyWindowStatus },
       { key: 'survey_window_start_day', value: surveyWindowStartDay.toLowerCase() },
       { key: 'survey_window_start_time', value: surveyWindowStartTime },
@@ -369,10 +376,10 @@ export default function AutomationPage() {
       {/* ── HEADER WITH ACTIONS ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <PageTitle sub="Central control tower for weekly survey windows, daily meal edit timings, and instant broadcasts.">
+          <PageTitle>
             <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Zap size={26} color={T.accent} />
-              Automation Center
+              Automation
             </span>
           </PageTitle>
         </div>
@@ -577,6 +584,40 @@ export default function AutomationPage() {
         </AdminCard>
       </div>
 
+      {/* ── PREMIUM CADENCE TOGGLE (1 Week vs 2 Weeks) ── */}
+      <AdminCard style={{ marginBottom: 18, padding: 16, border: `1.5px solid ${surveyCadence === '2_weeks' ? 'rgba(99,102,241,0.35)' : T.border}`, background: surveyCadence === '2_weeks' ? 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(16,185,129,0.06))' : `linear-gradient(135deg, ${T.border}10, transparent)`, overflow: 'hidden', position: 'relative' }}>
+        <div style={{ position: 'absolute', top: -30, right: -30, width: 160, height: 160, background: `radial-gradient(circle, ${T.accent}10, transparent 60%)`, filter: 'blur(20px)', pointerEvents: 'none' }} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', position: 'relative' }}>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <Calendar size={18} color={T.accent} />
+              <span style={{ fontSize: 14, fontWeight: 900, color: T.text, letterSpacing: '-0.01em' }}>Survey Cadence Control</span>
+              <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 999, background: surveyCadence === '2_weeks' ? 'rgba(99,102,241,0.15)' : 'rgba(212,175,55,0.12)', color: surveyCadence === '2_weeks' ? '#818cf8' : T.accent, border: `1px solid ${surveyCadence === '2_weeks' ? 'rgba(99,102,241,0.25)' : T.accentBorder}` }}>{surveyCadence === '2_weeks' ? '2 WEEKS · 24 MEALS' : '1 WEEK · 12 MEALS'}</span>
+            </div>
+            <div style={{ fontSize: 12, color: T.textSub, lineHeight: 1.5 }}>
+              {surveyCadence === '2_weeks'
+                ? `Fortnight — ${formatWeekRange(getSurveyTargetWeeks(settings)[0])} + ${formatWeekRange(getSurveyTargetWeeks(settings)[1])} (24 meals)`
+                : `Single week — 12 meals · ${formatWeekRange(getSurveyTargetWeek(settings))}`}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 5, borderRadius: 14, background: T.inputBg, border: `1px solid ${T.border}` }}>
+            {[
+              { val: '1_week', label: '1 Week', sub: '12 meals', icon: '📅' },
+              { val: '2_weeks', label: '2 Weeks', sub: '24 meals', icon: '🗓️' },
+            ].map(o => {
+              const active = surveyCadence === o.val
+              return (
+                <button key={o.val} onClick={() => handleToggle('survey_cadence', o.val)} disabled={saving} style={{ minWidth: 118, padding: '10px 14px', borderRadius: 10, border: `1.5px solid ${active ? T.accent : 'transparent'}`, background: active ? T.accentBg : 'transparent', color: active ? T.accent : T.textSub, fontWeight: active ? 900 : 700, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, transition: 'all 0.2s', boxShadow: active ? `0 4px 14px ${T.accentBg}` : 'none' }}>
+                  <span style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>{o.icon} {o.label} {active ? '✓' : ''}</span>
+                  <span style={{ fontSize: 10, opacity: 0.85 }}>{o.sub}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+      </AdminCard>
+
       {/* ── FAST CATEGORY TABS ── */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 18, borderBottom: `1px solid ${T.border}`, paddingBottom: 10, overflowX: 'auto' }}>
         {[
@@ -614,9 +655,7 @@ export default function AutomationPage() {
                 <Calendar size={20} color={T.accent} />
                 Weekly Survey Window Settings
               </div>
-              <div style={{ fontSize: 12, color: T.textSub, marginTop: 4 }}>
-                Configure when the survey opens and closes each week. All members (New, Partial, Inactive) use this window.
-              </div>
+
             </div>
             <button
               type="button"

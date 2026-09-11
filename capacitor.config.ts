@@ -2,11 +2,11 @@ import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.almawaid.myapp',
-  appName: 'Al-Mawaid | المَوَائِد',
+  appName: 'Al-Mawaid',
   webDir: 'dist',
   bundledWebRuntime: false,
   server: {
-    url: 'https://al-mawaid.vercel.app',
+    url: 'https://al-mawaid.vercel.app?v=2.1.7',
     cleartext: false,
     androidScheme: 'https'
   },

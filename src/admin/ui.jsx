@@ -596,13 +596,49 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
 
   const getResponseStyle = (dish, value, idx) => {
     const isRoti = isRotiItem(dish || '')
-    const dishKey = (dish || '').toLowerCase().replace(/[^a-z0-9]/g, '_')
-    const slotKey = `${String(day || '').toLowerCase()}_${displayMeal}_${idx}`
-    const isCount = (dishInputConfig && (
-      dishInputConfig[slotKey] === 'count' ||
-      dishInputConfig[dishKey] === 'count' ||
-      dishInputConfig[dish] === 'count'
-    )) || (typeof value === 'object' && value?.status) || (typeof value === 'string' && /person|ppl/i.test(value))
+    // Resolve COUNT vs PORTION. dishInputConfig is stored as
+    // { "<day>_<meal>": ["count","percentage",...] } (see SettingsPage /
+    // useSurvey.isCountInput), so the per-index array must be checked first.
+    // Upstream callers may also attach an explicit per-dish map
+    // (mealData.dishTypes / user.dishTypes) computed from the menu order —
+    // prefer it when present since TV grid order can differ from menu order.
+    const resolveIsCount = () => {
+      if (isRoti) return false
+      // Value shape is authoritative: writers persist percentages with a `%`
+      // suffix (denormalizeDishValue) and counts as plain numbers / objects,
+      // so a `%`-suffixed value is ALWAYS a percentage even if the menu order
+      // or config index has drifted since the response was saved.
+      try {
+        if (typeof value === 'string' && value.trim().endsWith('%')) return false
+      } catch {}
+      if (typeof value === 'object' && value !== null && value?.status) return true
+      const dt = (mealData && mealData.dishTypes) || user.dishTypes || null
+      if (dt && dish && dt[dish] !== undefined) {
+        const t = String(dt[dish]).toLowerCase()
+        if (t === 'count') return true
+        if (t === 'percentage' || t === 'portion' || t === 'percent' || t === '%') return false
+      }
+      try {
+        const cfg = dishInputConfig
+        if (cfg) {
+          const arrKey = `${String(day || '').toLowerCase()}_${displayMeal}`
+          const arr = cfg[arrKey]
+          if (Array.isArray(arr) && arr[idx] !== undefined) {
+            if (arr[idx] === 'count') return true
+            if (arr[idx] === 'percentage' || arr[idx] === 'portion') return false
+          }
+          const dishKey = (dish || '').toLowerCase().replace(/[^a-z0-9]/g, '_')
+          const slotKey = `${String(day || '').toLowerCase()}_${displayMeal}_${idx}`
+          if (cfg[slotKey] === 'count' || cfg[dishKey] === 'count' || cfg[dish] === 'count') return true
+          if (cfg[slotKey] === 'percentage' || cfg[dishKey] === 'percentage' || cfg[dish] === 'percentage') return false
+        }
+      } catch {}
+      if ((typeof value === 'object' && value !== null && value?.status) || (typeof value === 'string' && /person|ppl/i.test(value))) return true
+      // Legacy default mirrors the tracker: lunch slots 0-3 are counts unless configured
+      if (displayMeal === 'lunch' && typeof idx === 'number' && idx <= 3) return true
+      return false
+    }
+    const isCount = resolveIsCount()
 
     // If meal is explicitly skipped
     if (status === 'Skipped' || isStopped) {
@@ -670,13 +706,13 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
       }
       const countVal = typeof value === 'object' ? (value.value || 1) : (parseInt(value) || 0)
       return {
-        bg: 'rgba(59, 130, 246, 0.12)',
-        border: '#3b82f6',
+        bg: 'rgba(99, 102, 241, 0.12)',
+        border: '#6366f1',
         label: `${countVal} ${countVal === 1 ? 'PERSON' : 'PERSONS'}`,
-        labelColor: '#60a5fa',
-        glow: 'rgba(59, 130, 246, 0.6)',
+        labelColor: '#818cf8',
+        glow: 'rgba(99, 102, 241, 0.6)',
         typeLabel: 'COUNT',
-        typeColor: '#3b82f6'
+        typeColor: '#6366f1'
       }
     }
 
@@ -716,6 +752,8 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
         typeColor: '#ef4444'
       }
     }
+    // Progressive portion scale — mirrors getPctColor so the TV matches the
+    // member option buttons: red → amber → blue → cyan → green.
     if (n <= 25) {
       return {
         bg: 'rgba(245, 158, 11, 0.12)',
@@ -729,24 +767,24 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
     }
     if (n <= 50) {
       return {
-        bg: 'rgba(33, 150, 243, 0.12)',
-        border: '#2196f3',
+        bg: 'rgba(59, 130, 246, 0.12)',
+        border: '#3b82f6',
         label: `${n}%`,
         labelColor: '#60a5fa',
-        glow: 'rgba(33, 150, 243, 0.5)',
+        glow: 'rgba(59, 130, 246, 0.5)',
         typeLabel: 'PORTION',
-        typeColor: '#2196f3'
+        typeColor: '#3b82f6'
       }
     }
     if (n <= 75) {
       return {
-        bg: 'rgba(156, 163, 175, 0.12)',
-        border: '#9ca3af',
+        bg: 'rgba(34, 211, 238, 0.12)',
+        border: '#22d3ee',
         label: `${n}%`,
-        labelColor: '#e5e7eb',
-        glow: 'rgba(156, 163, 175, 0.4)',
+        labelColor: '#67e8f9',
+        glow: 'rgba(34, 211, 238, 0.45)',
         typeLabel: 'PORTION',
-        typeColor: '#9ca3af'
+        typeColor: '#22d3ee'
       }
     }
     return {

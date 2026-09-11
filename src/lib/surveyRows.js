@@ -105,6 +105,49 @@ export async function fetchUserSurveyRow(userId, weekId) {
   return { data: null, error: dayErr || null }
 }
 
+// ── Multi-week (2-week cadence) helpers — single journey, isolated storage ──
+// Each week stays as separate rows keyed by week_id; UI merges them client-side
+// so responses never overlay or jumble.
+
+export async function fetchUserSurveyRows(userId, weekIds) {
+  const ids = Array.isArray(weekIds) ? weekIds.filter(Boolean) : [weekIds].filter(Boolean)
+  if (!ids.length) return { data: {}, error: null }
+  const results = await Promise.all(ids.map(wid => fetchUserSurveyRow(userId, wid)))
+  const map = {}
+  ids.forEach((wid, i) => { map[wid] = results[i]?.data || null })
+  return { data: map, error: null }
+}
+
+// Count filled meal slots (l/d status present) across one or many flats
+export function countFilledSlotsForRows(rowOrMap, weekIds) {
+  const DKS = ['mon','tue','wed','thu','fri','sat']
+  let total = 0
+  if (rowOrMap && typeof rowOrMap === 'object' && !Array.isArray(rowOrMap) && weekIds && Array.isArray(weekIds)) {
+    // map weekId -> flat
+    for (const wid of weekIds) {
+      const row = rowOrMap[wid]
+      if (!row) continue
+      for (const dk of DKS) for (const mk of ['l','d']) if (row[`${dk}_${mk}_status`]) total++
+    }
+    return total
+  }
+  // single flat or array
+  const rows = Array.isArray(rowOrMap) ? rowOrMap : [rowOrMap]
+  for (const row of rows) if (row) for (const dk of DKS) for (const mk of ['l','d']) if (row[`${dk}_${mk}_status`]) total++
+  return total
+}
+
+export function isWeekComplete(flatRow) {
+  if (!flatRow) return false
+  const DKS = ['mon','tue','wed','thu','fri','sat']
+  return DKS.every(dk => flatRow[`${dk}_l_status`] && flatRow[`${dk}_d_status`])
+}
+
+export function areAllWeeksComplete(flatMap, weekIds) {
+  const ids = Array.isArray(weekIds) ? weekIds : [weekIds].filter(Boolean)
+  return ids.every(wid => isWeekComplete(flatMap?.[wid]))
+}
+
 // Load the member's MOST RECENT week (latest week_id with any saved day).
 export async function fetchLatestUserSurveyRow(userId) {
   const { data: weeks, error: weeksErr } = await supabase
@@ -178,6 +221,26 @@ export async function fetchWeekRows(weekId) {
   }
 
   return { data: merged, error: null }
+}
+
+// Multi-week variant: loads and merges rows for several week_ids at once.
+// Keeps each week isolated by week_id — admin dashboards can then show W1, W2 or combined without overlay.
+export async function fetchWeekRowsMulti(weekIds) {
+  const ids = Array.isArray(weekIds) ? weekIds.filter(Boolean) : [weekIds].filter(Boolean)
+  if (!ids.length) return { data: [], error: null }
+  if (ids.length === 1) return fetchWeekRows(ids[0])
+  const results = await Promise.all(ids.map(wid => fetchWeekRows(wid)))
+  // Tag rows with week_id already present; merged is concatenation (week_id disambiguates)
+  const merged = results.flatMap(r => r.data || [])
+  return { data: merged, error: null }
+}
+
+export async function fetchWeekRowsGrouped(weekIds) {
+  const ids = Array.isArray(weekIds) ? weekIds.filter(Boolean) : [weekIds].filter(Boolean)
+  const results = await Promise.all(ids.map(wid => fetchWeekRows(wid)))
+  const map = {}
+  ids.forEach((wid, i) => { map[wid] = results[i]?.data || [] })
+  return { data: map, error: null }
 }
 
 // Admin: erase one member's lunch or dinner for a single day.

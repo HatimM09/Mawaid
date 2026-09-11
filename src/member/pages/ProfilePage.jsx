@@ -1,24 +1,24 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { QrCode, ClipboardList, Users, Bell, LifeBuoy, Info, MessageCircle, Phone, MapPin, Check, KeyRound, Eye, EyeOff, LogOut, X, ChevronRight } from 'lucide-react'
+import { QrCode, ClipboardList, Users, Bell, LifeBuoy, Info, MessageCircle, Phone, MapPin, Check, KeyRound, Eye, EyeOff, LogOut, X, ChevronRight, Calendar, Sun, Moon, ArrowRight, CheckCircle2 } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/firebaseClient'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
-import { getSurveyTargetWeek, getCalendarWeekDate } from '../../common/utils'
+import { getSurveyTargetWeek, getSurveyTargetWeeks, getSurveyCadence, formatWeekRange, getCalendarWeekDate, addWeeks } from '../../common/utils'
 import { getSlotDishes, isRotiItem } from '../../hooks/useSurvey'
 import ErrorBoundary from '../../components/ErrorBoundary'
-import { fetchLatestUserSurveyRow, fetchUserSurveyRow } from '../../lib/surveyRows'
+import { fetchLatestUserSurveyRow, fetchUserSurveyRow, fetchUserSurveyRows } from '../../lib/surveyRows'
 import { ProfileSkeleton, ListPageSkeleton, RequestsSkeleton, NotificationsSkeleton, KhidmatTeamSkeleton } from '../../common/Skeleton'
 import { THEMES } from '../theme'
 import { DAYS } from '../constants'
 import { isSurveyOpen, getSurveyWindowMessage } from '../survey'
 import { Card, Avatar, SectionLabel, BackHeader, Btn, EmptyState, ErrorBanner } from '../ui'
 
-export default function ProfilePage({ theme, setTheme, markRead, appSettings, activeSubPage: externalSubPage, setActiveSubPage: externalSetSubPage }) {
+export default function ProfilePage({ theme, setTheme, markRead, appSettings, activeSubPage: externalSubPage, setActiveSubPage: externalSetSubPage, onGoToSurvey }) {
   const [internalSubPage, setInternalSubPage] = useState('main')
   const activeSubPage = externalSubPage !== undefined ? externalSubPage : internalSubPage
   const setActiveSubPage = externalSetSubPage || setInternalSubPage
-  if (activeSubPage === 'surveys') return <MySurveysPage onBack={() => setActiveSubPage('main')} />
+  if (activeSubPage === 'surveys') return <MySurveysPage onBack={() => setActiveSubPage('main')} appSettings={appSettings} onGoToSurvey={onGoToSurvey} />
   if (activeSubPage === 'requests') return <MyRequestsPage onBack={() => setActiveSubPage('main')} />
   if (activeSubPage === 'khidmat') return <KhidmatTeamPage onBack={() => setActiveSubPage('main')} />
   if (activeSubPage === 'notifications') return <NotificationsPage onBack={() => setActiveSubPage('main')} markRead={markRead} appSettings={appSettings} />
@@ -274,30 +274,48 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
   )
 }
 
-function MySurveysPage({ onBack }) {
+function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSurvey }) {
   const t = useTheme(), { user } = useAuth()
-  const [surveys, setSurveys] = useState({})
-  const [dailyEditSurveys, setDailyEditSurveys] = useState({})
+  const [appSettings, setAppSettings] = useState(initialAppSettings)
+  const [surveysByWeek, setSurveysByWeek] = useState({}) // weekId -> flat row
   const [loading, setLoading] = useState(true)
-  const [surveyWeekId, setSurveyWeekId] = useState(null)
-  const [appSettings, setAppSettings] = useState({})
-  const calendarWeekId = getCalendarWeekDate()
-  // Use the survey data's week_id for the menu so dish names match the snapshot
-  const weeklyMenu = useWeeklyMenu(surveyWeekId || getSurveyTargetWeek())
-  const dailyMenu = useWeeklyMenu(calendarWeekId)
+  const [activeTab, setActiveTab] = useState('current') // 'current' | 'next' | 'following'
+
+  const calendarWeekId = useMemo(() => getCalendarWeekDate(), [])
+  const nextWeekId = useMemo(() => addWeeks(calendarWeekId, 1), [calendarWeekId])
+  const targetWeeks = useMemo(() => getSurveyTargetWeeks(appSettings), [appSettings])
+  const isTwoWeeks = targetWeeks.length === 2
+  const followingWeekId = useMemo(() => (isTwoWeeks && targetWeeks[1]) ? targetWeeks[1] : addWeeks(calendarWeekId, 2), [isTwoWeeks, targetWeeks, calendarWeekId])
+
+  // Week options for the toggle
+  const weekTabs = useMemo(() => {
+    const list = [
+      { id: 'current', label: 'Current Week', weekId: calendarWeekId, range: formatWeekRange(calendarWeekId) },
+      { id: 'next', label: 'Next Week', weekId: nextWeekId, range: formatWeekRange(nextWeekId) },
+    ]
+    if (isTwoWeeks) {
+      list.push({ id: 'following', label: 'Following Week', weekId: followingWeekId, range: formatWeekRange(followingWeekId) })
+    }
+    return list
+  }, [calendarWeekId, nextWeekId, followingWeekId, isTwoWeeks])
+
+  const selectedWeekObj = weekTabs.find(w => w.id === activeTab) || weekTabs[0]
+  const selectedWeekId = selectedWeekObj.weekId
+
+  // Weekly menu for the active week to resolve dish labels
+  const selectedWeekMenu = useWeeklyMenu(selectedWeekId)
 
   useEffect(() => {
     supabase.from('app_settings').select('key, value')
       .then(({ data }) => {
         const s = {}
         ;(data || []).forEach(r => { if (r && r.key) s[r.key] = r.value })
-        setAppSettings(s)
+        setAppSettings(prev => ({ ...prev, ...s }))
       })
       .catch(() => {})
   }, [])
 
   const markOverride = useCallback((grouped, rawData) => {
-    // Badge derived from saved flag in survey response metadata.
     Object.keys(grouped).forEach(day => {
       Object.keys(grouped[day]).forEach(meal => {
         const hasSlotOverride = rawData?._isOverride ||
@@ -306,90 +324,72 @@ function MySurveysPage({ onBack }) {
       })
     })
     return grouped
-  }, [appSettings, user?.id])
+  }, [])
 
   const processRow = useCallback((data, menu) => {
     if (!data) return {}
     const grouped = {}
     DAYS.forEach(day => {
       const dayKey = day.substring(0, 3).toLowerCase()
-        ;['lunch', 'dinner'].forEach(meal => {
-          const mealKey = meal === 'lunch' ? 'l' : 'd'
-          const status = data[`${dayKey}_${mealKey}_status`]
-          if (status) {
-            const dishResponses = {}
-            // Resolve dish names from the saved snapshot, else the published
-            // menu. If BOTH are unavailable, fall back to generic "Dish N"
-            // labels so stored responses always render — never an empty card.
-            const dishes = getSlotDishes(data, day, meal, menu[day]?.[meal] || [])
-            const nameList = dishes.length > 0
-              ? dishes
-              : Array.from({ length: 5 }, (_, i) => `Dish ${i + 1}`)
-            nameList.forEach((d, i) => {
-              const val = data[`${dayKey}_${mealKey}_dish_${i + 1}`]
-              if (val !== undefined && val !== null && val !== '') {
-                const lower = String(val).toLowerCase()
-                if (lower === 'yes') dishResponses[d] = 'yes'
-                else if (lower === 'no') dishResponses[d] = 'no'
-                else if (typeof val === 'string' && val.endsWith('%')) dishResponses[d] = val
-                else {
-                  const n = parseInt(val)
-                  dishResponses[d] = isNaN(n) ? val : n
-                }
+      ;['lunch', 'dinner'].forEach(meal => {
+        const mealKey = meal === 'lunch' ? 'l' : 'd'
+        const status = data[`${dayKey}_${mealKey}_status`]
+        if (status) {
+          const dishResponses = {}
+          const dishes = getSlotDishes(data, day, meal, menu[day]?.[meal] || [])
+          const nameList = dishes.length > 0
+            ? dishes
+            : Array.from({ length: 5 }, (_, i) => `Dish ${i + 1}`)
+          nameList.forEach((d, i) => {
+            const val = data[`${dayKey}_${mealKey}_dish_${i + 1}`]
+            if (val !== undefined && val !== null && val !== '') {
+              const lower = String(val).toLowerCase()
+              if (lower === 'yes') dishResponses[d] = 'yes'
+              else if (lower === 'no') dishResponses[d] = 'no'
+              else if (typeof val === 'string' && val.endsWith('%')) dishResponses[d] = val
+              else {
+                const n = parseInt(val)
+                dishResponses[d] = isNaN(n) ? val : n
               }
-            })
-            if (!grouped[day]) grouped[day] = {}
-            grouped[day][meal] = {
-              wants_food: status === 'Applied',
-              dish_responses: dishResponses,
-              edit_count: (data.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0,
-              updated_at: data.updated_at || null
             }
+          })
+          if (!grouped[day]) grouped[day] = {}
+          grouped[day][meal] = {
+            wants_food: status === 'Applied',
+            dish_responses: dishResponses,
+            edit_count: (data.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0,
+            updated_at: data.updated_at || null
           }
-        })
+        }
+      })
     })
     return grouped
   }, [])
 
-  // Override-granted slots — removed along with the override table.
-  // All users now see their normal survey responses.
-  const grantedSlots = null
-
   const loadData = useCallback(async () => {
-    // Fetch the latest (survey) week AND the calendar week — Daily Edit writes
-    // land on the calendar week, so both must be merged to show everything.
-    const [{ data }, calRes] = await Promise.all([
-      fetchLatestUserSurveyRow(user.id),
-      calendarWeekId !== getSurveyTargetWeek(appSettings)
-        ? fetchUserSurveyRow(user.id, calendarWeekId)
-        : Promise.resolve({ data: null }),
-    ])
-    let weekId = data?.week_id
-    if (data) {
-      setSurveyWeekId(weekId)
+    const allIds = Array.from(new Set([calendarWeekId, nextWeekId, ...(targetWeeks || []), followingWeekId].filter(Boolean)))
+    try {
+      const { data: map } = await fetchUserSurveyRows(user.id, allIds)
+      setSurveysByWeek(map || {})
+    } catch {
+      setSurveysByWeek({})
     }
-    if (!data) { setSurveys({}) }
-    else setSurveys(markOverride(processRow(data, weeklyMenu), data))
-    setDailyEditSurveys(processRow(calRes?.data || null, dailyMenu))
-  }, [user.id, weeklyMenu, dailyMenu, processRow, markOverride, grantedSlots, appSettings, calendarWeekId])
+  }, [user.id, calendarWeekId, nextWeekId, targetWeeks, followingWeekId])
 
   useEffect(() => {
     loadData().finally(() => setLoading(false))
   }, [loadData])
 
-  // Re-process when the weekly menu loads (the initial render may have an empty menu)
-  useEffect(() => {
-    if (!surveyWeekId || Object.keys(weeklyMenu).length === 0) return
-    loadData()
-  }, [surveyWeekId, weeklyMenu, loadData])
-
   // Realtime subscription: refresh surveys on any change
   useEffect(() => {
-    const subscription = supabase.channel('survey_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses' }, () => { loadData() })
+    if (!user?.id) return
+    const subscription = supabase.channel(`profile-surveys-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses', filter: `user_id=eq.${user.id}` }, () => {
+        loadData()
+      })
       .subscribe()
     return () => supabase.removeChannel(subscription)
-  }, [loadData])
+  }, [user?.id, loadData])
 
   const formatDishVal = (val, dish) => {
     if (val === 'yes') return '✅ Yes'
@@ -402,147 +402,328 @@ function MySurveysPage({ onBack }) {
     return String(val)
   }
 
+  // Active week data processed
+  const currentWeekRaw = surveysByWeek[selectedWeekId]
+  const currentGrouped = useMemo(() => {
+    if (!currentWeekRaw) return {}
+    return markOverride(processRow(currentWeekRaw, selectedWeekMenu || {}), currentWeekRaw)
+  }, [currentWeekRaw, selectedWeekMenu, processRow, markOverride])
+
+  // Meal counts for summary
+  const mealSummary = useMemo(() => {
+    let appliedCount = 0
+    let skippedCount = 0
+    let totalAnswered = 0
+    DAYS.forEach(d => {
+      const l = currentGrouped[d]?.lunch
+      const dn = currentGrouped[d]?.dinner
+      if (l && l.wants_food !== undefined) {
+        totalAnswered++
+        if (l.wants_food) appliedCount++
+        else skippedCount++
+      }
+      if (dn && dn.wants_food !== undefined) {
+        totalAnswered++
+        if (dn.wants_food) appliedCount++
+        else skippedCount++
+      }
+    })
+    return { appliedCount, skippedCount, totalAnswered, hasResponses: totalAnswered > 0 }
+  }, [currentGrouped])
+
   return (
-    <main style={{ flex: 1, padding: '16px 16px 160px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{ flex: 1, padding: '16px 16px 140px', maxWidth: 640, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       <BackHeader title="My Surveys" onBack={onBack} />
-      {/* ── This Week · Daily Edits — live view of current-week daily edits ── */}
-      {calendarWeekId !== (surveyWeekId || getSurveyTargetWeek(appSettings)) && Object.keys(dailyEditSurveys).length > 0 && (
-        <div style={{ marginBottom: 18, padding: '12px 14px', borderRadius: 16, background: t.accentBg, border: `1px solid ${t.accentBorder}` }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif", marginBottom: 2 }}>
-            ⏱️ This Week · Daily Edits
+
+      {/* Week Toggle Tabs */}
+      <div style={{
+        display: 'flex',
+        background: t.inputBg,
+        padding: 4,
+        borderRadius: 16,
+        border: `1px solid ${t.border}`,
+        marginBottom: 18,
+        gap: 4
+      }}>
+        {weekTabs.map(tab => {
+          const isActive = activeTab === tab.id
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                flex: 1,
+                padding: '9px 12px',
+                borderRadius: 12,
+                border: 'none',
+                background: isActive ? t.accentGrad : 'transparent',
+                color: isActive ? '#0a0a0a' : t.textSub,
+                cursor: 'pointer',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 2,
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                boxShadow: isActive ? '0 4px 12px rgba(0,0,0,0.15)' : 'none',
+                fontFamily: "'DM Sans', sans-serif"
+              }}
+            >
+              <span style={{ fontSize: 13, fontWeight: isActive ? 800 : 700 }}>{tab.label}</span>
+              <span style={{ fontSize: 11, opacity: isActive ? 0.9 : 0.6, fontWeight: 500 }}>{tab.range}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {loading ? (
+        <ListPageSkeleton title="My Surveys" count={6} />
+      ) : !mealSummary.hasResponses ? (
+        <div style={{
+          padding: '36px 20px',
+          borderRadius: 20,
+          background: t.card,
+          border: `1px solid ${t.border}`,
+          textAlign: 'center',
+          marginTop: 10
+        }}>
+          <div style={{
+            width: 52,
+            height: 52,
+            borderRadius: 16,
+            background: t.accentBg,
+            border: `1px solid ${t.accentBorder}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 16px',
+            color: t.accent
+          }}>
+            <Calendar size={24} />
           </div>
-          <div style={{ fontSize: 10.5, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginBottom: 10 }}>
-            Live changes you made from the Home screen
-          </div>
-          {DAYS.filter(day => dailyEditSurveys[day]).map(day => (
-            <div key={day} style={{ marginBottom: 8, padding: 11, background: t.inputBg, borderRadius: 12, border: `1px solid ${t.border}`, borderLeft: '3px solid #10b981' }}>
-              <div style={{ fontSize: 13, fontWeight: 800, textTransform: 'capitalize', color: t.text, fontFamily: "'DM Sans',sans-serif", marginBottom: 6 }}>
-                {dailyMenu[day]?.en || day}
-              </div>
-              {['lunch', 'dinner'].map(meal => {
-                const r = dailyEditSurveys[day]?.[meal]
-                if (!r) return null
-                return (
-                  <div key={meal} style={{ marginBottom: r.wants_food ? 4 : 0 }}>
-                    <span style={{ fontSize: 12, fontWeight: 800, fontFamily: "'DM Sans',sans-serif", color: r.wants_food ? '#10b981' : '#ef4444' }}>
-                      {meal === 'lunch' ? '☀️' : '🌙'} {r.wants_food ? 'Applied' : 'Skipped'}
-                    </span>
-                    {r.wants_food && r.dish_responses && Object.entries(r.dish_responses).map(([dish, val]) => (
-                      <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: `1px solid ${t.border}` }}>
-                        <span style={{ fontSize: 11.5, color: t.textBody, fontFamily: "'DM Sans',sans-serif" }}>{dish}</span>
-                        <span style={{ fontSize: 11.5, fontWeight: 800, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>{formatDishVal(val, dish)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )
-              })}
-            </div>
-          ))}
+          <h3 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 800, color: t.text, fontFamily: "'DM Sans', sans-serif" }}>
+            {activeTab === 'next' ? 'No Survey Submitted for Next Week' : 'No Survey Found for This Week'}
+          </h3>
+          <p style={{ margin: '0 0 20px', fontSize: 13, color: t.textSub, lineHeight: 1.5, fontFamily: "'DM Sans', sans-serif", maxWidth: 360, marginLeft: 'auto', marginRight: 'auto' }}>
+            {activeTab === 'next'
+              ? 'You have not submitted your meal selections for next week yet. Complete the survey to reserve your thali.'
+              : 'There are no active survey responses or meal reservations recorded for the current week.'}
+          </p>
+          {activeTab === 'next' && onGoToSurvey && (
+            <button
+              onClick={onGoToSurvey}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '12px 22px',
+                borderRadius: 999,
+                border: 'none',
+                background: t.accentGrad,
+                color: '#0a0a0a',
+                fontSize: 13.5,
+                fontWeight: 800,
+                cursor: 'pointer',
+                fontFamily: "'DM Sans', sans-serif",
+                boxShadow: `0 4px 16px ${t.accent}35`
+              }}
+            >
+              Go to Survey Tab <ArrowRight size={16} />
+            </button>
+          )}
         </div>
-      )}
-      {loading ? <ListPageSkeleton title="My Surveys" count={6} /> : DAYS.map(day => {
-        const dayData = surveys[day]
-        return (
-          <Card key={day} active style={{ marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-              <img src="/al-mawaid.png" alt="" style={{ width: 28, height: 28, objectFit: 'contain' }} />
-              <div style={{ fontSize: 16, fontWeight: 700, color: t.accent, fontFamily: "'Playfair Display',serif" }}>{weeklyMenu[day]?.en || day}</div>
+      ) : (
+        <>
+          {/* Week Overview Card */}
+          <div style={{
+            padding: '14px 16px',
+            borderRadius: 16,
+            background: t.card,
+            border: `1px solid ${t.border}`,
+            marginBottom: 14,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 10
+          }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: t.accent }}>
+                {selectedWeekObj.label} Overview
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: t.text, marginTop: 2, fontFamily: "'DM Sans', sans-serif" }}>
+                {selectedWeekObj.range}
+              </div>
             </div>
-            {['lunch', 'dinner'].map(meal => {
-              const r = dayData?.[meal] || {};
-              const hasResponse = r.wants_food !== undefined
-              const isOverride = !!r.is_override
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{
+                fontSize: 11.5,
+                fontWeight: 800,
+                padding: '4px 10px',
+                borderRadius: 999,
+                background: 'rgba(16,185,129,0.12)',
+                color: '#10b981',
+                border: '1px solid rgba(16,185,129,0.25)',
+                fontFamily: "'DM Sans', sans-serif"
+              }}>
+                🍽️ {mealSummary.appliedCount} requested
+              </span>
+              {mealSummary.skippedCount > 0 && (
+                <span style={{
+                  fontSize: 11.5,
+                  fontWeight: 800,
+                  padding: '4px 10px',
+                  borderRadius: 999,
+                  background: 'rgba(239,68,68,0.10)',
+                  color: '#ef4444',
+                  border: '1px solid rgba(239,68,68,0.22)',
+                  fontFamily: "'DM Sans', sans-serif"
+                }}>
+                  ✕ {mealSummary.skippedCount} skipped
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Day-by-Day Cards */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {DAYS.map((day, dIdx) => {
+              const dayData = currentGrouped[day]
+              const [y, m, d] = selectedWeekId.split('-').map(Number)
+              const dayDate = new Date(y, m - 1, d + dIdx)
+              const dateLabel = dayDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+              const hasAny = !!dayData
 
               return (
-                <div key={meal} style={{
-                  marginBottom: 10, padding: 13,
-                  background: isOverride
-                    ? 'linear-gradient(135deg, rgba(76,175,80,0.08) 0%, rgba(255,255,255,0.02) 100%)'
-                    : t.inputBg,
-                  borderRadius: 12,
-                  border: `1px solid ${isOverride ? 'rgba(76,175,80,0.35)' : t.border}`,
-                  borderLeft: `3px solid ${isOverride ? '#4CAF50' : hasResponse ? t.accent : t.border}`,
-                  transition: 'all 0.2s ease',
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: t.accent, fontFamily: "'DM Sans',sans-serif" }}>
-                        {meal === 'lunch' ? '☀️ Lunch' : '🌙 Dinner'}
+                <div
+                  key={day}
+                  style={{
+                    padding: '14px 16px',
+                    borderRadius: 16,
+                    background: t.card,
+                    border: `1px solid ${t.border}`,
+                    borderLeft: `3px solid ${hasAny ? t.accent : t.border}`
+                  }}
+                >
+                  {/* Day Header */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 8,
+                        background: t.accentBg,
+                        border: `1px solid ${t.accentBorder}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 11,
+                        fontWeight: 900,
+                        color: t.accent
+                      }}>
+                        {day.slice(0, 2).toUpperCase()}
                       </span>
-                      {hasResponse && (
-                        isOverride ? (
-                          <span style={{
-                            fontSize: 9, fontWeight: 900, color: '#4CAF50',
-                            padding: '2px 8px', borderRadius: 6,
-                            background: 'rgba(76,175,80,0.15)',
-                            border: '1px solid rgba(76,175,80,0.4)',
-                            fontFamily: "'DM Sans',sans-serif",
-                            letterSpacing: '0.04em',
-                            display: 'inline-flex', alignItems: 'center', gap: 4
-                          }}>
-                            <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#4CAF50' }} />
-                            OVERRIDE SURVEY
-                          </span>
-                        ) : (
-                          <span style={{
-                            fontSize: 9, fontWeight: 800, color: t.accent,
-                            padding: '2px 8px', borderRadius: 6,
-                            background: t.accentBg,
-                            border: `1px solid ${t.accentBorder}`,
-                            fontFamily: "'DM Sans',sans-serif",
-                            letterSpacing: '0.04em',
-                            display: 'inline-flex', alignItems: 'center', gap: 4
-                          }}>
-                            <span style={{ width: 4, height: 4, borderRadius: '50%', background: t.accent }} />
-                            WEEKLY SURVEY
-                          </span>
-                        )
-                      )}
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 10, color: (r.edit_count || 0) < 1 ? t.accent : t.textSub, fontFamily: "'DM Sans',sans-serif", fontWeight: 600 }}>
-                        {r.edit_count === undefined ? '' : (r.edit_count || 0) === 0 ? 'Original response' : `Edited ${r.edit_count}x`}
+                      <span style={{ fontSize: 15, fontWeight: 800, textTransform: 'capitalize', color: t.text, fontFamily: "'DM Sans', sans-serif" }}>
+                        {selectedWeekMenu[day]?.en || day}
                       </span>
-                      {r.updated_at && (
-                        <span style={{ fontSize: 9, color: t.textSub, fontFamily: "'DM Sans',sans-serif", fontWeight: 500, opacity: 0.7 }}>
-                          • {new Date(r.updated_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      )}
                     </div>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, background: t.inputBg, border: `1px solid ${t.border}`, padding: '2px 8px', borderRadius: 999 }}>
+                      {dateLabel}
+                    </span>
                   </div>
 
-                  {r.wants_food !== undefined ? (
-                    <>
-                      <div style={{
-                        fontSize: 13, color: r.wants_food ? t.successText : '#e05555',
-                        fontWeight: 800, fontFamily: "'DM Sans',sans-serif",
-                        marginBottom: r.wants_food ? 8 : 0,
-                        display: 'flex', alignItems: 'center', gap: 5,
-                      }}>
-                        {r.wants_food ? '✅ Requested Food' : '❌ Skipped'}
-                      </div>
-                      {r.wants_food && r.dish_responses && Object.entries(r.dish_responses).map(([dish, val]) => (
-                        <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid ${t.border}` }}>
-                          <span style={{ fontSize: 12, color: t.textBody, fontFamily: "'DM Sans',sans-serif" }}>{dish}</span>
-                          <span style={{ fontSize: 12, fontWeight: 800, color: isOverride ? '#4CAF50' : t.accent, fontFamily: "'DM Sans',sans-serif" }}>
-                            {formatDishVal(val, dish)}
-                          </span>
+                  {/* Meals */}
+                  {['lunch', 'dinner'].map(meal => {
+                    const r = dayData?.[meal]
+                    const hasResponse = r && r.wants_food !== undefined
+                    const isOverride = !!r?.is_override
+
+                    return (
+                      <div
+                        key={meal}
+                        style={{
+                          marginTop: 8,
+                          padding: '10px 12px',
+                          borderRadius: 12,
+                          background: isOverride
+                            ? 'rgba(16,185,129,0.06)'
+                            : t.inputBg,
+                          border: `1px solid ${isOverride ? 'rgba(16,185,129,0.25)' : t.border}`
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, marginBottom: hasResponse && r.wants_food ? 8 : 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 12.5, fontWeight: 800, color: t.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                              {meal === 'lunch' ? <Sun size={14} color="#f59e0b" /> : <Moon size={14} color="#818cf8" />}
+                              {meal === 'lunch' ? 'Lunch' : 'Dinner'}
+                            </span>
+                            {hasResponse && (
+                              <span style={{
+                                fontSize: 10,
+                                fontWeight: 800,
+                                padding: '2px 7px',
+                                borderRadius: 999,
+                                background: r.wants_food ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.10)',
+                                color: r.wants_food ? '#10b981' : '#ef4444',
+                                border: `1px solid ${r.wants_food ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.20)'}`
+                              }}>
+                                {r.wants_food ? 'Requested' : 'Skipped'}
+                              </span>
+                            )}
+                            {isOverride && (
+                              <span style={{
+                                fontSize: 9.5,
+                                fontWeight: 800,
+                                padding: '2px 6px',
+                                borderRadius: 6,
+                                background: 'rgba(16,185,129,0.14)',
+                                color: '#10b981',
+                                border: '1px solid rgba(16,185,129,0.3)'
+                              }}>
+                                ⚡ Daily Edit
+                              </span>
+                            )}
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: t.textSub }}>
+                            {hasResponse && (
+                              <span>
+                                {(r.edit_count || 0) > 0 ? `Edited ${r.edit_count}x` : 'Original'}
+                              </span>
+                            )}
+                            {r?.updated_at && (
+                              <span style={{ opacity: 0.7 }}>
+                                • {new Date(r.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      ))}
-                    </>
-                  ) : (
-                    <div style={{ fontSize: 12, color: t.textSub, fontWeight: 600, fontFamily: "'DM Sans',sans-serif", fontStyle: 'italic' }}>
-                      No survey response recorded for this slot
-                    </div>
-                  )}
+
+                        {!hasResponse ? (
+                          <div style={{ fontSize: 11, color: t.textSub, fontStyle: 'italic', paddingTop: 2 }}>
+                            No response recorded for this meal
+                          </div>
+                        ) : r.wants_food && r.dish_responses && Object.keys(r.dish_responses).length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4, paddingTop: 4, borderTop: `1px solid ${t.border}` }}>
+                            {Object.entries(r.dish_responses).map(([dish, val]) => (
+                              <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, padding: '2px 0' }}>
+                                <span style={{ color: t.textSub }}>{dish}</span>
+                                <span style={{ fontWeight: 800, color: isOverride ? '#10b981' : t.accent }}>
+                                  {formatDishVal(val, dish)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  })}
                 </div>
               )
             })}
-          </Card>
-        )
-      })}
-      {Object.keys(surveys).length === 0 && !loading && <EmptyState msg="No surveys submitted yet." />}
+          </div>
+        </>
+      )}
     </main>
   )
 }

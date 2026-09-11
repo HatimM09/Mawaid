@@ -1,3 +1,4 @@
+// @refresh reset
 // src/components/DailyEditCard.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Sun, Moon, Check, X, Clock, Sparkles, Plus, Minus, RefreshCw } from 'lucide-react'
@@ -88,12 +89,13 @@ export default function DailyEditCard({
   const mi = useMemo(() => {
     if (propMealInfo && propMealInfo.day && propMealInfo.meal) {
       const dishes = (weeklyMenu && weeklyMenu[propMealInfo.day]?.[propMealInfo.meal]) || propMealInfo.dishes || []
+      // Use explicit weekId when provided; otherwise resolve via owning week (cadence-aware) to avoid writing to wrong week_id (e.g., W2)
+      const resolvedWeek = propMealInfo.weekId || getOwningWeekId(new Date(), appSettings) || getSurveyTargetWeek(appSettings)
       return {
         day: propMealInfo.day,
         meal: propMealInfo.meal,
         dishes,
-        weekId: propMealInfo.weekId
-          || (dayBelongsToCalendarWeek(propMealInfo.day) ? getCalendarWeekDate() : getSurveyTargetWeek(appSettings))
+        weekId: resolvedWeek
       }
     }
     return getCardMealInfo(weeklyMenu, appSettings)
@@ -144,10 +146,12 @@ export default function DailyEditCard({
     return () => window.removeEventListener('keydown', handleKey)
   }, [isOpen, onClose])
 
-  // Load existing saved response and fresh menu from Supabase
+  // Load existing saved response and fresh menu from Supabase — fast, no blocking refresh
   const loadExisting = useCallback(async (isManual = false) => {
     if (!user || !mi || !isOpen) return
-    setLoading(true)
+    // Only show full spinner on first load or manual refresh; silent background sync otherwise
+    const isFirstLoad = !existingData && !fetchedDishes
+    if (isFirstLoad || isManual) { setLoading(true) }
     setSavedSuccess(false)
     try {
       // 1. Fetch fresh dishes from weekly_menu for this specific week and day
@@ -246,7 +250,6 @@ export default function DailyEditCard({
     try {
       const status = wantsMeal ? 'Applied' : 'Skipped'
       const dishValues = {}
-
       if (wantsMeal) {
         dishes.forEach((d, idx) => {
           const val = dishResponses[d]
@@ -258,7 +261,6 @@ export default function DailyEditCard({
           }
         })
       }
-
       const res = await submitSurveyRow({
         user_id: user.id,
         week_id: mi.weekId,
@@ -271,14 +273,15 @@ export default function DailyEditCard({
         email: userData.email,
         updated_at: new Date().toISOString()
       })
-
       if (res.error) throw res.error
-
+      // Instant optimistic close — no 1s delay, no page refresh. Parent realtime syncs automatically.
       setSavedSuccess(true)
+      // Quick haptic / close — user can edit again immediately if needed
       setTimeout(() => {
         setSavedSuccess(false)
-        onComplete()
-      }, 1000)
+        onComplete() // parent will silently refresh via realtime, no skeleton
+        onClose()
+      }, 450)
     } catch (e) {
       console.error('DailyEditCard save error:', e)
       window.alert('Failed to save daily edit: ' + (e.message || 'Please try again'))

@@ -369,7 +369,7 @@ export default function ThaliUserApp() {
         {activeTab === 'survey' && <SurveyPage appSettings={appSettings} />}
 
         {activeTab === 'post' && <PostPage />}
-        {activeTab === 'profile' && <ProfilePage theme={theme} setTheme={handleSetTheme} markRead={markNotificationsRead} appSettings={appSettings} activeSubPage={activeSubPage} setActiveSubPage={setActiveSubPage} />}
+        {activeTab === 'profile' && <ProfilePage theme={theme} setTheme={handleSetTheme} markRead={markNotificationsRead} appSettings={appSettings} activeSubPage={activeSubPage} setActiveSubPage={setActiveSubPage} onGoToSurvey={() => { loadAppSettings(); setActiveTab('survey') }} />}
 
         <OfflineBanner />
 
