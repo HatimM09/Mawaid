@@ -7,7 +7,7 @@ import { RefreshCw, Search, Filter, Utensils, Download, User as UserIcon, Calend
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Grid, Modal, SectionHeader, SurveyResponseDisplay, PackingTVView, fmtDate, fmtDateTime, ErrorBanner } from './ui'
 import { getSurveyTargetWeek, DAYS, MEALS, parseDishArray } from '../common/utils'
-import { getSlotDishes } from '../hooks/useSurvey'
+import { getSlotDishes, isRotiItem, isCountInput } from '../hooks/useSurvey'
 import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot } from '../lib/surveyRows'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
@@ -99,13 +99,25 @@ export default function SurveysPage() {
     const resp = responses.find(r => r.user_id === userId && r.day === dayFilter && r.meal === mealFilter)
     if (resp) {
       const u = users[userId] || {}
+      // Build dishTypes so TV view shows COUNT vs PORTION correctly
+      const menuList = weeklyMenu[dayFilter]?.[mealFilter] || []
+      const dishTypes = {}
+      const dishEntries = Object.entries(resp.dish_responses || {})
+      dishEntries.forEach(([d], i) => {
+        const rotiKw = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
+        if (rotiKw.some(k => d.toLowerCase().includes(k))) { dishTypes[d] = 'roti'; return }
+        const idx = menuList.indexOf(d) >= 0 ? menuList.indexOf(d) : i
+        dishTypes[d] = isCountInput(appSettings, dayFilter, mealFilter, idx) ? 'count' : 'percentage'
+      })
       setSelectedUser({
         ...u,
         week_id: resp?.week_id || null,
         status: resp.wants_food ? 'Applied' : 'Skipped',
         dishResponses: resp.dish_responses,
+        dishTypes,
         currentDay: dayFilter,
-        currentMeal: mealFilter
+        currentMeal: mealFilter,
+        dishInputConfig: dishInputConfig
       })
     } else {
       // Fallback: try to fetch from DB if not in current view
@@ -171,13 +183,30 @@ export default function SurveysPage() {
       const buildLunch = buildAllDishes(row, dayFilter, 'lunch', dayMenu.lunch || [])
       const buildDinner = buildAllDishes(row, dayFilter, 'dinner', dayMenu.dinner || [])
 
+      // Build per-dish type maps so TV view shows COUNT vs PORTION correctly
+      const buildDishTypes = (mealName, menuList) => {
+        const types = {}
+        const list = Array.isArray(menuList) ? menuList.filter(Boolean) : []
+        const dishMap = mealName === 'lunch' ? buildLunch : buildDinner
+        Object.keys(dishMap).filter(k => k !== '_status').forEach((d) => {
+          if (isRotiItem(d)) { types[d] = 'roti'; return }
+          let idx = list.indexOf(d)
+          if (idx === -1) idx = Object.keys(dishMap).filter(k => k !== '_status').indexOf(d)
+          types[d] = isCountInput(appSettings, dayFilter, mealName, idx) ? 'count' : 'percentage'
+        })
+        return types
+      }
+      const lunchTypes = buildDishTypes('lunch', dayMenu.lunch || [])
+      const dinnerTypes = buildDishTypes('dinner', dayMenu.dinner || [])
+
       setSelectedUser({
         ...u,
         week_id: weekId,
         status: buildCur._status,
         dishResponses: buildCur,
-        lunch: { status: buildLunch._status, dishes: buildLunch },
-        dinner: { status: buildDinner._status, dishes: buildDinner },
+        dishTypes: mealFilter === 'lunch' ? lunchTypes : dinnerTypes,
+        lunch: { status: buildLunch._status, dishes: buildLunch, dishTypes: lunchTypes },
+        dinner: { status: buildDinner._status, dishes: buildDinner, dishTypes: dinnerTypes },
         currentDay: dayFilter,
         currentMeal: mealFilter,
         dishInputConfig: dishInputConfig
@@ -301,8 +330,24 @@ export default function SurveysPage() {
                   const lowerVal = String(val).toLowerCase()
                   if (isRotiItem(d)) {
                     dishResponses[d] = lowerVal === 'yes' ? 'yes' : 'no'
+                  } else if (lowerVal === 'yes' || lowerVal === 'no') {
+                    dishResponses[d] = lowerVal
+                  } else if (typeof val === 'string' && val.trim().endsWith('%')) {
+                    // Already has % suffix — keep as-is (percentage)
+                    dishResponses[d] = val
                   } else {
-                    dishResponses[d] = lowerVal === 'yes' ? 'yes' : lowerVal === 'no' ? 'no' : val
+                    // Determine count vs percentage from dishInputConfig
+                    // dishInputConfig is the parsed object: { "monday_lunch": ["count","percentage",...] }
+                    const arrKey = `${dayKey}_${meal}`
+                    const cfgArr = Array.isArray(dishInputConfig?.[arrKey]) ? dishInputConfig[arrKey] : null
+                    const isCount = cfgArr ? cfgArr[i] === 'count' : false
+                    const numVal = parseInt(val)
+                    if (!isNaN(numVal)) {
+                      // Tag with type: count stays as number, percentage gets "%" suffix
+                      dishResponses[d] = isCount ? numVal : `${numVal}%`
+                    } else {
+                      dishResponses[d] = val
+                    }
                   }
                 }
               })
@@ -322,7 +367,7 @@ export default function SurveysPage() {
       })
       
       setResponses(normalized)
-      buildChart(normalized)
+      buildChart(normalized, weekFilter)
     } catch (e) {
       console.error('SurveysPage load error:', e)
       setLoadError(e?.message || 'Failed to load survey responses')
@@ -356,9 +401,13 @@ export default function SurveysPage() {
     }
   }, [load])
 
-  const buildChart = (data) => {
+  const buildChart = (data, weekId) => {
+    // Filter to the selected week when a specific week is chosen
+    const filtered = (weekId && weekId !== 'all')
+      ? data.filter(r => r.week_id === weekId)
+      : data
     const map = {}
-    data.forEach(r => {
+    filtered.forEach(r => {
       const key = r.day
       if (!map[key]) map[key] = { day: key, lunch: 0, dinner: 0 }
       map[key][r.meal] = (map[key][r.meal] || 0) + 1
@@ -384,24 +433,67 @@ export default function SurveysPage() {
   })
 
   // AGGREGATE SUMMARY - shows total piece counts
+  // Rebuild chart whenever the filtered data or weekFilter changes
+  useEffect(() => {
+    buildChart(responses, weekFilter === 'all' ? null : weekFilter)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekFilter, responses])
+
   const summary = useMemo(() => {
     const counts = {}
     const isCountDish = {}
     const isPctDish = {}
+    const isRotiDish = {}
     const activeData = filtered.filter(f => f.wants_food)
+
+    // Use dishInputConfig to determine dish type by day+meal+index
+    const getDishIsCount = (dish, day, meal, idx) => {
+      const rotiKw = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
+      if (rotiKw.some(k => dish.toLowerCase().includes(k))) return 'roti'
+      if (dishInputConfig) {
+        try {
+          const cfg = typeof dishInputConfig === 'string' ? JSON.parse(dishInputConfig) : dishInputConfig
+          const arrKey = `${(day || '').toLowerCase()}_${meal}`
+          const arr = cfg[arrKey]
+          if (Array.isArray(arr) && arr[idx] !== undefined) {
+            return arr[idx] === 'count' ? 'count' : 'pct'
+          }
+        } catch {}
+      }
+      // Value-shape fallback: '%'-suffixed → pct, yes/no → roti, plain number → count
+      return 'unknown'
+    }
+
     activeData.forEach(r => {
       const q = r.dish_responses || {}
+      const menuDishes = weeklyMenu[r.day]?.[r.meal] || []
       Object.entries(q).forEach(([dish, val]) => {
+        const idx = menuDishes.indexOf(dish)
+        const typeHint = getDishIsCount(dish, r.day, r.meal, idx >= 0 ? idx : undefined)
         if (!counts[dish]) {
           counts[dish] = 0
-          isCountDish[dish] = (typeof val === 'number') || (typeof val === 'string' && !val.endsWith('%') && String(val).toLowerCase() !== 'yes' && String(val).toLowerCase() !== 'no')
-          isPctDish[dish] = typeof val === 'string' && val.endsWith('%')
+          isRotiDish[dish] = typeHint === 'roti'
+          const strVal = String(val ?? '').toLowerCase().trim()
+          if (typeHint === 'count') {
+            isCountDish[dish] = true
+            isPctDish[dish] = false
+          } else if (typeHint === 'pct') {
+            isCountDish[dish] = false
+            isPctDish[dish] = true
+          } else {
+            // Fallback: '%'-suffixed string → pct
+            isPctDish[dish] = typeof val === 'string' && val.endsWith('%')
+            isCountDish[dish] = !isRotiDish[dish] && !isPctDish[dish] &&
+              strVal !== 'yes' && strVal !== 'no'
+          }
         }
-        if (isCountDish[dish]) {
+        if (isRotiDish[dish]) {
+          if (String(val).toLowerCase() === 'yes') counts[dish] = (counts[dish] || 0) + 1
+        } else if (isCountDish[dish]) {
           counts[dish] += (parseInt(val) || 0)
         } else if (isPctDish[dish]) {
           counts[dish] += (parseInt(val) || 0)
-        } else if (val === 'yes') {
+        } else if (String(val).toLowerCase() === 'yes') {
           counts[dish] = (counts[dish] || 0) + 1
         }
       })
@@ -411,9 +503,10 @@ export default function SurveysPage() {
       portions: isCountDish[name] ? String(total) : isPctDish[name] ? (total / 100).toFixed(1) : String(total),
       raw: total,
       isCount: isCountDish[name],
-      isPct: isPctDish[name]
+      isPct: isPctDish[name],
+      isRoti: isRotiDish[name]
     }))
-  }, [filtered])
+  }, [filtered, dishInputConfig, weeklyMenu])
 
   // Erase individual survey portion entry from Supabase
   const handleEraseRow = async (r) => {
@@ -656,11 +749,21 @@ export default function SurveysPage() {
                   <div key={s.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 10, borderBottom: `1px solid ${T.border}` }}>
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <span style={{ color: T.text, fontSize: 15, fontWeight: 700 }}>{s.name}</span>
-                      <span style={{ color: T.textSub, fontSize: 11 }}>{s.isCount ? 'Total persons' : s.isPct ? 'Total portions' : 'Yes count'}: {s.raw}</span>
+                      <span style={{ color: T.textSub, fontSize: 11 }}>
+                        {s.isRoti ? 'Yes count' : s.isCount ? 'Total persons' : s.isPct ? 'Total portions' : 'Yes count'}: {s.raw}
+                      </span>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ color: T.accent, fontSize: 28, fontWeight: 900 }}>{s.portions}</div>
-                      <div style={{ fontSize: 10, color: T.textSub, textTransform: 'uppercase', fontWeight: 800 }}>{s.isCount ? 'Persons' : s.isPct ? 'Portions' : 'Members'}</div>
+                      {s.isCount ? (
+                        <div style={{ color: '#818cf8', fontSize: 28, fontWeight: 900 }}>{s.raw}<span style={{ fontSize: 14, marginLeft: 4, color: '#6366f1' }}>×</span></div>
+                      ) : s.isPct ? (
+                        <div style={{ color: T.accent, fontSize: 28, fontWeight: 900 }}>{s.portions}<span style={{ fontSize: 14, marginLeft: 2, color: T.textSub }}>🍽</span></div>
+                      ) : (
+                        <div style={{ color: '#10b981', fontSize: 28, fontWeight: 900 }}>{s.raw}</div>
+                      )}
+                      <div style={{ fontSize: 10, color: T.textSub, textTransform: 'uppercase', fontWeight: 800 }}>
+                        {s.isRoti ? 'Members (Yes)' : s.isCount ? 'Persons' : s.isPct ? 'Portions' : 'Members'}
+                      </div>
                     </div>
                   </div>
                 ))}
