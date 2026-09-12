@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Sun, Moon, Check, X, Clock, Sparkles, Plus, Minus, RefreshCw } from 'lucide-react'
 import { useTheme, useAuth } from '../admin/context'
-import { getCalendarWeekDate, getOwningWeekId, getSurveyTargetWeek, dayBelongsToCalendarWeek, parseDishArray } from '../common/utils'
+import { getCalendarWeekDate, getOwningWeekId, getSurveyTargetWeek, dayBelongsToCalendarWeek, parseDishArray, addWeeks } from '../common/utils'
 import { submitSurveyRow } from '../lib/submitSurvey'
 import {
   isRotiItem,
@@ -25,18 +25,7 @@ export const getCardMealInfo = (weeklyMenu = {}, appSettings = {}) => {
   const hour = now.getHours()
   const calWeek = getCalendarWeekDate()
   const targetWeek = getSurveyTargetWeek(appSettings)
-
-  // Own the edit to the week the target DATE actually belongs to, so daily
-  // edits stay linked to My Surveys + Admin Tracking (e.g. Sunday editing
-  // Monday's lunch must write to NEXT week's row, not this week's).
-  const resolveWeek = (dayName) => {
-    const names = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-    if (names[dayIdx] === dayName) return calWeek // today → always calendar week
-    const d = new Date(now)
-    d.setDate(d.getDate() + 1)
-    d.setHours(12, 0, 0, 0)
-    return getOwningWeekId(d, appSettings) || targetWeek || calWeek
-  }
+  const nextCalWeek = addWeeks(calWeek, 1)
 
   const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
   const todayName = dayNames[dayIdx]
@@ -45,34 +34,58 @@ export const getCardMealInfo = (weeklyMenu = {}, appSettings = {}) => {
   const nextDayIdx = (dayIdx + 1) % 7
   const nextDayName = dayNames[nextDayIdx]
   const tomorrowKey = nextDayName === 'sunday' ? 'monday' : nextDayName
+
+  // Resolve which week owns the target day
+  const resolveWeek = (dayName) => {
+    if (dayIdx === 6 && dayName === 'monday') return nextCalWeek
+    if (dayIdx === 0 && dayName === 'monday') return calWeek
+    if (dayName === todayName) return calWeek
+    const d = new Date(now)
+    d.setDate(d.getDate() + 1)
+    d.setHours(12, 0, 0, 0)
+    return getOwningWeekId(d, appSettings) || targetWeek || calWeek
+  }
+
   const tomorrowWeek = resolveWeek(tomorrowKey)
   const todayWeek = resolveWeek(todayName)
 
   // 1. Check if today's lunch is editable
-  if (canEditMeal(todayKey, calWeek, 'lunch', appSettings)) {
+  if (dayIdx !== 0 && canEditMeal(todayKey, calWeek, 'lunch', appSettings)) {
     const dishes = (weeklyMenu && weeklyMenu[todayKey]?.lunch) || []
     return { day: todayKey, meal: 'lunch', dishes, weekId: todayWeek }
   }
 
-  // 2. Check if tomorrow's lunch is editable (e.g. opens previous night 8 PM)
-  if (canEditMeal(tomorrowKey, calWeek, 'lunch', appSettings)) {
-    const dishes = (weeklyMenu && weeklyMenu[tomorrowKey]?.lunch) || []
-    return { day: tomorrowKey, meal: 'lunch', dishes, weekId: tomorrowWeek }
-  }
-
-  // 3. Check if today's dinner is editable
-  if (canEditMeal(todayKey, calWeek, 'dinner', appSettings)) {
+  // 2. Check if today's dinner is editable
+  if (dayIdx !== 0 && canEditMeal(todayKey, calWeek, 'dinner', appSettings)) {
     const dishes = (weeklyMenu && weeklyMenu[todayKey]?.dinner) || []
     return { day: todayKey, meal: 'dinner', dishes, weekId: todayWeek }
   }
 
-  // Fallback based on time of day
+  // 3. Check if tomorrow's lunch is editable (e.g. opens previous night 8 PM)
+  if (canEditMeal(tomorrowKey, tomorrowWeek, 'lunch', appSettings)) {
+    const dishes = (weeklyMenu && weeklyMenu[tomorrowKey]?.lunch) || []
+    return { day: tomorrowKey, meal: 'lunch', dishes, weekId: tomorrowWeek }
+  }
+
+  // 4. Check if tomorrow's dinner is editable
+  if (canEditMeal(tomorrowKey, tomorrowWeek, 'dinner', appSettings)) {
+    const dishes = (weeklyMenu && weeklyMenu[tomorrowKey]?.dinner) || []
+    return { day: tomorrowKey, meal: 'dinner', dishes, weekId: tomorrowWeek }
+  }
+
+  // Fallback: If weekend or after Saturday dinner, automatically target next week's Monday lunch
+  const isWeekendOrSatNight = dayIdx === 0 || (dayIdx === 6 && hour >= 16)
+  if (isWeekendOrSatNight) {
+    return { day: 'monday', meal: 'lunch', dishes: (weeklyMenu && weeklyMenu['monday']?.lunch) || [], weekId: nextCalWeek }
+  }
+
   const isEvening = hour >= 16
   const targetDay = isEvening ? tomorrowKey : todayKey
   const targetMeal = (hour >= 11 && hour < 16) ? 'dinner' : 'lunch'
+  const targetWeekId = isEvening ? tomorrowWeek : todayWeek
   const targetDishes = (weeklyMenu && weeklyMenu[targetDay]?.[targetMeal]) || []
 
-  return { day: targetDay, meal: targetMeal, dishes: targetDishes, weekId: isEvening ? tomorrowWeek : todayWeek }
+  return { day: targetDay, meal: targetMeal, dishes: targetDishes, weekId: targetWeekId }
 }
 
 export default function DailyEditCard({
@@ -557,15 +570,19 @@ export default function DailyEditCard({
             </div>
           ) : dishes.length === 0 ? (
             <div style={{
-              padding: '24px 16px',
+              padding: '28px 18px',
               borderRadius: 16,
               background: 'rgba(255,255,255,0.02)',
               border: `1px solid ${t.border}`,
               textAlign: 'center',
-              color: t.textSub,
-              fontSize: 12.5
             }}>
-              Menu is being prepared for this meal.
+              <div style={{ fontSize: 28, marginBottom: 8 }}>👨‍🍳</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: t.text, marginBottom: 4, fontFamily: "'Playfair Display', serif" }}>
+                Menu is being prepared by Al-Mawaid team
+              </div>
+              <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.5, fontFamily: "'DM Sans', sans-serif" }}>
+                The Al-Mawaid team is preparing the dishes for this meal. You can still confirm your attendance or choose to skip.
+              </div>
             </div>
           ) : (
             dishes.map((dish, idx) => {

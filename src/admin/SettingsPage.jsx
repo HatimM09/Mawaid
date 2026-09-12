@@ -112,24 +112,78 @@ const matchMeal = (str) => {
   return null
 }
 
-// Robust Multi-Format Menu CSV parser
+// Robust Multi-Format Menu CSV parser (supports single-week and 2-week fortnight CSVs)
 const parseMenuCSV = (text) => {
   const rows = parseCSVRows(text)
-  if (!rows.length) return { columns: [], byMeal: {} }
+  if (!rows.length) return { columns: [], byMeal: {}, isFortnightCSV: false, w1Meals: {}, w2Meals: {} }
 
-  const byMeal = {}
-  DAYS.forEach(d => {
-    byMeal[`${d}_lunch`] = { day: d, meal: 'lunch', dishes: [] }
-    byMeal[`${d}_dinner`] = { day: d, meal: 'dinner', dishes: [] }
-  })
+  const createBlankMeals = () => {
+    const m = {}
+    DAYS.forEach(d => {
+      m[`${d}_lunch`] = { day: d, meal: 'lunch', dishes: [] }
+      m[`${d}_dinner`] = { day: d, meal: 'dinner', dishes: [] }
+    })
+    return m
+  }
+
+  const byMeal = createBlankMeals()
+  const w1Meals = createBlankMeals()
+  const w2Meals = createBlankMeals()
 
   const headers = rows[0].map(h => String(h || '').trim())
   
+  // Check if headers specify Week 1 vs Week 2
+  const fortnightMatches = headers.map((h, idx) => {
+    const low = h.toLowerCase()
+    const meal = matchMeal(low)
+    if (!meal) return null
+    const isW2 = /\b(w2|week\s*2|second\s*week)\b/i.test(low)
+    const isW1 = /\b(w1|week\s*1|first\s*week)\b/i.test(low)
+    const cleanH = low.replace(/\b(w1|w2|week\s*1|week\s*2|lunch|dinner|menu|items?|dishes?)\b/gi, '').trim()
+    const day = matchDay(cleanH)
+    if (!day) return null
+    return { weekNum: isW2 ? 2 : isW1 ? 1 : 0, day, meal, idx }
+  }).filter(Boolean)
+
+  const hasExplicitWeeks = fortnightMatches.some(m => m.weekNum === 2)
+
+  if (hasExplicitWeeks) {
+    // Process 2-Week Fortnight CSV
+    rows.slice(1).forEach(row => {
+      fortnightMatches.forEach(({ weekNum, day, meal, idx }) => {
+        const cell = row[idx]
+        if (cell && String(cell).trim()) {
+          if (weekNum === 2) {
+            w2Meals[`${day}_${meal}`].dishes.push(cell)
+          } else {
+            w1Meals[`${day}_${meal}`].dishes.push(cell)
+          }
+        }
+      })
+    })
+
+    const cleanMap = (m) => {
+      const active = {}
+      Object.keys(m).forEach(k => {
+        m[k].dishes = cleanDishList(m[k].dishes)
+        if (m[k].dishes.length > 0) active[k] = m[k]
+      })
+      return active
+    }
+
+    return {
+      isFortnightCSV: true,
+      columns: fortnightMatches,
+      byMeal: cleanMap(w1Meals),
+      w1Meals: cleanMap(w1Meals),
+      w2Meals: cleanMap(w2Meals)
+    }
+  }
+
   // Detection Strategy 1: Columnar format (e.g. "Monday Lunch", "Monday Dinner" / "Mon (Lunch)")
   const columnarMatches = headers.map((h, idx) => {
     const meal = matchMeal(h)
     if (!meal) return null
-    // Extract day from the header
     const cleanH = h.toLowerCase().replace(/\b(lunch|dinner|menu|items?|dishes?)\b/gi, '').trim()
     const day = matchDay(cleanH)
     if (!day) return null
@@ -137,7 +191,6 @@ const parseMenuCSV = (text) => {
   }).filter(Boolean)
 
   if (columnarMatches.length >= 2) {
-    // Process Columnar CSV
     rows.slice(1).forEach(row => {
       columnarMatches.forEach(({ day, meal, idx }) => {
         const cell = row[idx]
@@ -163,14 +216,12 @@ const parseMenuCSV = (text) => {
       else if (low === 'dish' || low === 'dishes' || low === 'menu' || low === 'items') dishCol = idx
     })
 
-    // If dayCol wasn't explicit, check if column 0 contains day names
     if (dayCol === -1 && rows.length > 1) {
       const col0Days = rows.slice(1, 5).filter(r => matchDay(r[0]))
       if (col0Days.length > 0) dayCol = 0
     }
 
     if (dayCol !== -1 && lunchCol !== -1 && dinnerCol !== -1) {
-      // Row format: Day | Lunch dishes | Dinner dishes
       rows.slice(1).forEach(row => {
         const day = matchDay(row[dayCol])
         if (!day) return
@@ -178,7 +229,6 @@ const parseMenuCSV = (text) => {
         if (row[dinnerCol]) byMeal[`${day}_dinner`].dishes.push(row[dinnerCol])
       })
     } else if (dayCol !== -1 && mealCol !== -1 && dishCol !== -1) {
-      // Row format: Day | Meal (lunch/dinner) | Dishes
       rows.slice(1).forEach(row => {
         const day = matchDay(row[dayCol])
         const meal = matchMeal(row[mealCol])
@@ -186,7 +236,6 @@ const parseMenuCSV = (text) => {
         if (row[dishCol]) byMeal[`${day}_${meal}`].dishes.push(row[dishCol])
       })
     } else if (dayCol !== -1 && lunchCol !== -1) {
-      // At least Day and Lunch
       rows.slice(1).forEach(row => {
         const day = matchDay(row[dayCol])
         if (!day) return
@@ -204,7 +253,7 @@ const parseMenuCSV = (text) => {
     }
   })
 
-  return { columns: columnarMatches, byMeal: activeMeals }
+  return { isFortnightCSV: false, columns: columnarMatches, byMeal: activeMeals, w1Meals: activeMeals, w2Meals: {} }
 }
 
 const BLANK_MENU = {
@@ -218,15 +267,34 @@ const BLANK_MENU = {
 
 const capDay = (d) => d ? d.charAt(0).toUpperCase() + d.slice(1) : d
 
-// Build a ready-to-edit template seeded with the current/default menu
-const buildMenuCSVTemplate = (seed = BLANK_MENU) => {
+// Build a clean, ready-to-edit template seeded with current menu or sample dishes
+const buildMenuCSVTemplate = (seed = BLANK_MENU, forWeek = '', isFortnight = false) => {
   const dayKeys = DAYS
   const mk = m => m.charAt(0).toUpperCase() + m.slice(1)
-  const headers = dayKeys.flatMap(d => [`${mk(d)} Lunch`, `${mk(d)} Dinner`])
-  const data = dayKeys.flatMap(d => [seed[d]?.lunch || '', seed[d]?.dinner || ''])
   const quote = s => `"${String(s || '').replace(/"/g, '""')}"`
+
+  if (isFortnight) {
+    // 2-week Fortnight template with Week 1 and Week 2 columnar layout
+    const w1Headers = dayKeys.flatMap(d => [`W1 ${mk(d)} Lunch`, `W1 ${mk(d)} Dinner`])
+    const w2Headers = dayKeys.flatMap(d => [`W2 ${mk(d)} Lunch`, `W2 ${mk(d)} Dinner`])
+    const headers = [...w1Headers, ...w2Headers]
+    
+    // Sample rows
+    const row1 = [
+      ...dayKeys.flatMap(d => [seed[d]?.lunch || 'Biryani, Roti, Salad', seed[d]?.dinner || 'Dal Rice, Sabzi']),
+      ...dayKeys.flatMap(d => ['Pulao, Roti, Raita', 'Khichdi, Kadhi, Sweet'])
+    ]
+    const row2 = [
+      ...dayKeys.flatMap(() => ['', '']),
+      ...dayKeys.flatMap(() => ['', ''])
+    ]
+    return '\uFEFF' + [headers.join(','), row1.map(quote).join(','), row2.map(quote).join(',')].join('\n')
+  }
+
+  const headers = dayKeys.flatMap(d => [`${mk(d)} Lunch`, `${mk(d)} Dinner`])
+  const data = dayKeys.flatMap(d => [seed[d]?.lunch || 'Biryani, Roti, Salad', seed[d]?.dinner || 'Dal Rice, Sabzi'])
   const lines = [headers.join(','), data.map(quote).join(',')]
-  return lines.join('\n')
+  return '\uFEFF' + lines.join('\n')
 }
 
 export default function SettingsPage() {
@@ -303,7 +371,7 @@ export default function SettingsPage() {
             user_id: u.user_id,
             title: '📋 Weekly Food Survey Reminder',
             message: 'You haven’t submitted your weekly food survey yet. Please fill it before the survey window closes.',
-            url: '/',
+            url: '/survey',
             type: 'survey_reminder',
             sender_name: 'Al-Mawaid'
           })
@@ -313,7 +381,7 @@ export default function SettingsPage() {
               body: 'Your weekly menu selections are still pending. Please submit before the survey window closes.',
               target_type: 'specific',
               user_id: u.user_id,
-              url: '/'
+              url: '/survey'
             }
           })
           notified++
@@ -361,8 +429,6 @@ export default function SettingsPage() {
     } else if (dirtyRef.current) {
       return
     }
-    // Re-check right before applying: the admin may have started typing while
-    // the fetches above were in flight.
     const commit = (fn) => {
       if (silent && dirtyRef.current) return false
       fn()
@@ -379,9 +445,21 @@ export default function SettingsPage() {
         const draft = JSON.parse(draftRow.value)
         commit(() => setHelpline(draft.helpline_number || ''))
         if (draft.dish_input_config) commit(() => setDishInputConfig(draft.dish_input_config))
-        if (draft.menu) commit(() => setMenu(draft.menu))
-        if (draft.publishAt) commit(() => setPublishAt(draft.publishAt))
-        if (draft.week_target) commit(() => setTargetWeek(draft.week_target))
+        if (draft.drafts_by_week) {
+          commit(() => setFortnightCache(draft.drafts_by_week))
+          const currentDraft = draft.drafts_by_week[targetWeek]
+          if (currentDraft?.menu) {
+            commit(() => setMenu(currentDraft.menu))
+            commit(() => setPublishAt(currentDraft.publishAt || ''))
+          } else if (draft.menu && (draft.week_target === targetWeek || !draft.week_target)) {
+            commit(() => setMenu(draft.menu))
+            commit(() => setPublishAt(draft.publishAt || ''))
+          }
+        } else if (draft.menu) {
+          commit(() => setMenu(draft.menu))
+          if (draft.publishAt) commit(() => setPublishAt(draft.publishAt))
+        }
+        if (draft.week_target && !silent) commit(() => setTargetWeek(draft.week_target))
         setHasDraft(true)
       } else {
         const { data: settings } = await supabase.from('app_settings').select('*')
@@ -422,25 +500,24 @@ export default function SettingsPage() {
   loadRef.current = load
 
   // ── SWITCH THE WEEK THE MENU EDITOR TARGETS ──
-  // For 1-week: This Week vs Next Week. For 2-weeks (fortnight): This Week + Week 1 (W1) + Week 2 (W2) each gets its own CSV/menu, isolated by week_start.
-  // Cache current week's edits so switching W1 ↔ W2 doesn't discard unsaved fortnight drafts.
+  // Cache current week's edits into fortnightCache so switching This Week / W1 / W2 never loses or overwrites data
   const changeTargetWeek = async (week) => {
     if (week === targetWeek) return
-    // stash current week into cache when in fortnight mode
-    if (surveyCadence === '2_weeks') {
-      setFortnightCache(prev => ({ ...prev, [targetWeek]: { menu, publishAt } }))
-    }
-    if (dirtyRef.current && surveyCadence !== '2_weeks' && !window.confirm('You have unsaved edits in the current week. Switch and discard them?')) return
-    // if fortnight, allow silent switch (cached) without confirm
-    if (surveyCadence === '2_weeks' && fortnightCache[week]) {
-      setTargetWeek(week)
-      setMenu(fortnightCache[week].menu || BLANK_MENU)
-      setPublishAt(fortnightCache[week].publishAt || '')
-      dirtyRef.current = true
-      return
-    }
+    // Stash current week's menu and publishAt into cache
+    const updatedCache = { ...fortnightCache, [targetWeek]: { menu, publishAt } }
+    setFortnightCache(updatedCache)
+
     setSwitchingWeek(true)
     setTargetWeek(week)
+
+    // Check if the target week has cached in-memory edits
+    if (updatedCache[week]?.menu) {
+      setMenu(updatedCache[week].menu)
+      setPublishAt(updatedCache[week].publishAt || '')
+      setSwitchingWeek(false)
+      return
+    }
+
     try {
       const { data: menuData } = await supabase
         .from('weekly_menu')
@@ -456,17 +533,9 @@ export default function SettingsPage() {
         setMenu(formatted)
         setPublishAt(hasPublishAt ? new Date(hasPublishAt).toISOString().slice(0, 16) : '')
       } else {
-        // if cached fortnight draft exists for this week, prefer it
-        if (surveyCadence === '2_weeks' && fortnightCache[week]) {
-          setMenu(fortnightCache[week].menu || BLANK_MENU)
-          setPublishAt(fortnightCache[week].publishAt || '')
-        } else {
-          setMenu(BLANK_MENU)
-          setPublishAt('')
-        }
+        setMenu(BLANK_MENU)
+        setPublishAt('')
       }
-      dirtyRef.current = false
-      setHasDraft(false)
     } catch (e) {
       console.error('Settings week switch error:', e)
     }
@@ -474,9 +543,6 @@ export default function SettingsPage() {
   }
 
   // ── REALTIME SUBSCRIPTION ──
-  // Ignore changes to our own auto-saved draft (`draft_data`) — otherwise every
-  // debounced keystroke save triggers a full reload that wipes what the admin
-  // is currently typing.
   useEffect(() => {
     const channel = supabase
       .channel('settings-realtime')
@@ -493,16 +559,19 @@ export default function SettingsPage() {
   }, [])
 
   // ── AUTO-SAVE ──
-  // Debounces any user edit and writes the working state to the draft automatically,
-  // so the admin only ever needs to hit "Publish & Notify".
   useEffect(() => {
     if (!loadedRef.current || !dirtyRef.current) return
     const timer = setTimeout(async () => {
       dirtyRef.current = false
       setAutoSaving(true)
+      const currentCache = {
+        ...fortnightCache,
+        [targetWeek]: { menu, publishAt }
+      }
       const draft = {
         helpline_number: helpline,
         dish_input_config: dishInputConfig,
+        drafts_by_week: currentCache,
         menu: menu,
         publishAt: publishAt,
         week_target: targetWeek,
@@ -517,17 +586,21 @@ export default function SettingsPage() {
       }
     }, 900)
     return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menu, helpline, dishInputConfig, publishAt])
+  }, [menu, helpline, dishInputConfig, publishAt, targetWeek, fortnightCache])
 
   const save = async (e) => {
     e.preventDefault()
     setSaving(true)
     setMsg({ text: '', type: 'success' })
 
+    const currentCache = {
+      ...fortnightCache,
+      [targetWeek]: { menu, publishAt }
+    }
     const draft = {
       helpline_number: helpline,
       dish_input_config: dishInputConfig,
+      drafts_by_week: currentCache,
       menu: menu,
       publishAt: publishAt,
       week_target: targetWeek,
@@ -596,14 +669,13 @@ export default function SettingsPage() {
   }
 
   // ── CSV Menu Import ──
-  const applyCSVMenu = (byMeal) => {
-    const next = { ...menu }
+  const formatMealsToMenu = (byMeal) => {
+    const next = { ...BLANK_MENU }
     Object.values(byMeal).forEach(({ day, meal, dishes }) => {
       if (!next[day]) next[day] = { lunch: '', dinner: '', ar: '' }
       next[day] = { ...next[day], [meal]: dishes.join(', ') }
     })
-    setMenu(next)
-    markDirty()
+    return next
   }
 
   const handleCSVFile = async (file) => {
@@ -612,14 +684,47 @@ export default function SettingsPage() {
     setCsvStatus(null)
     try {
       const text = await file.text()
-      const { columns, byMeal } = parseMenuCSV(text)
-      const keys = Object.keys(byMeal)
-      if (!keys.length) {
-        setCsvStatus({ type: 'error', text: 'Could not find day+meal columns. Use headers like "Monday Lunch", "Monday Dinner", ...' })
+      const parsed = parseMenuCSV(text)
+      
+      if (parsed.isFortnightCSV) {
+        // Fortnight CSV with Week 1 and Week 2
+        const w1Menu = formatMealsToMenu(parsed.w1Meals)
+        const w2Menu = formatMealsToMenu(parsed.w2Meals)
+        
+        setFortnightCache(prev => ({
+          ...prev,
+          [nextWeek]: { menu: w1Menu, publishAt },
+          [week2]: { menu: w2Menu, publishAt },
+        }))
+
+        if (targetWeek === week2) {
+          setMenu(w2Menu)
+        } else {
+          setMenu(w1Menu)
+        }
+        markDirty()
+
+        const totalW1 = Object.keys(parsed.w1Meals).length
+        const totalW2 = Object.keys(parsed.w2Meals).length
+        setCsvStatus({
+          type: 'success',
+          text: `✅ Fortnight CSV imported! Loaded Week 1 (${totalW1} meals) and Week 2 (${totalW2} meals) without overlay. Review both weeks, then click Publish.`
+        })
       } else {
-        applyCSVMenu(byMeal)
-        const total = keys.reduce((sum, k) => sum + byMeal[k].dishes.length, 0)
-        setCsvStatus({ type: 'success', text: `Imported ${keys.length} meals (${total} dishes) for ${targetWeek} (${targetWeek===calendarWeek?'This Week':targetWeek===nextWeek?(surveyCadence==='2_weeks'?'Week 1':'Next Week'):'Week 2'}). Auto-saved as draft — switch week to upload different CSV for the other week, then Publish.` })
+        const keys = Object.keys(parsed.byMeal)
+        if (!keys.length) {
+          setCsvStatus({ type: 'error', text: 'Could not find day/meal columns. Please check headers like "Monday Lunch", "Monday Dinner", ...' })
+        } else {
+          const newMenu = formatMealsToMenu(parsed.byMeal)
+          setMenu(newMenu)
+          setFortnightCache(prev => ({ ...prev, [targetWeek]: { menu: newMenu, publishAt } }))
+          markDirty()
+          const totalDishes = keys.reduce((sum, k) => sum + parsed.byMeal[k].dishes.length, 0)
+          setCsvStatus({
+            type: 'success',
+            text: `✅ Imported ${keys.length} meals (${totalDishes} dishes) for ${targetWeek} (${targetWeek === calendarWeek ? 'This Week' : targetWeek === nextWeek ? (surveyCadence === '2_weeks' ? 'Week 1' : 'Next Week') : 'Week 2'}). Auto-saved as draft.`
+          })
+        }
       }
     } catch (e) {
       setCsvStatus({ type: 'error', text: `CSV parse failed: ${e.message}` })
@@ -630,14 +735,19 @@ export default function SettingsPage() {
   }
 
   const downloadCSVTemplate = () => {
-    const blob = new Blob(['\uFEFF' + buildMenuCSVTemplate(menu)], { type: 'text/csv;charset=utf-8;' })
+    const isFortnight = surveyCadence === '2_weeks'
+    const csvContent = buildMenuCSVTemplate(menu, targetWeek, isFortnight)
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `al_mawaid_menu_${targetWeek}.csv`
+    a.download = `al_mawaid_menu_${isFortnight ? 'fortnight_template' : targetWeek}.csv`
     a.click()
     URL.revokeObjectURL(url)
-    setCsvStatus({ type: 'success', text: 'Template downloaded. Fill the cells under each "Day Meal" heading, save as CSV, then upload it here.' })
+    setCsvStatus({
+      type: 'success',
+      text: `✅ ${isFortnight ? 'Fortnight (2-Week)' : 'Weekly'} template downloaded with UTF-8 encoding. Open in Excel/Sheets, fill dishes, and upload.`
+    })
   }
 
   if (loading) return (
@@ -1051,36 +1161,75 @@ export default function SettingsPage() {
                 >
                   <Clock size={14} /> Now
                 </Btn>
-                <Btn
-                  type="button"
-                  disabled={publishing}
-                  onClick={async () => {
-                    if (!window.confirm(`Publish this menu to BOTH This Week (${calendarWeek}) AND Next Week (${nextWeek})?`)) return
-                    setPublishing(true)
-                    setMsg({ text: '', type: 'success' })
-                    const publishTimestamp = new Date().toISOString()
-                    const rows1 = Object.entries(menu).map(([day, val]) => ({
-                      day_name: day, week_start: calendarWeek, day_ar: val.ar || '', lunch: val.lunch, dinner: val.dinner, publish_at: publishTimestamp,
-                    }))
-                    const rows2 = Object.entries(menu).map(([day, val]) => ({
-                      day_name: day, week_start: nextWeek, day_ar: val.ar || '', lunch: val.lunch, dinner: val.dinner, publish_at: publishTimestamp,
-                    }))
-                    const { error: err1 } = await supabase.from('weekly_menu').upsert(rows1, { onConflict: 'week_start,day_name' })
-                    const { error: err2 } = await supabase.from('weekly_menu').upsert(rows2, { onConflict: 'week_start,day_name' })
-                    setPublishing(false)
-                    if (err1 || err2) {
-                      setMsg({ text: `Publish error: ${(err1 || err2).message}`, type: 'error' })
-                    } else {
-                      queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] })
-                      await supabase.from('app_settings').delete().eq('key', 'draft_data')
-                      setHasDraft(false)
-                      setMsg({ text: `✅ Successfully published menu to BOTH This Week (${calendarWeek}) and Next Week (${nextWeek})!`, type: 'success' })
-                    }
-                  }}
-                  style={{ whiteSpace: 'nowrap', background: 'rgba(255,255,255,0.06)', border: `1px solid ${T.border}`, color: T.text }}
-                >
-                  Publish for Both Weeks
-                </Btn>
+                {surveyCadence === '2_weeks' ? (
+                  <Btn
+                    type="button"
+                    disabled={publishing}
+                    onClick={async () => {
+                      if (!window.confirm(`Publish BOTH Week 1 (${nextWeek}) and Week 2 (${week2}) menus? Each week will be saved independently to weekly_menu.`)) return
+                      setPublishing(true)
+                      setMsg({ text: '', type: 'success' })
+                      const publishTimestamp = new Date().toISOString()
+                      
+                      const w1Menu = targetWeek === nextWeek ? menu : (fortnightCache[nextWeek]?.menu || menu)
+                      const w2Menu = targetWeek === week2 ? menu : (fortnightCache[week2]?.menu || BLANK_MENU)
+
+                      const rows1 = Object.entries(w1Menu).map(([day, val]) => ({
+                        day_name: day, week_start: nextWeek, day_ar: val.ar || '', lunch: val.lunch, dinner: val.dinner, publish_at: publishTimestamp,
+                      }))
+                      const rows2 = Object.entries(w2Menu).map(([day, val]) => ({
+                        day_name: day, week_start: week2, day_ar: val.ar || '', lunch: val.lunch, dinner: val.dinner, publish_at: publishTimestamp,
+                      }))
+
+                      const { error: err1 } = await supabase.from('weekly_menu').upsert(rows1, { onConflict: 'week_start,day_name' })
+                      const { error: err2 } = await supabase.from('weekly_menu').upsert(rows2, { onConflict: 'week_start,day_name' })
+
+                      setPublishing(false)
+                      if (err1 || err2) {
+                        setMsg({ text: `Publish error: ${(err1 || err2).message}`, type: 'error' })
+                      } else {
+                        queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] })
+                        await supabase.from('app_settings').delete().eq('key', 'draft_data')
+                        setHasDraft(false)
+                        setMsg({ text: `✅ Successfully published Fortnight menus: Week 1 (${nextWeek}) and Week 2 (${week2})!`, type: 'success' })
+                      }
+                    }}
+                    style={{ whiteSpace: 'nowrap', background: 'rgba(99,102,241,0.18)', border: '1px solid #818cf8', color: '#c7d2fe' }}
+                  >
+                    🚀 Publish Fortnight (W1 & W2)
+                  </Btn>
+                ) : (
+                  <Btn
+                    type="button"
+                    disabled={publishing}
+                    onClick={async () => {
+                      if (!window.confirm(`Publish this menu to BOTH This Week (${calendarWeek}) AND Next Week (${nextWeek})?`)) return
+                      setPublishing(true)
+                      setMsg({ text: '', type: 'success' })
+                      const publishTimestamp = new Date().toISOString()
+                      const rows1 = Object.entries(menu).map(([day, val]) => ({
+                        day_name: day, week_start: calendarWeek, day_ar: val.ar || '', lunch: val.lunch, dinner: val.dinner, publish_at: publishTimestamp,
+                      }))
+                      const rows2 = Object.entries(menu).map(([day, val]) => ({
+                        day_name: day, week_start: nextWeek, day_ar: val.ar || '', lunch: val.lunch, dinner: val.dinner, publish_at: publishTimestamp,
+                      }))
+                      const { error: err1 } = await supabase.from('weekly_menu').upsert(rows1, { onConflict: 'week_start,day_name' })
+                      const { error: err2 } = await supabase.from('weekly_menu').upsert(rows2, { onConflict: 'week_start,day_name' })
+                      setPublishing(false)
+                      if (err1 || err2) {
+                        setMsg({ text: `Publish error: ${(err1 || err2).message}`, type: 'error' })
+                      } else {
+                        queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] })
+                        await supabase.from('app_settings').delete().eq('key', 'draft_data')
+                        setHasDraft(false)
+                        setMsg({ text: `✅ Successfully published menu to BOTH This Week (${calendarWeek}) and Next Week (${nextWeek})!`, type: 'success' })
+                      }
+                    }}
+                    style={{ whiteSpace: 'nowrap', background: 'rgba(255,255,255,0.06)', border: `1px solid ${T.border}`, color: T.text }}
+                  >
+                    Publish for Both Weeks
+                  </Btn>
+                )}
                 <Btn
                   type="button"
                   disabled={publishing}

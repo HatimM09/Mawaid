@@ -854,7 +854,13 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
                   <button type="button" onClick={()=>clearAll('lunch')} style={{ minHeight:32, padding:'4px 10px', borderRadius:8, border:`1px solid ${T.border}`, background:'transparent', color:T.textSub, fontSize:11, fontWeight:700, cursor:'pointer', touchAction:'manipulation' }}>Clear</button>
                 </div>
               </div>
-              {lunchDishes.length>0 ? lunchDishes.map((dish,idx)=>(<DishRow key={`lunch-${activeWeekId}-${dish}-${idx}`} dish={dish} idx={idx} mealType="lunch" value={lunchResponses[dish]} onChange={handleLunchDish} T={T} appSettings={liveAppSettings} currentDay={currentDay} snackDefaults={snackDefaults} />)) : <div style={{ padding:14, textAlign:'center', color:T.textSub, fontSize:12.5, fontStyle:'italic' }}>📋 Lunch menu being prepared…</div>}
+              {lunchDishes.length>0 ? lunchDishes.map((dish,idx)=>(<DishRow key={`lunch-${activeWeekId}-${dish}-${idx}`} dish={dish} idx={idx} mealType="lunch" value={lunchResponses[dish]} onChange={handleLunchDish} T={T} appSettings={liveAppSettings} currentDay={currentDay} snackDefaults={snackDefaults} />)) : (
+                <div style={{ padding:'20px 14px', textAlign:'center', color:T.textSub, background:'rgba(255,255,255,0.02)', borderRadius:12, border:`1px solid ${T.border}` }}>
+                  <div style={{ fontSize:20, marginBottom:4 }}>👨‍🍳</div>
+                  <div style={{ fontSize:13, fontWeight:700, color:T.text }}>👨‍🍳 Menu is being prepared by Al-Mawaid team</div>
+                  <div style={{ fontSize:11, color:T.textSub, marginTop:2 }}>Dishes for this week will appear once finalized.</div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -884,7 +890,13 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
                   <button type="button" onClick={()=>clearAll('dinner')} style={{ minHeight:32, padding:'4px 10px', borderRadius:8, border:`1px solid ${T.border}`, background:'transparent', color:T.textSub, fontSize:11, fontWeight:700, cursor:'pointer', touchAction:'manipulation' }}>Clear</button>
                 </div>
               </div>
-              {dinnerDishes.length>0 ? dinnerDishes.map((dish,idx)=>(<DishRow key={`dinner-${activeWeekId}-${dish}-${idx}`} dish={dish} idx={idx} mealType="dinner" value={dinnerResponses[dish]} onChange={handleDinnerDish} T={T} appSettings={liveAppSettings} currentDay={currentDay} snackDefaults={snackDefaults} />)) : <div style={{ padding:14, textAlign:'center', color:T.textSub, fontSize:12.5, fontStyle:'italic' }}>📋 Dinner menu being prepared…</div>}
+              {dinnerDishes.length>0 ? dinnerDishes.map((dish,idx)=>(<DishRow key={`dinner-${activeWeekId}-${dish}-${idx}`} dish={dish} idx={idx} mealType="dinner" value={dinnerResponses[dish]} onChange={handleDinnerDish} T={T} appSettings={liveAppSettings} currentDay={currentDay} snackDefaults={snackDefaults} />)) : (
+                <div style={{ padding:'20px 14px', textAlign:'center', color:T.textSub, background:'rgba(255,255,255,0.02)', borderRadius:12, border:`1px solid ${T.border}` }}>
+                  <div style={{ fontSize:20, marginBottom:4 }}>👨‍🍳</div>
+                  <div style={{ fontSize:13, fontWeight:700, color:T.text }}>👨‍🍳 Menu is being prepared by Al-Mawaid team</div>
+                  <div style={{ fontSize:11, color:T.textSub, marginTop:2 }}>Dishes for this week will appear once finalized.</div>
+                </div>
+              )}
             </div>
           )}
         </div>

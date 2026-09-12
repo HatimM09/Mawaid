@@ -563,19 +563,66 @@ export default function SurveysPage() {
           </Btn>
 
           <Btn variant="outline" onClick={() => {
-            const csv = dailyHeaders.join(',') + "\n" +
-              filtered.map(r => {
-                const u = users[r.user_id] || {}
-                const qtys = r.dish_responses || {}
-                const dishVals = dailyDishes.map(d => qtys[d] || (r.wants_food === false ? 'SKIPPED' : 'N/A'))
-                return [`"${u.name}"`, ...dishVals, `"${r.created_at}"`].join(',')
-              }).join("\n")
-            const blob = new Blob([csv], { type: 'text/csv' })
+            const quote = s => `"${String(s ?? '').replace(/"/g, '""')}"`
+            const csvHeaders = ['"Member Name"', '"Thali #"', '"Week"', '"Day"', '"Meal"', '"Status"', ...dailyDishes.map(d => quote(d)), '"Submitted At"']
+            
+            let totalApplied = 0
+            let totalSkipped = 0
+            const dishTotals = {}
+            dailyDishes.forEach(d => { dishTotals[d] = 0 })
+
+            const dataRows = filtered.map(r => {
+              const u = users[r.user_id] || {}
+              const qtys = r.dish_responses || {}
+              const isSkipped = r.wants_food === false
+              if (isSkipped) totalSkipped++
+              else totalApplied++
+
+              const dishVals = dailyDishes.map(d => {
+                if (isSkipped) return 'SKIPPED'
+                const val = qtys[d]
+                if (val === undefined || val === null) return 'N/A'
+                
+                const isRoti = d.toLowerCase().includes('roti') || d.toLowerCase().includes('naan')
+                if (isRoti) {
+                  const yes = String(val).toLowerCase() === 'yes'
+                  if (yes) dishTotals[d] = (dishTotals[d] || 0) + 1
+                  return yes ? 'YES' : 'NO'
+                }
+                const isCount = (typeof val === 'string' && !val.endsWith('%') && String(val).toLowerCase() !== 'yes' && String(val).toLowerCase() !== 'no') || typeof val === 'number'
+                const numVal = parseInt(val) || 0
+                dishTotals[d] = (dishTotals[d] || 0) + numVal
+                return isCount ? `${numVal} person${numVal === 1 ? '' : 's'}` : `${numVal}%`
+              })
+
+              return [
+                quote(u.name || 'Unknown'),
+                quote(u.thali_number || '—'),
+                quote(r.week_id || weekFilter || '—'),
+                quote(r.day || dayFilter),
+                quote(r.meal || mealFilter),
+                quote(isSkipped ? 'Skipped' : 'Applied'),
+                ...dishVals.map(quote),
+                quote(fmtDateTime(r.created_at || r.updated_at))
+              ].join(',')
+            })
+
+            // Summary Totals Row
+            const summaryEmptyCols = ['', '', '', '', '']
+            const summaryDishCols = dailyDishes.map(d => quote(`Total: ${dishTotals[d] || 0}`))
+            const summaryRow = [quote('TOTALS / SUMMARY'), quote(`Applied: ${totalApplied} | Skipped: ${totalSkipped}`), ...summaryEmptyCols.slice(2), ...summaryDishCols, ''].join(',')
+
+            const fullCsv = '\uFEFF' + [csvHeaders.join(','), ...dataRows, '', summaryRow].join('\n')
+            const blob = new Blob([fullCsv], { type: 'text/csv;charset=utf-8;' })
             const url = window.URL.createObjectURL(blob)
             const a = document.createElement('a')
-            a.href = url; a.download = `detailed_survey_${dayFilter}_${mealFilter}.csv`
+            a.href = url
+            a.download = `al_mawaid_survey_${dayFilter}_${mealFilter}_${weekFilter || 'all'}.csv`
             a.click()
-          }} aria-label="Export CSV" style={{ height: 48, width: 48, padding: 0, borderRadius: 14 }}><Download size={20} /></Btn>
+            window.URL.revokeObjectURL(url)
+          }} aria-label="Export CSV" title="Export Redesigned Survey CSV with Totals" style={{ height: 48, padding: '0 16px', borderRadius: 14, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <Download size={18} /> <span className="desktop-only">Export CSV</span>
+          </Btn>
         </div>
       </div>
 

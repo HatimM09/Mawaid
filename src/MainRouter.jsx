@@ -71,9 +71,13 @@ export default function MainRouter() {
             </Route>
           </Route>
 
-          {/* Public user app or fallback */}
+          {/* Public user app or direct tab routes */}
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="privacy" element={<PrivacyPolicy />} />
+          <Route path="survey" element={<App />} />
+          <Route path="menu" element={<App />} />
+          <Route path="profile" element={<App />} />
+          <Route path="post" element={<App />} />
           <Route path="/*" element={<App />} />
 
           {/* Catch-all */}

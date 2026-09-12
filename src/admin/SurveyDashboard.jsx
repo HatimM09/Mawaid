@@ -245,7 +245,7 @@ export default function SurveyDashboard() {
       for (const u of pendingUsers) {
         await supabase.from('notifications').insert({
           user_id: u.user_id, title: '📋 Survey Reminder',
-          message: `Please submit your ${trackDay} ${trackMeal} survey.`, url: '/', type: 'survey_reminder'
+          message: `Please submit your ${trackDay} ${trackMeal} survey.`, url: '/survey', type: 'survey_reminder'
         })
         sent++
       }
@@ -256,22 +256,66 @@ export default function SurveyDashboard() {
   }
 
   const exportCSV = () => {
-    const rows = [['User', 'Thali', 'Status', 'Dish', 'Response']]
-    trackUsers.forEach(u => {
-      const dishEntries = Object.entries(u.dishResponses)
-      if (dishEntries.length === 0) {
-        rows.push([u.name || 'Unknown', u.thali_number || '', u.status, '', ''])
-      } else {
-        dishEntries.forEach(([dish, resp]) => {
-          rows.push([u.name || 'Unknown', u.thali_number || '', u.status, dish, resp])
-        })
-      }
+    const quote = s => `"${String(s ?? '').replace(/"/g, '""')}"`
+    const currentWeekId = trackWeekFilter !== 'all' ? trackWeekFilter : getSurveyTargetWeek(autoSettings)
+    const menuDishes = weeklyMenu[trackDay]?.[trackMeal] || []
+
+    const headers = ['"Member Name"', '"Thali #"', '"Week"', '"Day"', '"Meal"', '"Status"', ...menuDishes.map(d => quote(d)), '"Last Updated"']
+
+    let appliedCount = 0
+    let skippedCount = 0
+    let pendingCount = 0
+    const dishTotals = {}
+    menuDishes.forEach(d => { dishTotals[d] = 0 })
+
+    const dataRows = trackUsers.map(u => {
+      if (u.status === 'Applied') appliedCount++
+      else if (u.status === 'Skipped') skippedCount++
+      else pendingCount++
+
+      const dishVals = menuDishes.map(dish => {
+        if (u.status !== 'Applied') return u.status === 'Skipped' ? 'SKIPPED' : 'PENDING'
+        const val = u.dishResponses[dish]
+        if (val === undefined || val === null) return 'N/A'
+        const isRoti = dish.toLowerCase().includes('roti') || dish.toLowerCase().includes('naan')
+        if (isRoti) {
+          const yes = String(val).toLowerCase() === 'yes'
+          if (yes) dishTotals[dish] = (dishTotals[dish] || 0) + 1
+          return yes ? 'YES' : 'NO'
+        }
+        const isCount = (typeof val === 'string' && !val.endsWith('%') && String(val).toLowerCase() !== 'yes' && String(val).toLowerCase() !== 'no') || typeof val === 'number'
+        const numVal = parseInt(val) || 0
+        dishTotals[dish] = (dishTotals[dish] || 0) + numVal
+        return isCount ? `${numVal} person${numVal === 1 ? '' : 's'}` : `${numVal}%`
+      })
+
+      return [
+        quote(u.name || 'Unknown'),
+        quote(u.thali_number || '—'),
+        quote(currentWeekId),
+        quote(trackDay.charAt(0).toUpperCase() + trackDay.slice(1)),
+        quote(trackMeal.charAt(0).toUpperCase() + trackMeal.slice(1)),
+        quote(u.status),
+        ...dishVals.map(quote),
+        quote(u.updated_at ? new Date(u.updated_at).toLocaleString('en-GB') : '—')
+      ].join(',')
     })
-    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
+
+    const summaryRow = [
+      quote('TOTALS / SUMMARY'),
+      quote(`Applied: ${appliedCount} | Skipped: ${skippedCount} | Pending: ${pendingCount}`),
+      quote(currentWeekId), quote(trackDay), quote(trackMeal), '',
+      ...menuDishes.map(d => quote(`Total: ${dishTotals[d] || 0}`)),
+      ''
+    ].join(',')
+
+    const csv = '\uFEFF' + [headers.join(','), ...dataRows, '', summaryRow].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url; a.download = `survey-${trackDay}-${trackMeal}.csv`; a.click()
+    a.href = url
+    a.download = `al_mawaid_tracking_${trackDay}_${trackMeal}_${currentWeekId}.csv`
+    a.click()
     URL.revokeObjectURL(url)
   }
 

@@ -243,8 +243,16 @@ export default function NotificationsPage() {
   // Handle notification click (mark read + navigate)
   const handleNotificationClick = (item) => {
     if (!item.read_at) markAsRead([item.id])
-    if (item.url && item.url !== '/') {
-      window.location.href = item.url
+    if (item.url) {
+      if (item.url.startsWith('http://') || item.url.startsWith('https://')) {
+        window.open(item.url, '_blank')
+      } else if (item.url.includes('survey')) {
+        window.dispatchEvent(new CustomEvent('app-navigate', { detail: { url: '/survey' } }))
+      } else if (item.url.includes('menu')) {
+        window.dispatchEvent(new CustomEvent('app-navigate', { detail: { url: '/menu' } }))
+      } else if (item.url !== '/') {
+        window.location.href = item.url
+      }
     }
     setDetailItem(item)
   }
@@ -573,9 +581,27 @@ export default function NotificationsPage() {
             </div>
 
             {detailItem.url && detailItem.url !== '/' && (
-              <a href={detailItem.url} style={{ textAlign: 'center', display: 'block' }}>
-                <Btn variant="primary" size="md"><ChevronRight size={14} /> Open Link</Btn>
-              </a>
+              <div style={{ textAlign: 'center' }}>
+                <Btn
+                  variant="primary"
+                  size="md"
+                  onClick={() => {
+                    if (detailItem.url.startsWith('http://') || detailItem.url.startsWith('https://')) {
+                      window.open(detailItem.url, '_blank')
+                    } else if (detailItem.url.includes('survey')) {
+                      window.dispatchEvent(new CustomEvent('app-navigate', { detail: { url: '/survey' } }))
+                      setDetailItem(null)
+                    } else if (detailItem.url.includes('menu')) {
+                      window.dispatchEvent(new CustomEvent('app-navigate', { detail: { url: '/menu' } }))
+                      setDetailItem(null)
+                    } else {
+                      window.location.href = detailItem.url
+                    }
+                  }}
+                >
+                  <ChevronRight size={14} /> Open Link
+                </Btn>
+              </div>
             )}
 
             <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', paddingTop: 8 }}>

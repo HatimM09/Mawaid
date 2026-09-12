@@ -20,8 +20,16 @@ import ProfilePage from './pages/ProfilePage'
 export default function ThaliUserApp() {
   const { user } = useAuth()
   const initialParams = new URLSearchParams(window.location.search)
-  const initialTab = initialParams.get('alerts') === '1' ? 'profile' : 'home'
-  const initialSubPage = initialParams.get('alerts') === '1' ? 'notifications' : 'main'
+  const pathname = window.location.pathname.toLowerCase()
+  const tabParam = initialParams.get('tab')
+  const isAlerts = initialParams.get('alerts') === '1'
+  const isSurvey = pathname.includes('/survey') || tabParam === 'survey'
+  const isMenu = pathname.includes('/menu') || tabParam === 'menu'
+  const isPost = pathname.includes('/post') || tabParam === 'post'
+  const isProfile = pathname.includes('/profile') || tabParam === 'profile' || isAlerts
+
+  const initialTab = isSurvey ? 'survey' : isMenu ? 'menu' : isPost ? 'post' : isProfile ? 'profile' : 'home'
+  const initialSubPage = isAlerts ? 'notifications' : 'main'
   const [activeTab, setActiveTab] = useState(initialTab)
   const [activeSubPage, setActiveSubPage] = useState(initialSubPage)
   const [theme, setTheme] = useState(() => localStorage.getItem('almawaid_theme') || 'dark')
@@ -105,19 +113,30 @@ export default function ThaliUserApp() {
       if (url.includes('/profile/notifications') || url.includes('alerts=1')) {
         setActiveTab('profile')
         setActiveSubPage('notifications')
-      } else if (url.includes('/profile')) {
+      } else if (url.includes('/survey') || url.includes('tab=survey')) {
+        loadAppSettings()
+        setActiveTab('survey')
+      } else if (url.includes('/menu') || url.includes('tab=menu')) {
+        setActiveTab('menu')
+      } else if (url.includes('/post') || url.includes('tab=post')) {
+        setActiveTab('post')
+      } else if (url.includes('/profile') || url.includes('tab=profile')) {
         setActiveTab('profile')
-      } else if (url !== '/' && url) {
+      } else if (url.includes('/home') || url.includes('tab=home') || url === '/') {
+        setActiveTab('home')
+      } else if (url.startsWith('http://') || url.startsWith('https://')) {
+        window.open(url, '_blank')
+      } else if (url) {
         window.location.href = url
       }
     }
     window.addEventListener('app-navigate', handleAppNavigate)
-    // Clean up ?alerts=1 from URL after handling
+    // Clean up ?alerts=1 or query params from URL after handling
     if (window.location.search.includes('alerts=1')) {
       window.history.replaceState({}, '', window.location.pathname)
     }
     return () => window.removeEventListener('app-navigate', handleAppNavigate)
-  }, [])
+  }, [loadAppSettings])
 
   // ── Native Notification System (Supabase Realtime) ──
   useEffect(() => {

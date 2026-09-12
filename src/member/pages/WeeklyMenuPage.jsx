@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { Utensils, Sun, Moon, ChevronDown, Calendar } from 'lucide-react'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
-import { getCalendarWeekDate, addWeeks } from '../../common/utils'
+import { getCalendarWeekDate, addWeeks, isTwoWeekCadence } from '../../common/utils'
 import { getSlotDishes } from '../../hooks/useSurvey'
 import { WeeklyMenuSkeleton } from '../../common/Skeleton'
 import { DAYS, getTodayKey } from '../constants'
@@ -24,6 +24,8 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
   const t = useTheme()
   const calendarWeekId = getCalendarWeekDate()
   const nextWeekId = addWeeks(calendarWeekId, 1)
+  const week2Id = addWeeks(calendarWeekId, 2)
+  const isFortnight = isTwoWeekCadence(appSettings)
   
   const [selectedWeekId, setSelectedWeekId] = useState(calendarWeekId)
   const weeklyMenu = useWeeklyMenu(selectedWeekId)
@@ -31,6 +33,20 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
   const [expandedDay, setExpandedDay] = useState(todayKey)
   const { user } = useAuth()
   const [userSurvey, setUserSurvey] = useState(null)
+
+  const weekOptions = useMemo(() => {
+    if (isFortnight) {
+      return [
+        { id: calendarWeekId, label: 'This Week' },
+        { id: nextWeekId, label: 'Week 1' },
+        { id: week2Id, label: 'Week 2' },
+      ]
+    }
+    return [
+      { id: calendarWeekId, label: 'This Week' },
+      { id: nextWeekId, label: 'Next Week' },
+    ]
+  }, [isFortnight, calendarWeekId, nextWeekId, week2Id])
 
   // Check if current calendar week has any dishes
   const hasCurrentDishes = useMemo(() => {
@@ -98,10 +114,7 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
 
             {/* Week Switcher */}
             <div style={{ display: 'inline-flex', background: t.inputBg, padding: 4, borderRadius: 14, border: `1px solid ${t.border}`, gap: 4 }}>
-              {[
-                { id: calendarWeekId, label: 'This Week' },
-                { id: nextWeekId, label: 'Next Week' },
-              ].map(opt => {
+              {weekOptions.map(opt => {
                 const active = selectedWeekId === opt.id
                 return (
                   <button
@@ -242,7 +255,7 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
                             )}
                           </div>
                         )
-                      }) : <div style={{ fontSize: 12, color: t.textSub, fontStyle: 'italic' }}>Preparation in progress...</div>}
+                      }) : <div style={{ fontSize: 12, color: t.textSub, fontStyle: 'italic' }}>👨‍🍳 Menu is being prepared by Al-Mawaid team</div>}
                     </div>
                   </div>
 
@@ -277,7 +290,7 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
                             )}
                           </div>
                         )
-                      }) : <div style={{ fontSize: 12, color: t.textSub, fontStyle: 'italic' }}>Stay tuned for the menu...</div>}
+                      }) : <div style={{ fontSize: 12, color: t.textSub, fontStyle: 'italic' }}>👨‍🍳 Menu is being prepared by Al-Mawaid team</div>}
                     </div>
                   </div>
                 </div>
