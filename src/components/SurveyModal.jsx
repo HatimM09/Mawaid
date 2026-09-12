@@ -357,7 +357,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
   }, [weekIds, weekData])
 
   // Escape
-  useEffect(() => { const h=(e)=>{ if(e.key==='Escape') onClose() }; window.addEventListener('keydown',h); return()=>window.removeEventListener('keydown',h)}, [onClose])
+  useEffect(() => { const h=(e)=>{ if(e.key==='Escape') handleClose() }; window.addEventListener('keydown',h); return()=>window.removeEventListener('keydown',h)}, [handleClose])
   useEffect(()=>{ if(!errorToast) return; const t=setTimeout(()=>setErrorToast(null),4000); return()=>clearTimeout(t)}, [errorToast])
   useEffect(()=>{ if(!syncMsg) return; const t=setTimeout(()=>setSyncMsg(null),2400); return()=>clearTimeout(t)}, [syncMsg])
 
@@ -475,7 +475,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     return payload
   }, [currentDay, weekData, existingMap, user?.id, userData, liveAppSettings, resolveWeekMenu])
 
-  const saveSlot = async (wid, dayIdx)=>{
+  const saveSlot = useCallback(async (wid, dayIdx)=>{
     if(loading) return false
     const tDay=DAYS[dayIdx]||currentDay
     const tDayKey=tDay.substring(0,3).toLowerCase()
@@ -493,7 +493,46 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
       return true
     }catch(err){ setErrorToast(`Save failed: ${err?.message||'Please try again.'}`); return false }
     finally{ setLoading(false) }
-  }
+  }, [loading, currentDay, weekData, buildPayloadForSlot, user?.id, weekIds])
+
+  // Save ALL filled & dirty slots across all weeks (guarantees nothing is missed on final submit or exit)
+  const saveAllSlots = useCallback(async ()=>{
+    if(loading) return false
+    setLoading(true)
+    try{
+      const payloads=[]
+      for(const wid of weekIds){
+        const wd = weekData[wid]
+        if(!wd) continue
+        for(let dIdx=0; dIdx<DAYS.length; dIdx++){
+          const d=DAYS[dIdx]
+          const dk=d.substring(0,3).toLowerCase()
+          const st=wd[dk]
+          if(st && (st.lunchWantsFood!==null || st.dinnerWantsFood!==null)){
+            payloads.push(buildPayloadForSlot(wid, dIdx))
+          }
+        }
+      }
+      if(payloads.length>0){
+        for(const p of payloads){
+          const { error } = await submitSurveyRow(p)
+          if(error) throw error
+        }
+        dirtyRef.current.clear()
+        const { data: map } = await fetchUserSurveyRows(user?.id, weekIds)
+        if(map) setExistingMap(map)
+      }
+      return true
+    }catch(err){ setErrorToast(`Save failed: ${err?.message||'Please try again.'}`); return false }
+    finally{ setLoading(false) }
+  }, [loading, weekIds, weekData, buildPayloadForSlot, user?.id])
+
+  const handleClose = useCallback(async ()=>{
+    if(dirtyRef.current.size > 0 && !surveySubmitted){
+      try { await saveAllSlots() } catch {}
+    }
+    onClose()
+  }, [onClose, surveySubmitted, saveAllSlots])
 
   // Lunch/Dinner handlers for active slot
   const updateActive = (updater)=>{
@@ -633,7 +672,8 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
 
   const handleSubmitWeekly = async ()=>{
     if(!isDayComplete){ setErrorToast(`Complete both Lunch & Dinner for ${currentDayName} first.`); return }
-    const saved=await saveSlot(activeWeekId, currentDayIndex)
+    // Save all answered slots across all weeks to ensure everything in weekData is stored in Supabase
+    const saved=await saveAllSlots()
     if(!saved) return
     const { data: freshMap }=await fetchUserSurveyRows(user?.id, weekIds)
     if(freshMap) setExistingMap(freshMap)
@@ -664,10 +704,10 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
   // INTRO
   if(showIntro){
     return (
-      <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:10001, background:T.overlay, backdropFilter:'blur(14px)', display:'flex', alignItems:'center', justifyContent:'center', padding:'clamp(10px,3vw,28px)' }}>
+      <div onClick={handleClose} style={{ position:'fixed', inset:0, zIndex:10001, background:T.overlay, backdropFilter:'blur(14px)', display:'flex', alignItems:'center', justifyContent:'center', padding:'clamp(10px,3vw,28px)' }}>
         <style>{SURVEY_STYLES}</style>
         <div onClick={e=>e.stopPropagation()} style={{ background:T.modalBg, borderRadius:24, padding:'clamp(22px,4vw,34px)', maxWidth:620, width:'100%', border:`1.5px solid ${T.modalBorder}`, boxShadow:'0 30px 80px rgba(0,0,0,0.55)', position:'relative', textAlign:'center', animation:'surveyModalIn 0.35s ease-out' }}>
-          <button onClick={onClose} style={{ position:'absolute', top:14, right:14, background:T.softBg, border:`1px solid ${T.border}`, borderRadius:8, width:32, height:32, color:T.textSub, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', touchAction:'manipulation' }}><X size={16}/></button>
+          <button onClick={handleClose} style={{ position:'absolute', top:14, right:14, background:T.softBg, border:`1px solid ${T.border}`, borderRadius:8, width:32, height:32, color:T.textSub, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', touchAction:'manipulation' }}><X size={16}/></button>
           <div style={{ width:64, height:64, borderRadius:20, background:T.accentBg, border:`1.5px solid ${T.accent}`, display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px', fontSize:28 }}>{isTwoWeeks?'🗓️':'📋'}</div>
           <h2 style={{ margin:'0 0 6px', fontSize:22, fontWeight:800, color:T.text, fontFamily:"'Playfair Display',serif" }}>{isTwoWeeks?'Fortnight Meal Survey':'Weekly Meal Survey'}</h2>
           <p style={{ margin:'0 0 8px', fontSize:13, color:T.textSub, lineHeight:1.65, fontFamily:"'DM Sans',sans-serif" }}>{isTwoWeeks?`Fill both weeks at once — ${formatWeekRange(weekIds[0])} + ${formatWeekRange(weekIds[1])} · 24 meals in one flow.`:'Fill meal preferences for each day — Monday through Saturday.'}</p>
@@ -700,10 +740,10 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
   // Locked only when window is closed.
   if(surveySubmitted && !initialDay && !surveyOpen){
     return (
-      <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:10001, background:T.overlay, backdropFilter:'blur(14px)', display:'flex', alignItems:'center', justifyContent:'center', padding:'clamp(10px,3vw,28px)' }}>
+      <div onClick={handleClose} style={{ position:'fixed', inset:0, zIndex:10001, background:T.overlay, backdropFilter:'blur(14px)', display:'flex', alignItems:'center', justifyContent:'center', padding:'clamp(10px,3vw,28px)' }}>
         <style>{SURVEY_STYLES}</style>
         <div onClick={e=>e.stopPropagation()} style={{ background:T.modalBg, borderRadius:24, padding:'clamp(24px,4vw,36px)', maxWidth:560, width:'100%', border:`1.5px solid ${T.modalBorder}`, boxShadow:'0 30px 80px rgba(0,0,0,0.55)', position:'relative', textAlign:'center', animation:'surveyModalIn 0.35s ease-out' }}>
-          <button onClick={onClose} style={{ position:'absolute', top:14, right:14, background:T.softBg, border:`1px solid ${T.border}`, borderRadius:8, width:32, height:32, color:T.textSub, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', touchAction:'manipulation' }}><X size={16}/></button>
+          <button onClick={handleClose} style={{ position:'absolute', top:14, right:14, background:T.softBg, border:`1px solid ${T.border}`, borderRadius:8, width:32, height:32, color:T.textSub, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', touchAction:'manipulation' }}><X size={16}/></button>
           <div style={{ width:68, height:68, borderRadius:20, background:'rgba(76,175,80,0.15)', border:'1.5px solid rgba(76,175,80,0.4)', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 16px', color:'#4CAF50' }}><Lock size={32}/></div>
           <h2 style={{ margin:'0 0 8px', fontSize:22, fontWeight:800, color:T.text, fontFamily:"'Playfair Display',serif" }}>{isTwoWeeks?'Fortnight Locked':'Weekly Survey Locked'}</h2>
           <p style={{ margin:'0 0 20px', fontSize:13.5, color:T.textSub, lineHeight:1.6, fontFamily:"'DM Sans',sans-serif" }}>You have already filled and submitted your full {isTwoWeeks?'fortnight':'weekly'} survey for {isTwoWeeks? `${formatWeekRange(weekIds[0])} + ${formatWeekRange(weekIds[1])}`: formatWeekRange(primaryWeekId)}. No further submissions are permitted — window is now closed.</p>
@@ -711,7 +751,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
             <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6 }}><Check size={18} color="#4CAF50" strokeWidth={2.5}/><span style={{ fontSize:13, fontWeight:800, color:'#4CAF50', fontFamily:"'DM Sans',sans-serif" }}>All {totalSlots} Meals Recorded & Locked</span></div>
             <div style={{ fontSize:12, color:T.textSub, fontFamily:"'DM Sans',sans-serif", lineHeight:1.5 }}>Your meal portion preferences are saved in the system. Shukran! 🤲</div>
           </div>
-          <button onClick={onClose} type="button" style={{ width:'100%', minHeight:46, padding:'12px', borderRadius:14, border:'none', background:T.accentGrad, color:'#000', cursor:'pointer', fontSize:14, fontWeight:900, fontFamily:"'DM Sans',sans-serif", touchAction:'manipulation' }}>Close</button>
+          <button onClick={handleClose} type="button" style={{ width:'100%', minHeight:46, padding:'12px', borderRadius:14, border:'none', background:T.accentGrad, color:'#000', cursor:'pointer', fontSize:14, fontWeight:900, fontFamily:"'DM Sans',sans-serif", touchAction:'manipulation' }}>Close</button>
         </div>
       </div>
     )
@@ -719,7 +759,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
 
   // ── MAIN MODAL ──
   return (
-    <div onClick={onClose} style={{ position:'fixed', inset:0, zIndex:10001, background:T.overlay, backdropFilter:'blur(14px)', display:'flex', alignItems:'center', justifyContent:'center', padding:'clamp(8px,2.5vw,20px)', overflowY:'auto' }}>
+    <div onClick={handleClose} style={{ position:'fixed', inset:0, zIndex:10001, background:T.overlay, backdropFilter:'blur(14px)', display:'flex', alignItems:'center', justifyContent:'center', padding:'clamp(8px,2.5vw,20px)', overflowY:'auto' }}>
       <style>{SURVEY_STYLES}</style>
       <div ref={modalScrollRef} onClick={e=>e.stopPropagation()} style={{ background:T.modalBg, borderRadius:24, padding:'clamp(14px,3vw,22px)', maxWidth:780, width:'100%', boxSizing:'border-box', border:`1.5px solid ${T.modalBorder}`, boxShadow:'0 30px 80px rgba(0,0,0,0.55)', position:'relative', overflowX:'hidden', overflowY:'auto', maxHeight:'calc(100dvh - 24px)', WebkitOverflowScrolling:'touch', animation:'surveyModalIn 0.35s ease-out' }}>
         {loading && (<div style={{ position:'absolute', inset:0, zIndex:999, borderRadius:24, background:T.loadingOverlay, backdropFilter:'blur(8px)', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:12 }}><div style={{ width:40, height:40, borderRadius:'50%', border:`3px solid`, borderColor:`${T.accent} transparent ${T.accent} ${T.accent}`, animation:'spin 0.8s linear infinite' }} /><div style={{ fontSize:13, color:T.accent, fontWeight:700, fontFamily:"'DM Sans',sans-serif" }}>Saving…</div></div>)}
@@ -734,7 +774,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:10 }}>
             {syncMsg && <span style={{ fontSize:11, color:T.yesColor, fontWeight:800, fontFamily:"'DM Sans',sans-serif" }}>✓ {syncMsg}</span>}
-            <button onClick={onClose} style={{ background:T.softBg, border:'none', cursor:'pointer', padding:8, borderRadius:10, color:T.textSub, display:'flex', alignItems:'center', justifyContent:'center', touchAction:'manipulation' }}><X size={18}/></button>
+            <button onClick={handleClose} style={{ background:T.softBg, border:'none', cursor:'pointer', padding:8, borderRadius:10, color:T.textSub, display:'flex', alignItems:'center', justifyContent:'center', touchAction:'manipulation' }}><X size={18}/></button>
           </div>
         </div>
 

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react'
 import { AlertCircle, X, Maximize2, Minimize2, Trash2 } from 'lucide-react'
 import { eraseSurveySlot } from '../lib/surveyRows'
 import { isRotiItem } from '../hooks/useSurvey'
+import { formatWeekRange } from '../common/utils'
 
 export const T = {
   bg: 'var(--bg-deep)',
@@ -924,6 +925,25 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
             }}>MANUAL</span>
           )}
         </div>
+
+        {/* Week Range Badge */}
+        {(user?.week_range || user?.week_id) && (
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: 'clamp(6px, 0.8vh, 10px) clamp(12px, 1.5vw, 20px)',
+            background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.2)', borderRadius: 50,
+            boxShadow: '0 0 16px rgba(0,0,0,0.3)'
+          }}>
+            <span style={{ fontSize: 'clamp(12px, 1.4vw, 18px)' }}>📅</span>
+            <span style={{
+              fontSize: 'clamp(11px, 1.3vw, 16px)', fontWeight: 800,
+              color: '#ffffff', letterSpacing: '0.06em', textTransform: 'uppercase',
+              textShadow: '0 0 10px rgba(255,255,255,0.3)'
+            }}>
+              {user.week_range || formatWeekRange(user.week_id)}
+            </span>
+          </div>
+        )}
 
         {/* Status badge - bright white status text with colored glow */}
         <div style={{

@@ -6,7 +6,7 @@ import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { RefreshCw, Search, Filter, Utensils, Download, User as UserIcon, Calendar as CalendarIcon, Scan, X, Trash2 } from 'lucide-react'
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Grid, Modal, SectionHeader, SurveyResponseDisplay, PackingTVView, fmtDate, fmtDateTime, ErrorBanner } from './ui'
-import { getSurveyTargetWeek, DAYS, MEALS, parseDishArray } from '../common/utils'
+import { getSurveyTargetWeek, DAYS, MEALS, parseDishArray, formatWeekRange } from '../common/utils'
 import { getSlotDishes, isRotiItem, isCountInput } from '../hooks/useSurvey'
 import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot } from '../lib/surveyRows'
 import {
@@ -162,7 +162,7 @@ export default function SurveysPage() {
       
       const dayKey = dayFilter.substring(0, 3).toLowerCase()
       const mealKey = mealFilter === 'lunch' ? 'l' : 'd'
-      const weekId = surveyWeekId()
+      const weekId = (weekFilter && weekFilter !== 'all') ? weekFilter : surveyWeekId()
       
       const { data: row } = await fetchUserSurveyRow(userId, weekId)
       
@@ -202,6 +202,7 @@ export default function SurveysPage() {
       setSelectedUser({
         ...u,
         week_id: weekId,
+        week_range: formatWeekRange(weekId),
         status: buildCur._status,
         dishResponses: buildCur,
         dishTypes: mealFilter === 'lunch' ? lunchTypes : dinnerTypes,

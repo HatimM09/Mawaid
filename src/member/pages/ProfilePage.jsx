@@ -279,30 +279,67 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
   const [appSettings, setAppSettings] = useState(initialAppSettings)
   const [surveysByWeek, setSurveysByWeek] = useState({}) // weekId -> flat row
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('current') // 'current' | 'next' | 'following'
 
   const calendarWeekId = useMemo(() => getCalendarWeekDate(), [])
   const nextWeekId = useMemo(() => addWeeks(calendarWeekId, 1), [calendarWeekId])
   const targetWeeks = useMemo(() => getSurveyTargetWeeks(appSettings), [appSettings])
   const isTwoWeeks = targetWeeks.length === 2
-  const followingWeekId = useMemo(() => (isTwoWeeks && targetWeeks[1]) ? targetWeeks[1] : addWeeks(calendarWeekId, 2), [isTwoWeeks, targetWeeks, calendarWeekId])
+  const primaryTargetWeek = targetWeeks[0] || nextWeekId
+  const secondaryTargetWeek = isTwoWeeks ? (targetWeeks[1] || addWeeks(calendarWeekId, 2)) : null
 
-  // Week options for the toggle
+  // Dynamic week tabs: Current serving week + Target survey week(s) + any historical survey weeks
   const weekTabs = useMemo(() => {
-    const list = [
-      { id: 'current', label: 'Current Week', weekId: calendarWeekId, range: formatWeekRange(calendarWeekId) },
-      { id: 'next', label: 'Next Week', weekId: nextWeekId, range: formatWeekRange(nextWeekId) },
-    ]
-    if (isTwoWeeks) {
-      list.push({ id: 'following', label: 'Following Week', weekId: followingWeekId, range: formatWeekRange(followingWeekId) })
+    const list = []
+    // 1. Current serving week
+    list.push({
+      id: calendarWeekId,
+      label: 'This Week (Serving)',
+      weekId: calendarWeekId,
+      range: formatWeekRange(calendarWeekId),
+      isServing: true,
+    })
+    // 2. Target survey week 1
+    list.push({
+      id: primaryTargetWeek,
+      label: isTwoWeeks ? 'Fortnight Week 1' : 'Survey Week',
+      weekId: primaryTargetWeek,
+      range: formatWeekRange(primaryTargetWeek),
+      isTarget: true,
+    })
+    // 3. Fortnight week 2 if 2-week cadence
+    if (isTwoWeeks && secondaryTargetWeek) {
+      list.push({
+        id: secondaryTargetWeek,
+        label: 'Fortnight Week 2',
+        weekId: secondaryTargetWeek,
+        range: formatWeekRange(secondaryTargetWeek),
+        isTarget: true,
+      })
     }
+    // 4. Any other weeks where user has saved responses
+    Object.keys(surveysByWeek || {}).forEach(wid => {
+      if (!list.some(tab => tab.weekId === wid) && wid && /^\d{4}-\d{2}-\d{2}$/.test(wid)) {
+        list.push({
+          id: wid,
+          label: formatWeekRange(wid),
+          weekId: wid,
+          range: formatWeekRange(wid),
+          isHistory: true,
+        })
+      }
+    })
     return list
-  }, [calendarWeekId, nextWeekId, followingWeekId, isTwoWeeks])
+  }, [calendarWeekId, primaryTargetWeek, secondaryTargetWeek, isTwoWeeks, surveysByWeek])
 
-  const selectedWeekObj = weekTabs.find(w => w.id === activeTab) || weekTabs[0]
+  const [activeTab, setActiveTab] = useState(primaryTargetWeek)
+
+  const selectedWeekObj = useMemo(() => {
+    return weekTabs.find(w => w.id === activeTab || w.weekId === activeTab) || weekTabs[0]
+  }, [weekTabs, activeTab])
+
   const selectedWeekId = selectedWeekObj.weekId
 
-  // Weekly menu for the active week to resolve dish labels
+  // Weekly menu for the active week to resolve scheduled dish labels
   const selectedWeekMenu = useWeeklyMenu(selectedWeekId)
 
   useEffect(() => {
@@ -315,66 +352,15 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
       .catch(() => {})
   }, [])
 
-  const markOverride = useCallback((grouped, rawData) => {
-    Object.keys(grouped).forEach(day => {
-      Object.keys(grouped[day]).forEach(meal => {
-        const hasSlotOverride = rawData?._isOverride ||
-          rawData?.edit_metadata?.[`${day.substring(0, 3).toLowerCase()}_${meal === 'lunch' ? 'l' : 'd'}_override`]
-        if (hasSlotOverride) grouped[day][meal].is_override = true
-      })
-    })
-    return grouped
-  }, [])
-
-  const processRow = useCallback((data, menu) => {
-    if (!data) return {}
-    const grouped = {}
-    DAYS.forEach(day => {
-      const dayKey = day.substring(0, 3).toLowerCase()
-      ;['lunch', 'dinner'].forEach(meal => {
-        const mealKey = meal === 'lunch' ? 'l' : 'd'
-        const status = data[`${dayKey}_${mealKey}_status`]
-        if (status) {
-          const dishResponses = {}
-          const dishes = getSlotDishes(data, day, meal, menu[day]?.[meal] || [])
-          const nameList = dishes.length > 0
-            ? dishes
-            : Array.from({ length: 5 }, (_, i) => `Dish ${i + 1}`)
-          nameList.forEach((d, i) => {
-            const val = data[`${dayKey}_${mealKey}_dish_${i + 1}`]
-            if (val !== undefined && val !== null && val !== '') {
-              const lower = String(val).toLowerCase()
-              if (lower === 'yes') dishResponses[d] = 'yes'
-              else if (lower === 'no') dishResponses[d] = 'no'
-              else if (typeof val === 'string' && val.endsWith('%')) dishResponses[d] = val
-              else {
-                const n = parseInt(val)
-                dishResponses[d] = isNaN(n) ? val : n
-              }
-            }
-          })
-          if (!grouped[day]) grouped[day] = {}
-          grouped[day][meal] = {
-            wants_food: status === 'Applied',
-            dish_responses: dishResponses,
-            edit_count: (data.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0,
-            updated_at: data.updated_at || null
-          }
-        }
-      })
-    })
-    return grouped
-  }, [])
-
   const loadData = useCallback(async () => {
-    const allIds = Array.from(new Set([calendarWeekId, nextWeekId, ...(targetWeeks || []), followingWeekId].filter(Boolean)))
+    const allIds = Array.from(new Set([calendarWeekId, nextWeekId, ...(targetWeeks || []), secondaryTargetWeek].filter(Boolean)))
     try {
       const { data: map } = await fetchUserSurveyRows(user.id, allIds)
       setSurveysByWeek(map || {})
     } catch {
       setSurveysByWeek({})
     }
-  }, [user.id, calendarWeekId, nextWeekId, targetWeeks, followingWeekId])
+  }, [user.id, calendarWeekId, nextWeekId, targetWeeks, secondaryTargetWeek])
 
   useEffect(() => {
     loadData().finally(() => setLoading(false))
@@ -391,9 +377,29 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
     return () => supabase.removeChannel(subscription)
   }, [user?.id, loadData])
 
+  // Smart initial tab switch: if current week has no responses but primary target week has responses, switch to target week
+  useEffect(() => {
+    if (!loading && Object.keys(surveysByWeek).length > 0) {
+      const countFor = (r) => {
+        if (!r) return 0
+        let c = 0
+        DAYS.forEach(d => {
+          const dk = d.substring(0, 3).toLowerCase()
+          if (r[`${dk}_l_status`] || r[`${dk}_d_status`]) c++
+        })
+        return c
+      }
+      const targetCount = countFor(surveysByWeek[primaryTargetWeek])
+      const curCount = countFor(surveysByWeek[calendarWeekId])
+      if (targetCount > 0 && curCount === 0 && activeTab === calendarWeekId) {
+        setActiveTab(primaryTargetWeek)
+      }
+    }
+  }, [loading, surveysByWeek, primaryTargetWeek, calendarWeekId, activeTab])
+
   const formatDishVal = (val, dish) => {
-    if (val === 'yes') return '✅ Yes'
-    if (val === 'no') return '❌ Skip'
+    if (val === 'yes' || val === 'Yes') return '✅ Yes'
+    if (val === 'no' || val === 'No') return '❌ Skip'
     if (typeof val === 'string' && val.endsWith('%')) return val
     if (typeof val === 'number') {
       if ([0, 25, 50, 75, 100].includes(val) && !isRotiItem(dish)) return `${val}%`
@@ -402,10 +408,74 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
     return String(val)
   }
 
+  const markOverride = useCallback((grouped, rawData) => {
+    Object.keys(grouped).forEach(day => {
+      Object.keys(grouped[day]).forEach(meal => {
+        const hasSlotOverride = rawData?._isOverride ||
+          rawData?.edit_metadata?.[`${day.substring(0, 3).toLowerCase()}_${meal === 'lunch' ? 'l' : 'd'}_override`]
+        if (hasSlotOverride) grouped[day][meal].is_override = true
+      })
+    })
+    return grouped
+  }, [])
+
+  const processRow = useCallback((data, menu) => {
+    const grouped = {}
+    DAYS.forEach(day => {
+      const dayKey = day.substring(0, 3).toLowerCase()
+      grouped[day] = {}
+      ;['lunch', 'dinner'].forEach(meal => {
+        const mealKey = meal === 'lunch' ? 'l' : 'd'
+        const rawStatus = data?.[`${dayKey}_${mealKey}_status`] || null
+        const status = rawStatus === 'Applied' || rawStatus === 'opted_in' ? 'Applied'
+          : rawStatus === 'Skipped' || rawStatus === 'opted_out' ? 'Skipped'
+          : null
+
+        const menuDishes = menu?.[day]?.[meal] || menu?.[day.toLowerCase()]?.[meal] || menu?.[dayKey]?.[meal] || []
+        const dishList = getSlotDishes(data, day, meal, menuDishes)
+        const nameList = dishList.length > 0
+          ? dishList
+          : menuDishes.length > 0
+            ? menuDishes
+            : Array.from({ length: 5 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => data && data[`${dayKey}_${mealKey}_dish_${i + 1}`] !== undefined && data[`${dayKey}_${mealKey}_dish_${i + 1}`] !== null && data[`${dayKey}_${mealKey}_dish_${i + 1}`] !== '')
+
+        const dishResponses = {}
+        if (status === 'Applied') {
+          nameList.forEach((d, i) => {
+            const val = data?.[`${dayKey}_${mealKey}_dish_${i + 1}`]
+            if (val !== undefined && val !== null && val !== '') {
+              const lower = String(val).toLowerCase()
+              if (lower === 'yes') dishResponses[d] = 'yes'
+              else if (lower === 'no') dishResponses[d] = 'no'
+              else if (typeof val === 'string' && val.endsWith('%')) dishResponses[d] = val
+              else {
+                const n = parseInt(val)
+                dishResponses[d] = isNaN(n) ? val : n
+              }
+            } else {
+              // Default to full portion if status is applied
+              dishResponses[d] = isRotiItem(d) ? 'yes' : 100
+            }
+          })
+        }
+
+        grouped[day][meal] = {
+          has_response: !!status,
+          status,
+          wants_food: status === 'Applied',
+          dish_responses: dishResponses,
+          menu_dishes: nameList.length > 0 ? nameList : menuDishes,
+          edit_count: (data?.edit_metadata || {})[`${dayKey}_${mealKey}`] || 0,
+          updated_at: data?.updated_at || null
+        }
+      })
+    })
+    return grouped
+  }, [])
+
   // Active week data processed
-  const currentWeekRaw = surveysByWeek[selectedWeekId]
+  const currentWeekRaw = surveysByWeek[selectedWeekId] || null
   const currentGrouped = useMemo(() => {
-    if (!currentWeekRaw) return {}
     return markOverride(processRow(currentWeekRaw, selectedWeekMenu || {}), currentWeekRaw)
   }, [currentWeekRaw, selectedWeekMenu, processRow, markOverride])
 
@@ -413,22 +483,20 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
   const mealSummary = useMemo(() => {
     let appliedCount = 0
     let skippedCount = 0
-    let totalAnswered = 0
+    let pendingCount = 0
     DAYS.forEach(d => {
-      const l = currentGrouped[d]?.lunch
-      const dn = currentGrouped[d]?.dinner
-      if (l && l.wants_food !== undefined) {
-        totalAnswered++
-        if (l.wants_food) appliedCount++
-        else skippedCount++
-      }
-      if (dn && dn.wants_food !== undefined) {
-        totalAnswered++
-        if (dn.wants_food) appliedCount++
-        else skippedCount++
-      }
+      ;['lunch', 'dinner'].forEach(meal => {
+        const item = currentGrouped[d]?.[meal]
+        if (item?.has_response) {
+          if (item.wants_food) appliedCount++
+          else skippedCount++
+        } else {
+          pendingCount++
+        }
+      })
     })
-    return { appliedCount, skippedCount, totalAnswered, hasResponses: totalAnswered > 0 }
+    const totalAnswered = appliedCount + skippedCount
+    return { appliedCount, skippedCount, pendingCount, totalAnswered, hasResponses: totalAnswered > 0 }
   }, [currentGrouped])
 
   return (
@@ -443,10 +511,12 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
         borderRadius: 16,
         border: `1px solid ${t.border}`,
         marginBottom: 18,
-        gap: 4
+        gap: 4,
+        overflowX: 'auto',
+        scrollbarWidth: 'none'
       }}>
         {weekTabs.map(tab => {
-          const isActive = activeTab === tab.id
+          const isActive = selectedWeekId === tab.weekId
           return (
             <button
               key={tab.id}
@@ -454,6 +524,7 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
               onClick={() => setActiveTab(tab.id)}
               style={{
                 flex: 1,
+                minWidth: 120,
                 padding: '9px 12px',
                 borderRadius: 12,
                 border: 'none',
@@ -469,8 +540,8 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
                 fontFamily: "'DM Sans', sans-serif"
               }}
             >
-              <span style={{ fontSize: 13, fontWeight: isActive ? 800 : 700 }}>{tab.label}</span>
-              <span style={{ fontSize: 11, opacity: isActive ? 0.9 : 0.6, fontWeight: 500 }}>{tab.range}</span>
+              <span style={{ fontSize: 13, fontWeight: isActive ? 800 : 700, whiteSpace: 'nowrap' }}>{tab.label}</span>
+              <span style={{ fontSize: 11, opacity: isActive ? 0.9 : 0.6, fontWeight: 500, whiteSpace: 'nowrap' }}>{tab.range}</span>
             </button>
           )
         })}
@@ -478,60 +549,6 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
 
       {loading ? (
         <ListPageSkeleton title="My Surveys" count={6} />
-      ) : !mealSummary.hasResponses ? (
-        <div style={{
-          padding: '36px 20px',
-          borderRadius: 20,
-          background: t.card,
-          border: `1px solid ${t.border}`,
-          textAlign: 'center',
-          marginTop: 10
-        }}>
-          <div style={{
-            width: 52,
-            height: 52,
-            borderRadius: 16,
-            background: t.accentBg,
-            border: `1px solid ${t.accentBorder}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 16px',
-            color: t.accent
-          }}>
-            <Calendar size={24} />
-          </div>
-          <h3 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 800, color: t.text, fontFamily: "'DM Sans', sans-serif" }}>
-            {activeTab === 'next' ? 'No Survey Submitted for Next Week' : 'No Survey Found for This Week'}
-          </h3>
-          <p style={{ margin: '0 0 20px', fontSize: 13, color: t.textSub, lineHeight: 1.5, fontFamily: "'DM Sans', sans-serif", maxWidth: 360, marginLeft: 'auto', marginRight: 'auto' }}>
-            {activeTab === 'next'
-              ? 'You have not submitted your meal selections for next week yet. Complete the survey to reserve your thali.'
-              : 'There are no active survey responses or meal reservations recorded for the current week.'}
-          </p>
-          {activeTab === 'next' && onGoToSurvey && (
-            <button
-              onClick={onGoToSurvey}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '12px 22px',
-                borderRadius: 999,
-                border: 'none',
-                background: t.accentGrad,
-                color: '#0a0a0a',
-                fontSize: 13.5,
-                fontWeight: 800,
-                cursor: 'pointer',
-                fontFamily: "'DM Sans', sans-serif",
-                boxShadow: `0 4px 16px ${t.accent}35`
-              }}
-            >
-              Go to Survey Tab <ArrowRight size={16} />
-            </button>
-          )}
-        </div>
       ) : (
         <>
           {/* Week Overview Card */}
@@ -555,7 +572,7 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
                 {selectedWeekObj.range}
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <span style={{
                 fontSize: 11.5,
                 fontWeight: 800,
@@ -582,17 +599,75 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
                   ✕ {mealSummary.skippedCount} skipped
                 </span>
               )}
+              {mealSummary.pendingCount > 0 && (
+                <span style={{
+                  fontSize: 11.5,
+                  fontWeight: 800,
+                  padding: '4px 10px',
+                  borderRadius: 999,
+                  background: 'rgba(245,158,11,0.10)',
+                  color: '#f59e0b',
+                  border: '1px solid rgba(245,158,11,0.22)',
+                  fontFamily: "'DM Sans', sans-serif"
+                }}>
+                  ⏳ {mealSummary.pendingCount} pending
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Day-by-Day Cards */}
+          {/* Quick CTA banner if survey is not completed for this week */}
+          {mealSummary.pendingCount > 0 && onGoToSurvey && (
+            <div style={{
+              padding: '12px 16px',
+              borderRadius: 14,
+              background: 'linear-gradient(135deg, rgba(212,175,55,0.12), rgba(212,175,55,0.04))',
+              border: `1px solid ${t.accentBorder}`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 14,
+              gap: 12
+            }}>
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: t.text, fontFamily: "'DM Sans', sans-serif" }}>
+                  {mealSummary.pendingCount} meals still pending for this week
+                </div>
+                <div style={{ fontSize: 11, color: t.textSub }}>
+                  Tap below to fill or edit your survey preferences
+                </div>
+              </div>
+              <button
+                onClick={onGoToSurvey}
+                type="button"
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: t.accentGrad,
+                  color: '#000',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Fill Survey <ArrowRight size={13} />
+              </button>
+            </div>
+          )}
+
+          {/* Day-by-Day Cards with Assigned Menu & Responses */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {DAYS.map((day, dIdx) => {
-              const dayData = currentGrouped[day]
+              const dayData = currentGrouped[day] || {}
               const [y, m, d] = selectedWeekId.split('-').map(Number)
               const dayDate = new Date(y, m - 1, d + dIdx)
               const dateLabel = dayDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-              const hasAny = !!dayData
+              const hasAnyResponse = dayData?.lunch?.has_response || dayData?.dinner?.has_response
 
               return (
                 <div
@@ -602,7 +677,7 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
                     borderRadius: 16,
                     background: t.card,
                     border: `1px solid ${t.border}`,
-                    borderLeft: `3px solid ${hasAny ? t.accent : t.border}`
+                    borderLeft: `3px solid ${hasAnyResponse ? t.accent : t.border}`
                   }}
                 >
                   {/* Day Header */}
@@ -624,7 +699,7 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
                         {day.slice(0, 2).toUpperCase()}
                       </span>
                       <span style={{ fontSize: 15, fontWeight: 800, textTransform: 'capitalize', color: t.text, fontFamily: "'DM Sans', sans-serif" }}>
-                        {selectedWeekMenu[day]?.en || day}
+                        {selectedWeekMenu?.[day]?.en || day}
                       </span>
                     </div>
                     <span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, background: t.inputBg, border: `1px solid ${t.border}`, padding: '2px 8px', borderRadius: 999 }}>
@@ -632,11 +707,14 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
                     </span>
                   </div>
 
-                  {/* Meals */}
+                  {/* Meals (Lunch & Dinner) */}
                   {['lunch', 'dinner'].map(meal => {
-                    const r = dayData?.[meal]
-                    const hasResponse = r && r.wants_food !== undefined
+                    const r = dayData?.[meal] || {}
+                    const hasResponse = r.has_response
+                    const isApplied = r.status === 'Applied'
+                    const isSkipped = r.status === 'Skipped'
                     const isOverride = !!r?.is_override
+                    const menuDishes = r.menu_dishes || []
 
                     return (
                       <div
@@ -651,23 +729,49 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
                           border: `1px solid ${isOverride ? 'rgba(16,185,129,0.25)' : t.border}`
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, marginBottom: hasResponse && r.wants_food ? 8 : 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, marginBottom: (hasResponse || menuDishes.length > 0) ? 8 : 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <span style={{ fontSize: 12.5, fontWeight: 800, color: t.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                               {meal === 'lunch' ? <Sun size={14} color="#f59e0b" /> : <Moon size={14} color="#818cf8" />}
                               {meal === 'lunch' ? 'Lunch' : 'Dinner'}
                             </span>
-                            {hasResponse && (
+                            {isApplied && (
                               <span style={{
                                 fontSize: 10,
                                 fontWeight: 800,
                                 padding: '2px 7px',
                                 borderRadius: 999,
-                                background: r.wants_food ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.10)',
-                                color: r.wants_food ? '#10b981' : '#ef4444',
-                                border: `1px solid ${r.wants_food ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.20)'}`
+                                background: 'rgba(16,185,129,0.12)',
+                                color: '#10b981',
+                                border: '1px solid rgba(16,185,129,0.25)'
                               }}>
-                                {r.wants_food ? 'Requested' : 'Skipped'}
+                                ✓ Requested
+                              </span>
+                            )}
+                            {isSkipped && (
+                              <span style={{
+                                fontSize: 10,
+                                fontWeight: 800,
+                                padding: '2px 7px',
+                                borderRadius: 999,
+                                background: 'rgba(239,68,68,0.10)',
+                                color: '#ef4444',
+                                border: '1px solid rgba(239,68,68,0.20)'
+                              }}>
+                                ✕ Skipped
+                              </span>
+                            )}
+                            {!hasResponse && (
+                              <span style={{
+                                fontSize: 10,
+                                fontWeight: 800,
+                                padding: '2px 7px',
+                                borderRadius: 999,
+                                background: 'rgba(245,158,11,0.10)',
+                                color: '#f59e0b',
+                                border: '1px solid rgba(245,158,11,0.20)'
+                              }}>
+                                ⏳ Pending
                               </span>
                             )}
                             {isOverride && (
@@ -699,11 +803,8 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
                           </div>
                         </div>
 
-                        {!hasResponse ? (
-                          <div style={{ fontSize: 11, color: t.textSub, fontStyle: 'italic', paddingTop: 2 }}>
-                            No response recorded for this meal
-                          </div>
-                        ) : r.wants_food && r.dish_responses && Object.keys(r.dish_responses).length > 0 ? (
+                        {/* If Applied: show dish responses */}
+                        {isApplied && r.dish_responses && Object.keys(r.dish_responses).length > 0 ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4, paddingTop: 4, borderTop: `1px solid ${t.border}` }}>
                             {Object.entries(r.dish_responses).map(([dish, val]) => (
                               <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, padding: '2px 0' }}>
@@ -714,7 +815,46 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
                               </div>
                             ))}
                           </div>
-                        ) : null}
+                        ) : isSkipped ? (
+                          /* If Skipped: display scheduled menu items in subdued style so user knows what they skipped */
+                          <div style={{ marginTop: 4, paddingTop: 4, borderTop: `1px solid ${t.border}` }}>
+                            <div style={{ fontSize: 11, color: t.textSub, marginBottom: 4 }}>
+                              Scheduled Menu:
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                              {menuDishes.length > 0 ? (
+                                menuDishes.map((dish, i) => (
+                                  <span key={i} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 6, background: t.card, border: `1px solid ${t.border}`, color: t.textSub, opacity: 0.8 }}>
+                                    {dish}
+                                  </span>
+                                ))
+                              ) : (
+                                <span style={{ fontSize: 11, color: t.textSub, fontStyle: 'italic' }}>
+                                  Meal skipped
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          /* If Pending: show scheduled menu items with pending note */
+                          <div style={{ marginTop: 4, paddingTop: 4, borderTop: `1px solid ${t.border}` }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                {menuDishes.length > 0 ? (
+                                  menuDishes.map((dish, i) => (
+                                    <span key={i} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 6, background: t.card, border: `1px solid ${t.border}`, color: t.textSub }}>
+                                      {dish}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span style={{ fontSize: 11, color: t.textSub, fontStyle: 'italic' }}>
+                                    No response recorded yet
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )
                   })}

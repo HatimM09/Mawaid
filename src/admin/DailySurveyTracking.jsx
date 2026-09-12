@@ -13,7 +13,11 @@ import {
   SectionHeader, Modal, PackingTVView, fmtDate, ErrorBanner
 } from './ui'
 
-import { getSurveyTargetWeek, getCalendarWeekDate, dayBelongsToCalendarWeek, DAYS, DAY_KEYS, toLocalDateStr, isStoppedOnDay, parseDishArray } from '../common/utils'
+import { 
+  getSurveyTargetWeek, getCalendarWeekDate, dayBelongsToCalendarWeek, 
+  DAYS, DAY_KEYS, toLocalDateStr, isStoppedOnDay, parseDishArray,
+  getSurveyTargetWeeks, formatWeekRange, formatWeekShort, isTwoWeekCadence 
+} from '../common/utils'
 import { getPctColor, getSlotDishes, isRotiItem, isCountInput } from '../hooks/useSurvey'
 import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot, flattenDayRows } from '../lib/surveyRows'
 
@@ -31,7 +35,8 @@ const pickStopInfo = (reqs, selDateStr, meal) => {
 export default function DailySurveyTracking() {
   const [appSettings, setAppSettings] = useState({})
   const surveyWeekId = useCallback(() => getSurveyTargetWeek(appSettings), [appSettings])
-  const targetWeek = surveyWeekId()
+  const targetWeeks = useMemo(() => getSurveyTargetWeeks(appSettings), [appSettings])
+  const targetWeek = targetWeeks[0] || surveyWeekId()
   const weeklyMenu = useWeeklyMenu(targetWeek) || {}
   const [searchParams] = useSearchParams()
   const urlMeal = searchParams.get('meal')
@@ -83,102 +88,59 @@ export default function DailySurveyTracking() {
       const dayKey = day.substring(0, 3).toLowerCase()
       const mealKey = meal === 'lunch' ? 'l' : 'd'
       const statusKey = `${dayKey}_${mealKey}_status`
-      // Resolve the week that OWNS this day right now — daily edits made on
-      // Home write to the calendar week for today/tomorrow, the survey target
-      // week otherwise. Reading from the same week keeps tracking in sync.
-      const calWeek = getCalendarWeekDate()
-      const targetWeek = surveyWeekId()
-      const preferredWeekId = (dayBelongsToCalendarWeek(day) && calWeek !== targetWeek)
-        ? calWeek
-        : targetWeek
 
-      // NOTE: must mirror the list `load()` resolution. The list searches ALL
-      // weeks and falls back to the latest answered row for this day+meal, so
-      // pinning the scan to a single week showed "no response" for members
-      // whose answer lives in the other week (e.g. daily-edit wrote to the
-      // calendar week while the tracker pointed at the target week).
+      const calWeek = getCalendarWeekDate()
+      const primaryTarget = targetWeeks[0] || surveyWeekId()
+      const activeWeekId = (weekFilter && weekFilter !== 'all')
+        ? weekFilter
+        : ((dayBelongsToCalendarWeek(day) && calWeek !== primaryTarget) ? calWeek : primaryTarget)
+
       let row = null
       try {
         const { data: dayRows } = await supabase
           .from('survey_day_responses')
           .select('*')
           .eq('user_id', userId)
-        let flatFallback = []
-        try {
-          const { data: flatRows } = await supabase
-            .from('survey_submissions_flat')
-            .select('*')
-            .eq('user_id', userId)
-          if (flatRows) flatFallback = flatRows
-        } catch {}
-        let candidates = flattenDayRows(dayRows || [])
-        // Merge flat fallback for weeks missing from day rows (same as fetchAllUserRows)
-        for (const f of flatFallback) {
-          const key = `${f.user_id || f.thali_number}|${f.week_id}`
-          const existing = candidates.find(m => `${m.user_id || m.thali_number}|${m.week_id}` === key)
-          if (!existing) {
-            candidates.push(f)
-          } else {
-            DAY_KEYS.forEach(dk => {
-              ;['l', 'd'].forEach(mk => {
-                const stKey = `${dk}_${mk}_status`
-                if (!existing[stKey] && f[stKey]) {
-                  existing[stKey] = f[stKey]
-                  for (let i = 1; i <= 5; i++) {
-                    const dishKey = `${dk}_${mk}_dish_${i}`
-                    if (existing[dishKey] === undefined && f[dishKey] !== undefined) {
-                      existing[dishKey] = f[dishKey]
-                    }
-                  }
-                }
-              })
-            })
-          }
+          .eq('week_id', activeWeekId)
+
+        if (dayRows && dayRows.length > 0) {
+          row = flattenDayRows(dayRows)[0]
         }
-        // Thali/email fallback: if this login has no rows under its user_id
-        // (e.g. re-created account), match the way the list does.
-        if (!candidates.length && (u.thali_number || u.email)) {
+
+        // Thali / email fallback for the active week
+        if (!row && (u.thali_number || u.email)) {
           const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
           const ctU = cleanThali(u.thali_number)
           const emU = String(u.email || '').toLowerCase().trim()
           try {
-            const { data: allDay } = await supabase.from('survey_day_responses').select('*')
+            const { data: allDay } = await supabase
+              .from('survey_day_responses')
+              .select('*')
+              .eq('week_id', activeWeekId)
             const matched = (allDay || []).filter(r => {
               if (ctU && cleanThali(r.thali_number) && cleanThali(r.thali_number) === ctU) return true
               if (emU && r.email && String(r.email).toLowerCase().trim() === emU) return true
               return false
             })
-            if (matched.length) candidates = flattenDayRows(matched)
+            if (matched.length) row = flattenDayRows(matched)[0]
           } catch {}
         }
-        const answered = candidates.filter(r => r && r[statusKey])
-        if (answered.length > 0) {
-          const calMatch = answered.find(r => r.week_id === calWeek)
-          const targetMatch = answered.find(r => r.week_id === targetWeek)
-          const preferredMatch = answered.find(r => r.week_id === preferredWeekId)
-          const latestAnswered = [...answered].sort((a, b) => (b.week_id || '').localeCompare(a.week_id || ''))[0]
-          row = preferredMatch || (dayBelongsToCalendarWeek(day) ? (calMatch || targetMatch) : (targetMatch || calMatch)) || latestAnswered || null
-        } else {
-          const anyAnswered = candidates.filter(r => DAY_KEYS.some(dk => r && (r[`${dk}_l_status`] || r[`${dk}_d_status`])))
-          const pool = anyAnswered.length ? anyAnswered : candidates
-          row = [...pool].sort((a, b) => (b.week_id || '').localeCompare(a.week_id || ''))[0] || null
-        }
-        // Final safety net: single-week direct fetch (covers RLS-restricted lists)
+
         if (!row) {
-          const { data: single } = await fetchUserSurveyRow(userId, preferredWeekId)
+          const { data: single } = await fetchUserSurveyRow(userId, activeWeekId)
           if (single) row = single
         }
       } catch (e) {
-        console.warn('[processDirectScan] multi-week lookup failed, falling back:', e)
-        const { data: single } = await fetchUserSurveyRow(userId, preferredWeekId)
+        console.warn('[processDirectScan] week lookup failed, fallback to fetchUserSurveyRow:', e)
+        const { data: single } = await fetchUserSurveyRow(userId, activeWeekId)
         if (single) row = single
       }
-      const weekId = row?.week_id || preferredWeekId
+
+      const weekId = activeWeekId
 
       // Check for an active stop-thali request covering this day+meal
-      // (same tracker-week date math as the list `load()` so stops agree)
       const dayIdx = DAYS.indexOf(day)
-      const trackingWeek = new Date(targetWeek + 'T00:00:00')
+      const trackingWeek = new Date(activeWeekId + 'T00:00:00')
       const selDate = new Date(trackingWeek)
       selDate.setDate(trackingWeek.getDate() + (dayIdx === -1 ? 0 : dayIdx))
       const selDateStr = toLocalDateStr(selDate)
@@ -240,11 +202,10 @@ export default function DailySurveyTracking() {
         return result
       }
 
-      // Fetch fresh weekly menu for the TRACKER week (same as the list's
-      // menuForDay) so dish names line up with what the list shows.
+      // Fetch fresh weekly menu specifically for activeWeekId
       let freshMenu = {}
       try {
-        const { data: menuRows } = await supabase.from('weekly_menu').select('day_name,lunch,dinner').eq('week_start', preferredWeekId)
+        const { data: menuRows } = await supabase.from('weekly_menu').select('day_name,lunch,dinner').eq('week_start', activeWeekId)
         ;(menuRows || []).forEach(r => {
           const k = String(r.day_name || '').toLowerCase()
           freshMenu[k] = {
@@ -252,27 +213,13 @@ export default function DailySurveyTracking() {
             dinner: parseDishArray(r.dinner),
           }
         })
-        // If the answer came from a different week, merge that week's menu too
-        // so snapshot-less dishes still resolve to names.
-        if (weekId !== preferredWeekId) {
-          const { data: rowWeekMenu } = await supabase.from('weekly_menu').select('day_name,lunch,dinner').eq('week_start', weekId)
-          ;(rowWeekMenu || []).forEach(r => {
-            const k = String(r.day_name || '').toLowerCase()
-            if (!freshMenu[k]) {
-              freshMenu[k] = {
-                lunch: parseDishArray(r.lunch),
-                dinner: parseDishArray(r.dinner),
-              }
-            }
-          })
-        }
       } catch {}
       const dayNameLower = day.toLowerCase()
-      const dayMenu = freshMenu[dayNameLower] || weeklyMenu[dayNameLower] || weeklyMenu[day] || {}
+      const dayMenu = freshMenu[dayNameLower] || displayMenu[dayNameLower] || weeklyMenu[dayNameLower] || weeklyMenu[day] || {}
       const lunchMap = buildDishMap(day, 'lunch', dayMenu.lunch || [])
       const dinnerMap = buildDishMap(day, 'dinner', dayMenu.dinner || [])
+
       // Explicit per-dish COUNT vs PORTION map, resolved from the menu order
-      // (TV grid order can differ, so the TV view must not rely on grid idx).
       const buildDishTypes = (mealName, menuList) => {
         const types = {}
         const list = Array.isArray(menuList) ? menuList.filter(Boolean) : []
@@ -291,7 +238,8 @@ export default function DailySurveyTracking() {
 
       setSelectedUser({
         ...u,
-        week_id: weekId,
+        week_id: activeWeekId,
+        week_range: formatWeekRange(activeWeekId),
         stopped: isStopped,
         stopInfo,
         status: isStopped ? 'Skipped' : (meal === 'lunch' ? lunchMap._status : dinnerMap._status),
@@ -475,10 +423,19 @@ setLoadError(null)
 
       setLoadError(null)
 
-      // Collect distinct week_ids for filter (normal rows only).
-      const allWeeks = [...new Set(
-        (allRows || []).map(s => s.week_id).filter(Boolean)
-      )].sort().reverse()
+      // Collect distinct week_ids for filter
+      const targetWeeksList = getSurveyTargetWeeks(settingsMap)
+      const primaryTarget = targetWeeksList[0] || getSurveyTargetWeek(settingsMap)
+      const cal = getCalendarWeekDate()
+      const effectiveWeek = (weekFilter && weekFilter !== 'all')
+        ? weekFilter
+        : ((dayBelongsToCalendarWeek(day) && cal !== primaryTarget) ? cal : primaryTarget)
+
+      const allWeeks = [...new Set([
+        ...targetWeeksList,
+        cal,
+        ...(allRows || []).map(s => s.week_id).filter(Boolean)
+      ])].filter(Boolean).sort().reverse()
       setAvailableWeeks(allWeeks)
       
       const dayKey = day.substring(0, 3).toLowerCase()
@@ -518,28 +475,25 @@ setLoadError(null)
         return result
       }
 
-      // Resolve the menu from the SAME week that owns the selected day.
+      // Resolve the menu specifically for the active week (e.g. 14-19 vs 21-26)
       let menuForDay = weeklyMenu
-      {
-        const cal = getCalendarWeekDate()
-        if (dayBelongsToCalendarWeek(day) && cal !== surveyWeekId()) {
-          const { data: menuRows, error: menuErr } = await supabase
-            .from('weekly_menu')
-            .select('day_name,lunch,dinner')
-            .eq('week_start', cal)
-          if (!menuErr && menuRows && menuRows.length) {
-            const m = {}
-            menuRows.forEach(r => {
-              const k = String(r.day_name || '').toLowerCase()
-              m[k] = {
-                lunch: parseDishArray(r.lunch),
-                dinner: parseDishArray(r.dinner),
-              }
-            })
-            menuForDay = m
-          }
+      try {
+        const { data: menuRows, error: menuErr } = await supabase
+          .from('weekly_menu')
+          .select('day_name,lunch,dinner')
+          .eq('week_start', effectiveWeek)
+        if (!menuErr && menuRows && menuRows.length) {
+          const m = {}
+          menuRows.forEach(r => {
+            const k = String(r.day_name || '').toLowerCase()
+            m[k] = {
+              lunch: parseDishArray(r.lunch),
+              dinner: parseDishArray(r.dinner),
+            }
+          })
+          menuForDay = m
         }
-      }
+      } catch {}
       setDisplayMenu(menuForDay)
 
       const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -565,18 +519,16 @@ setLoadError(null)
         const statusKey = `${dayKey}_${mealKey}_status`
 
         if (weekFilter !== 'all') {
-          resp = candidates.find(r => r.week_id === weekFilter) || candidates[0] || {}
+          resp = candidates.find(r => r.week_id === weekFilter) || {}
         } else {
-          const cal = getCalendarWeekDate()
-          const target = targetWeekId || surveyWeekId()
-
           // Find candidate rows that actually have an answered status for this day+meal
           const answered = candidates.filter(r => r && r[statusKey])
           if (answered.length > 0) {
             const calMatch = answered.find(r => r.week_id === cal)
-            const targetMatch = answered.find(r => r.week_id === target)
+            const targetMatch = answered.find(r => r.week_id === primaryTarget)
+            const effectiveMatch = answered.find(r => r.week_id === effectiveWeek)
             const latestAnswered = [...answered].sort((a, b) => (b.week_id || '').localeCompare(a.week_id || ''))[0]
-            resp = (dayBelongsToCalendarWeek(day) ? (calMatch || targetMatch) : (targetMatch || calMatch)) || latestAnswered || {}
+            resp = effectiveMatch || (dayBelongsToCalendarWeek(day) ? (calMatch || targetMatch) : (targetMatch || calMatch)) || latestAnswered || {}
           } else {
             // Check any row with ANY day answered
             const anyAnswered = candidates.filter(r => {
@@ -586,6 +538,8 @@ setLoadError(null)
             resp = latestAny || {}
           }
         }
+
+        const userWeekId = (weekFilter !== 'all') ? weekFilter : (resp.week_id || effectiveWeek)
         const dayKeyLower = day.toLowerCase()
         const dayMenu = menuForDay[dayKeyLower] || menuForDay[day] || {}
         const buildCurMeal = buildDishMap(resp, day, meal, dayMenu[meal] || [])
@@ -624,7 +578,8 @@ setLoadError(null)
           dinner: { status: stoppedDinnerMap[u.user_id] ? 'Skipped' : buildDinner._status, dishes: buildDinner, dishTypes: dinnerTypes },
           currentDay: day,
           currentMeal: meal,
-          week_id: resp ? resp.week_id : null,
+          week_id: userWeekId,
+          week_range: formatWeekRange(userWeekId),
           updated_at: resp ? resp.updated_at : null 
         }
       })
@@ -826,12 +781,32 @@ setLoadError(null)
             ))}
           </div>
 
-          {/* Week Filter */}
+          {/* Week Quick Select Tabs */}
+          {targetWeeks.length > 1 && (
+            <div style={{ display: 'flex', background: T.inputBg, padding: 3, borderRadius: 12, border: `1px solid ${T.border}` }}>
+              {targetWeeks.map((tw, idx) => {
+                const isSelected = weekFilter === tw
+                return (
+                  <button key={tw} onClick={() => setWeekFilter(tw)}
+                    style={{
+                      padding: '6px 12px', borderRadius: 8, border: 'none',
+                      background: isSelected ? T.accentGrad : 'transparent',
+                      color: isSelected ? '#fff' : T.textSub,
+                      fontSize: 10, fontWeight: 700, cursor: 'pointer', transition: '0.2s', whiteSpace: 'nowrap'
+                    }}>
+                    {formatWeekRange(tw)} (W{idx + 1})
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Week Filter Dropdown */}
           <select value={weekFilter} onChange={e => setWeekFilter(e.target.value)} name="weekFilter"
             style={{ padding: '6px 12px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.border}`, color: T.text, fontSize: 11, fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
-            <option value="all">Latest Week</option>
+            <option value="all">⚡ Auto / Latest Week</option>
             {availableWeeks.map(w => (
-              <option key={w} value={w}>{new Date(w + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</option>
+              <option key={w} value={w}>{formatWeekRange(w)} ({formatWeekShort(w)})</option>
             ))}
           </select>
           
