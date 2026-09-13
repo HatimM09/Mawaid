@@ -356,8 +356,6 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     return out
   }, [weekIds, weekData])
 
-  // Escape
-  useEffect(() => { const h=(e)=>{ if(e.key==='Escape') handleClose() }; window.addEventListener('keydown',h); return()=>window.removeEventListener('keydown',h)}, [handleClose])
   useEffect(()=>{ if(!errorToast) return; const t=setTimeout(()=>setErrorToast(null),4000); return()=>clearTimeout(t)}, [errorToast])
   useEffect(()=>{ if(!syncMsg) return; const t=setTimeout(()=>setSyncMsg(null),2400); return()=>clearTimeout(t)}, [syncMsg])
 
@@ -533,6 +531,13 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     }
     onClose()
   }, [onClose, surveySubmitted, saveAllSlots])
+
+  // Escape key handler
+  useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') handleClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [handleClose])
 
   // Lunch/Dinner handlers for active slot
   const updateActive = (updater)=>{
