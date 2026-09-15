@@ -129,15 +129,14 @@ export default function SurveysPage() {
     const dk = dayName.substring(0, 3).toLowerCase()
     const mk = mealName === 'lunch' ? 'l' : 'd'
     const snapshotList = getSlotDishes(row, dayName, mealName, null)
+    const cleanSnapshot = Array.isArray(snapshotList) ? snapshotList.filter(Boolean) : []
     const menuList = Array.isArray(fallbackList) ? fallbackList.filter(Boolean) : []
-    const allDishNames = Array.from(new Set([...menuList, ...(snapshotList || [])]))
-    const dishList = allDishNames.length ? allDishNames : (snapshotList || menuList)
+    const dishList = menuList.length > 0 ? menuList : (cleanSnapshot.length > 0 ? cleanSnapshot : [])
     const res = {}
     res._status = row ? row[`${dk}_${mk}_status`] : 'Not Submitted'
-    dishList.forEach((d) => {
-      let pos = -1
-      if (snapshotList && snapshotList.includes(d)) pos = snapshotList.indexOf(d)
-      else if (menuList.includes(d)) pos = menuList.indexOf(d)
+    dishList.forEach((d, idx) => {
+      let pos = idx
+      if (cleanSnapshot.length > 0 && cleanSnapshot.includes(d)) pos = cleanSnapshot.indexOf(d)
       const v = (row && pos >= 0) ? row[`${dk}_${mk}_dish_${pos + 1}`] : null
       if (v !== undefined && v !== null && v !== '') {
         const rotiKw = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
@@ -155,16 +154,35 @@ export default function SurveysPage() {
     return res
   }
 
-  const processDirectScan = async (userId) => {
+  const processDirectScan = async (rawUserId) => {
     try {
-      const { data: u } = await supabase.from('user_stats').select('*').eq('user_id', userId).maybeSingle()
+      const cleanId = String(rawUserId || '').trim().replace(/^ALMAWAID:/i, '').trim()
+      if (!cleanId) return
+
+      const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+      const cleanTarget = cleanThali(cleanId)
+
+      let { data: u } = await supabase.from('user_stats').select('*').eq('user_id', cleanId).maybeSingle()
+      if (!u) {
+        const { data: uById } = await supabase.from('user_stats').select('*').eq('id', cleanId).maybeSingle()
+        u = uById
+      }
+      if (!u) {
+        const { data: uByThali } = await supabase.from('user_stats').select('*').eq('thali_number', cleanId).maybeSingle()
+        u = uByThali
+      }
+      if (!u && cleanTarget) {
+        const { data: allU } = await supabase.from('user_stats').select('*')
+        u = (allU || []).find(x => cleanThali(x.thali_number) === cleanTarget || (x.email && x.email.toLowerCase().trim() === cleanId.toLowerCase()))
+      }
       if (!u) return
       
+      const targetUserId = u.user_id || u.id
       const dayKey = dayFilter.substring(0, 3).toLowerCase()
       const mealKey = mealFilter === 'lunch' ? 'l' : 'd'
       const weekId = (weekFilter && weekFilter !== 'all') ? weekFilter : surveyWeekId()
       
-      const { data: row } = await fetchUserSurveyRow(userId, weekId)
+      const { data: row } = await fetchUserSurveyRow(targetUserId, weekId)
       
       // Fresh menu for this week so scan shows real dish names, not Dish1
       let freshMenu = {}

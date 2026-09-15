@@ -12,10 +12,12 @@ import { AuthCtx, ThemeCtx, useAuth, useTheme } from './context'
 import { T as SharedT, updateSystemTheme, Modal, SurveyResponseDisplay, Btn as SharedBtn, PackingTVView } from './ui'
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { Scan, X, RefreshCw } from 'lucide-react'
-import UsersPage from './UsersPage'
-import { getCalendarWeekDate } from '../common/utils'
-import { getSlotDishes } from '../hooks/useSurvey'
-import { fetchUserSurveyRow, fetchAllUserRows } from '../lib/surveyRows'
+import { 
+  getCalendarWeekDate, getSurveyTargetWeek, getSurveyTargetWeeks, 
+  DAYS, DAY_KEYS, toLocalDateStr, isStoppedOnDay, parseDishArray, formatWeekRange 
+} from '../common/utils'
+import { getSlotDishes, isRotiItem, isCountInput } from '../hooks/useSurvey'
+import { fetchUserSurveyRow, fetchAllUserRows, flattenDayRows } from '../lib/surveyRows'
 import RequestsAdminPage from './RequestsAdminPage'
 import QueriesAdminPage from './QueriesAdminPage'
 import DailySurveyTracking from './DailySurveyTracking'
@@ -331,12 +333,18 @@ function ScanHeaderCard({ staffInfo, onScan, onNotices, currentMeal, mealOverrid
   )
 }
 
-// Need to import RefreshCw
-
-export default function KhidmatPortal({ signOut, user }) {
-  const [activeTab, setActiveTab] = useState('home')
-  const [staffInfo, setStaffInfo] = useState({ name: 'Staff Member', role: 'Team Member' })
+export default function KhidmatPortal() {
+  const { user } = useAuth()
+  const { theme } = useTheme()
+  const [activeTab, setActiveTab] = useState('tracking')
   const [loading, setLoading] = useState(true)
+  const [staffInfo, setStaffInfo] = useState(null)
+  const [stats, setStats] = useState({
+    todayDispatches: 0,
+    activeRequests: 0,
+    totalRegistered: 0,
+    recentFeedback: 0,
+  })
   const [isScanning, setIsScanning] = useState(false)
   const [scannedUser, setScannedUser] = useState(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -385,9 +393,12 @@ export default function KhidmatPortal({ signOut, user }) {
       lastKeyTime = now
 
       if (e.key === 'Enter') {
-        if (scanBuffer.startsWith('ALMAWAID:')) {
-          const userId = scanBuffer.split(':')[1]
-          processScan(userId)
+        const text = scanBuffer.trim()
+        if (text) {
+          const userId = text.replace(/^ALMAWAID:/i, '').trim()
+          if (userId) {
+            processScan(userId)
+          }
           scanBuffer = ''
         }
       } else if (e.key.length === 1) {
@@ -399,54 +410,148 @@ export default function KhidmatPortal({ signOut, user }) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  const processScan = async (userId) => {
+  const processScan = async (rawUserId) => {
     try {
-      const { data: u } = await supabase.from('user_stats').select('*').eq('user_id', userId).maybeSingle()
+      const cleanId = String(rawUserId || '').trim().replace(/^ALMAWAID:/i, '').trim()
+      if (!cleanId) return
+
+      const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+      const cleanTarget = cleanThali(cleanId)
+
+      let { data: u } = await supabase.from('user_stats').select('*').eq('user_id', cleanId).maybeSingle()
+      if (!u) {
+        const { data: uById } = await supabase.from('user_stats').select('*').eq('id', cleanId).maybeSingle()
+        u = uById
+      }
+      if (!u) {
+        const { data: uByThali } = await supabase.from('user_stats').select('*').eq('thali_number', cleanId).maybeSingle()
+        u = uByThali
+      }
+      if (!u && cleanTarget) {
+        const { data: allU } = await supabase.from('user_stats').select('*')
+        u = (allU || []).find(x => cleanThali(x.thali_number) === cleanTarget || (x.email && x.email.toLowerCase().trim() === cleanId.toLowerCase()))
+      }
       if (!u) return
       
+      const targetUserId = u.user_id || u.id
       const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
       let today = days[new Date().getDay()]
       if (today === 'sunday') today = 'monday'
       const dayKey = today.substring(0, 3).toLowerCase()
-      const weekId = getCalendarWeekDate()
+
+      const calWeek = getCalendarWeekDate()
+      let targetWeek = calWeek
+      try {
+        const { data: allSettings } = await supabase.from('app_settings').select('*')
+        const settingsMap = {}
+        ;(allSettings || []).forEach(r => { if (r && r.key) settingsMap[r.key] = r.value })
+        targetWeek = getSurveyTargetWeek(settingsMap)
+      } catch {}
+
+      const candidateWeekIds = [...new Set([calWeek, targetWeek])].filter(Boolean)
       
-      const { data: row } = await fetchUserSurveyRow(userId, weekId)
+      let row = null
+      for (const wid of candidateWeekIds) {
+        try {
+          const { data: r } = await fetchUserSurveyRow(targetUserId, wid)
+          if (r && (r[`${dayKey}_l_status`] || r[`${dayKey}_d_status`])) {
+            row = r
+            break
+          }
+          if (r && !row) row = r
+        } catch {}
+      }
+
+      const activeWeekId = row?.week_id || calWeek
+
+      // Check stop thali requests
+      const dayIdx = DAYS.indexOf(today)
+      const trackingWeek = new Date(activeWeekId + 'T00:00:00')
+      const selDate = new Date(trackingWeek)
+      selDate.setDate(trackingWeek.getDate() + (dayIdx === -1 ? 0 : dayIdx))
+      const selDateStr = toLocalDateStr(selDate)
+      let isStopped = false
+      let stopInfo = null
+      let isStoppedLunch = false
+      let isStoppedDinner = false
+
+      try {
+        const { data: stopReqs } = await supabase
+          .from('thali_requests')
+          .select('request_type, status, from_date, to_date, meal_type, created_at')
+          .eq('user_id', targetUserId)
+          .in('request_type', ['stop'])
+          .in('status', ['pending', 'approved'])
+        const { data: resumeReqs } = await supabase
+          .from('thali_requests')
+          .select('request_type, status, from_date, to_date, meal_type, created_at')
+          .eq('user_id', targetUserId)
+          .in('request_type', ['resume'])
+          .in('status', ['pending', 'approved'])
+        const allReqs = [
+          ...(stopReqs || []).map(r => ({ ...r, kind: 'stop' })),
+          ...(resumeReqs || []).map(r => ({ ...r, kind: 'resume' })),
+        ]
+        if (isStoppedOnDay(allReqs, selDateStr, currentMeal)) {
+          isStopped = true
+          stopInfo = (allReqs || []).filter(r => r.kind === 'stop')[0] || null
+        }
+        isStoppedLunch = isStoppedOnDay(allReqs, selDateStr, 'lunch')
+        isStoppedDinner = isStoppedOnDay(allReqs, selDateStr, 'dinner')
+      } catch (e) { console.warn(e) }
 
       const { data: menuRow } = await supabase
         .from('weekly_menu')
         .select('*')
         .eq('day_name', today)
-        .eq('week_start', getCalendarWeekDate())
+        .eq('week_start', activeWeekId)
         .maybeSingle()
 
-      const buildMealData = (meal) => {
-        const mealKey = meal === 'lunch' ? 'l' : 'd'
+      const buildMealData = (mealName) => {
+        const mealKey = mealName === 'lunch' ? 'l' : 'd'
         const statusKey = `${dayKey}_${mealKey}_status`
         const status = row ? row[statusKey] : null
         const dishes = {}
-        const currentList = (menuRow?.[meal] || '').split(',').map(s => s.trim()).filter(Boolean)
-        const dishList = getSlotDishes(row, today, meal, currentList)
-        dishList.forEach((dish, idx) => {
-          const val = row ? row[`${dayKey}_${mealKey}_dish_${idx + 1}`] : null
+        const currentList = parseDishArray(menuRow?.[mealName])
+        const snapshotList = getSlotDishes(row, today, mealName, null)
+        const names = currentList.length > 0 ? currentList : (snapshotList || [])
+        
+        names.forEach((dish, idx) => {
+          let pos = idx
+          if (snapshotList && snapshotList.includes(dish)) pos = snapshotList.indexOf(dish)
+          const val = row ? row[`${dayKey}_${mealKey}_dish_${pos + 1}`] : null
           if (val !== undefined && val !== null && val !== '') {
-            dishes[dish] = val === 'Yes' ? 'yes' : (val === 'No' ? 'no' : val)
+            if (isRotiItem(dish)) {
+              dishes[dish] = String(val).toLowerCase() === 'yes' ? 'yes' : 'no'
+            } else {
+              const lv = String(val).toLowerCase()
+              dishes[dish] = (lv === 'yes' || lv === 'no') ? lv : val
+            }
           } else {
             dishes[dish] = null
           }
         })
-        return { status: status || 'Not Submitted', dishes }
+
+        const isMealStopped = mealName === 'lunch' ? isStoppedLunch : isStoppedDinner
+        return { status: isMealStopped ? 'Skipped' : (status || 'Not Submitted'), dishes }
       }
 
       // Use scanned meal (which respects admin override) or current meal
       const mealToShow = scannedMeal || currentMeal
+      const lunchData = buildMealData('lunch')
+      const dinnerData = buildMealData('dinner')
       
       setScannedUser({
         ...u,
-        week_id: weekId,
+        week_id: activeWeekId,
+        week_range: formatWeekRange(activeWeekId),
+        stopped: isStopped,
+        stopInfo,
+        status: isStopped ? 'Skipped' : (mealToShow === 'lunch' ? lunchData.status : dinnerData.status),
         currentDay: today,
         currentMeal: mealToShow,
-        lunch: buildMealData('lunch'),
-        dinner: buildMealData('dinner')
+        lunch: lunchData,
+        dinner: dinnerData
       })
       // Set the scanned meal to current meal (respecting override)
       setScannedMeal(mealToShow)

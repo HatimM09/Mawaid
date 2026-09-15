@@ -37,7 +37,8 @@ export default function DailySurveyTracking() {
   const surveyWeekId = useCallback(() => getSurveyTargetWeek(appSettings), [appSettings])
   const targetWeeks = useMemo(() => getSurveyTargetWeeks(appSettings), [appSettings])
   const targetWeek = targetWeeks[0] || surveyWeekId()
-  const weeklyMenu = useWeeklyMenu(targetWeek) || {}
+  const weeklyMenuRaw = useWeeklyMenu(targetWeeks.length > 1 ? targetWeeks : targetWeek) || {}
+  const weeklyMenu = targetWeeks.length > 1 ? (weeklyMenuRaw.__byWeek?.[targetWeek] || weeklyMenuRaw) : weeklyMenuRaw
   const [searchParams] = useSearchParams()
   const urlMeal = searchParams.get('meal')
   const [loading, setLoading] = useState(true)
@@ -59,6 +60,11 @@ export default function DailySurveyTracking() {
   const [mealOverride, setMealOverride] = useState(false)
   const [search, setSearch] = useState('')
   const [users, setUsers] = useState([])
+  const usersRef = useRef([])
+  useEffect(() => {
+    usersRef.current = users
+  }, [users])
+
   const [selectedUser, setSelectedUser] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [isScanning, setIsScanning] = useState(false)
@@ -75,88 +81,136 @@ export default function DailySurveyTracking() {
     return config?.[idx] || (m === 'lunch' && idx <= 3 ? 'count' : 'percentage')
   }
 
-  const processDirectScan = async (userId) => {
+  const processDirectScan = async (rawUserId) => {
     // Auto-fullscreen on scan — must be synchronous before any await to preserve user gesture
     document.documentElement.requestFullscreen().catch(() => {})
     try {
-      const { data: u } = await supabase.from('user_stats').select('*').eq('user_id', userId).maybeSingle()
+      const cleanId = String(rawUserId || '').trim().replace(/^ALMAWAID:/i, '').trim()
+      if (!cleanId) {
+        alert('Invalid QR code scanned.')
+        return
+      }
+
+      const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+      const cleanTarget = cleanThali(cleanId)
+
+      // 1. FAST PATH: Check if user is already loaded in the tracker table
+      const cached = (usersRef.current || []).find(u => 
+        (u.user_id && String(u.user_id).trim() === cleanId) ||
+        (u.id && String(u.id).trim() === cleanId) ||
+        (u.thali_number && String(u.thali_number).trim() === cleanId) ||
+        (u.thali_number && cleanThali(u.thali_number) === cleanTarget) ||
+        (u.email && String(u.email).toLowerCase().trim() === cleanId.toLowerCase())
+      )
+
+      if (cached) {
+        setSelectedUser(cached)
+        return
+      }
+
+      // 2. FALLBACK PATH: Query DB directly
+      let { data: u } = await supabase.from('user_stats').select('*').eq('user_id', cleanId).maybeSingle()
+      if (!u) {
+        const { data: uById } = await supabase.from('user_stats').select('*').eq('id', cleanId).maybeSingle()
+        u = uById
+      }
+      if (!u) {
+        const { data: uByThali } = await supabase.from('user_stats').select('*').eq('thali_number', cleanId).maybeSingle()
+        u = uByThali
+      }
+      if (!u && cleanTarget) {
+        const { data: allU } = await supabase.from('user_stats').select('*')
+        u = (allU || []).find(x => cleanThali(x.thali_number) === cleanTarget || (x.email && x.email.toLowerCase().trim() === cleanId.toLowerCase()))
+      }
+
       if (!u) {
         alert('User not found!')
         return
       }
-      
+
+      const targetUserId = u.user_id || u.id
       const dayKey = day.substring(0, 3).toLowerCase()
       const mealKey = meal === 'lunch' ? 'l' : 'd'
       const statusKey = `${dayKey}_${mealKey}_status`
 
       const calWeek = getCalendarWeekDate()
-      const primaryTarget = targetWeeks[0] || surveyWeekId()
+      const targetWeeksList = getSurveyTargetWeeks(appSettings)
+      const primaryTarget = targetWeeksList[0] || surveyWeekId()
       const activeWeekId = (weekFilter && weekFilter !== 'all')
         ? weekFilter
         : ((dayBelongsToCalendarWeek(day) && calWeek !== primaryTarget) ? calWeek : primaryTarget)
 
-      let row = null
+      // Fetch all candidate survey rows for this user (covering active week, calendar week, target weeks)
+      const candidateWeekIds = [...new Set([activeWeekId, calWeek, primaryTarget, ...targetWeeksList])].filter(Boolean)
+      
+      let candidateRows = []
       try {
         const { data: dayRows } = await supabase
           .from('survey_day_responses')
           .select('*')
-          .eq('user_id', userId)
-          .eq('week_id', activeWeekId)
+          .in('week_id', candidateWeekIds)
+          .or(`user_id.eq.${targetUserId},thali_number.eq.${u.thali_number || ''}`)
 
         if (dayRows && dayRows.length > 0) {
-          row = flattenDayRows(dayRows)[0]
-        }
-
-        // Thali / email fallback for the active week
-        if (!row && (u.thali_number || u.email)) {
-          const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-          const ctU = cleanThali(u.thali_number)
-          const emU = String(u.email || '').toLowerCase().trim()
-          try {
-            const { data: allDay } = await supabase
-              .from('survey_day_responses')
-              .select('*')
-              .eq('week_id', activeWeekId)
-            const matched = (allDay || []).filter(r => {
-              if (ctU && cleanThali(r.thali_number) && cleanThali(r.thali_number) === ctU) return true
-              if (emU && r.email && String(r.email).toLowerCase().trim() === emU) return true
-              return false
-            })
-            if (matched.length) row = flattenDayRows(matched)[0]
-          } catch {}
-        }
-
-        if (!row) {
-          const { data: single } = await fetchUserSurveyRow(userId, activeWeekId)
-          if (single) row = single
+          candidateRows = flattenDayRows(dayRows)
         }
       } catch (e) {
-        console.warn('[processDirectScan] week lookup failed, fallback to fetchUserSurveyRow:', e)
-        const { data: single } = await fetchUserSurveyRow(userId, activeWeekId)
-        if (single) row = single
+        console.warn('[processDirectScan] error fetching dayRows:', e)
       }
 
-      const weekId = activeWeekId
+      // Check legacy / fallback if no candidate rows
+      if (!candidateRows.length) {
+        for (const wid of candidateWeekIds) {
+          try {
+            const { data: single } = await fetchUserSurveyRow(targetUserId, wid)
+            if (single) candidateRows.push(single)
+          } catch {}
+        }
+      }
+
+      // Pick the best response row for the selected day/meal
+      let row = {}
+      if (weekFilter !== 'all') {
+        row = candidateRows.find(r => r.week_id === weekFilter) || {}
+      } else {
+        const answered = candidateRows.filter(r => r && r[statusKey])
+        if (answered.length > 0) {
+          const effectiveMatch = answered.find(r => r.week_id === activeWeekId)
+          const calMatch = answered.find(r => r.week_id === calWeek)
+          const targetMatch = answered.find(r => r.week_id === primaryTarget)
+          const latestAnswered = [...answered].sort((a, b) => (b.week_id || '').localeCompare(a.week_id || ''))[0]
+          row = effectiveMatch || (dayBelongsToCalendarWeek(day) ? (calMatch || targetMatch) : (targetMatch || calMatch)) || latestAnswered || {}
+        } else {
+          const anyAnswered = candidateRows.filter(r => DAY_KEYS.some(dk => r && (r[`${dk}_l_status`] || r[`${dk}_d_status`])))
+          const latestAny = [...(anyAnswered.length ? anyAnswered : candidateRows)].sort((a, b) => (b.week_id || '').localeCompare(a.week_id || ''))[0]
+          row = latestAny || {}
+        }
+      }
+
+      const resolvedWeekId = (weekFilter !== 'all') ? weekFilter : (row.week_id || activeWeekId)
 
       // Check for an active stop-thali request covering this day+meal
       const dayIdx = DAYS.indexOf(day)
-      const trackingWeek = new Date(activeWeekId + 'T00:00:00')
+      const trackingWeek = new Date(resolvedWeekId + 'T00:00:00')
       const selDate = new Date(trackingWeek)
       selDate.setDate(trackingWeek.getDate() + (dayIdx === -1 ? 0 : dayIdx))
       const selDateStr = toLocalDateStr(selDate)
       let isStopped = false
       let stopInfo = null
+      let isStoppedLunch = false
+      let isStoppedDinner = false
+
       try {
         const { data: stopReqs } = await supabase
           .from('thali_requests')
           .select('request_type, status, from_date, to_date, meal_type, created_at')
-          .eq('user_id', userId)
+          .eq('user_id', targetUserId)
           .in('request_type', ['stop'])
           .in('status', ['pending', 'approved'])
         const { data: resumeReqs } = await supabase
           .from('thali_requests')
           .select('request_type, status, from_date, to_date, meal_type, created_at')
-          .eq('user_id', userId)
+          .eq('user_id', targetUserId)
           .in('request_type', ['resume'])
           .in('status', ['pending', 'approved'])
         const allReqs = [
@@ -168,23 +222,39 @@ export default function DailySurveyTracking() {
           const info = pickStopInfo(allReqs, selDateStr, meal)
           stopInfo = { from_date: info?.from_date, to_date: info?.to_date, meal_type: info?.meal_type }
         }
+        isStoppedLunch = isStoppedOnDay(allReqs, selDateStr, 'lunch')
+        isStoppedDinner = isStoppedOnDay(allReqs, selDateStr, 'dinner')
       } catch (e) { console.warn(e) }
-      
-      const buildDishMap = (dayName, mealName, fallbackList) => {
+
+      // Fetch fresh weekly menu specifically for resolvedWeekId
+      let freshMenu = {}
+      try {
+        const { data: menuRows } = await supabase.from('weekly_menu').select('day_name,lunch,dinner').eq('week_start', resolvedWeekId)
+        ;(menuRows || []).forEach(r => {
+          const k = String(r.day_name || '').toLowerCase()
+          freshMenu[k] = {
+            lunch: parseDishArray(r.lunch),
+            dinner: parseDishArray(r.dinner),
+          }
+        })
+      } catch {}
+      const dayNameLower = day.toLowerCase()
+      const dayMenu = freshMenu[dayNameLower] || (weeklyMenuRaw.__byWeek?.[resolvedWeekId]?.[dayNameLower]) || displayMenu[dayNameLower] || weeklyMenu[dayNameLower] || weeklyMenu[day] || {}
+
+      const scanBuildDishMap = (mealName, menuList) => {
         const mk = mealName === 'lunch' ? 'l' : 'd'
-        const dk = String(dayName || day).substring(0, 3).toLowerCase()
-        const snapshotList = getSlotDishes(row, dayName, mealName, null)
-        const menuList = Array.isArray(fallbackList) ? fallbackList.filter(Boolean) : []
-        const allDishNames = Array.from(new Set([...menuList, ...(snapshotList || [])]))
-        const names = allDishNames.length ? allDishNames : (snapshotList || menuList)
+        const dk = day.substring(0, 3).toLowerCase()
+        const cleanMenuList = Array.isArray(menuList) ? menuList.filter(Boolean) : []
+        const snapshotList = getSlotDishes(row, day, mealName, null)
+        const cleanSnapshot = Array.isArray(snapshotList) ? snapshotList.filter(Boolean) : []
+        const names = cleanMenuList.length > 0 ? cleanMenuList : (cleanSnapshot.length > 0 ? cleanSnapshot : [])
         const result = {}
         result._status = row ? row[`${dk}_${mk}_status`] : null
-        names.forEach((d) => {
-          let pos = -1
-          if (snapshotList && snapshotList.includes(d)) {
-            pos = snapshotList.indexOf(d)
-          } else if (menuList.includes(d)) {
-            pos = menuList.indexOf(d)
+
+        names.forEach((d, idx) => {
+          let pos = idx
+          if (cleanSnapshot.length > 0 && cleanSnapshot.includes(d)) {
+            pos = cleanSnapshot.indexOf(d)
           }
           const val = (row && pos >= 0) ? row[`${dk}_${mk}_dish_${pos + 1}`] : null
           if (val !== undefined && val !== null && val !== '') {
@@ -202,51 +272,39 @@ export default function DailySurveyTracking() {
         return result
       }
 
-      // Fetch fresh weekly menu specifically for activeWeekId
-      let freshMenu = {}
-      try {
-        const { data: menuRows } = await supabase.from('weekly_menu').select('day_name,lunch,dinner').eq('week_start', activeWeekId)
-        ;(menuRows || []).forEach(r => {
-          const k = String(r.day_name || '').toLowerCase()
-          freshMenu[k] = {
-            lunch: parseDishArray(r.lunch),
-            dinner: parseDishArray(r.dinner),
-          }
-        })
-      } catch {}
-      const dayNameLower = day.toLowerCase()
-      const dayMenu = freshMenu[dayNameLower] || displayMenu[dayNameLower] || weeklyMenu[dayNameLower] || weeklyMenu[day] || {}
-      const lunchMap = buildDishMap(day, 'lunch', dayMenu.lunch || [])
-      const dinnerMap = buildDishMap(day, 'dinner', dayMenu.dinner || [])
+      const lunchMap = scanBuildDishMap('lunch', dayMenu.lunch || [])
+      const dinnerMap = scanBuildDishMap('dinner', dayMenu.dinner || [])
+      const curMealMap = meal === 'lunch' ? lunchMap : dinnerMap
 
-      // Explicit per-dish COUNT vs PORTION map, resolved from the menu order
-      const buildDishTypes = (mealName, menuList) => {
+      const buildDishTypes = (mealName, menuList, dishMap) => {
         const types = {}
         const list = Array.isArray(menuList) ? menuList.filter(Boolean) : []
-        const dishMap = mealName === 'lunch' ? lunchMap : dinnerMap
-        Object.keys(dishMap).filter(k => k !== '_status').forEach((d) => {
+        Object.keys(dishMap).filter(k => k !== '_status').forEach((d, idx) => {
           if (isRotiItem(d)) { types[d] = 'roti'; return }
-          let idx = list.indexOf(d)
-          if (idx === -1) idx = Object.keys(dishMap).filter(k => k !== '_status').indexOf(d)
-          types[d] = (getInputType(day, mealName, idx) === 'count' || isCountInput(appSettings, day, mealName, idx)) ? 'count' : 'percentage'
+          let pos = list.indexOf(d)
+          if (pos === -1) pos = idx
+          types[d] = (getInputType(day, mealName, pos) === 'count' || isCountInput(appSettings, day, mealName, pos)) ? 'count' : 'percentage'
         })
         return types
       }
-      const lunchTypes = buildDishTypes('lunch', dayMenu.lunch || [])
-      const dinnerTypes = buildDishTypes('dinner', dayMenu.dinner || [])
+
+      const lunchTypes = buildDishTypes('lunch', dayMenu.lunch || [], lunchMap)
+      const dinnerTypes = buildDishTypes('dinner', dayMenu.dinner || [], dinnerMap)
       const curTypes = meal === 'lunch' ? lunchTypes : dinnerTypes
+
+      const curStatus = isStopped ? 'Skipped' : curMealMap._status
 
       setSelectedUser({
         ...u,
-        week_id: activeWeekId,
-        week_range: formatWeekRange(activeWeekId),
+        week_id: resolvedWeekId,
+        week_range: formatWeekRange(resolvedWeekId),
         stopped: isStopped,
         stopInfo,
-        status: isStopped ? 'Skipped' : (meal === 'lunch' ? lunchMap._status : dinnerMap._status),
-        dishResponses: buildDishMap(day, meal, dayMenu[meal] || []),
+        status: curStatus,
+        dishResponses: curMealMap,
         dishTypes: curTypes,
-        lunch: { status: isStopped ? 'Skipped' : lunchMap._status, dishes: lunchMap, dishTypes: lunchTypes },
-        dinner: { status: isStopped ? 'Skipped' : dinnerMap._status, dishes: dinnerMap, dishTypes: dinnerTypes },
+        lunch: { status: isStoppedLunch ? 'Skipped' : lunchMap._status, dishes: lunchMap, dishTypes: lunchTypes },
+        dinner: { status: isStoppedDinner ? 'Skipped' : dinnerMap._status, dishes: dinnerMap, dishTypes: dinnerTypes },
         currentDay: day,
         currentMeal: meal
       })
@@ -267,9 +325,12 @@ export default function DailySurveyTracking() {
       lastKeyTime = now
 
       if (e.key === 'Enter') {
-        if (scanBuffer.startsWith('ALMAWAID:')) {
-          const userId = scanBuffer.split(':')[1]
-          handleWirelessScan(userId)
+        const text = scanBuffer.trim()
+        if (text) {
+          const userId = text.replace(/^ALMAWAID:/i, '').trim()
+          if (userId) {
+            handleWirelessScan(userId)
+          }
           scanBuffer = ''
         }
       } else if (e.key.length === 1) {
@@ -442,22 +503,20 @@ setLoadError(null)
       const mealKey = meal === 'lunch' ? 'l' : 'd'
       const statusKey = `${dayKey}_${mealKey}_status`
       
-      const buildDishMap = (r, dayName, mealName, fallbackList) => {
+      const buildDishMap = (r, dayName, mealName, menuList) => {
         const mk = mealName === 'lunch' ? 'l' : 'd'
         const dk = String(dayName || day).substring(0, 3).toLowerCase()
+        const cleanMenuList = Array.isArray(menuList) ? menuList.filter(Boolean) : []
         const snapshotList = getSlotDishes(r, dayName, mealName, null)
-        const menuList = Array.isArray(fallbackList) ? fallbackList.filter(Boolean) : []
-        const allDishNames = Array.from(new Set([...menuList, ...(snapshotList || [])]))
-        const names = allDishNames.length ? allDishNames : (snapshotList || menuList)
+        const cleanSnapshot = Array.isArray(snapshotList) ? snapshotList.filter(Boolean) : []
+        const names = cleanMenuList.length > 0 ? cleanMenuList : (cleanSnapshot.length > 0 ? cleanSnapshot : [])
         const result = {}
         result._status = r ? r[`${dk}_${mk}_status`] : null
 
-        names.forEach((d) => {
-          let pos = -1
-          if (snapshotList && snapshotList.includes(d)) {
-            pos = snapshotList.indexOf(d)
-          } else if (menuList.includes(d)) {
-            pos = menuList.indexOf(d)
+        names.forEach((d, idx) => {
+          let pos = idx
+          if (cleanSnapshot.length > 0 && cleanSnapshot.includes(d)) {
+            pos = cleanSnapshot.indexOf(d)
           }
           const val = (r && pos >= 0) ? r[`${dk}_${mk}_dish_${pos + 1}`] : null
           if (val !== undefined && val !== null && val !== '') {
@@ -475,26 +534,28 @@ setLoadError(null)
         return result
       }
 
-      // Resolve the menu specifically for the active week (e.g. 14-19 vs 21-26)
-      let menuForDay = weeklyMenu
+      // Resolve the menus for all target weeks & candidate weeks
+      const weekMenusMap = {}
       try {
         const { data: menuRows, error: menuErr } = await supabase
           .from('weekly_menu')
-          .select('day_name,lunch,dinner')
-          .eq('week_start', effectiveWeek)
+          .select('day_name,lunch,dinner,week_start')
+          .in('week_start', allWeeks)
         if (!menuErr && menuRows && menuRows.length) {
-          const m = {}
           menuRows.forEach(r => {
+            const ws = r.week_start || effectiveWeek
+            if (!weekMenusMap[ws]) weekMenusMap[ws] = {}
             const k = String(r.day_name || '').toLowerCase()
-            m[k] = {
+            weekMenusMap[ws][k] = {
               lunch: parseDishArray(r.lunch),
               dinner: parseDishArray(r.dinner),
             }
           })
-          menuForDay = m
         }
       } catch {}
-      setDisplayMenu(menuForDay)
+
+      const activeDisplayMenu = weekMenusMap[effectiveWeek] || (weeklyMenuRaw.__byWeek?.[effectiveWeek]) || weeklyMenu || {}
+      setDisplayMenu(activeDisplayMenu)
 
       const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
 
@@ -540,8 +601,9 @@ setLoadError(null)
         }
 
         const userWeekId = (weekFilter !== 'all') ? weekFilter : (resp.week_id || effectiveWeek)
+        const userWeekMenu = weekMenusMap[userWeekId] || (weeklyMenuRaw.__byWeek?.[userWeekId]) || activeDisplayMenu || {}
         const dayKeyLower = day.toLowerCase()
-        const dayMenu = menuForDay[dayKeyLower] || menuForDay[day] || {}
+        const dayMenu = userWeekMenu[dayKeyLower] || userWeekMenu[day] || activeDisplayMenu[dayKeyLower] || {}
         const buildCurMeal = buildDishMap(resp, day, meal, dayMenu[meal] || [])
         const buildLunch = buildDishMap(resp, day, 'lunch', dayMenu.lunch || [])
         const buildDinner = buildDishMap(resp, day, 'dinner', dayMenu.dinner || [])
@@ -555,11 +617,11 @@ setLoadError(null)
           const types = {}
           const list = Array.isArray(menuList) ? menuList.filter(Boolean) : []
           const dishMap = mealName === 'lunch' ? buildLunch : mealName === 'dinner' ? buildDinner : buildCurMeal
-          Object.keys(dishMap).filter(k => k !== '_status').forEach((d) => {
+          Object.keys(dishMap).filter(k => k !== '_status').forEach((d, idx) => {
             if (isRotiItem(d)) { types[d] = 'roti'; return }
-            let idx = list.indexOf(d)
-            if (idx === -1) idx = Object.keys(dishMap).filter(k => k !== '_status').indexOf(d)
-            types[d] = (getInputType(day, mealName, idx) === 'count' || isCountInput(settingsMap, day, mealName, idx)) ? 'count' : 'percentage'
+            let pos = list.indexOf(d)
+            if (pos === -1) pos = idx
+            types[d] = (getInputType(day, mealName, pos) === 'count' || isCountInput(settingsMap, day, mealName, pos)) ? 'count' : 'percentage'
           })
           return types
         }
@@ -627,8 +689,9 @@ setLoadError(null)
         experimentalFeatures: { useBarCodeDetectorIfSupported: true }
       });
       const handleScan = async (decodedText) => {
-        if (decodedText.startsWith('ALMAWAID:')) {
-          const userId = decodedText.split(':')[1];
+        const rawText = String(decodedText || '').trim()
+        const userId = rawText.replace(/^ALMAWAID:/i, '').trim()
+        if (userId) {
           try {
             await scanner.clear();
           } catch (e) {
