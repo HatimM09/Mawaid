@@ -745,6 +745,7 @@ export default function SurveysPage() {
           meal={mealFilter}
           day={dayFilter}
           dishInputConfig={dishInputConfig}
+          onMealToggle={(m) => setMealFilter(m)}
           onClose={() => {
             setSelectedUser(null)
             setSearchParams({})

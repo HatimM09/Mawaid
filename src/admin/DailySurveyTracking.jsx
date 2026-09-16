@@ -136,58 +136,35 @@ export default function DailySurveyTracking() {
       const calWeek = getCalendarWeekDate()
       const targetWeeksList = getSurveyTargetWeeks(appSettings)
       const primaryTarget = targetWeeksList[0] || surveyWeekId()
-      const activeWeekId = (weekFilter && weekFilter !== 'all')
-        ? weekFilter
-        : ((dayBelongsToCalendarWeek(day) && calWeek !== primaryTarget) ? calWeek : primaryTarget)
+      const isSunday = new Date().getDay() === 0
+      const defaultWeek = isSunday ? primaryTarget : calWeek
+      const activeWeekId = (weekFilter && weekFilter !== 'all') ? weekFilter : defaultWeek
 
-      // Fetch all candidate survey rows for this user (covering active week, calendar week, target weeks)
-      const candidateWeekIds = [...new Set([activeWeekId, calWeek, primaryTarget, ...targetWeeksList])].filter(Boolean)
-      
-      let candidateRows = []
+      // Fetch survey row for this user in activeWeekId
+      let row = {}
       try {
         const { data: dayRows } = await supabase
           .from('survey_day_responses')
           .select('*')
-          .in('week_id', candidateWeekIds)
+          .eq('week_id', activeWeekId)
           .or(`user_id.eq.${targetUserId},thali_number.eq.${u.thali_number || ''}`)
 
         if (dayRows && dayRows.length > 0) {
-          candidateRows = flattenDayRows(dayRows)
+          const flats = flattenDayRows(dayRows)
+          row = flats[0] || {}
         }
       } catch (e) {
         console.warn('[processDirectScan] error fetching dayRows:', e)
       }
 
-      // Check legacy / fallback if no candidate rows
-      if (!candidateRows.length) {
-        for (const wid of candidateWeekIds) {
-          try {
-            const { data: single } = await fetchUserSurveyRow(targetUserId, wid)
-            if (single) candidateRows.push(single)
-          } catch {}
-        }
+      if (!row || !row[statusKey]) {
+        try {
+          const { data: single } = await fetchUserSurveyRow(targetUserId, activeWeekId)
+          if (single) row = single
+        } catch {}
       }
 
-      // Pick the best response row for the selected day/meal
-      let row = {}
-      if (weekFilter !== 'all') {
-        row = candidateRows.find(r => r.week_id === weekFilter) || {}
-      } else {
-        const answered = candidateRows.filter(r => r && r[statusKey])
-        if (answered.length > 0) {
-          const effectiveMatch = answered.find(r => r.week_id === activeWeekId)
-          const calMatch = answered.find(r => r.week_id === calWeek)
-          const targetMatch = answered.find(r => r.week_id === primaryTarget)
-          const latestAnswered = [...answered].sort((a, b) => (b.week_id || '').localeCompare(a.week_id || ''))[0]
-          row = effectiveMatch || (dayBelongsToCalendarWeek(day) ? (calMatch || targetMatch) : (targetMatch || calMatch)) || latestAnswered || {}
-        } else {
-          const anyAnswered = candidateRows.filter(r => DAY_KEYS.some(dk => r && (r[`${dk}_l_status`] || r[`${dk}_d_status`])))
-          const latestAny = [...(anyAnswered.length ? anyAnswered : candidateRows)].sort((a, b) => (b.week_id || '').localeCompare(a.week_id || ''))[0]
-          row = latestAny || {}
-        }
-      }
-
-      const resolvedWeekId = (weekFilter !== 'all') ? weekFilter : (row.week_id || activeWeekId)
+      const resolvedWeekId = activeWeekId
 
       // Check for an active stop-thali request covering this day+meal
       const dayIdx = DAYS.indexOf(day)
@@ -488,9 +465,9 @@ setLoadError(null)
       const targetWeeksList = getSurveyTargetWeeks(settingsMap)
       const primaryTarget = targetWeeksList[0] || getSurveyTargetWeek(settingsMap)
       const cal = getCalendarWeekDate()
-      const effectiveWeek = (weekFilter && weekFilter !== 'all')
-        ? weekFilter
-        : ((dayBelongsToCalendarWeek(day) && cal !== primaryTarget) ? cal : primaryTarget)
+      const isSunday = new Date().getDay() === 0
+      const defaultWeek = isSunday ? primaryTarget : cal
+      const effectiveWeek = (weekFilter && weekFilter !== 'all') ? weekFilter : defaultWeek
 
       const allWeeks = [...new Set([
         ...targetWeeksList,
@@ -574,33 +551,10 @@ setLoadError(null)
       const results = (users || []).map(u => {
         const candidates = (allRows || []).filter(r => matchUserRow(r, u))
 
-        let resp = {}
-        const dayKey = day.substring(0, 3).toLowerCase()
-        const mealKey = meal === 'lunch' ? 'l' : 'd'
-        const statusKey = `${dayKey}_${mealKey}_status`
+        // Strictly match responses for the active effectiveWeek
+        const resp = candidates.find(r => r.week_id === effectiveWeek) || {}
 
-        if (weekFilter !== 'all') {
-          resp = candidates.find(r => r.week_id === weekFilter) || {}
-        } else {
-          // Find candidate rows that actually have an answered status for this day+meal
-          const answered = candidates.filter(r => r && r[statusKey])
-          if (answered.length > 0) {
-            const calMatch = answered.find(r => r.week_id === cal)
-            const targetMatch = answered.find(r => r.week_id === primaryTarget)
-            const effectiveMatch = answered.find(r => r.week_id === effectiveWeek)
-            const latestAnswered = [...answered].sort((a, b) => (b.week_id || '').localeCompare(a.week_id || ''))[0]
-            resp = effectiveMatch || (dayBelongsToCalendarWeek(day) ? (calMatch || targetMatch) : (targetMatch || calMatch)) || latestAnswered || {}
-          } else {
-            // Check any row with ANY day answered
-            const anyAnswered = candidates.filter(r => {
-              return DAY_KEYS.some(dk => r && (r[`${dk}_l_status`] || r[`${dk}_d_status`]))
-            })
-            const latestAny = [...(anyAnswered.length ? anyAnswered : candidates)].sort((a, b) => (b.week_id || '').localeCompare(a.week_id || ''))[0]
-            resp = latestAny || {}
-          }
-        }
-
-        const userWeekId = (weekFilter !== 'all') ? weekFilter : (resp.week_id || effectiveWeek)
+        const userWeekId = effectiveWeek
         const userWeekMenu = weekMenusMap[userWeekId] || (weeklyMenuRaw.__byWeek?.[userWeekId]) || activeDisplayMenu || {}
         const dayKeyLower = day.toLowerCase()
         const dayMenu = userWeekMenu[dayKeyLower] || userWeekMenu[day] || activeDisplayMenu[dayKeyLower] || {}
@@ -1094,6 +1048,7 @@ setLoadError(null)
           day={day} 
           onClose={() => setSelectedUser(null)}
           dishInputConfig={dishInputConfig}
+          onMealToggle={(m) => { setMeal(m); setMealOverride(true) }}
         />
       )}
 

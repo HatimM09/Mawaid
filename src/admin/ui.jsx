@@ -561,14 +561,32 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
     return 'lunch'
   }
 
-  const displayMeal = mealOverride && currentMeal ? currentMeal : (meal || getTimeBasedMeal())
+  const [selectedMeal, setSelectedMeal] = useState(meal || (mealOverride && currentMeal ? currentMeal : getTimeBasedMeal()))
+  useEffect(() => {
+    if (meal) setSelectedMeal(meal)
+  }, [meal])
+
+  const displayMeal = selectedMeal || meal || getTimeBasedMeal()
+  const activeDay = day || user?.currentDay || 'monday'
+
+  const dayIdx = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].indexOf(String(activeDay).toLowerCase())
+  let dayFormatted = String(activeDay).toUpperCase()
+  if (user?.week_id && dayIdx >= 0) {
+    try {
+      const mon = new Date(user.week_id + 'T00:00:00')
+      const targetDate = new Date(mon)
+      targetDate.setDate(mon.getDate() + dayIdx)
+      const dateStr = targetDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+      dayFormatted = `${String(activeDay).toUpperCase()} · ${dateStr.toUpperCase()}`
+    } catch {}
+  }
 
   const mealData = displayMeal === 'lunch' ? user.lunch : user.dinner
-  const dishes = mealData?.dishes || user.dishResponses || {}
+  const dishes = mealData?.dishes || (displayMeal === user.currentMeal ? user.dishResponses : {}) || {}
   const dishEntries = Object.entries(dishes).filter(([k]) => k !== '_status')
   const total = dishEntries.length
 
-  const status = mealData?.status || user.status || 'Not Submitted'
+  const status = mealData?.status || (displayMeal === user.currentMeal ? user.status : null) || 'Not Submitted'
 
   const isStopped = !!user.stopped
 
@@ -583,7 +601,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
     if (!window.confirm(`Erase the ${mealLabels[displayMeal]} response for ${who}?\n\nThis clears their ${displayMeal} choices for this day and cannot be undone.`)) return
     setIsErasing(true)
     try {
-      const dayKey = String(day || '').substring(0, 3).toLowerCase()
+      const dayKey = String(activeDay || '').substring(0, 3).toLowerCase()
       const { error } = await eraseSurveySlot(user.user_id, user.week_id, dayKey, displayMeal)
       if (error) throw error
       onClose()
@@ -884,32 +902,70 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 'clamp(12px, 3vw, 32px)',
+        gap: 'clamp(10px, 2.5vw, 24px)',
         flexWrap: 'wrap'
       }}>
-        {/* Thali badge - bright white with gold glow for distance visibility */}
+        {/* Thali badge & Member Name - bright white with gold glow for distance visibility */}
         <div style={{
-          display: 'inline-flex', alignItems: 'center',
+          display: 'inline-flex', alignItems: 'center', gap: 12,
           background: 'linear-gradient(135deg, rgba(212,175,55,0.25), rgba(212,175,55,0.06))',
           border: '2px solid rgba(212,175,55,0.6)', borderRadius: 'clamp(14px, 2vw, 24px)',
           padding: 'clamp(6px, 1vh, 12px) clamp(14px, 2vw, 28px)',
           boxShadow: '0 0 30px rgba(212,175,55,0.15), inset 0 0 20px rgba(212,175,55,0.05)'
         }}>
           <span style={{
-            fontSize: 'clamp(40px, 8vw, 100px)', fontWeight: 900,
+            fontSize: 'clamp(36px, 7vw, 90px)', fontWeight: 900,
             color: '#ffffff',
             textShadow: '0 0 30px rgba(212,175,55,0.6), 0 0 60px rgba(212,175,55,0.3)',
             letterSpacing: '0.04em'
           }}>#{user?.thali_number || '—'}</span>
+          {user?.name && (
+            <span style={{
+              fontSize: 'clamp(14px, 1.8vw, 26px)', fontWeight: 700,
+              color: 'rgba(255,255,255,0.9)',
+              textShadow: '0 0 16px rgba(255,255,255,0.2)',
+              maxWidth: 'clamp(120px, 20vw, 320px)',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+            }}>{user.name}</span>
+          )}
         </div>
 
-        {/* Meal badge - bright text on darker bg */}
+        {/* Day badge */}
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
           padding: 'clamp(6px, 0.8vh, 10px) clamp(12px, 1.5vw, 22px)',
-          background: 'rgba(212,175,55,0.08)', border: '2px solid rgba(212,175,55,0.4)', borderRadius: 50,
-          boxShadow: '0 0 20px rgba(212,175,55,0.1)'
+          background: 'rgba(212,175,55,0.1)', border: '2px solid rgba(212,175,55,0.5)', borderRadius: 50,
+          boxShadow: '0 0 20px rgba(212,175,55,0.12)'
         }}>
+          <span style={{ fontSize: 'clamp(14px, 1.8vw, 22px)' }}>📆</span>
+          <span style={{
+            fontSize: 'clamp(12px, 1.4vw, 18px)', fontWeight: 900,
+            color: '#ffffff',
+            textShadow: '0 0 12px rgba(212,175,55,0.4)',
+            textTransform: 'uppercase', letterSpacing: '0.1em', whiteSpace: 'nowrap'
+          }}>{dayFormatted}</span>
+        </div>
+
+        {/* Meal badge / Interactive Toggle Button */}
+        <button
+          onClick={() => {
+            const next = displayMeal === 'lunch' ? 'dinner' : 'lunch'
+            setSelectedMeal(next)
+            onMealToggle?.(next)
+          }}
+          title="Click to switch between Lunch & Dinner"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: 'clamp(6px, 0.8vh, 10px) clamp(14px, 1.5vw, 22px)',
+            background: displayMeal === 'lunch' ? 'rgba(245,158,11,0.15)' : 'rgba(99,102,241,0.15)',
+            border: `2px solid ${displayMeal === 'lunch' ? 'rgba(245,158,11,0.6)' : 'rgba(99,102,241,0.6)'}`,
+            borderRadius: 50,
+            boxShadow: `0 0 20px ${displayMeal === 'lunch' ? 'rgba(245,158,11,0.2)' : 'rgba(99,102,241,0.2)'}`,
+            cursor: 'pointer', transition: 'all 0.2s', outline: 'none'
+          }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.04)' }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+        >
           <span style={{ fontSize: 'clamp(14px, 1.8vw, 22px)' }}>{mealIcons[displayMeal]}</span>
           <span style={{
             fontSize: 'clamp(12px, 1.4vw, 18px)', fontWeight: 900,
@@ -917,6 +973,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
             textShadow: '0 0 12px rgba(212,175,55,0.4)',
             textTransform: 'uppercase', letterSpacing: '0.12em', whiteSpace: 'nowrap'
           }}>{mealLabels[displayMeal]}</span>
+          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginLeft: 2, fontWeight: 700 }}>⇄</span>
           {mealOverride && (
             <span style={{
               fontSize: 9, fontWeight: 800, color: '#fbbf24',
@@ -924,7 +981,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
               textTransform: 'uppercase', letterSpacing: '0.08em'
             }}>MANUAL</span>
           )}
-        </div>
+        </button>
 
         {/* Week Range Badge */}
         {(user?.week_range || user?.week_id) && (
@@ -949,18 +1006,20 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
           padding: 'clamp(6px, 0.8vh, 10px) clamp(14px, 1.5vw, 24px)', borderRadius: 50,
-          background: status === 'Applied'
-            ? 'rgba(16, 185, 129, 0.15)'
-            : status === 'Skipped'
-              ? 'rgba(239, 68, 68, 0.15)'
-              : 'rgba(245, 158, 11, 0.15)',
-          border: `2px solid ${status === 'Applied' ? 'rgba(16,185,129,0.6)' : status === 'Skipped' ? 'rgba(239,68,68,0.6)' : 'rgba(245,158,11,0.6)'}`,
-          boxShadow: `0 0 24px ${status === 'Applied' ? 'rgba(16,185,129,0.15)' : status === 'Skipped' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'}`
+          background: isStopped
+            ? 'rgba(244, 63, 94, 0.15)'
+            : status === 'Applied'
+              ? 'rgba(16, 185, 129, 0.15)'
+              : status === 'Skipped'
+                ? 'rgba(239, 68, 68, 0.15)'
+                : 'rgba(245, 158, 11, 0.15)',
+          border: `2px solid ${isStopped ? 'rgba(244,63,94,0.6)' : status === 'Applied' ? 'rgba(16,185,129,0.6)' : status === 'Skipped' ? 'rgba(239,68,68,0.6)' : 'rgba(245,158,11,0.6)'}`,
+          boxShadow: `0 0 24px ${isStopped ? 'rgba(244,63,94,0.15)' : status === 'Applied' ? 'rgba(16,185,129,0.15)' : status === 'Skipped' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'}`
         }}>
           <span style={{
             width: 12, height: 12, borderRadius: '50%',
-            background: status === 'Applied' ? '#10b981' : status === 'Skipped' ? '#ef4444' : '#f59e0b',
-            boxShadow: `0 0 16px ${status === 'Applied' ? '#10b981' : status === 'Skipped' ? '#ef4444' : '#f59e0b'}`
+            background: isStopped ? '#f43f5e' : status === 'Applied' ? '#10b981' : status === 'Skipped' ? '#ef4444' : '#f59e0b',
+            boxShadow: `0 0 16px ${isStopped ? '#f43f5e' : status === 'Applied' ? '#10b981' : status === 'Skipped' ? '#ef4444' : '#f59e0b'}`
           }} />
           <span style={{
             fontSize: 'clamp(11px, 1.2vw, 16px)', fontWeight: 800,
