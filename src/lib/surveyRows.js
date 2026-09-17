@@ -78,7 +78,7 @@ export function flattenDayRow(rows) {
   return list.length ? list[0] : null
 }
 
-// Load one member's flat row for a week. Reads survey_day_responses with fallback to survey_submissions_flat.
+// Load one member's flat row for a week from canonical survey_day_responses.
 export async function fetchUserSurveyRow(userId, weekId) {
   const { data: dayData, error: dayErr } = await supabase
     .from('survey_day_responses')
@@ -90,17 +90,6 @@ export async function fetchUserSurveyRow(userId, weekId) {
     const flat = flattenDayRow(dayData)
     if (flat) return { data: flat, error: null }
   }
-
-  // Fallback to survey_submissions_flat in case old app submitted there
-  try {
-    const { data: flatData } = await supabase
-      .from('survey_submissions_flat')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('week_id', weekId)
-      .maybeSingle()
-    if (flatData) return { data: flatData, error: null }
-  } catch {}
 
   return { data: null, error: dayErr || null }
 }
@@ -174,53 +163,15 @@ export async function fetchLatestUserSurveyRow(userId) {
   return { data: null, error: null }
 }
 
-// Load every member's row for a week (or all weeks when omitted).
+// Load every member's row for a week.
 export async function fetchWeekRows(weekId) {
   const { data: dayData, error: dayErr } = await supabase
     .from('survey_day_responses')
     .select('*')
     .eq('week_id', weekId)
 
-  let flatFallback = []
-  try {
-    const { data: flatRows } = await supabase
-      .from('survey_submissions_flat')
-      .select('*')
-      .eq('week_id', weekId)
-    if (flatRows) flatFallback = flatRows
-  } catch {}
-
   const dayFlats = flattenDayRows(dayData || [])
-  const seenKeys = new Set(dayFlats.map(r => r.user_id || r.thali_number))
-
-  const merged = [...dayFlats]
-  for (const f of flatFallback) {
-    const key = f.user_id || f.thali_number
-    if (!seenKeys.has(key)) {
-      merged.push(f)
-      seenKeys.add(key)
-    } else {
-      const existing = merged.find(m => (m.user_id && m.user_id === f.user_id) || (m.thali_number && String(m.thali_number) === String(f.thali_number)))
-      if (existing) {
-        DAY_KEYS.forEach(dk => {
-          ;['l', 'd'].forEach(mk => {
-            const stKey = `${dk}_${mk}_status`
-            if (!existing[stKey] && f[stKey]) {
-              existing[stKey] = f[stKey]
-              for (let i = 1; i <= 5; i++) {
-                const dishKey = `${dk}_${mk}_dish_${i}`
-                if (existing[dishKey] === undefined && f[dishKey] !== undefined) {
-                  existing[dishKey] = f[dishKey]
-                }
-              }
-            }
-          })
-        })
-      }
-    }
-  }
-
-  return { data: merged, error: null }
+  return { data: dayFlats, error: dayErr || null }
 }
 
 // Multi-week variant: loads and merges rows for several week_ids at once.
@@ -289,43 +240,6 @@ export async function fetchAllUserRows() {
     .from('survey_day_responses')
     .select('*')
 
-  let flatFallback = []
-  try {
-    const { data: flatRows } = await supabase
-      .from('survey_submissions_flat')
-      .select('*')
-    if (flatRows) flatFallback = flatRows
-  } catch {}
-
   const dayFlats = flattenDayRows(dayData || [])
-  const seenKeys = new Set(dayFlats.map(r => `${r.user_id || r.thali_number}|${r.week_id}`))
-
-  const merged = [...dayFlats]
-  for (const f of flatFallback) {
-    const key = `${f.user_id || f.thali_number}|${f.week_id}`
-    if (!seenKeys.has(key)) {
-      merged.push(f)
-      seenKeys.add(key)
-    } else {
-      const existing = merged.find(m => `${m.user_id || m.thali_number}|${m.week_id}` === key)
-      if (existing) {
-        DAY_KEYS.forEach(dk => {
-          ;['l', 'd'].forEach(mk => {
-            const stKey = `${dk}_${mk}_status`
-            if (!existing[stKey] && f[stKey]) {
-              existing[stKey] = f[stKey]
-              for (let i = 1; i <= 5; i++) {
-                const dishKey = `${dk}_${mk}_dish_${i}`
-                if (existing[dishKey] === undefined && f[dishKey] !== undefined) {
-                  existing[dishKey] = f[dishKey]
-                }
-              }
-            }
-          })
-        })
-      }
-    }
-  }
-
-  return { data: merged, error: null }
+  return { data: dayFlats, error: dayErr || null }
 }

@@ -395,7 +395,22 @@ export default function DailySurveyTracking() {
       const { data: allRows, error: subsError } = await fetchAllUserRows()
       if (subsError) throw subsError
 
-      // Thali stop/stop requests — used to mark a member as "no thali" (stopped)
+      // Collect distinct week_ids for filter
+      const targetWeeksList = getSurveyTargetWeeks(settingsMap)
+      const primaryTarget = targetWeeksList[0] || getSurveyTargetWeek(settingsMap)
+      const cal = getCalendarWeekDate()
+      const isSunday = new Date().getDay() === 0
+      const defaultWeek = isSunday ? primaryTarget : cal
+      const effectiveWeek = (weekFilter && weekFilter !== 'all') ? weekFilter : defaultWeek
+
+      const allWeeks = [...new Set([
+        ...targetWeeksList,
+        cal,
+        ...(allRows || []).map(s => s.week_id).filter(Boolean)
+      ])].filter(Boolean).sort().reverse()
+      setAvailableWeeks(allWeeks)
+
+      // Thali stop/resume requests — used to mark a member as "no thali" (stopped)
       const { data: stopRequests } = await supabase
         .from('thali_requests')
         .select('user_id, request_type, status, from_date, to_date, meal_type, created_at')
@@ -411,7 +426,7 @@ export default function DailySurveyTracking() {
         .in('status', ['pending', 'approved'])
 
       const dayIdx = DAYS.indexOf(day)
-      const trackingWeek = new Date(targetWeekId + 'T00:00:00')
+      const trackingWeek = new Date(effectiveWeek + 'T00:00:00')
       const selDate = new Date(trackingWeek)
       selDate.setDate(trackingWeek.getDate() + (dayIdx === -1 ? 0 : dayIdx))
       const selDateStr = toLocalDateStr(selDate)
@@ -449,33 +464,8 @@ export default function DailySurveyTracking() {
         if (isStoppedOnDay(reqs, selDateStr, 'dinner')) stoppedDinnerMap[userId] = true
       })
 
-setLoadError(null)
-
-      // Merge merged rows into user records (one array per user, newest week first).
-      // No override merging — each user's effective row is the normal row from survey_day_responses.
-      const subMap = {}
-      for (const s of allRows || []) {
-        if (!subMap[s.user_id]) subMap[s.user_id] = []
-        subMap[s.user_id].push(s)
-      }
-
       setLoadError(null)
 
-      // Collect distinct week_ids for filter
-      const targetWeeksList = getSurveyTargetWeeks(settingsMap)
-      const primaryTarget = targetWeeksList[0] || getSurveyTargetWeek(settingsMap)
-      const cal = getCalendarWeekDate()
-      const isSunday = new Date().getDay() === 0
-      const defaultWeek = isSunday ? primaryTarget : cal
-      const effectiveWeek = (weekFilter && weekFilter !== 'all') ? weekFilter : defaultWeek
-
-      const allWeeks = [...new Set([
-        ...targetWeeksList,
-        cal,
-        ...(allRows || []).map(s => s.week_id).filter(Boolean)
-      ])].filter(Boolean).sort().reverse()
-      setAvailableWeeks(allWeeks)
-      
       const dayKey = day.substring(0, 3).toLowerCase()
       const mealKey = meal === 'lunch' ? 'l' : 'd'
       const statusKey = `${dayKey}_${mealKey}_status`
@@ -488,7 +478,8 @@ setLoadError(null)
         const cleanSnapshot = Array.isArray(snapshotList) ? snapshotList.filter(Boolean) : []
         const names = cleanMenuList.length > 0 ? cleanMenuList : (cleanSnapshot.length > 0 ? cleanSnapshot : [])
         const result = {}
-        result._status = r ? r[`${dk}_${mk}_status`] : null
+        const rawStatus = r ? r[`${dk}_${mk}_status`] : null
+        result._status = (rawStatus === 'Applied' || rawStatus === 'Skipped') ? rawStatus : null
 
         names.forEach((d, idx) => {
           let pos = idx
@@ -538,7 +529,9 @@ setLoadError(null)
 
       const matchUserRow = (r, u) => {
         if (!r || !u) return false
-        if (r.user_id && u.user_id && r.user_id === u.user_id) return true
+        if (r.user_id && u.user_id) {
+          return String(r.user_id).trim() === String(u.user_id).trim()
+        }
         if (r.thali_number && u.thali_number) {
           const ctR = cleanThali(r.thali_number)
           const ctU = cleanThali(u.thali_number)
