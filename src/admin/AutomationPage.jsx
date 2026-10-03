@@ -584,38 +584,21 @@ export default function AutomationPage() {
         </AdminCard>
       </div>
 
-      {/* ── PREMIUM CADENCE TOGGLE (1 Week vs 2 Weeks) ── */}
-      <AdminCard style={{ marginBottom: 18, padding: 16, border: `1.5px solid ${surveyCadence === '2_weeks' ? 'rgba(99,102,241,0.35)' : T.border}`, background: surveyCadence === '2_weeks' ? 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(16,185,129,0.06))' : `linear-gradient(135deg, ${T.border}10, transparent)`, overflow: 'hidden', position: 'relative' }}>
+      {/* ── WEEKLY CADENCE INFO (1 Week · 12 Meals) ── */}
+      <AdminCard style={{ marginBottom: 18, padding: 16, border: `1.5px solid ${T.border}`, background: `linear-gradient(135deg, ${T.border}10, transparent)`, overflow: 'hidden', position: 'relative' }}>
         <div style={{ position: 'absolute', top: -30, right: -30, width: 160, height: 160, background: `radial-gradient(circle, ${T.accent}10, transparent 60%)`, filter: 'blur(20px)', pointerEvents: 'none' }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', position: 'relative' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', position: 'relative' }}>
           <div style={{ flex: 1, minWidth: 260 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <Calendar size={18} color={T.accent} />
-              <span style={{ fontSize: 14, fontWeight: 900, color: T.text, letterSpacing: '-0.01em' }}>Survey Cadence Control</span>
-              <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 999, background: surveyCadence === '2_weeks' ? 'rgba(99,102,241,0.15)' : 'rgba(212,175,55,0.12)', color: surveyCadence === '2_weeks' ? '#818cf8' : T.accent, border: `1px solid ${surveyCadence === '2_weeks' ? 'rgba(99,102,241,0.25)' : T.accentBorder}` }}>{surveyCadence === '2_weeks' ? '2 WEEKS · 24 MEALS' : '1 WEEK · 12 MEALS'}</span>
+              <span style={{ fontSize: 14, fontWeight: 900, color: T.text, letterSpacing: '-0.01em' }}>Survey Cadence</span>
+              <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 8px', borderRadius: 999, background: 'rgba(212,175,55,0.12)', color: T.accent, border: `1px solid ${T.accentBorder}` }}>1 WEEK · 12 MEALS</span>
             </div>
             <div style={{ fontSize: 12, color: T.textSub, lineHeight: 1.5 }}>
-              {surveyCadence === '2_weeks'
-                ? `Fortnight — ${formatWeekRange(getSurveyTargetWeeks(settings)[0])} + ${formatWeekRange(getSurveyTargetWeeks(settings)[1])} (24 meals)`
-                : `Single week — 12 meals · ${formatWeekRange(getSurveyTargetWeek(settings))}`}
+              Standard Weekly Schedule — 6 days (Mon–Sat) × 2 meals = 12 meals · Target: {formatWeekRange(getSurveyTargetWeek(settings))}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 5, borderRadius: 14, background: T.inputBg, border: `1px solid ${T.border}` }}>
-            {[
-              { val: '1_week', label: '1 Week', sub: '12 meals', icon: '📅' },
-              { val: '2_weeks', label: '2 Weeks', sub: '24 meals', icon: '🗓️' },
-            ].map(o => {
-              const active = surveyCadence === o.val
-              return (
-                <button key={o.val} onClick={() => handleToggle('survey_cadence', o.val)} disabled={saving} style={{ minWidth: 118, padding: '10px 14px', borderRadius: 10, border: `1.5px solid ${active ? T.accent : 'transparent'}`, background: active ? T.accentBg : 'transparent', color: active ? T.accent : T.textSub, fontWeight: active ? 900 : 700, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, transition: 'all 0.2s', boxShadow: active ? `0 4px 14px ${T.accentBg}` : 'none' }}>
-                  <span style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>{o.icon} {o.label} {active ? '✓' : ''}</span>
-                  <span style={{ fontSize: 10, opacity: 0.85 }}>{o.sub}</span>
-                </button>
-              )
-            })}
-          </div>
         </div>
-
       </AdminCard>
 
       {/* ── FAST CATEGORY TABS ── */}

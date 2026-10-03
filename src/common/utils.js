@@ -119,28 +119,22 @@ export const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'sa
 export const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat']
 export const MEALS = ['lunch', 'dinner']
 
-// ── Survey cadence (admin toggle: 1 week vs 2 weeks at once) ──
+// ── Survey cadence (1 week · 12 meals: Mon-Sat Lunch & Dinner) ──
 export const SURVEY_CADENCE_ONE = '1_week'
-export const SURVEY_CADENCE_TWO = '2_weeks'
+export const SURVEY_CADENCE_TWO = '1_week'
 
-export const getSurveyCadence = (appSettings = {}) => {
-  const raw = String(appSettings.survey_cadence || appSettings.surveyCadence || SURVEY_CADENCE_ONE).toLowerCase().trim()
-  if (raw === '2' || raw === '2_weeks' || raw === '2weeks' || raw === 'two' || raw === 'biweekly' || raw === 'fortnight') return SURVEY_CADENCE_TWO
-  return SURVEY_CADENCE_ONE
-}
-export const isTwoWeekCadence = (appSettings = {}) => getSurveyCadence(appSettings) === SURVEY_CADENCE_TWO
-export const getSurveyCadenceLabel = (appSettings = {}) => isTwoWeekCadence(appSettings) ? '2 Weeks (12 days)' : '1 Week (6 days)'
-export const getSurveyTotalSlots = (appSettings = {}) => isTwoWeekCadence(appSettings) ? 24 : 12
+export const getSurveyCadence = (_appSettings = {}) => SURVEY_CADENCE_ONE
+export const isTwoWeekCadence = (_appSettings = {}) => false
+export const getSurveyCadenceLabel = (_appSettings = {}) => '1 Week (6 days · 12 meals)'
+export const getSurveyTotalSlots = (_appSettings = {}) => 12
 
 /**
  * Returns the ordered list of target week_ids (YYYY-MM-DD Mondays) the survey is planning.
- * 1_week → [W1]   2_weeks → [W1, W2=W1+7d]
+ * Strictly 1 week (12 meals total).
  */
 export const getSurveyTargetWeeks = (appSettings = {}) => {
   const w1 = getSurveyTargetWeek(appSettings)
-  if (!isTwoWeekCadence(appSettings)) return [w1]
-  const w2 = addWeeks(w1, 1)
-  return [w1, w2]
+  return [w1]
 }
 
 export const formatWeekRange = (weekId) => {

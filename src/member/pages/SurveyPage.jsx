@@ -21,13 +21,11 @@ export default function SurveyPage({ appSettings = {} }) {
   const t = useTheme()
   const { user } = useAuth()
   const weekIds = useMemo(() => getSurveyTargetWeeks(appSettings), [appSettings])
-  const isTwoWeeks = weekIds.length === 2
-  const primaryWeekId = weekIds[0]
+  const primaryWeekId = weekIds[0] || getSurveyTargetWeek(appSettings)
   const calendarWeekId = getCalendarWeekDate()
-  const weeklyMenu = useWeeklyMenu(isTwoWeeks ? weekIds : primaryWeekId)
+  const weeklyMenu = useWeeklyMenu(primaryWeekId)
 
-  const [activeWeekIdx, setActiveWeekIdx] = useState(0)
-  const activeWeekId = weekIds[activeWeekIdx] || primaryWeekId
+  const activeWeekId = primaryWeekId
 
   const [showSurvey, setShowSurvey] = useState(false)
   const [openDay, setOpenDay] = useState(null)
@@ -38,14 +36,14 @@ export default function SurveyPage({ appSettings = {} }) {
   const initialLoadDone = React.useRef(false)
 
   const surveyOpen = isSurveyOpen(appSettings, user?.id)
-  const totalMeals = getSurveyTotalSlots(appSettings)
+  const totalMeals = 12
 
   const loadSurvey = useCallback(async () => {
     const isFirst = !initialLoadDone.current
     if (isFirst) setLoading(true)
     else setIsSyncing(true)
     try {
-      const { data: map } = await fetchUserSurveyRows(user.id, weekIds)
+      const { data: map } = await fetchUserSurveyRows(user.id, [primaryWeekId])
       setSurveyMap(map || {})
       initialLoadDone.current = true
     } catch {
@@ -53,23 +51,18 @@ export default function SurveyPage({ appSettings = {} }) {
     }
     setLoading(false)
     setIsSyncing(false)
-  }, [user?.id, weekIds])
+  }, [user?.id, primaryWeekId])
 
   const silentRefresh = useCallback(async () => {
     setIsSyncing(true)
     try {
-      const { data: map } = await fetchUserSurveyRows(user.id, weekIds)
+      const { data: map } = await fetchUserSurveyRows(user.id, [primaryWeekId])
       if (map) setSurveyMap(map)
     } catch {}
     setIsSyncing(false)
-  }, [user?.id, weekIds])
+  }, [user?.id, primaryWeekId])
 
   useEffect(() => { loadSurvey() }, [loadSurvey])
-
-  // Keep activeWeekIdx in bounds when cadence switches
-  useEffect(() => {
-    if (activeWeekIdx >= weekIds.length) setActiveWeekIdx(0)
-  }, [weekIds.length, activeWeekIdx])
 
   // Realtime updates
   useEffect(() => {
@@ -91,45 +84,31 @@ export default function SurveyPage({ appSettings = {} }) {
   }, [user?.id, silentRefresh])
 
   const isAnyMealEditable = useMemo(() => (
-    weekIds.some(wid => DAYS.some(d =>
-      canEditMeal(d, wid, 'lunch', appSettings) || canEditMeal(d, wid, 'dinner', appSettings)
-    ))
-  ), [weekIds, appSettings])
+    DAYS.some(d =>
+      canEditMeal(d, primaryWeekId, 'lunch', appSettings) || canEditMeal(d, primaryWeekId, 'dinner', appSettings)
+    )
+  ), [primaryWeekId, appSettings])
 
   const toPill = (v) => (
     v === 'Applied' || v === 'opted_in' ? 'Applied' :
     v === 'Skipped' || v === 'opted_out' ? 'Skipped' : 'pending'
   )
 
-  const globalFilled = weekIds.reduce((n, wid) => {
-    const row = surveyMap[wid]
-    if (!row) return n
+  const globalFilled = useMemo(() => {
+    const row = surveyMap[primaryWeekId]
+    if (!row) return 0
     let c = 0
     DAYS.forEach(d => {
       const dk = d.substring(0, 3).toLowerCase()
       if (row[`${dk}_l_status`]) c++
       if (row[`${dk}_d_status`]) c++
     })
-    return n + c
-  }, 0)
+    return Math.min(12, c)
+  }, [surveyMap, primaryWeekId])
 
-  const isWeeklyComplete = globalFilled >= totalMeals
+  const isWeeklyComplete = globalFilled >= 12
   const isWindowEditable = surveyOpen && isWeeklyComplete
-  const progressPct = totalMeals ? Math.min(100, Math.round(globalFilled / totalMeals * 100)) : 0
-
-  const weekFilledMap = {}
-  weekIds.forEach(wid => {
-    const r = surveyMap[wid]
-    let c = 0
-    if (r) {
-      DAYS.forEach(d => {
-        const dk = d.substring(0, 3).toLowerCase()
-        if (r[`${dk}_l_status`]) c++
-        if (r[`${dk}_d_status`]) c++
-      })
-    }
-    weekFilledMap[wid] = c
-  })
+  const progressPct = Math.min(100, Math.round(globalFilled / 12 * 100))
 
   const editable = surveyOpen || isAnyMealEditable
   const canOpenEditor = editable || isWindowEditable
@@ -140,8 +119,8 @@ export default function SurveyPage({ appSettings = {} }) {
     : isWeeklyComplete
       ? 'Survey Submitted & Confirmed'
       : globalFilled === 0
-        ? `Start ${isTwoWeeks ? 'Fortnight' : 'Weekly'} Survey`
-        : `Resume Survey (${totalMeals - globalFilled} remaining)`
+        ? 'Start Weekly Survey (12 Meals)'
+        : `Resume Survey (${12 - globalFilled} remaining)`
 
   if (loading && !initialLoadDone.current) return <WeeklyMenuSkeleton />
   if (!weeklyMenu) return <WeeklyMenuSkeleton />
@@ -253,7 +232,7 @@ export default function SurveyPage({ appSettings = {} }) {
             Al-Mawaid Food Service
           </div>
           <h1 style={{ margin: '3px 0 0', fontSize: 22, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display', serif" }}>
-            {isTwoWeeks ? 'Fortnight Survey' : 'Weekly Survey'}
+            Weekly Survey
           </h1>
         </div>
         {isSyncing && (
@@ -273,66 +252,6 @@ export default function SurveyPage({ appSettings = {} }) {
           </div>
         )}
       </div>
-
-      {/* Two-week cadence switcher */}
-      {isTwoWeeks && (
-        <div style={{
-          display: 'flex',
-          background: t.inputBg,
-          padding: 4,
-          borderRadius: 16,
-          border: `1px solid ${t.border}`,
-          marginBottom: 16,
-          gap: 4
-        }}>
-          {weekIds.map((wid, idx) => {
-            const isActive = idx === activeWeekIdx
-            const filled = weekFilledMap[wid] || 0
-            return (
-              <button
-                key={wid}
-                type="button"
-                onClick={() => setActiveWeekIdx(idx)}
-                style={{
-                  flex: 1,
-                  padding: '9px 12px',
-                  borderRadius: 12,
-                  border: 'none',
-                  background: isActive ? t.accentGrad : 'transparent',
-                  color: isActive ? '#0a0a0a' : t.textSub,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 2,
-                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                  boxShadow: isActive ? '0 4px 12px rgba(0,0,0,0.15)' : 'none',
-                  fontFamily: "'DM Sans', sans-serif"
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 13, fontWeight: isActive ? 800 : 700 }}>
-                    Week {idx + 1}
-                  </span>
-                  <span style={{
-                    fontSize: 10,
-                    fontWeight: 800,
-                    padding: '1px 6px',
-                    borderRadius: 999,
-                    background: isActive ? 'rgba(0,0,0,0.15)' : t.card,
-                    color: isActive ? '#0a0a0a' : t.textSub
-                  }}>
-                    {filled}/12
-                  </span>
-                </div>
-                <span style={{ fontSize: 11, opacity: isActive ? 0.9 : 0.6, fontWeight: 500 }}>
-                  {formatWeekRange(wid)}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      )}
 
       {/* Minimal Status & Progress Card */}
       <div style={{
@@ -466,7 +385,7 @@ export default function SurveyPage({ appSettings = {} }) {
         padding: '0 4px'
       }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: t.text }}>
-          {isTwoWeeks ? `Week ${activeWeekIdx + 1} Schedule` : 'Daily Schedule'}
+          Daily Schedule (12 Meals)
         </div>
         <div style={{ fontSize: 11.5, color: t.textSub, fontWeight: 600 }}>
           {formatWeekRange(activeWeekId)}

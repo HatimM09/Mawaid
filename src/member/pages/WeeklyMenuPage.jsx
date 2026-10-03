@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { Utensils, Sun, Moon, ChevronDown, Calendar } from 'lucide-react'
+import { UtensilsCrossed, SunMedium, MoonStar, ChevronDown, CalendarDays, Sparkles } from 'lucide-react'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
 import { getCalendarWeekDate, addWeeks, isTwoWeekCadence } from '../../common/utils'
@@ -24,8 +24,6 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
   const t = useTheme()
   const calendarWeekId = getCalendarWeekDate()
   const nextWeekId = addWeeks(calendarWeekId, 1)
-  const week2Id = addWeeks(calendarWeekId, 2)
-  const isFortnight = isTwoWeekCadence(appSettings)
   
   const [selectedWeekId, setSelectedWeekId] = useState(calendarWeekId)
   const weeklyMenu = useWeeklyMenu(selectedWeekId)
@@ -34,19 +32,10 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
   const { user } = useAuth()
   const [userSurvey, setUserSurvey] = useState(null)
 
-  const weekOptions = useMemo(() => {
-    if (isFortnight) {
-      return [
-        { id: calendarWeekId, label: 'This Week' },
-        { id: nextWeekId, label: 'Week 1' },
-        { id: week2Id, label: 'Week 2' },
-      ]
-    }
-    return [
-      { id: calendarWeekId, label: 'This Week' },
-      { id: nextWeekId, label: 'Next Week' },
-    ]
-  }, [isFortnight, calendarWeekId, nextWeekId, week2Id])
+  const weekOptions = useMemo(() => [
+    { id: calendarWeekId, label: 'This Week' },
+    { id: nextWeekId, label: 'Next Week' },
+  ], [calendarWeekId, nextWeekId])
 
   // Check if current calendar week has any dishes
   const hasCurrentDishes = useMemo(() => {
@@ -104,7 +93,7 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ width: 40, height: 40, borderRadius: 14, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 16px rgba(0,0,0,0.2)' }}>
-                <Utensils size={20} color="#fff" />
+                <UtensilsCrossed size={20} color="#fff" />
               </div>
               <div>
                 <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.2em', color: t.accent, textTransform: 'uppercase', fontFamily: "'DM Sans',sans-serif" }}>Culinary Journey</div>
@@ -137,20 +126,40 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: t.textSub, fontFamily: "'DM Sans', sans-serif" }}>
-            <Calendar size={13} color={t.accent} />
+            <CalendarDays size={14} color={t.accent} />
             <span>Week: <strong style={{ color: t.text }}>{formatWeekSpan(selectedWeekId)}</strong></span>
-            {!hasCurrentDishes && selectedWeekId === calendarWeekId && (
-              <span style={{ marginLeft: 'auto', fontSize: 10.5, color: t.accent, background: t.accentBg, padding: '2px 8px', borderRadius: 6, border: `1px solid ${t.border}` }}>
-                Previewing available menu
+            {!hasCurrentDishes && (
+              <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.12)', padding: '3px 10px', borderRadius: 8, border: '1px solid rgba(245,158,11,0.3)' }}>
+                👨‍🍳 In Preparation
               </span>
             )}
           </div>
         </div>
       </div>
 
-      {/* Grid of Days */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {DAYS.map((day) => {
+      {/* Preparation in progress or Grid of Days */}
+      {!hasCurrentDishes ? (
+        <div style={{
+          padding: '48px 24px', textAlign: 'center', borderRadius: 28,
+          background: t.card, border: `1.5px solid ${t.border}`,
+          boxShadow: '0 12px 36px rgba(0,0,0,0.25)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16
+        }}>
+          <div style={{ width: 68, height: 68, borderRadius: 24, background: t.accentBg, border: `1px solid ${t.accentBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 34 }}>
+            👨‍🍳
+          </div>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: t.text, fontFamily: "'Playfair Display', serif" }}>
+              Preparation in Progress
+            </div>
+            <div style={{ fontSize: 13.5, color: t.textSub, marginTop: 8, maxWidth: 420, lineHeight: 1.6 }}>
+              {selectedWeekId === nextWeekId ? "Next week's" : "This week's"} thali menu is currently being crafted by our culinary team. It will appear here as soon as it is published by the admin!
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {DAYS.map((day) => {
           const menu = weeklyMenu[day] || { en: '', ar: '', lunch: [], dinner: [] }
           const isToday = day === todayKey
           const isExpanded = day === expandedDay
@@ -232,7 +241,7 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                       <div style={{ width: 32, height: 32, borderRadius: 10, background: 'linear-gradient(135deg, #FF9500, #FFCC00)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Sun size={16} color="#fff" />
+                        <SunMedium size={16} color="#fff" />
                       </div>
                       <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.1em', color: t.text }}>LUNCH FEAST</span>
                     </div>
@@ -267,7 +276,7 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                       <div style={{ width: 32, height: 32, borderRadius: 10, background: 'linear-gradient(135deg, #5856D6, #AF52DE)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Moon size={16} color="#fff" />
+                        <MoonStar size={16} color="#fff" />
                       </div>
                       <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.1em', color: t.text }}>DINNER DELIGHT</span>
                     </div>
@@ -298,7 +307,8 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
             </div>
           )
         })}
-      </div>
+        </div>
+      )}
     </main>
   )
 }

@@ -87,14 +87,23 @@ const fetchWeeklyMenu = async (weekStart: string): Promise<any> => {
 
       if (data && data.length > 0) {
         const formatted = formatMenu(data, weekStart);
-        if (hasDishes(formatted)) {
-          return formatted;
-        }
+        const dishesExist = hasDishes(formatted);
+        formatted.isUploaded = dishesExist;
+        formatted.hasDishes = dishesExist;
+        formatted.isPreparationInProgress = !dishesExist;
+        return formatted;
+      } else {
+        // Explicit week requested (e.g. Next Week) but admin has not uploaded it yet:
+        // Return empty days with clear preparation state (never inject fake dishes)
+        const emptyFormatted = formatMenu([], weekStart);
+        emptyFormatted.isUploaded = false;
+        emptyFormatted.hasDishes = false;
+        emptyFormatted.isPreparationInProgress = true;
+        return emptyFormatted;
       }
     }
 
     // Fallback 1: Only use latest published menu when NO explicit week was requested.
-    // For an explicit week_start (e.g., W2 in fortnight) we must NOT return W1's menu mis-labeled as W2 — return empty/default for that week instead.
     if (!weekStart) {
       const { data: latestRow } = await supabase
         .from('weekly_menu')
@@ -112,17 +121,24 @@ const fetchWeeklyMenu = async (weekStart: string): Promise<any> => {
         if (fallbackData && fallbackData.length > 0) {
           const formatted = formatMenu(fallbackData, latestRow.week_start);
           if (hasDishes(formatted)) {
+            formatted.isUploaded = true;
+            formatted.hasDishes = true;
+            formatted.isPreparationInProgress = false;
             return formatted;
           }
         }
       }
     }
   } catch (err) {
-    console.warn('[useWeeklyMenu] Error fetching menu from Supabase, using default fallback:', err);
+    console.warn('[useWeeklyMenu] Error fetching menu from Supabase:', err);
   }
 
-  // Fallback 2: Default hardcoded menu so UI never disappears or renders empty
-  return formatDefaultMenu(DEFAULT_MENU, weekStart);
+  // Fallback 2: If no explicit week was requested and DB is completely empty
+  const defaultRes = formatDefaultMenu(DEFAULT_MENU, weekStart);
+  defaultRes.isUploaded = false;
+  defaultRes.hasDishes = false;
+  defaultRes.isPreparationInProgress = true;
+  return defaultRes;
 };
 
 /**

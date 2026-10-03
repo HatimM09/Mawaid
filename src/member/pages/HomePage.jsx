@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { QrCode, Sun, Moon, Clock, ChevronRight, Utensils, Star, Check, ClipboardList } from 'lucide-react'
+import { ScanLine, SunMedium, MoonStar, Clock, ChevronRight, UtensilsCrossed, Star, Check, ClipboardCheck } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/firebaseClient'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
@@ -21,8 +21,14 @@ export default function HomePage({ appSettings = {} }) {
   const weeklyMenu = useWeeklyMenu(getCalendarWeekDate())
   const [showQR, setShowQR] = useState(false)
   const [showWeeklySurveyModal, setShowWeeklySurveyModal] = useState(false)
-  const [profileData, setProfileData] = useState({ name: '', thali_number: '', avatar_url: '' })
-  const [statsLoading, setStatsLoading] = useState(true)
+  const [profileData, setProfileData] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`almawaid_user_profile_${user?.id || 'anon'}`)
+      if (cached) return JSON.parse(cached)
+    } catch { /* ignore */ }
+    return { name: '', thali_number: '', avatar_url: '' }
+  })
+  const [statsLoading, setStatsLoading] = useState(() => !profileData?.name)
   const [weeklySurveySubmitted, setWeeklySurveySubmitted] = useState(false)
   const todayKey = getTodayKey()
 
@@ -137,7 +143,11 @@ export default function HomePage({ appSettings = {} }) {
         // Survey responses now live in survey_day_responses (merged flat shape)
         fetchUserSurveyRow(user.id, weekId).then(r => r.data),
       ])
-      if (profile) setProfileData({ name: profile.name || '', thali_number: profile.thali_number || '', avatar_url: profile.avatar_url || '' })
+      if (profile) {
+        const updated = { name: profile.name || '', thali_number: profile.thali_number || '', avatar_url: profile.avatar_url || '' }
+        setProfileData(updated)
+        try { localStorage.setItem(`almawaid_user_profile_${user?.id || 'anon'}`, JSON.stringify(updated)) } catch { /* ignore */ }
+      }
       if (existingFb) {
         setFeedbackSubmitted({ lunch: !!existingFb.lunch_stars, dinner: !!existingFb.dinner_stars })
         setLunchStars(existingFb.lunch_stars || 0)
@@ -265,7 +275,7 @@ export default function HomePage({ appSettings = {} }) {
           <div style={{ fontSize: 13, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 2 }}>Thali #{profileData?.thali_number || '—'}</div>
         </div>
         <button onClick={() => setShowQR(true)} style={{ background: t.accentBg, border: `1px solid ${t.accentBorder}`, borderRadius: 12, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 2, position: 'relative' }}>
-          <QrCode size={22} color={t.accent} />
+          <ScanLine size={22} color={t.accent} />
         </button>
       </Card>
 
@@ -287,7 +297,7 @@ export default function HomePage({ appSettings = {} }) {
           onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = `0 8px 22px ${t.accentBg}` }}
         >
           <div style={{ width: 38, height: 38, borderRadius: 12, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: `0 6px 16px ${t.accentBg}` }}>
-            <ClipboardList size={18} color="#000" />
+            <ClipboardCheck size={19} color="#000" />
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: t.accent }}>Weekly Survey Open</div>
@@ -313,7 +323,7 @@ export default function HomePage({ appSettings = {} }) {
       {/* Time-based Daily Survey Edit button — shows during lunch/dinner edit window */}
       {currentEditableMeal && (() => {
         const isLunch = currentEditableMeal.meal === 'lunch'
-        const MealIcon = isLunch ? Sun : Moon
+        const MealIcon = isLunch ? SunMedium : MoonStar
         const window = getEditWindow(appSettings, currentEditableMeal.meal)
         return (
           <button
@@ -415,7 +425,7 @@ export default function HomePage({ appSettings = {} }) {
         <div style={{ position: 'absolute', top: -30, right: -30, width: 150, height: 150, background: t.accentGrad, borderRadius: '50%', filter: 'blur(60px)', opacity: 0.12 }} />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 4px 15px ${t.accentBg}` }}><Utensils size={16} color="#fff" /></div>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 4px 15px ${t.accentBg}` }}><UtensilsCrossed size={16} color="#fff" /></div>
           <div style={{ fontSize: 18, fontWeight: 800, color: t.accent, fontFamily: "'Playfair Display',serif" }}>Today's Menu & Feedback</div>
         </div>
 
@@ -427,7 +437,7 @@ export default function HomePage({ appSettings = {} }) {
             const stars = meal === 'lunch' ? lunchStars : dinnerStars
             const setStars = meal === 'lunch' ? setLunchStars : setDinnerStars
             const submitted = feedbackSubmitted[meal]
-            const Icon = meal === 'lunch' ? Sun : Moon
+            const Icon = meal === 'lunch' ? SunMedium : MoonStar
 
             return (
               <div key={meal} style={{ background: 'rgba(255, 255, 255, 0.03)', padding: 20, borderRadius: 20, border: `1px solid ${stars > 0 ? t.accentBorder : t.border}`, transition: 'border-color 0.3s', boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.05), 0 8px 20px rgba(0,0,0,0.1)' }}>

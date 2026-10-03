@@ -39,13 +39,40 @@ export const ErrorBanner = ({ msg }) => (
 
 export const Avatar = ({ avatarUrl, name, email, size = 56 }) => {
   const t = useTheme()
+  const [imgError, setImgError] = React.useState(false)
   const initials = (name || email || 'U').charAt(0).toUpperCase()
+
+  React.useEffect(() => {
+    setImgError(false)
+  }, [avatarUrl])
+
   return (
-    <div style={{ width: size, height: size, borderRadius: '50%', overflow: 'hidden', flexShrink: 0, border: `2px solid ${t.accent}`, boxShadow: `0 4px 16px ${t.accentBg}` }}>
-      {avatarUrl
-        ? <img src={avatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        : <div style={{ width: '100%', height: '100%', background: t.accentGrad, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.38, fontWeight: 800, color: '#fff', fontFamily: "'Playfair Display',serif" }}>{initials}</div>
-      }
+    <div style={{
+      width: size, height: size, borderRadius: '50%', overflow: 'hidden',
+      flexShrink: 0, border: `2px solid ${t.accent}`,
+      boxShadow: `0 4px 16px ${t.accentBg}`,
+      background: t.accentGrad,
+      display: 'flex', alignItems: 'center', justifyContent: 'center'
+    }}>
+      {avatarUrl && !imgError ? (
+        <img
+          src={avatarUrl}
+          alt={name || "Avatar"}
+          loading="eager"
+          decoding="async"
+          onError={() => setImgError(true)}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      ) : (
+        <div style={{
+          width: '100%', height: '100%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: Math.max(14, size * 0.38), fontWeight: 800,
+          color: '#fff', fontFamily: "'Playfair Display',serif"
+        }}>
+          {initials}
+        </div>
+      )}
     </div>
   )
 }

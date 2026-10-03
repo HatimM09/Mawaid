@@ -38,15 +38,56 @@ const CHANNEL_OPTIONS = [
 ]
 
 const DELIVERY_OPTIONS = [
-  { value: 'now', label: 'Now' },
-  { value: 'schedule', label: 'Schedule for later' },
+  { value: 'now', label: 'Now (Immediate)' },
+  { value: 'schedule', label: 'Schedule Once (Specific Date & Time)' },
+  { value: 'recurring_daily', label: '🔁 Recurring Daily (Set Time)' },
+  { value: 'recurring_weekly', label: '🔁 Recurring Weekly (Day & Time)' },
 ]
+
+const DAYS_LIST = [
+  { value: 'monday', label: 'Every Monday' },
+  { value: 'tuesday', label: 'Every Tuesday' },
+  { value: 'wednesday', label: 'Every Wednesday' },
+  { value: 'thursday', label: 'Every Thursday' },
+  { value: 'friday', label: 'Every Friday' },
+  { value: 'saturday', label: 'Every Saturday' },
+  { value: 'sunday', label: 'Every Sunday' },
+]
+
+const calculateNextTrigger = (delivery, timeStr, dayStr) => {
+  const now = new Date()
+  const [h, m] = (timeStr || '09:00').split(':').map(Number)
+  const target = new Date(now)
+  target.setHours(h, m, 0, 0)
+
+  if (delivery === 'recurring_daily') {
+    if (target.getTime() <= now.getTime()) {
+      target.setDate(target.getDate() + 1)
+    }
+    return target.toISOString()
+  }
+
+  if (delivery === 'recurring_weekly') {
+    const dayMap = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 }
+    const targetDayNum = dayMap[dayStr?.toLowerCase()] ?? 6
+    let diffDays = (targetDayNum - now.getDay() + 7) % 7
+    if (diffDays === 0 && target.getTime() <= now.getTime()) {
+      diffDays = 7
+    }
+    target.setDate(target.getDate() + diffDays)
+    return target.toISOString()
+  }
+
+  return target.toISOString()
+}
 
 const DEFAULT_FORM = {
   title: '',
   body: '',
   sender_name: 'Al-Mawaid',
   scheduled_at: '',
+  recurring_day: 'saturday',
+  recurring_time: '20:00',
   target_type: 'all',
   target_user_id: '',
   tone: 'var(--accent-primary)',
@@ -236,15 +277,113 @@ export default function NotificationsAdminPage() {
     formErrorTimer.current = setTimeout(() => setFormError(''), 5000)
   }
 
+  // Single broadcast processor (handles immediate, scheduled, and recurring)
+  const processSingleBroadcast = useCallback(async (entry) => {
+    let sentCount = 0
+    let failedCount = 0
+    const now = new Date().toISOString()
+    const targetCount = getTargetCount(entry.target_type, entry.target_user_id)
+
+    await insertInAppNotifications(
+      entry.target_type,
+      entry.target_user_id,
+      entry.title,
+      entry.body,
+      '/profile/notifications',
+      entry.sender_name
+    )
+
+    if (entry.channel === 'push' || !entry.channel) {
+      try {
+        const { data: pushResult, error: pushError } = await supabase.functions.invoke('send-push', {
+          body: {
+            title: entry.title,
+            body: entry.body,
+            user_id: entry.target_type === 'specific' ? entry.target_user_id : null,
+            target_type: entry.target_type === 'all' ? null : entry.target_type,
+            url: '/',
+            image_url: entry.media_url || undefined,
+            sender_name: entry.sender_name || 'Admin',
+            notify_in_app: true,
+          }
+        })
+        if (pushError) throw pushError
+        sentCount = pushResult?.sent || 0
+        failedCount = pushResult?.failed || 0
+      } catch (err) {
+        console.error('Push trigger error:', err)
+        failedCount = targetCount
+      }
+    } else {
+      sentCount = targetCount
+    }
+
+    const isRecurring = entry.repeat_interval === 'daily' || entry.repeat_interval === 'weekly' ||
+      entry.delivery === 'recurring_daily' || entry.delivery === 'recurring_weekly'
+
+    if (isRecurring) {
+      const mode = (entry.repeat_interval === 'daily' || entry.delivery === 'recurring_daily') ? 'recurring_daily' : 'recurring_weekly'
+      const nextScheduled = calculateNextTrigger(mode, entry.recurring_time || '09:00', entry.recurring_day || 'saturday')
+
+      await supabase.from('broadcast_schedule').update({
+        status: 'scheduled',
+        scheduled_for: nextScheduled,
+        sent_at: now,
+        sent_count: (entry.sent_count || 0) + sentCount,
+        failed_count: (entry.failed_count || 0) + failedCount,
+      }).eq('id', entry.id)
+    } else {
+      await supabase.from('broadcast_schedule').update({
+        status: failedCount > 0 && sentCount === 0 ? 'failed' : 'sent',
+        sent_at: now,
+        sent_count: sentCount,
+        failed_count: failedCount,
+      }).eq('id', entry.id)
+    }
+  }, [getTargetCount, insertInAppNotifications])
+
+  // Automated Schedule & Recurring runner
+  useEffect(() => {
+    let timer = null
+    const checkAndProcessDue = async () => {
+      try {
+        const now = new Date().toISOString()
+        const { data: dueItems } = await supabase
+          .from('broadcast_schedule')
+          .select('*')
+          .eq('status', 'scheduled')
+          .lte('scheduled_for', now)
+          .limit(10)
+
+        if (dueItems && dueItems.length > 0) {
+          for (const item of dueItems) {
+            await processSingleBroadcast(item)
+          }
+          fetchAll()
+        }
+      } catch (err) {
+        console.error('Schedule runner check error:', err)
+      }
+    }
+
+    checkAndProcessDue()
+    timer = setInterval(checkAndProcessDue, 25000)
+    return () => clearInterval(timer)
+  }, [processSingleBroadcast])
+
   const handleSend = async () => {
     if (!form.title || !form.body) {
       showFormError('Title and Message are required')
       return
     }
+    const isRecurring = form.delivery === 'recurring_daily' || form.delivery === 'recurring_weekly'
+    const isScheduledOnce = form.delivery === 'schedule' && form.scheduled_at
+    const isDelayed = isRecurring || isScheduledOnce
+
     // Confirmation for sending to all users
     const targetCount = getTargetCount(form.target_type, form.target_user_id)
-    if (form.target_type === 'all' && targetCount > 10) {
-      const confirmed = window.confirm(`Send this broadcast to ${targetCount} users? This cannot be undone.`)
+    if (!isDelayed && form.target_type === 'all' && targetCount > 10) {
+      const confirmed = window.confirm(`Send this broadcast to ${targetCount} users now? This cannot be undone.`)
       if (!confirmed) return
     }
     setSubmitting(true)
@@ -252,7 +391,11 @@ export default function NotificationsAdminPage() {
     let sentCount = 0
     let failedCount = 0
     const now = new Date().toISOString()
-    const isScheduled = form.delivery === 'schedule' && form.scheduled_at
+    const scheduledFor = isRecurring
+      ? calculateNextTrigger(form.delivery, form.recurring_time, form.recurring_day)
+      : isScheduledOnce
+        ? form.scheduled_at
+        : now
 
     const payload = {
       title: form.title,
@@ -260,7 +403,7 @@ export default function NotificationsAdminPage() {
       body: form.body,
       sender_name: form.sender_name,
       media: form.media_url ? [form.media_url] : [],
-      scheduled_at: isScheduled ? form.scheduled_at : now,
+      scheduled_at: scheduledFor,
       target_user_id: form.target_type === 'specific' ? form.target_user_id : null,
       tone: form.tone,
       channel: form.channel,
@@ -289,8 +432,12 @@ export default function NotificationsAdminPage() {
       target_type: form.target_type,
       target_user_id: form.target_type === 'specific' ? form.target_user_id : null,
       channel: form.channel,
-      status: isScheduled ? 'scheduled' : 'sending',
-      scheduled_for: isScheduled ? form.scheduled_at : now,
+      delivery: form.delivery,
+      repeat_interval: form.delivery === 'recurring_daily' ? 'daily' : form.delivery === 'recurring_weekly' ? 'weekly' : null,
+      recurring_day: form.recurring_day,
+      recurring_time: form.recurring_time,
+      status: isDelayed ? 'scheduled' : 'sending',
+      scheduled_for: scheduledFor,
       total_targets: targetCount,
       sent_count: 0,
       failed_count: 0,
@@ -299,7 +446,7 @@ export default function NotificationsAdminPage() {
 
     await supabase.from('broadcast_schedule').insert([scheduleEntry])
 
-    if (!isScheduled) {
+    if (!isDelayed) {
       // Always write in-app notifications so open web/AAB clients get Realtime toasts
       await insertInAppNotifications(
         form.target_type,
@@ -345,8 +492,13 @@ export default function NotificationsAdminPage() {
     setUploadProgress(0)
     fetchAll()
     setSubmitting(false)
+
     // Show delivery feedback
-    if (form.channel === 'push') {
+    if (isRecurring) {
+      showFormError(`🔁 Recurring notification scheduled! Next trigger: ${new Date(scheduledFor).toLocaleString()}`)
+    } else if (isScheduledOnce) {
+      showFormError(`📅 Notification scheduled for ${new Date(scheduledFor).toLocaleString()}`)
+    } else if (form.channel === 'push') {
       showFormError(`✅ Sent! ${sentCount} delivered, ${failedCount} failed.`)
     } else {
       showFormError(`✅ Broadcast sent to ${targetCount} recipient(s).`)
@@ -1191,20 +1343,90 @@ export default function NotificationsAdminPage() {
                   </button>
                 </div>
 
-                {/* Conditional: Schedule picker */}
+                {/* Conditional: Schedule picker (One-time) */}
                 {form.delivery === 'schedule' && (
-                  <input
-                    name="scheduledAt"
-                    type="datetime-local"
-                    value={form.scheduled_at}
-                    onChange={e => setForm({ ...form, scheduled_at: e.target.value })}
-                    style={{
-                      width: '100%', boxSizing: 'border-box',
-                      padding: '12px 16px', borderRadius: 12,
-                      background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
-                      color: 'var(--text-primary)', fontSize: 14, outline: 'none', fontFamily: 'inherit',
-                    }}
-                  />
+                  <div>
+                    <label style={{ display: 'block', color: 'var(--text-tertiary)', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', marginBottom: 6 }}>
+                      Select Date & Time (One-Time Delivery)
+                    </label>
+                    <input
+                      name="scheduledAt"
+                      type="datetime-local"
+                      value={form.scheduled_at}
+                      onChange={e => setForm({ ...form, scheduled_at: e.target.value })}
+                      style={{
+                        width: '100%', boxSizing: 'border-box',
+                        padding: '12px 16px', borderRadius: 12,
+                        background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)',
+                        color: 'var(--text-primary)', fontSize: 14, outline: 'none', fontFamily: 'inherit',
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Conditional: Recurring Daily picker */}
+                {form.delivery === 'recurring_daily' && (
+                  <div style={{ padding: 14, borderRadius: 12, background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: '#818cf8', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      🔁 Recurring Daily Delivery Time
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <input
+                        name="recurringTime"
+                        type="time"
+                        value={form.recurring_time}
+                        onChange={e => setForm({ ...form, recurring_time: e.target.value })}
+                        style={{
+                          flex: 1, padding: '10px 14px', borderRadius: 10,
+                          background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-glass)',
+                          color: 'var(--text-primary)', fontSize: 14, fontWeight: 700, outline: 'none', fontFamily: 'inherit',
+                        }}
+                      />
+                      <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Fires every day automatically</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Conditional: Recurring Weekly picker */}
+                {form.delivery === 'recurring_weekly' && (
+                  <div style={{ padding: 14, borderRadius: 12, background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: '#818cf8', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      🔁 Recurring Weekly Schedule (e.g. Survey Announcement)
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 10 }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', marginBottom: 4 }}>Day of Week</label>
+                        <select
+                          name="recurringDay"
+                          value={form.recurring_day}
+                          onChange={e => setForm({ ...form, recurring_day: e.target.value })}
+                          style={{
+                            width: '100%', padding: '10px 12px', borderRadius: 10,
+                            background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-glass)',
+                            color: 'var(--text-primary)', fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit',
+                          }}
+                        >
+                          {DAYS_LIST.map(d => (
+                            <option key={d.value} value={d.value}>{d.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', marginBottom: 4 }}>Time</label>
+                        <input
+                          name="recurringTime"
+                          type="time"
+                          value={form.recurring_time}
+                          onChange={e => setForm({ ...form, recurring_time: e.target.value })}
+                          style={{
+                            width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10,
+                            background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-glass)',
+                            color: 'var(--text-primary)', fontSize: 13, fontWeight: 700, outline: 'none', fontFamily: 'inherit',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 )}
 
                 {/* Conditional: Specific user picker */}
@@ -1232,20 +1454,28 @@ export default function NotificationsAdminPage() {
                 {/* Target count indicator */}
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '8px 12px', borderRadius: 10,
+                  padding: '10px 14px', borderRadius: 10,
                   background: 'rgba(197, 160, 89, 0.04)', border: '1px solid rgba(197, 160, 89, 0.1)',
-                  fontSize: 11, color: 'var(--text-tertiary)'
+                  fontSize: 11.5, color: 'var(--text-tertiary)'
                 }}>
                   <Target size={14} color={T.accent} />
-                  Will reach <strong style={{ color: T.accent }}>
-{form.target_type === 'specific' && form.target_user_id ? 1 :
-                      form.target_type === 'all' ? realPushSubs :
-                      form.target_type === 'admins' ? (users.filter(u => u.role === 'admin').length || realPushSubs) :
-                      users.length}
-                  </strong> recipient{form.target_type === 'specific' && form.target_user_id ? '' : 's'}
-                  {form.delivery === 'schedule' && form.scheduled_at
-                    ? ` at ${new Date(form.scheduled_at).toLocaleString()}`
-                    : ' immediately'}
+                  <span>
+                    Will reach <strong style={{ color: T.accent }}>
+                      {form.target_type === 'specific' && form.target_user_id ? 1 :
+                        form.target_type === 'all' ? realPushSubs :
+                        form.target_type === 'admins' ? (users.filter(u => u.role === 'admin').length || realPushSubs) :
+                        users.length}
+                    </strong> recipient{form.target_type === 'specific' && form.target_user_id ? '' : 's'} ·{' '}
+                    {form.delivery === 'recurring_daily' ? (
+                      <strong style={{ color: '#818cf8' }}>🔁 Daily at {form.recurring_time} (Next: {new Date(calculateNextTrigger('recurring_daily', form.recurring_time, form.recurring_day)).toLocaleString()})</strong>
+                    ) : form.delivery === 'recurring_weekly' ? (
+                      <strong style={{ color: '#818cf8' }}>🔁 Weekly on {form.recurring_day} at {form.recurring_time} (Next: {new Date(calculateNextTrigger('recurring_weekly', form.recurring_time, form.recurring_day)).toLocaleString()})</strong>
+                    ) : form.delivery === 'schedule' && form.scheduled_at ? (
+                      <strong style={{ color: '#34d399' }}>📅 Scheduled for {new Date(form.scheduled_at).toLocaleString()}</strong>
+                    ) : (
+                      <strong style={{ color: '#34d399' }}>⚡ Immediately</strong>
+                    )}
+                  </span>
                 </div>
               </div>
             </AdminCard>
@@ -1257,48 +1487,36 @@ export default function NotificationsAdminPage() {
                 disabled={submitting}
                 style={{
                   flex: 1, height: 54,
-                  background: '#fff',
+                  background: form.delivery.startsWith('recurring') ? 'linear-gradient(135deg, #6366f1, #4f46e5)' : '#fff',
                   border: 'none', borderRadius: 14,
-                  color: '#0a0d14', fontWeight: 900, fontSize: 16,
+                  color: form.delivery.startsWith('recurring') ? '#fff' : '#0a0d14',
+                  fontWeight: 900, fontSize: 15,
                   cursor: submitting ? 'not-allowed' : 'pointer',
                   fontFamily: 'inherit',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                  boxShadow: '0 8px 25px rgba(255,255,255,0.15)',
+                  boxShadow: form.delivery.startsWith('recurring') ? '0 8px 25px rgba(99,102,241,0.35)' : '0 8px 25px rgba(255,255,255,0.15)',
                   transition: 'all 0.2s',
                   opacity: submitting ? 0.6 : 1
                 }}
-                onMouseEnter={e => { if (!submitting) { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 12px 30px rgba(255,255,255,0.2)' } }}
-                onMouseLeave={e => { if (!submitting) { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 8px 25px rgba(255,255,255,0.15)' } }}
+                onMouseEnter={e => { if (!submitting) { e.currentTarget.style.transform = 'translateY(-2px)' } }}
+                onMouseLeave={e => { if (!submitting) { e.currentTarget.style.transform = 'translateY(0)' } }}
               >
-                <Rocket size={20} color="#0a0d14" />
-                {submitting ? 'Sending...' : 'Send Now'}
-              </button>
-              <button
-                onClick={() => {
-                  if (form.delivery !== 'schedule') {
-                    setForm(prev => ({ ...prev, delivery: 'schedule' }))
-                  } else {
-                    handleSend()
-                  }
-                }}
-                disabled={submitting}
-                style={{
-                  height: 54, padding: '0 28px',
-                  background: 'var(--accent-bg)',
-                  border: '1.5px solid rgba(212, 175, 55, 0.3)',
-                  borderRadius: 14,
-                  color: 'var(--text-primary)', fontWeight: 800, fontSize: 14,
-                  cursor: submitting ? 'not-allowed' : 'pointer',
-                  fontFamily: 'inherit',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  transition: 'all 0.2s',
-                  opacity: submitting ? 0.5 : 1
-                }}
-                onMouseEnter={e => { if (!submitting) { e.currentTarget.style.borderColor = T.accent; e.currentTarget.style.background = 'rgba(197, 160, 89, 0.05)' } }}
-                onMouseLeave={e => { if (!submitting) { e.currentTarget.style.borderColor = 'rgba(212, 175, 55, 0.3)'; e.currentTarget.style.background = 'transparent' } }}
-              >
-                <Calendar size={18} />
-                {form.delivery === 'schedule' && form.scheduled_at ? 'Confirm Schedule' : 'Schedule'}
+                {form.delivery === 'recurring_daily' || form.delivery === 'recurring_weekly' ? (
+                  <>
+                    <RefreshCw size={18} />
+                    {submitting ? 'Setting Schedule...' : 'Save & Activate Recurring Broadcast'}
+                  </>
+                ) : form.delivery === 'schedule' ? (
+                  <>
+                    <Calendar size={18} />
+                    {submitting ? 'Scheduling...' : 'Save Scheduled Broadcast'}
+                  </>
+                ) : (
+                  <>
+                    <Rocket size={18} />
+                    {submitting ? 'Sending...' : 'Send Broadcast Now'}
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -1629,57 +1847,105 @@ export default function NotificationsAdminPage() {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {scheduledBroadcasts.map(entry => (
-                    <div
-                      key={entry.id}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 10,
-                        padding: '10px 12px', borderRadius: 12,
-                        background: 'rgba(255,255,255,0.02)',
-                        transition: 'background 0.15s'
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
-                    >
-                      <div style={{
-                        width: 28, height: 28, borderRadius: 8,
-                        background: `${STATUS_COLORS[entry.status] || '#a78bfa'}15`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-                      }}>
-                        <Clock size={12} color={STATUS_COLORS[entry.status] || '#a78bfa'} />
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: T.text, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                          {entry.title}
+                  {scheduledBroadcasts.map(entry => {
+                    const isRecurringEntry = entry.repeat_interval === 'daily' || entry.repeat_interval === 'weekly' ||
+                      entry.delivery === 'recurring_daily' || entry.delivery === 'recurring_weekly'
+                    const recurringLabel = isRecurringEntry
+                      ? (entry.repeat_interval === 'daily' || entry.delivery === 'recurring_daily')
+                        ? `🔁 Daily at ${entry.recurring_time || '09:00'}`
+                        : `🔁 Weekly (${entry.recurring_day ? entry.recurring_day.charAt(0).toUpperCase() + entry.recurring_day.slice(1) : 'Sat'}) at ${entry.recurring_time || '09:00'}`
+                      : null
+                    return (
+                      <div
+                        key={entry.id}
+                        style={{
+                          display: 'flex', flexDirection: 'column', gap: 6,
+                          padding: '10px 12px', borderRadius: 12,
+                          background: isRecurringEntry ? 'rgba(167,139,250,0.04)' : 'rgba(255,255,255,0.02)',
+                          border: isRecurringEntry ? '1px solid rgba(167,139,250,0.12)' : '1px solid transparent',
+                          transition: 'background 0.15s'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = isRecurringEntry ? 'rgba(167,139,250,0.08)' : 'rgba(255,255,255,0.04)'}
+                        onMouseLeave={e => e.currentTarget.style.background = isRecurringEntry ? 'rgba(167,139,250,0.04)' : 'rgba(255,255,255,0.02)'}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{
+                            width: 28, height: 28, borderRadius: 8,
+                            background: `${isRecurringEntry ? '#a78bfa' : (STATUS_COLORS[entry.status] || '#a78bfa')}15`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                          }}>
+                            <Clock size={12} color={isRecurringEntry ? '#a78bfa' : (STATUS_COLORS[entry.status] || '#a78bfa')} />
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: T.text, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                              {entry.title}
+                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1 }}>
+                              {isRecurringEntry
+                                ? `Next: ${entry.scheduled_for ? new Date(entry.scheduled_for).toLocaleDateString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}`
+                                : entry.scheduled_for
+                                  ? new Date(entry.scheduled_for).toLocaleDateString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                                  : timeAgo(entry.created_at)
+                              }
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                            <span style={{
+                              padding: '2px 8px', borderRadius: 12,
+                              background: `${STATUS_COLORS[entry.status] || '#a78bfa'}15`,
+                              color: STATUS_COLORS[entry.status] || '#a78bfa',
+                              fontSize: 8, fontWeight: 800,
+                            }}>
+                              {entry.status.charAt(0).toUpperCase() + entry.status.slice(1)}
+                            </span>
+                            <button
+                              onClick={() => deleteScheduleEntry(entry.id)}
+                              style={{
+                                background: 'none', border: 'none',
+                                color: '#ef4444', cursor: 'pointer',
+                                padding: 2, display: 'flex', opacity: 0.4,
+                                fontFamily: 'inherit'
+                              }}
+                              title="Cancel"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
                         </div>
-                        <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1 }}>
-                          {entry.scheduled_for ? new Date(entry.scheduled_for).toLocaleDateString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : timeAgo(entry.created_at)}
-                        </div>
+                        {/* Recurring badge + Trigger Now row */}
+                        {isRecurringEntry && (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 38 }}>
+                            <span style={{
+                              fontSize: 9, fontWeight: 700,
+                              color: '#a78bfa',
+                              background: 'rgba(167,139,250,0.12)',
+                              padding: '2px 8px', borderRadius: 20,
+                            }}>
+                              {recurringLabel}
+                            </span>
+                            <button
+                              onClick={async () => {
+                                await processSingleBroadcast(entry)
+                                fetchAll()
+                              }}
+                              style={{
+                                background: 'rgba(167,139,250,0.15)',
+                                border: '1px solid rgba(167,139,250,0.3)',
+                                color: '#a78bfa', cursor: 'pointer',
+                                padding: '2px 8px', borderRadius: 8,
+                                fontSize: 9, fontWeight: 700,
+                                display: 'flex', alignItems: 'center', gap: 3,
+                                fontFamily: 'inherit',
+                              }}
+                              title="Trigger this recurring broadcast now"
+                            >
+                              ⚡ Trigger Now
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                        <span style={{
-                          padding: '2px 8px', borderRadius: 12,
-                          background: `${STATUS_COLORS[entry.status] || '#a78bfa'}15`,
-                          color: STATUS_COLORS[entry.status] || '#a78bfa',
-                          fontSize: 8, fontWeight: 800,
-                        }}>
-                          {entry.status.charAt(0).toUpperCase() + entry.status.slice(1)}
-                        </span>
-                        <button
-                          onClick={() => deleteScheduleEntry(entry.id)}
-                          style={{
-                            background: 'none', border: 'none',
-                            color: '#ef4444', cursor: 'pointer',
-                            padding: 2, display: 'flex', opacity: 0.4,
-                            fontFamily: 'inherit'
-                          }}
-                          title="Cancel"
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </AdminCard>

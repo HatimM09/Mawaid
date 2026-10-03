@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { QrCode, ClipboardList, Users, Bell, LifeBuoy, Info, MessageCircle, Phone, MapPin, Check, KeyRound, Eye, EyeOff, LogOut, X, ChevronRight, Calendar, Sun, Moon, ArrowRight, CheckCircle2 } from 'lucide-react'
+import {
+  ScanLine, ClipboardCheck, Users2, BellRing, Headphones, Sparkles,
+  MessageCircle, Phone, MapPin, Check, KeyRound, Eye, EyeOff, LogOut,
+  X, ChevronRight, Calendar, CalendarDays, Sun, Moon, SunMedium, MoonStar, ArrowRight,
+  CheckCircle2, ShieldCheck, HeartHandshake, Layers, FileText, HelpCircle, LifeBuoy, Clock,
+  PlayCircle, PauseCircle, PlusCircle, MinusCircle
+} from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/firebaseClient'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
@@ -41,8 +47,14 @@ const pwInputStyle = t => ({
 })
 function ProfileMainPage({ theme, setTheme, onNav }) {
   const t = useTheme(), { user, signOut } = useAuth()
-  const [profileData, setProfileData] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [profileData, setProfileData] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`almawaid_user_profile_${user?.id || 'anon'}`)
+      if (cached) return JSON.parse(cached)
+    } catch { /* ignore */ }
+    return null
+  })
+  const [loading, setLoading] = useState(() => !profileData)
   const [showQR, setShowQR] = useState(false)
   const [helpline, setHelpline] = useState('')
   // Change password state
@@ -80,7 +92,10 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
 
   useEffect(() => {
     supabase.from('user_stats').select('*').eq('user_id', user.id).maybeSingle().then(({ data }) => { 
-      if (data) setProfileData(data)
+      if (data) {
+        setProfileData(data)
+        try { localStorage.setItem(`almawaid_user_profile_${user?.id || 'anon'}`, JSON.stringify(data)) } catch { /* ignore */ }
+      }
     }).finally(() => setLoading(false))
     supabase.from("app_settings").select("*").eq("key", "helpline_number").maybeSingle().then(({ data }) => { if (data) setHelpline(data.value) })
   }, [user.id])
@@ -118,29 +133,29 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
 
       </Card>
       <SectionLabel>My Activity</SectionLabel>
-      <NavCard label="My Identity QR" icon={<QrCode size={19} color="#fff" />} desc="Show your QR code for thali collection" onClick={() => setShowQR(true)} />
-      <NavCard label="My Surveys" icon={<ClipboardList size={19} color="#fff" />} desc="View your weekly survey responses" onClick={() => onNav('surveys')} />
+      <NavCard label="My Identity QR" icon={<ScanLine size={20} color="#fff" />} desc="Show your QR code for thali collection" onClick={() => setShowQR(true)} />
+      <NavCard label="My Surveys" icon={<ClipboardCheck size={20} color="#fff" />} desc="View your weekly survey responses" onClick={() => onNav('surveys')} />
       <NavCard label="My Requests" icon={<img src="/al-mawaid.png" alt="" style={{ width: 22, height: 22, objectFit: 'contain' }} />} desc="Resume, stop & extra food requests" onClick={() => onNav('requests')} />
-      <NavCard label="Khidmat Team" icon={<Users size={19} color="#fff" />} desc="Meet our Al-Mawaid team" onClick={() => onNav('khidmat')} />
-      <NavCard label="Alerts" icon={<Bell size={19} color="#fff" />} desc="See notices and important updates" onClick={() => onNav('notifications')} />
-      <NavCard label="Support Ticket" icon={<LifeBuoy size={19} color="#fff" />} desc="Raise general, thali, and delivery issues" onClick={() => onNav('support')} />
+      <NavCard label="Khidmat Team" icon={<HeartHandshake size={20} color="#fff" />} desc="Meet our Al-Mawaid team" onClick={() => onNav('khidmat')} />
+      <NavCard label="Alerts" icon={<BellRing size={20} color="#fff" />} desc="See notices and important updates" onClick={() => onNav('notifications')} />
+      <NavCard label="Support Ticket" icon={<Headphones size={20} color="#fff" />} desc="Raise general, thali, and delivery issues" onClick={() => onNav('support')} />
 
       {helpline && (
         <a href={`https://wa.me/${helpline.replace(/[^\d]/g, '')}`} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', display: 'block', marginBottom: 10 }}>
           <button style={{ width: '100%', padding: '13px 16px', borderRadius: 14, border: '1px solid rgba(37,211,102,0.3)', background: 'rgba(37,211,102,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, transition: 'all 0.2s', textAlign: 'left' }}>
             <div style={{ width: 42, height: 42, borderRadius: 12, background: '#25D366', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <MessageCircle size={19} color="#fff" />
+              <MessageCircle size={20} color="#fff" />
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: t.text, fontFamily: "'DM Sans',sans-serif" }}>WhatsApp Helpline</div>
               <div style={{ fontSize: 12, color: '#25D366', marginTop: 1, fontFamily: "'DM Sans',sans-serif", fontWeight: 600 }}>{helpline} — Tap to chat</div>
             </div>
-            <MessageCircle size={15} color="#25D366" />
+            <MessageCircle size={16} color="#25D366" />
           </button>
         </a>
       )}
 
-      <NavCard label="About" icon={<Info size={19} color="#fff" />} desc="Learn more about the app and services" onClick={() => onNav('about')} />
+      <NavCard label="About" icon={<Sparkles size={20} color="#fff" />} desc="Learn more about the app and services" onClick={() => onNav('about')} />
       <div style={{ marginTop: 20, marginBottom: 20 }}>
         <SectionLabel>App Theme</SectionLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -283,55 +298,27 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
   const calendarWeekId = useMemo(() => getCalendarWeekDate(), [])
   const nextWeekId = useMemo(() => addWeeks(calendarWeekId, 1), [calendarWeekId])
   const targetWeeks = useMemo(() => getSurveyTargetWeeks(appSettings), [appSettings])
-  const isTwoWeeks = targetWeeks.length === 2
   const primaryTargetWeek = targetWeeks[0] || nextWeekId
-  const secondaryTargetWeek = isTwoWeeks ? (targetWeeks[1] || addWeeks(calendarWeekId, 2)) : null
 
-  // Dynamic week tabs: Current serving week + Target survey week(s) + any historical survey weeks
-  const weekTabs = useMemo(() => {
-    const list = []
-    // 1. Current serving week
-    list.push({
+  // Exactly 2 tabs: This Week & Next Week
+  const weekTabs = useMemo(() => [
+    {
       id: calendarWeekId,
-      label: 'This Week (Serving)',
+      label: 'This Week',
       weekId: calendarWeekId,
       range: formatWeekRange(calendarWeekId),
       isServing: true,
-    })
-    // 2. Target survey week 1
-    list.push({
-      id: primaryTargetWeek,
-      label: isTwoWeeks ? 'Fortnight Week 1' : 'Survey Week',
-      weekId: primaryTargetWeek,
-      range: formatWeekRange(primaryTargetWeek),
+    },
+    {
+      id: nextWeekId,
+      label: 'Next Week',
+      weekId: nextWeekId,
+      range: formatWeekRange(nextWeekId),
       isTarget: true,
-    })
-    // 3. Fortnight week 2 if 2-week cadence
-    if (isTwoWeeks && secondaryTargetWeek) {
-      list.push({
-        id: secondaryTargetWeek,
-        label: 'Fortnight Week 2',
-        weekId: secondaryTargetWeek,
-        range: formatWeekRange(secondaryTargetWeek),
-        isTarget: true,
-      })
     }
-    // 4. Any other weeks where user has saved responses
-    Object.keys(surveysByWeek || {}).forEach(wid => {
-      if (!list.some(tab => tab.weekId === wid) && wid && /^\d{4}-\d{2}-\d{2}$/.test(wid)) {
-        list.push({
-          id: wid,
-          label: formatWeekRange(wid),
-          weekId: wid,
-          range: formatWeekRange(wid),
-          isHistory: true,
-        })
-      }
-    })
-    return list
-  }, [calendarWeekId, primaryTargetWeek, secondaryTargetWeek, isTwoWeeks, surveysByWeek])
+  ], [calendarWeekId, nextWeekId])
 
-  const [activeTab, setActiveTab] = useState(primaryTargetWeek)
+  const [activeTab, setActiveTab] = useState(calendarWeekId)
 
   const selectedWeekObj = useMemo(() => {
     return weekTabs.find(w => w.id === activeTab || w.weekId === activeTab) || weekTabs[0]
@@ -353,14 +340,13 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
   }, [])
 
   const loadData = useCallback(async () => {
-    const allIds = Array.from(new Set([calendarWeekId, nextWeekId, ...(targetWeeks || []), secondaryTargetWeek].filter(Boolean)))
     try {
-      const { data: map } = await fetchUserSurveyRows(user.id, allIds)
+      const { data: map } = await fetchUserSurveyRows(user.id, [calendarWeekId, nextWeekId])
       setSurveysByWeek(map || {})
     } catch {
       setSurveysByWeek({})
     }
-  }, [user.id, calendarWeekId, nextWeekId, targetWeeks, secondaryTargetWeek])
+  }, [user.id, calendarWeekId, nextWeekId])
 
   useEffect(() => {
     loadData().finally(() => setLoading(false))
@@ -377,7 +363,7 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
     return () => supabase.removeChannel(subscription)
   }, [user?.id, loadData])
 
-  // Smart initial tab switch: if current week has no responses but primary target week has responses, switch to target week
+  // Smart initial tab switch: if current week has no responses but next week has responses, switch to next week
   useEffect(() => {
     if (!loading && Object.keys(surveysByWeek).length > 0) {
       const countFor = (r) => {
@@ -389,13 +375,13 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
         })
         return c
       }
-      const targetCount = countFor(surveysByWeek[primaryTargetWeek])
+      const nextCount = countFor(surveysByWeek[nextWeekId])
       const curCount = countFor(surveysByWeek[calendarWeekId])
-      if (targetCount > 0 && curCount === 0 && activeTab === calendarWeekId) {
-        setActiveTab(primaryTargetWeek)
+      if (nextCount > 0 && curCount === 0 && activeTab === calendarWeekId) {
+        setActiveTab(nextWeekId)
       }
     }
-  }, [loading, surveysByWeek, primaryTargetWeek, calendarWeekId, activeTab])
+  }, [loading, surveysByWeek, nextWeekId, calendarWeekId, activeTab])
 
   const formatDishVal = (val, dish) => {
     if (val === 'yes' || val === 'Yes') return '✅ Yes'
@@ -503,14 +489,14 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
     <main style={{ flex: 1, padding: '16px 16px 140px', maxWidth: 640, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
       <BackHeader title="My Surveys" onBack={onBack} />
 
-      {/* Week Toggle Tabs */}
+      {/* Week Toggle Tabs with Modern Segmented Control */}
       <div style={{
         display: 'flex',
         background: t.inputBg,
         padding: 4,
-        borderRadius: 16,
+        borderRadius: 18,
         border: `1px solid ${t.border}`,
-        marginBottom: 18,
+        marginBottom: 16,
         gap: 4,
         overflowX: 'auto',
         scrollbarWidth: 'none'
@@ -524,24 +510,29 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
               onClick={() => setActiveTab(tab.id)}
               style={{
                 flex: 1,
-                minWidth: 120,
-                padding: '9px 12px',
-                borderRadius: 12,
+                minWidth: 130,
+                padding: '10px 14px',
+                borderRadius: 14,
                 border: 'none',
                 background: isActive ? t.accentGrad : 'transparent',
-                color: isActive ? '#0a0a0a' : t.textSub,
+                color: isActive ? '#000' : t.textSub,
                 cursor: 'pointer',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 gap: 2,
-                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                boxShadow: isActive ? '0 4px 12px rgba(0,0,0,0.15)' : 'none',
+                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                boxShadow: isActive ? '0 4px 14px rgba(0,0,0,0.2)' : 'none',
                 fontFamily: "'DM Sans', sans-serif"
               }}
             >
-              <span style={{ fontSize: 13, fontWeight: isActive ? 800 : 700, whiteSpace: 'nowrap' }}>{tab.label}</span>
-              <span style={{ fontSize: 11, opacity: isActive ? 0.9 : 0.6, fontWeight: 500, whiteSpace: 'nowrap' }}>{tab.range}</span>
+              <span style={{ fontSize: 13, fontWeight: isActive ? 900 : 700, whiteSpace: 'nowrap' }}>
+                {tab.isServing ? '🌿 ' : tab.isTarget ? '📋 ' : '🗓️ '}
+                {tab.label}
+              </span>
+              <span style={{ fontSize: 11, opacity: isActive ? 0.95 : 0.6, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                {tab.range}
+              </span>
             </button>
           )
         })}
@@ -551,298 +542,347 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
         <ListPageSkeleton title="My Surveys" count={6} />
       ) : (
         <>
-          {/* Week Overview Card */}
+          {/* Week Overview Hero Bento Card */}
           <div style={{
-            padding: '14px 16px',
-            borderRadius: 16,
-            background: t.card,
-            border: `1px solid ${t.border}`,
-            marginBottom: 14,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: 10
+            padding: '20px',
+            borderRadius: 24,
+            background: t.cardActive || t.card,
+            border: `1.5px solid ${t.borderActive || t.border}`,
+            marginBottom: 16,
+            position: 'relative',
+            overflow: 'hidden',
+            boxShadow: '0 12px 32px rgba(0,0,0,0.25)'
           }}>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: t.accent }}>
-                {selectedWeekObj.label} Overview
+            <div style={{ position: 'absolute', top: -30, right: -20, width: 120, height: 120, background: t.accentGrad, borderRadius: '50%', filter: 'blur(45px)', opacity: 0.12 }} />
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', color: t.accent }}>
+                  {selectedWeekObj.label} Overview
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: t.text, marginTop: 2, fontFamily: "'Playfair Display', serif" }}>
+                  {selectedWeekObj.range}
+                </div>
               </div>
-              <div style={{ fontSize: 14, fontWeight: 800, color: t.text, marginTop: 2, fontFamily: "'DM Sans', sans-serif" }}>
-                {selectedWeekObj.range}
+
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '4px 12px', borderRadius: 999,
+                background: t.accentBg, border: `1px solid ${t.accentBorder}`,
+                fontSize: 11, fontWeight: 800, color: t.accent
+              }}>
+                <Calendar size={13} /> 12 Meals Total
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <span style={{
-                fontSize: 11.5,
-                fontWeight: 800,
-                padding: '4px 10px',
-                borderRadius: 999,
-                background: 'rgba(16,185,129,0.12)',
-                color: '#10b981',
-                border: '1px solid rgba(16,185,129,0.25)',
-                fontFamily: "'DM Sans', sans-serif"
+
+            {/* Progress Bar */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11.5, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
+                <span>Completion Status</span>
+                <span style={{ color: mealSummary.totalAnswered === 12 ? '#10b981' : t.accent }}>
+                  {mealSummary.totalAnswered} / 12 Decided ({Math.round(mealSummary.totalAnswered / 12 * 100)}%)
+                </span>
+              </div>
+              <div style={{ height: 7, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', display: 'flex' }}>
+                <div style={{ width: `${(mealSummary.appliedCount / 12) * 100}%`, background: '#10b981', transition: 'width 0.4s' }} />
+                <div style={{ width: `${(mealSummary.skippedCount / 12) * 100}%`, background: '#ef4444', transition: 'width 0.4s' }} />
+              </div>
+            </div>
+
+            {/* Stats Metrics Bento Row */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+              <div style={{
+                padding: '10px 12px', borderRadius: 14,
+                background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.22)',
+                textAlign: 'center'
               }}>
-                🍽️ {mealSummary.appliedCount} requested
-              </span>
-              {mealSummary.skippedCount > 0 && (
-                <span style={{
-                  fontSize: 11.5,
-                  fontWeight: 800,
-                  padding: '4px 10px',
-                  borderRadius: 999,
-                  background: 'rgba(239,68,68,0.10)',
-                  color: '#ef4444',
-                  border: '1px solid rgba(239,68,68,0.22)',
-                  fontFamily: "'DM Sans', sans-serif"
-                }}>
-                  ✕ {mealSummary.skippedCount} skipped
-                </span>
-              )}
-              {mealSummary.pendingCount > 0 && (
-                <span style={{
-                  fontSize: 11.5,
-                  fontWeight: 800,
-                  padding: '4px 10px',
-                  borderRadius: 999,
-                  background: 'rgba(245,158,11,0.10)',
-                  color: '#f59e0b',
-                  border: '1px solid rgba(245,158,11,0.22)',
-                  fontFamily: "'DM Sans', sans-serif"
-                }}>
-                  ⏳ {mealSummary.pendingCount} pending
-                </span>
-              )}
+                <div style={{ fontSize: 18, fontWeight: 900, color: '#34d399' }}>{mealSummary.appliedCount}</div>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: 'rgba(52,211,153,0.85)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Requested</div>
+              </div>
+
+              <div style={{
+                padding: '10px 12px', borderRadius: 14,
+                background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.22)',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: 18, fontWeight: 900, color: '#f87171' }}>{mealSummary.skippedCount}</div>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: 'rgba(248,113,113,0.85)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Skipped</div>
+              </div>
+
+              <div style={{
+                padding: '10px 12px', borderRadius: 14,
+                background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.22)',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: 18, fontWeight: 900, color: '#fbbf24' }}>{mealSummary.pendingCount}</div>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: 'rgba(251,191,36,0.85)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Pending</div>
+              </div>
             </div>
           </div>
 
           {/* Quick CTA banner if survey is not completed for this week */}
           {mealSummary.pendingCount > 0 && onGoToSurvey && (
             <div style={{
-              padding: '12px 16px',
-              borderRadius: 14,
-              background: 'linear-gradient(135deg, rgba(212,175,55,0.12), rgba(212,175,55,0.04))',
-              border: `1px solid ${t.accentBorder}`,
+              padding: '14px 18px',
+              borderRadius: 18,
+              background: 'linear-gradient(135deg, rgba(212,175,55,0.15), rgba(212,175,55,0.05))',
+              border: `1.5px solid ${t.accentBorder}`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              marginBottom: 14,
-              gap: 12
+              marginBottom: 16,
+              gap: 12,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.15)'
             }}>
               <div>
-                <div style={{ fontSize: 12.5, fontWeight: 800, color: t.text, fontFamily: "'DM Sans', sans-serif" }}>
-                  {mealSummary.pendingCount} meals still pending for this week
+                <div style={{ fontSize: 13.5, fontWeight: 800, color: t.text, fontFamily: "'DM Sans', sans-serif" }}>
+                  ⚠️ {mealSummary.pendingCount} meal{mealSummary.pendingCount === 1 ? '' : 's'} pending for this week
                 </div>
-                <div style={{ fontSize: 11, color: t.textSub }}>
-                  Tap below to fill or edit your survey preferences
+                <div style={{ fontSize: 11.5, color: t.textSub, marginTop: 2 }}>
+                  Set your portions or skip meals in 1 tap
                 </div>
               </div>
               <button
                 onClick={onGoToSurvey}
                 type="button"
                 style={{
-                  padding: '7px 14px',
-                  borderRadius: 8,
+                  padding: '9px 16px',
+                  borderRadius: 10,
                   border: 'none',
                   background: t.accentGrad,
                   color: '#000',
-                  fontSize: 12,
-                  fontWeight: 800,
+                  fontSize: 12.5,
+                  fontWeight: 900,
                   cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 4,
-                  whiteSpace: 'nowrap'
+                  gap: 5,
+                  whiteSpace: 'nowrap',
+                  boxShadow: '0 4px 12px rgba(184,134,11,0.3)',
+                  transition: 'transform 0.2s',
                 }}
+                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
+                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
               >
-                Fill Survey <ArrowRight size={13} />
+                Fill Survey <ArrowRight size={14} />
               </button>
             </div>
           )}
 
           {/* Day-by-Day Cards with Assigned Menu & Responses */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {DAYS.map((day, dIdx) => {
               const dayData = currentGrouped[day] || {}
               const [y, m, d] = selectedWeekId.split('-').map(Number)
               const dayDate = new Date(y, m - 1, d + dIdx)
               const dateLabel = dayDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
               const hasAnyResponse = dayData?.lunch?.has_response || dayData?.dinner?.has_response
+              const dayAr = selectedWeekMenu?.[day]?.ar || ''
 
               return (
                 <div
                   key={day}
                   style={{
-                    padding: '14px 16px',
-                    borderRadius: 16,
+                    padding: '18px',
+                    borderRadius: 22,
                     background: t.card,
-                    border: `1px solid ${t.border}`,
-                    borderLeft: `3px solid ${hasAnyResponse ? t.accent : t.border}`
+                    border: `1.5px solid ${hasAnyResponse ? t.borderActive || t.border : t.border}`,
+                    boxShadow: '0 6px 18px rgba(0,0,0,0.12)',
+                    transition: 'all 0.2s ease',
                   }}
                 >
                   {/* Day Header */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 8,
-                        background: t.accentBg,
-                        border: `1px solid ${t.accentBorder}`,
+                        width: 34,
+                        height: 34,
+                        borderRadius: 11,
+                        background: t.accentGrad,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: 11,
+                        fontSize: 12.5,
                         fontWeight: 900,
-                        color: t.accent
+                        color: '#000',
+                        boxShadow: '0 4px 10px rgba(0,0,0,0.15)'
                       }}>
                         {day.slice(0, 2).toUpperCase()}
                       </span>
-                      <span style={{ fontSize: 15, fontWeight: 800, textTransform: 'capitalize', color: t.text, fontFamily: "'DM Sans', sans-serif" }}>
-                        {selectedWeekMenu?.[day]?.en || day}
-                      </span>
+                      <div>
+                        <div style={{ fontSize: 16, fontWeight: 800, textTransform: 'capitalize', color: t.text, fontFamily: "'Playfair Display', serif" }}>
+                          {selectedWeekMenu?.[day]?.en || day}
+                        </div>
+                        {dayAr && (
+                          <div style={{ fontSize: 11, color: t.accent, fontFamily: "'Amiri', serif" }}>
+                            {dayAr}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, background: t.inputBg, border: `1px solid ${t.border}`, padding: '2px 8px', borderRadius: 999 }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, color: t.textSub,
+                      background: t.inputBg, border: `1px solid ${t.border}`,
+                      padding: '4px 10px', borderRadius: 999
+                    }}>
                       {dateLabel}
                     </span>
                   </div>
 
                   {/* Meals (Lunch & Dinner) */}
-                  {['lunch', 'dinner'].map(meal => {
-                    const r = dayData?.[meal] || {}
-                    const hasResponse = r.has_response
-                    const isApplied = r.status === 'Applied'
-                    const isSkipped = r.status === 'Skipped'
-                    const isOverride = !!r?.is_override
-                    const menuDishes = r.menu_dishes || []
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
+                    {['lunch', 'dinner'].map(meal => {
+                      const r = dayData?.[meal] || {}
+                      const hasResponse = r.has_response
+                      const isApplied = r.status === 'Applied'
+                      const isSkipped = r.status === 'Skipped'
+                      const isOverride = !!r?.is_override
+                      const menuDishes = r.menu_dishes || []
 
-                    return (
-                      <div
-                        key={meal}
-                        style={{
-                          marginTop: 8,
-                          padding: '10px 12px',
-                          borderRadius: 12,
-                          background: isOverride
-                            ? 'rgba(16,185,129,0.06)'
-                            : t.inputBg,
-                          border: `1px solid ${isOverride ? 'rgba(16,185,129,0.25)' : t.border}`
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, marginBottom: (hasResponse || menuDishes.length > 0) ? 8 : 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontSize: 12.5, fontWeight: 800, color: t.text, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                              {meal === 'lunch' ? <Sun size={14} color="#f59e0b" /> : <Moon size={14} color="#818cf8" />}
-                              {meal === 'lunch' ? 'Lunch' : 'Dinner'}
-                            </span>
-                            {isApplied && (
+                      return (
+                        <div
+                          key={meal}
+                          style={{
+                            padding: '12px 14px',
+                            borderRadius: 16,
+                            background: isApplied
+                              ? 'rgba(16,185,129,0.04)'
+                              : isSkipped
+                                ? 'rgba(239,68,68,0.03)'
+                                : t.inputBg,
+                            border: `1px solid ${
+                              isOverride
+                                ? 'rgba(16,185,129,0.35)'
+                                : isApplied
+                                  ? 'rgba(16,185,129,0.2)'
+                                  : isSkipped
+                                    ? 'rgba(239,68,68,0.18)'
+                                    : t.border
+                            }`
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: (hasResponse || menuDishes.length > 0) ? 10 : 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <span style={{
-                                fontSize: 10,
-                                fontWeight: 800,
-                                padding: '2px 7px',
-                                borderRadius: 999,
-                                background: 'rgba(16,185,129,0.12)',
-                                color: '#10b981',
-                                border: '1px solid rgba(16,185,129,0.25)'
+                                width: 26, height: 26, borderRadius: 8,
+                                background: meal === 'lunch' ? 'linear-gradient(135deg, #FF9500, #FFCC00)' : 'linear-gradient(135deg, #5856D6, #AF52DE)',
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center'
                               }}>
-                                ✓ Requested
+                                {meal === 'lunch' ? <SunMedium size={13} color="#fff" /> : <MoonStar size={13} color="#fff" />}
                               </span>
-                            )}
-                            {isSkipped && (
-                              <span style={{
-                                fontSize: 10,
-                                fontWeight: 800,
-                                padding: '2px 7px',
-                                borderRadius: 999,
-                                background: 'rgba(239,68,68,0.10)',
-                                color: '#ef4444',
-                                border: '1px solid rgba(239,68,68,0.20)'
-                              }}>
-                                ✕ Skipped
+                              <span style={{ fontSize: 13, fontWeight: 800, color: t.text }}>
+                                {meal === 'lunch' ? 'Lunch Feast' : 'Dinner Delight'}
                               </span>
-                            )}
-                            {!hasResponse && (
-                              <span style={{
-                                fontSize: 10,
-                                fontWeight: 800,
-                                padding: '2px 7px',
-                                borderRadius: 999,
-                                background: 'rgba(245,158,11,0.10)',
-                                color: '#f59e0b',
-                                border: '1px solid rgba(245,158,11,0.20)'
-                              }}>
-                                ⏳ Pending
-                              </span>
-                            )}
-                            {isOverride && (
-                              <span style={{
-                                fontSize: 9.5,
-                                fontWeight: 800,
-                                padding: '2px 6px',
-                                borderRadius: 6,
-                                background: 'rgba(16,185,129,0.14)',
-                                color: '#10b981',
-                                border: '1px solid rgba(16,185,129,0.3)'
-                              }}>
-                                ⚡ Daily Edit
-                              </span>
-                            )}
-                          </div>
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: t.textSub }}>
-                            {hasResponse && (
-                              <span>
-                                {(r.edit_count || 0) > 0 ? `Edited ${r.edit_count}x` : 'Original'}
-                              </span>
-                            )}
-                            {r?.updated_at && (
-                              <span style={{ opacity: 0.7 }}>
-                                • {new Date(r.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* If Applied: show dish responses */}
-                        {isApplied && r.dish_responses && Object.keys(r.dish_responses).length > 0 ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4, paddingTop: 4, borderTop: `1px solid ${t.border}` }}>
-                            {Object.entries(r.dish_responses).map(([dish, val]) => (
-                              <div key={dish} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, padding: '2px 0' }}>
-                                <span style={{ color: t.textSub }}>{dish}</span>
-                                <span style={{ fontWeight: 800, color: isOverride ? '#10b981' : t.accent }}>
-                                  {formatDishVal(val, dish)}
+                              {isApplied && (
+                                <span style={{
+                                  fontSize: 10.5, fontWeight: 800,
+                                  padding: '2px 8px', borderRadius: 999,
+                                  background: 'rgba(16,185,129,0.14)',
+                                  color: '#34d399',
+                                  border: '1px solid rgba(16,185,129,0.3)'
+                                }}>
+                                  ✓ Requested
                                 </span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : isSkipped ? (
-                          /* If Skipped: display scheduled menu items in subdued style so user knows what they skipped */
-                          <div style={{ marginTop: 4, paddingTop: 4, borderTop: `1px solid ${t.border}` }}>
-                            <div style={{ fontSize: 11, color: t.textSub, marginBottom: 4 }}>
-                              Scheduled Menu:
+                              )}
+                              {isSkipped && (
+                                <span style={{
+                                  fontSize: 10.5, fontWeight: 800,
+                                  padding: '2px 8px', borderRadius: 999,
+                                  background: 'rgba(239,68,68,0.12)',
+                                  color: '#f87171',
+                                  border: '1px solid rgba(239,68,68,0.25)'
+                                }}>
+                                  ✕ Skipped
+                                </span>
+                              )}
+                              {!hasResponse && (
+                                <span style={{
+                                  fontSize: 10.5, fontWeight: 800,
+                                  padding: '2px 8px', borderRadius: 999,
+                                  background: 'rgba(245,158,11,0.12)',
+                                  color: '#fbbf24',
+                                  border: '1px solid rgba(245,158,11,0.25)'
+                                }}>
+                                  ⏳ Pending
+                                </span>
+                              )}
+                              {isOverride && (
+                                <span style={{
+                                  fontSize: 10, fontWeight: 800,
+                                  padding: '2px 7px', borderRadius: 6,
+                                  background: 'rgba(16,185,129,0.18)',
+                                  color: '#34d399',
+                                  border: '1px solid rgba(16,185,129,0.4)'
+                                }}>
+                                  ⚡ Daily Edit
+                                </span>
+                              )}
                             </div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                              {menuDishes.length > 0 ? (
-                                menuDishes.map((dish, i) => (
-                                  <span key={i} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 6, background: t.card, border: `1px solid ${t.border}`, color: t.textSub, opacity: 0.8 }}>
-                                    {dish}
-                                  </span>
-                                ))
-                              ) : (
-                                <span style={{ fontSize: 11, color: t.textSub, fontStyle: 'italic' }}>
-                                  Meal skipped
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, color: t.textSub }}>
+                              {hasResponse && (
+                                <span>
+                                  {(r.edit_count || 0) > 0 ? `Edited ${r.edit_count}x` : 'Original'}
+                                </span>
+                              )}
+                              {r?.updated_at && (
+                                <span style={{ opacity: 0.7 }}>
+                                  • {new Date(r.updated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                                 </span>
                               )}
                             </div>
                           </div>
-                        ) : (
-                          /* If Pending: show scheduled menu items with pending note */
-                          <div style={{ marginTop: 4, paddingTop: 4, borderTop: `1px solid ${t.border}` }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+
+                          {/* If Applied: show individual dish responses */}
+                          {isApplied && r.dish_responses && Object.keys(r.dish_responses).length > 0 ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 6, borderTop: `1px solid ${t.border}` }}>
+                              {Object.entries(r.dish_responses).map(([dish, val]) => (
+                                <div
+                                  key={dish}
+                                  style={{
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                    fontSize: 12.5, padding: '4px 8px', borderRadius: 8,
+                                    background: 'rgba(255,255,255,0.02)',
+                                  }}
+                                >
+                                  <span style={{ color: t.text, fontWeight: 600 }}>{dish}</span>
+                                  <span style={{
+                                    fontWeight: 900,
+                                    color: isOverride ? '#34d399' : t.accent,
+                                    background: t.accentBg, padding: '2px 8px', borderRadius: 6,
+                                    border: `1px solid ${t.accentBorder}`
+                                  }}>
+                                    {formatDishVal(val, dish)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : isSkipped ? (
+                            <div style={{ paddingTop: 6, borderTop: `1px solid ${t.border}` }}>
+                              <div style={{ fontSize: 11, color: t.textSub, marginBottom: 4, fontWeight: 600 }}>
+                                Menu Prepared by Al-Mawaid:
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                 {menuDishes.length > 0 ? (
                                   menuDishes.map((dish, i) => (
-                                    <span key={i} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 6, background: t.card, border: `1px solid ${t.border}`, color: t.textSub }}>
+                                    <span key={i} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 8, background: t.card, border: `1px solid ${t.border}`, color: t.textSub, opacity: 0.75 }}>
+                                      {dish}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span style={{ fontSize: 11, color: t.textSub, fontStyle: 'italic' }}>
+                                    Meal skipped
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ paddingTop: 6, borderTop: `1px solid ${t.border}` }}>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                {menuDishes.length > 0 ? (
+                                  menuDishes.map((dish, i) => (
+                                    <span key={i} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 8, background: t.card, border: `1px solid ${t.border}`, color: t.textSub }}>
                                       {dish}
                                     </span>
                                   ))
@@ -853,11 +893,11 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
                                 )}
                               </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               )
             })}
@@ -902,61 +942,136 @@ function MyRequestsPage({ onBack }) {
     const labels = { resume: 'Resume Thali', stop: 'Stop Thali', miqaat: 'Miqaat Pirsu', extra: 'Extra Food' }
     return labels[type] || type
   }
-  const statusColor = (s) => s === 'pending' || s === 'open' || s === 'in_progress' ? '#d4882a' : s === 'approved' || s === 'resolved' ? '#5eba82' : '#e05555'
-  const statusIcon = (s) => s === 'pending' || s === 'open' ? '⏳' : s === 'in_progress' ? '🔄' : s === 'approved' || s === 'resolved' ? '✅' : s === 'rejected' || s === 'closed' ? '❌' : ''
+
+  const typeIcon = (type) => {
+    if (type === 'resume') return <PlayCircle size={16} color="#10b981" />
+    if (type === 'stop') return <PauseCircle size={16} color="#ef4444" />
+    if (type === 'miqaat') return <Sparkles size={16} color="#eab308" />
+    if (type === 'extra') return <PlusCircle size={16} color="#3b82f6" />
+    return <FileText size={16} color={t.accent} />
+  }
+
+  const statusStyle = (s) => {
+    if (s === 'approved' || s === 'resolved') {
+      return { bg: 'rgba(16, 185, 129, 0.12)', color: '#10b981', border: 'rgba(16, 185, 129, 0.3)', icon: <CheckCircle2 size={12} /> }
+    }
+    if (s === 'rejected' || s === 'closed') {
+      return { bg: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: 'rgba(239, 68, 68, 0.3)', icon: <X size={12} /> }
+    }
+    return { bg: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b', border: 'rgba(245, 158, 11, 0.3)', icon: <Clock size={12} /> }
+  }
 
   const tabs = [
-    { id: 'all', label: 'All Activity' },
-    { id: 'requests', label: `Requests (${requests.length})` },
-    { id: 'queries', label: `Queries (${queries.length})` },
-    { id: 'tickets', label: `Tickets (${tickets.length})` },
+    { id: 'all', label: 'All', icon: Layers, count: requests.length + queries.length + tickets.length },
+    { id: 'requests', label: 'Requests', icon: FileText, count: requests.length },
+    { id: 'queries', label: 'Queries', icon: HelpCircle, count: queries.length },
+    { id: 'tickets', label: 'Tickets', icon: LifeBuoy, count: tickets.length },
   ]
 
-  const renderRequestCard = (r) => (
-    <Card key={r.id} style={{ marginBottom: 10 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
-        <div>
+  const renderRequestCard = (r) => {
+    const st = statusStyle(r.status)
+    return (
+      <div key={r.id} style={{
+        padding: '16px', borderRadius: 20, marginBottom: 12,
+        background: t.card, border: `1px solid ${t.border}`,
+        boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {typeIcon(r.request_type)}
             <span style={{ fontSize: 15, fontWeight: 700, color: t.text }}>{typeLabel(r.request_type)}</span>
-            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 10px', borderRadius: 20, background: `${statusColor(r.status)}20`, color: statusColor(r.status), border: `1px solid ${statusColor(r.status)}40` }}>
-              {statusIcon(r.status)} {r.status?.toUpperCase()}
-            </span>
           </div>
-          {r.meal_type && <div style={{ fontSize: 12, color: t.textSub, marginTop: 4 }}>Meal: {r.meal_type}</div>}
-          {r.from_date && <div style={{ fontSize: 12, color: t.textSub, marginTop: 4 }}>{r.from_date} {r.to_date ? `\u2192 ${r.to_date}` : ''}</div>}
-          {r.extra_items && <div style={{ fontSize: 12, color: t.textSub, marginTop: 4 }}>{r.extra_mode === 'deduction' ? '➖ Deduction: ' : '➕ Addition: '}{r.extra_items.map(i => `${i.name} x${i.qty}`).join(', ')}</div>}
-          {r.details && <div style={{ fontSize: 12, color: t.textSub, marginTop: 4 }}>{r.details}</div>}
+          <span style={{
+            fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 20,
+            background: st.bg, color: st.color, border: `1px solid ${st.border}`,
+            display: 'flex', alignItems: 'center', gap: 5, textTransform: 'uppercase'
+          }}>
+            {st.icon} {r.status}
+          </span>
         </div>
-      </div>
-      {r.admin_note && <div style={{ marginTop: 8, padding: 8, borderRadius: 8, background: t.accentBg, fontSize: 12, color: t.accent }}>Note: {r.admin_note}</div>}
-      <div style={{ fontSize: 10, color: t.textSub, marginTop: 8, opacity: .5 }}>{new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
-    </Card>
-  )
 
-  const renderQueryCard = (q, isTicket = false) => (
-    <Card key={q.id} style={{ marginBottom: 10 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            {q.subject && <span style={{ fontSize: 14, fontWeight: 700, color: t.text }}>{q.subject}</span>}
-            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 10px', borderRadius: 20, background: `${statusColor(q.status)}20`, color: statusColor(q.status), border: `1px solid ${statusColor(q.status)}40` }}>
-              {statusIcon(q.status)} {q.status?.toUpperCase()}
-            </span>
+        {r.meal_type && (
+          <div style={{ fontSize: 13, color: t.textSub, marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontWeight: 600, color: t.text }}>Meal:</span> {r.meal_type.toUpperCase()}
           </div>
-          <div style={{ fontSize: 12, color: t.textSub, marginTop: 4 }}>{new Date(q.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+        )}
+        {r.from_date && (
+          <div style={{ fontSize: 13, color: t.textSub, marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontWeight: 600, color: t.text }}>Dates:</span> {r.from_date} {r.to_date ? `→ ${r.to_date}` : ''}
+          </div>
+        )}
+        {r.extra_items && (
+          <div style={{ fontSize: 13, color: t.textSub, marginTop: 4 }}>
+            <span style={{ fontWeight: 600, color: t.text }}>{r.extra_mode === 'deduction' ? 'Deduction: ' : 'Addition: '}</span>
+            {r.extra_items.map(i => `${i.name} × ${i.qty}`).join(', ')}
+          </div>
+        )}
+        {r.details && (
+          <div style={{ fontSize: 13, color: t.textBody, marginTop: 6, padding: '8px 12px', borderRadius: 10, background: t.inputBg }}>
+            {r.details}
+          </div>
+        )}
+
+        {r.admin_note && (
+          <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 10, background: t.accentBg, border: `1px solid ${t.accentBorder}`, fontSize: 12, color: t.accent }}>
+            <strong>Admin Note:</strong> {r.admin_note}
+          </div>
+        )}
+        <div style={{ fontSize: 11, color: t.textSub, marginTop: 10, opacity: 0.6 }}>
+          {new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
         </div>
       </div>
-      {q.comment && <p style={{ margin: '6px 0 0', fontSize: 13, color: t.textBody, lineHeight: 1.6, whiteSpace: 'pre-line' }}>
-        {isTicket ? q.comment.replace('[Support Ticket]\n', '') : q.comment}
-      </p>}
-      {q.media && q.media.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-          {q.media.map((m, i) => m.path && m.type === 'image' && <img key={i} src={m.path} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover' }} />)}
+    )
+  }
+
+  const renderQueryCard = (q, isTicket = false) => {
+    const st = statusStyle(q.status)
+    return (
+      <div key={q.id} style={{
+        padding: '16px', borderRadius: 20, marginBottom: 12,
+        background: t.card, border: `1px solid ${t.border}`,
+        boxShadow: '0 4px 16px rgba(0,0,0,0.1)'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isTicket ? <LifeBuoy size={16} color="#ec4899" /> : <MessageCircle size={16} color={t.accent} />}
+            <span style={{ fontSize: 15, fontWeight: 700, color: t.text }}>{q.subject || (isTicket ? 'Support Ticket' : 'Query')}</span>
+          </div>
+          <span style={{
+            fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 20,
+            background: st.bg, color: st.color, border: `1px solid ${st.border}`,
+            display: 'flex', alignItems: 'center', gap: 5, textTransform: 'uppercase'
+          }}>
+            {st.icon} {q.status}
+          </span>
         </div>
-      )}
-      {q.admin_reply && <div style={{ marginTop: 8, padding: 8, borderRadius: 8, background: t.accentBg, fontSize: 12, color: t.accent }}>Reply: {q.admin_reply}</div>}
-    </Card>
-  )
+
+        {q.comment && (
+          <p style={{ margin: '8px 0 0', fontSize: 13, color: t.textBody, lineHeight: 1.6, whiteSpace: 'pre-line' }}>
+            {isTicket ? q.comment.replace('[Support Ticket]\n', '') : q.comment}
+          </p>
+        )}
+
+        {q.media && q.media.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+            {q.media.map((m, i) => m.path && m.type === 'image' && (
+              <img key={i} src={m.path} alt="" style={{ width: 64, height: 64, borderRadius: 12, objectFit: 'cover', border: `1px solid ${t.border}` }} />
+            ))}
+          </div>
+        )}
+
+        {q.admin_reply && (
+          <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 12, background: t.accentBg, border: `1px solid ${t.accentBorder}`, fontSize: 12.5, color: t.accent }}>
+            <strong>Official Reply:</strong> {q.admin_reply}
+          </div>
+        )}
+
+        <div style={{ fontSize: 11, color: t.textSub, marginTop: 10, opacity: 0.6 }}>
+          {new Date(q.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+        </div>
+      </div>
+    )
+  }
 
   if (loading) return <RequestsSkeleton title="My Requests" />
 
@@ -967,20 +1082,49 @@ function MyRequestsPage({ onBack }) {
       <BackHeader title="My Requests" onBack={onBack} />
 
       {/* Filter tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 18, background: t.card, borderRadius: 13, padding: 5, border: `1px solid ${t.border}`, overflowX: 'auto' }}>
-        {tabs.map(({ id, label }) => (
-          <button key={id} onClick={() => setFilterTab(id)}
-            style={{ flex: 1, padding: '8px 10px', borderRadius: 9, border: 'none', whiteSpace: 'nowrap', background: filterTab === id ? t.accentGrad : 'transparent', color: filterTab === id ? '#fff' : t.textSub, fontWeight: 700, fontSize: 12, cursor: 'pointer', transition: 'all 0.25s' }}>
-            {label}
-          </button>
-        ))}
+      <div style={{
+        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 20,
+        background: t.card, borderRadius: 18, padding: 6, border: `1px solid ${t.border}`
+      }}>
+        {tabs.map(({ id, label, icon: TabIcon, count }) => {
+          const isActive = filterTab === id
+          return (
+            <button
+              key={id}
+              onClick={() => setFilterTab(id)}
+              style={{
+                padding: '10px 6px', borderRadius: 12, border: 'none',
+                background: isActive ? t.accentGrad : 'transparent',
+                color: isActive ? '#000' : t.textSub,
+                fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                boxShadow: isActive ? '0 4px 12px rgba(184,134,11,0.25)' : 'none',
+                transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+              }}
+            >
+              <TabIcon size={16} color={isActive ? '#000' : t.textSub} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span>{label}</span>
+                {count > 0 && (
+                  <span style={{
+                    fontSize: 10, fontWeight: 800, padding: '1px 5px', borderRadius: 10,
+                    background: isActive ? 'rgba(0,0,0,0.15)' : t.inputBg,
+                    color: isActive ? '#000' : t.accent
+                  }}>
+                    {count}
+                  </span>
+                )}
+              </div>
+            </button>
+          )
+        })}
       </div>
 
       {!hasAny ? <EmptyState msg="No activity yet. Raise a request, query, or support ticket to see it here." /> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {/* Pending Requests */}
           {(filterTab === 'all' || filterTab === 'requests') && requests.filter(r => r.status === 'pending').length > 0 && (
-            <div>
+            <div style={{ marginBottom: 12 }}>
               <SectionLabel>Pending Requests</SectionLabel>
               {requests.filter(r => r.status === 'pending').map(renderRequestCard)}
             </div>
@@ -988,8 +1132,7 @@ function MyRequestsPage({ onBack }) {
 
           {/* Approved Requests */}
           {(filterTab === 'all' || filterTab === 'requests') && requests.filter(r => r.status === 'approved').length > 0 && (
-            <div style={{ marginTop: filterTab === 'all' ? 16 : 0 }}>
-              {filterTab === 'all' && requests.filter(r => r.status === 'pending').length > 0 && <div style={{ height: 1, background: t.border, marginBottom: 16 }} />}
+            <div style={{ marginBottom: 12 }}>
               <SectionLabel>Approved Requests</SectionLabel>
               {requests.filter(r => r.status === 'approved').map(renderRequestCard)}
             </div>
@@ -997,34 +1140,31 @@ function MyRequestsPage({ onBack }) {
 
           {/* Rejected Requests */}
           {(filterTab === 'all' || filterTab === 'requests') && requests.filter(r => r.status === 'rejected').length > 0 && (
-            <div style={{ marginTop: filterTab === 'all' ? 16 : 0 }}>
-              {(requests.filter(r => r.status === 'pending').length > 0 || requests.filter(r => r.status === 'approved').length > 0) && filterTab === 'all' && <div style={{ height: 1, background: t.border, marginBottom: 16 }} />}
+            <div style={{ marginBottom: 12 }}>
               <SectionLabel>Rejected Requests</SectionLabel>
               {requests.filter(r => r.status === 'rejected').map(renderRequestCard)}
             </div>
           )}
 
-          {filterTab === 'requests' && requests.length === 0 && <div style={{ textAlign: 'center', padding: 30, color: t.textSub, fontSize: 13 }}>No thali requests yet.</div>}
+          {filterTab === 'requests' && requests.length === 0 && <div style={{ textAlign: 'center', padding: 30, color: t.textSub, fontSize: 13 }}>No thali requests found.</div>}
 
           {/* Queries */}
           {(filterTab === 'all' || filterTab === 'queries') && queries.length > 0 && (
-            <div style={{ marginTop: (filterTab === 'all' && requests.length > 0) ? 16 : 0 }}>
-              {filterTab === 'all' && requests.length > 0 && <div style={{ height: 1, background: t.border, marginBottom: 16 }} />}
-              <SectionLabel>Queries ({queries.filter(q => q.status === 'open' || q.status === 'in_progress').length} open)</SectionLabel>
+            <div style={{ marginBottom: 12 }}>
+              <SectionLabel>Queries & Feedback ({queries.length})</SectionLabel>
               {queries.map(q => renderQueryCard(q, false))}
-              {queries.length === 0 && filterTab === 'queries' && <EmptyState msg="No queries." />}
             </div>
           )}
+          {filterTab === 'queries' && queries.length === 0 && <div style={{ textAlign: 'center', padding: 30, color: t.textSub, fontSize: 13 }}>No queries submitted yet.</div>}
 
           {/* Support Tickets */}
           {(filterTab === 'all' || filterTab === 'tickets') && tickets.length > 0 && (
-            <div style={{ marginTop: (filterTab === 'all' && (requests.length > 0 || queries.length > 0)) ? 16 : 0 }}>
-              {(requests.length > 0 || queries.length > 0) && filterTab === 'all' && <div style={{ height: 1, background: t.border, marginBottom: 16 }} />}
-              <SectionLabel>Support Tickets ({tickets.filter(t => t.status === 'open' || t.status === 'in_progress').length} open)</SectionLabel>
+            <div style={{ marginBottom: 12 }}>
+              <SectionLabel>Support Tickets ({tickets.length})</SectionLabel>
               {tickets.map(t => renderQueryCard(t, true))}
-              {tickets.length === 0 && filterTab === 'tickets' && <EmptyState msg="No support tickets." />}
             </div>
           )}
+          {filterTab === 'tickets' && tickets.length === 0 && <div style={{ textAlign: 'center', padding: 30, color: t.textSub, fontSize: 13 }}>No support tickets found.</div>}
         </div>
       )}
     </main>
@@ -1210,7 +1350,7 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
           background: `${t.accent}20`, border: `1px solid ${t.accent}40`,
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
         }}>
-          <Bell size={20} color={t.accent} />
+          <BellRing size={20} color={t.accent} />
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: t.text, marginBottom: 4, fontFamily: "'DM Sans',sans-serif" }}>Weekly Survey Window</div>

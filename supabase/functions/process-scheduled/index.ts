@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Supabase Edge Function: Process Scheduled Broadcasts & Menu Publish
 // Called by external cron service every minute
 // Handles: broadcast delivery + menu publish notifications
@@ -16,7 +17,36 @@ function getWeekMonday(date: Date): string {
   return monday.toISOString().split('T')[0]
 }
 
-serve(async (req) => {
+/** Compute next ISO timestamp for a recurring schedule */
+function calculateNextTrigger(delivery: string, timeStr: string, dayStr: string): string {
+  const now = new Date()
+  const [h, m] = (timeStr || '09:00').split(':').map(Number)
+  const target = new Date(now)
+  target.setHours(h, m, 0, 0)
+
+  if (delivery === 'recurring_daily' || delivery === 'daily') {
+    if (target.getTime() <= now.getTime()) {
+      target.setDate(target.getDate() + 1)
+    }
+    return target.toISOString()
+  }
+
+  if (delivery === 'recurring_weekly' || delivery === 'weekly') {
+    const dayMap: Record<string, number> = {
+      sunday: 0, monday: 1, tuesday: 2, wednesday: 3,
+      thursday: 4, friday: 5, saturday: 6
+    }
+    const targetDayNum = dayMap[dayStr?.toLowerCase()] ?? 6
+    let diffDays = (targetDayNum - now.getDay() + 7) % 7
+    if (diffDays === 0 && target.getTime() <= now.getTime()) diffDays = 7
+    target.setDate(target.getDate() + diffDays)
+    return target.toISOString()
+  }
+
+  return target.toISOString()
+}
+
+serve(async (_req: Request) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Content-Type': 'application/json',
@@ -57,28 +87,26 @@ serve(async (req) => {
             const { data: admins } = await supabase.from('user_stats').select('user_id').eq('role', 'admin')
             targets = admins?.map((a: any) => a.user_id) || []
           } else if (broadcast.target_type === 'opt_in' || broadcast.target_type === 'opt_out') {
+            // Use survey_day_responses (canonical meal-preference table)
             const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
             const dayNum = new Date().getDay()
             const h = new Date().getHours()
-            if (dayNum !== 0) {
+            if (dayNum !== 0) { // skip Sunday — no meals
               const today = dayMap[dayNum]
-              const mealName = h < 15 ? 'lunch' : 'dinner'
-              const dayKey = today.substring(0, 3).toLowerCase()
-              const mealKey = mealName === 'lunch' ? 'l' : 'd'
-              const statusField = `${dayKey}_${mealKey}_status`
-              const weekId = getWeekMonday(new Date())
+              const mealKey = h < 15 ? 'l_status' : 'd_status'
               const { data: subs } = await supabase
-                .from('survey_submissions_flat')
-                .select('user_id, ' + statusField)
-                .eq('week_id', weekId)
+                .from('survey_day_responses')
+                .select('user_id, l_status, d_status')
+                .eq('day', today)
               if (subs) {
                 targets = subs
                   .filter((s: any) => broadcast.target_type === 'opt_in'
-                    ? s[statusField] === 'Applied'
-                    : s[statusField] !== 'Applied')
+                    ? s[mealKey] === 'Applied'
+                    : s[mealKey] !== 'Applied')
                   .map((s: any) => s.user_id)
               }
             }
+            // Fallback to all users if no survey data
             if (targets.length === 0) {
               const { data: users } = await supabase.from('user_stats').select('user_id').limit(5000)
               targets = users?.map((u: any) => u.user_id) || []
@@ -90,13 +118,18 @@ serve(async (req) => {
 
           if (targets.length > 0) {
             const notifications = targets.map((user_id: string) => ({
-              user_id, title: broadcast.title || 'Notification',
-              message: broadcast.body || '', type: 'broadcast', url: '/profile/notifications',
+              user_id,
+              title: broadcast.title || 'Notification',
+              message: broadcast.body || '',
+              type: 'broadcast',
+              url: '/profile/notifications',
               sender_name: broadcast.sender_name || 'Al-Mawaid',
             }))
-
-            const { error: notifErr } = await supabase.from('notifications').insert(notifications)
-            if (notifErr) throw notifErr
+            // Chunk inserts to avoid payload limits
+            for (let i = 0; i < notifications.length; i += 200) {
+              const { error: notifErr } = await supabase.from('notifications').insert(notifications.slice(i, i + 200))
+              if (notifErr) console.error(`[process-scheduled] In-app chunk error:`, notifErr.message)
+            }
 
             // Send push: Firebase CF (AAB FCM + web) with edge fallback.
             // Capture the REAL delivery counts so admin dashboards show actual
@@ -143,19 +176,41 @@ serve(async (req) => {
                   await invokeEdge()
                 }
               } catch (pushErr) {
-                console.error(`[process-scheduled] Push send failed for broadcast ${broadcast.id}:`, pushErr.message)
+                console.error(`[process-scheduled] Push send failed for broadcast ${broadcast.id}:`, (pushErr as Error).message)
                 try { await invokeEdge() } catch (_) { /* already logged */ }
               }
             }
           }
 
-          const isPush = broadcast.channel === 'push' || !broadcast.channel
-          await supabase.from('broadcast_schedule').update({
-            status: isPush && pushFailed > 0 && pushSent === 0 ? 'failed' : 'sent',
-            sent_count: isPush ? pushSent : targets.length,
-            failed_count: isPush ? pushFailed : 0,
-            sent_at: now,
-          }).eq('id', broadcast.id)
+          // Advance recurring items to next trigger; finalize one-time items
+          const isRecurring =
+            broadcast.repeat_interval === 'daily' || broadcast.repeat_interval === 'weekly' ||
+            broadcast.delivery === 'recurring_daily' || broadcast.delivery === 'recurring_weekly'
+
+          if (isRecurring) {
+            const mode = (broadcast.repeat_interval === 'daily' || broadcast.delivery === 'recurring_daily')
+              ? 'recurring_daily' : 'recurring_weekly'
+            const nextScheduled = calculateNextTrigger(
+              mode,
+              broadcast.recurring_time || '09:00',
+              broadcast.recurring_day || 'saturday'
+            )
+            await supabase.from('broadcast_schedule').update({
+              status: 'scheduled',       // stay alive for next cycle
+              scheduled_for: nextScheduled,
+              sent_at: now,
+              sent_count: (broadcast.sent_count || 0) + pushSent,
+              failed_count: (broadcast.failed_count || 0) + pushFailed,
+            }).eq('id', broadcast.id)
+          } else {
+            const isPush = broadcast.channel === 'push' || !broadcast.channel
+            await supabase.from('broadcast_schedule').update({
+              status: isPush && pushFailed > 0 && pushSent === 0 ? 'failed' : 'sent',
+              sent_count: isPush ? pushSent : targets.length,
+              failed_count: isPush ? pushFailed : 0,
+              sent_at: now,
+            }).eq('id', broadcast.id)
+          }
 
           totalProcessed++
         } catch (err: any) {
@@ -167,35 +222,51 @@ serve(async (req) => {
       }
     }
 
-    // ── 2. Publish menus that are due ──
-    const { data: dueMenus, error: menuErr } = await supabase
+    // ── 2. Handle scheduled menu publication (one-shot cleanup) ──
+    const { data: dueMenus } = await supabase
       .from('weekly_menu')
-      .select('week_start')
+      .update({ publish_at: null })
       .not('publish_at', 'is', null)
       .lte('publish_at', now)
-      .order('publish_at', { ascending: true })
-      .limit(1)
-
-    if (menuErr) throw menuErr
+      .select('week_start')
 
     if (dueMenus?.length) {
-      const weekStart = dueMenus[0].week_start
+      const distinctWeeks = Array.from(new Set(dueMenus.map((m: any) => m.week_start)))
+      for (const weekStart of distinctWeeks) {
+        // Safe deduplication: check if already notified with limit(1)
+        const { data: existingNotice } = await supabase
+          .from('notices')
+          .select('id')
+          .eq('type', 'menu')
+          .ilike('message', `%${weekStart}%`)
+          .limit(1)
 
-      const { data: existingNotice } = await supabase
-        .from('notices')
-        .select('id')
-        .eq('type', 'menu')
-        .ilike('message', `%${weekStart}%`)
-        .maybeSingle()
+        if (!existingNotice || existingNotice.length === 0) {
+          await supabase.from('notices').insert({
+            title: '🍽️ New Weekly Menu Available',
+            message: `The menu for week of ${weekStart} is now live! Check it out in the app.`,
+            body: `The menu for week of ${weekStart} is now live! Check it out in the app.`,
+            url: '/menu',
+            type: 'menu',
+            sender_name: 'Al-Mawaid',
+          })
 
-      if (!existingNotice) {
-        await supabase.from('notices').insert({
-          title: 'New Weekly Menu Available',
-          message: `The menu for week of ${weekStart} is now live! Check it out in the app.`,
-          body: `The menu for week of ${weekStart} is now live! Check it out in the app.`,
-          url: '/', type: 'menu', sender_name: 'Al-Mawaid',
-        })
-        totalProcessed++
+          const { data: allUsers } = await supabase.from('user_stats').select('user_id').limit(5000)
+          if (allUsers?.length) {
+            const notifRows = allUsers.map((u: any) => ({
+              user_id: u.user_id,
+              title: '🍽️ New Weekly Menu Available',
+              message: `The menu for week of ${weekStart} is now live! Check it out in the app.`,
+              type: 'menu',
+              url: '/menu',
+              sender_name: 'Al-Mawaid',
+            }))
+            for (let i = 0; i < notifRows.length; i += 200) {
+              await supabase.from('notifications').insert(notifRows.slice(i, i + 200))
+            }
+          }
+          totalProcessed++
+        }
       }
     }
 

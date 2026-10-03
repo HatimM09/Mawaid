@@ -112,79 +112,24 @@ const matchMeal = (str) => {
   return null
 }
 
-// Robust Multi-Format Menu CSV parser (supports single-week and 2-week fortnight CSVs)
+// Robust Multi-Format Menu CSV parser (12 meals: Mon-Sat Lunch & Dinner)
 const parseMenuCSV = (text) => {
   const rows = parseCSVRows(text)
-  if (!rows.length) return { columns: [], byMeal: {}, isFortnightCSV: false, w1Meals: {}, w2Meals: {} }
+  if (!rows.length) return { columns: [], byMeal: {} }
 
-  const createBlankMeals = () => {
-    const m = {}
-    DAYS.forEach(d => {
-      m[`${d}_lunch`] = { day: d, meal: 'lunch', dishes: [] }
-      m[`${d}_dinner`] = { day: d, meal: 'dinner', dishes: [] }
-    })
-    return m
-  }
-
-  const byMeal = createBlankMeals()
-  const w1Meals = createBlankMeals()
-  const w2Meals = createBlankMeals()
+  const byMeal = {}
+  DAYS.forEach(d => {
+    byMeal[`${d}_lunch`] = { day: d, meal: 'lunch', dishes: [] }
+    byMeal[`${d}_dinner`] = { day: d, meal: 'dinner', dishes: [] }
+  })
 
   const headers = rows[0].map(h => String(h || '').trim())
-  
-  // Check if headers specify Week 1 vs Week 2
-  const fortnightMatches = headers.map((h, idx) => {
-    const low = h.toLowerCase()
-    const meal = matchMeal(low)
-    if (!meal) return null
-    const isW2 = /\b(w2|week\s*2|second\s*week)\b/i.test(low)
-    const isW1 = /\b(w1|week\s*1|first\s*week)\b/i.test(low)
-    const cleanH = low.replace(/\b(w1|w2|week\s*1|week\s*2|lunch|dinner|menu|items?|dishes?)\b/gi, '').trim()
-    const day = matchDay(cleanH)
-    if (!day) return null
-    return { weekNum: isW2 ? 2 : isW1 ? 1 : 0, day, meal, idx }
-  }).filter(Boolean)
-
-  const hasExplicitWeeks = fortnightMatches.some(m => m.weekNum === 2)
-
-  if (hasExplicitWeeks) {
-    // Process 2-Week Fortnight CSV
-    rows.slice(1).forEach(row => {
-      fortnightMatches.forEach(({ weekNum, day, meal, idx }) => {
-        const cell = row[idx]
-        if (cell && String(cell).trim()) {
-          if (weekNum === 2) {
-            w2Meals[`${day}_${meal}`].dishes.push(cell)
-          } else {
-            w1Meals[`${day}_${meal}`].dishes.push(cell)
-          }
-        }
-      })
-    })
-
-    const cleanMap = (m) => {
-      const active = {}
-      Object.keys(m).forEach(k => {
-        m[k].dishes = cleanDishList(m[k].dishes)
-        if (m[k].dishes.length > 0) active[k] = m[k]
-      })
-      return active
-    }
-
-    return {
-      isFortnightCSV: true,
-      columns: fortnightMatches,
-      byMeal: cleanMap(w1Meals),
-      w1Meals: cleanMap(w1Meals),
-      w2Meals: cleanMap(w2Meals)
-    }
-  }
 
   // Detection Strategy 1: Columnar format (e.g. "Monday Lunch", "Monday Dinner" / "Mon (Lunch)")
   const columnarMatches = headers.map((h, idx) => {
     const meal = matchMeal(h)
     if (!meal) return null
-    const cleanH = h.toLowerCase().replace(/\b(lunch|dinner|menu|items?|dishes?)\b/gi, '').trim()
+    const cleanH = h.toLowerCase().replace(/\b(lunch|dinner|menu|items?|dishes?|w1|w2|week\s*\d)\b/gi, '').trim()
     const day = matchDay(cleanH)
     if (!day) return null
     return { day, meal, idx }
@@ -253,7 +198,7 @@ const parseMenuCSV = (text) => {
     }
   })
 
-  return { isFortnightCSV: false, columns: columnarMatches, byMeal: activeMeals, w1Meals: activeMeals, w2Meals: {} }
+  return { columns: columnarMatches, byMeal: activeMeals }
 }
 
 const BLANK_MENU = {
@@ -267,29 +212,11 @@ const BLANK_MENU = {
 
 const capDay = (d) => d ? d.charAt(0).toUpperCase() + d.slice(1) : d
 
-// Build a clean, ready-to-edit template seeded with current menu or sample dishes
-const buildMenuCSVTemplate = (seed = BLANK_MENU, forWeek = '', isFortnight = false) => {
+// Build a clean, ready-to-edit 1-week (12-meal) template
+const buildMenuCSVTemplate = (seed = BLANK_MENU, forWeek = '') => {
   const dayKeys = DAYS
   const mk = m => m.charAt(0).toUpperCase() + m.slice(1)
   const quote = s => `"${String(s || '').replace(/"/g, '""')}"`
-
-  if (isFortnight) {
-    // 2-week Fortnight template with Week 1 and Week 2 columnar layout
-    const w1Headers = dayKeys.flatMap(d => [`W1 ${mk(d)} Lunch`, `W1 ${mk(d)} Dinner`])
-    const w2Headers = dayKeys.flatMap(d => [`W2 ${mk(d)} Lunch`, `W2 ${mk(d)} Dinner`])
-    const headers = [...w1Headers, ...w2Headers]
-    
-    // Sample rows
-    const row1 = [
-      ...dayKeys.flatMap(d => [seed[d]?.lunch || 'Biryani, Roti, Salad', seed[d]?.dinner || 'Dal Rice, Sabzi']),
-      ...dayKeys.flatMap(d => ['Pulao, Roti, Raita', 'Khichdi, Kadhi, Sweet'])
-    ]
-    const row2 = [
-      ...dayKeys.flatMap(() => ['', '']),
-      ...dayKeys.flatMap(() => ['', ''])
-    ]
-    return '\uFEFF' + [headers.join(','), row1.map(quote).join(','), row2.map(quote).join(',')].join('\n')
-  }
 
   const headers = dayKeys.flatMap(d => [`${mk(d)} Lunch`, `${mk(d)} Dinner`])
   const data = dayKeys.flatMap(d => [seed[d]?.lunch || 'Biryani, Roti, Salad', seed[d]?.dinner || 'Dal Rice, Sabzi'])
@@ -678,56 +605,44 @@ export default function SettingsPage() {
     return next
   }
 
+  const [csvDragOver, setCsvDragOver] = useState(false)
+  const [csvSummary, setCsvSummary] = useState(null)
+
   const handleCSVFile = async (file) => {
     if (!file) return
     setCsvLoading(true)
     setCsvStatus(null)
+    setCsvSummary(null)
     try {
       const text = await file.text()
       const parsed = parseMenuCSV(text)
+      const keys = Object.keys(parsed.byMeal)
       
-      if (parsed.isFortnightCSV) {
-        // Fortnight CSV with Week 1 and Week 2
-        const w1Menu = formatMealsToMenu(parsed.w1Meals)
-        const w2Menu = formatMealsToMenu(parsed.w2Meals)
-        
-        setFortnightCache(prev => ({
-          ...prev,
-          [nextWeek]: { menu: w1Menu, publishAt },
-          [week2]: { menu: w2Menu, publishAt },
-        }))
-
-        if (targetWeek === week2) {
-          setMenu(w2Menu)
-        } else {
-          setMenu(w1Menu)
-        }
-        markDirty()
-
-        const totalW1 = Object.keys(parsed.w1Meals).length
-        const totalW2 = Object.keys(parsed.w2Meals).length
+      if (!keys.length) {
         setCsvStatus({
-          type: 'success',
-          text: `✅ Fortnight CSV imported! Loaded Week 1 (${totalW1} meals) and Week 2 (${totalW2} meals) without overlay. Review both weeks, then click Publish.`
+          type: 'error',
+          text: 'Could not detect menu dishes. Please check that your CSV has headings like "Monday Lunch", "Monday Dinner", etc.'
         })
       } else {
-        const keys = Object.keys(parsed.byMeal)
-        if (!keys.length) {
-          setCsvStatus({ type: 'error', text: 'Could not find day/meal columns. Please check headers like "Monday Lunch", "Monday Dinner", ...' })
-        } else {
-          const newMenu = formatMealsToMenu(parsed.byMeal)
-          setMenu(newMenu)
-          setFortnightCache(prev => ({ ...prev, [targetWeek]: { menu: newMenu, publishAt } }))
-          markDirty()
-          const totalDishes = keys.reduce((sum, k) => sum + parsed.byMeal[k].dishes.length, 0)
-          setCsvStatus({
-            type: 'success',
-            text: `✅ Imported ${keys.length} meals (${totalDishes} dishes) for ${targetWeek} (${targetWeek === calendarWeek ? 'This Week' : targetWeek === nextWeek ? (surveyCadence === '2_weeks' ? 'Week 1' : 'Next Week') : 'Week 2'}). Auto-saved as draft.`
-          })
-        }
+        const newMenu = formatMealsToMenu(parsed.byMeal)
+        setMenu(newMenu)
+        markDirty()
+
+        const totalDishes = keys.reduce((sum, k) => sum + parsed.byMeal[k].dishes.length, 0)
+        const summary = DAYS.map(d => ({
+          day: d,
+          lunchCount: parsed.byMeal[`${d}_lunch`]?.dishes?.length || 0,
+          dinnerCount: parsed.byMeal[`${d}_dinner`]?.dishes?.length || 0,
+        }))
+        setCsvSummary(summary)
+
+        setCsvStatus({
+          type: 'success',
+          text: `✅ Successfully imported ${keys.length} meals (${totalDishes} dishes total) for ${targetWeek === calendarWeek ? 'This Week' : 'Next Week'} (${targetWeek}). Menu updated below and ready to publish!`
+        })
       }
     } catch (e) {
-      setCsvStatus({ type: 'error', text: `CSV parse failed: ${e.message}` })
+      setCsvStatus({ type: 'error', text: `CSV import failed: ${e.message}` })
     } finally {
       setCsvLoading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -735,18 +650,17 @@ export default function SettingsPage() {
   }
 
   const downloadCSVTemplate = () => {
-    const isFortnight = surveyCadence === '2_weeks'
-    const csvContent = buildMenuCSVTemplate(menu, targetWeek, isFortnight)
+    const csvContent = buildMenuCSVTemplate(menu, targetWeek)
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `al_mawaid_menu_${isFortnight ? 'fortnight_template' : targetWeek}.csv`
+    a.download = `al_mawaid_weekly_menu_${targetWeek}.csv`
     a.click()
     URL.revokeObjectURL(url)
     setCsvStatus({
       type: 'success',
-      text: `✅ ${isFortnight ? 'Fortnight (2-Week)' : 'Weekly'} template downloaded with UTF-8 encoding. Open in Excel/Sheets, fill dishes, and upload.`
+      text: `✅ Clean weekly template (12 meals) downloaded with UTF-8 encoding. Open in Excel/Google Sheets, fill dishes, and upload.`
     })
   }
 
@@ -777,23 +691,20 @@ export default function SettingsPage() {
           </div>
         </AdminCard>
 
-        {/* Weekly Menu — isolated per week_start; for 2-week cadence each week gets its own CSV/menu */}
+        {/* Weekly Menu — isolated per week_start (12 meals per week) */}
         <AdminCard>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18, flexWrap: 'wrap' }}>
-            <SectionHeader style={{ marginBottom: 0 }}>🍽️ Weekly Menu {surveyCadence==='2_weeks' && <span style={{ fontSize:11, fontWeight:800, padding:'3px 8px', borderRadius:999, background:'rgba(99,102,241,0.12)', border:'1px solid rgba(99,102,241,0.22)', color:'#818cf8', marginLeft:8 }}>FORTNIGHT — 2 separate CSVs</span>}</SectionHeader>
+            <SectionHeader style={{ marginBottom: 0 }}>🍽️ Weekly Menu</SectionHeader>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              {/* Menu target week selector — supports 1-week (2 pills) and 2-weeks (3 pills: This + W1 + W2, each separate CSV) */}
+              {/* Week selector — This Week or Next Week only */}
               <div style={{
                 display: 'inline-flex', background: T.inputBg, padding: 4, borderRadius: 14,
                 border: `1px solid ${T.inputBorder}`, gap: 4,
               }}>
-                {(surveyCadence==='2_weeks'
-                  ? [{ id: calendarWeek, label: `This Week · ${formatWeekLabel(calendarWeek)}` },
-                     { id: nextWeek, label: `Week 1 · ${formatWeekLabel(nextWeek)}` },
-                     { id: week2, label: `Week 2 · ${formatWeekLabel(week2)}` }]
-                  : [{ id: calendarWeek, label: `This Week · ${formatWeekLabel(calendarWeek)}` },
-                     { id: nextWeek, label: `Next Week · ${formatWeekLabel(nextWeek)}` }]
-                ).map(opt => {
+                {[
+                  { id: calendarWeek, label: `This Week · ${formatWeekLabel(calendarWeek)}` },
+                  { id: nextWeek, label: `Next Week · ${formatWeekLabel(nextWeek)}` }
+                ].map(opt => {
                   const active = targetWeek === opt.id
                   return (
                     <button
@@ -814,41 +725,6 @@ export default function SettingsPage() {
                   )
                 })}
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const opts = surveyCadence==='2_weeks'
-                    ? [{id:calendarWeek,l:'This Week'},{id:nextWeek,l:'Week 1'},{id:week2,l:'Week 2'}].filter(o=>o.id!==targetWeek)
-                    : [{id: targetWeek===calendarWeek?nextWeek:calendarWeek, l: targetWeek===calendarWeek?'Next Week':'This Week'}]
-                  // For fortnight, copy to next logical week; for single, copy to other
-                  const other = opts[0]
-                  if (!other) return
-                  if (window.confirm(`Copy current menu dishes to ${other.l} (${other.id})? This upserts weekly_menu for week_start=${other.id} only — the other week stays isolated.`)) {
-                    const menuRows = Object.entries(menu).map(([day, val]) => ({
-                      day_name: day,
-                      week_start: other.id,
-                      day_ar: val.ar || '',
-                      lunch: val.lunch,
-                      dinner: val.dinner,
-                      publish_at: new Date().toISOString(),
-                    }))
-                    supabase.from('weekly_menu').upsert(menuRows, { onConflict: 'week_start,day_name' }).then(({ error }) => {
-                      if (error) setMsg({ text: `Copy failed: ${error.message}`, type: 'error' })
-                      else {
-                        queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] })
-                        setMsg({ text: `✅ Copied menu to ${other.l} (${other.id}) — different CSV per week stays isolated by week_start.`, type: 'success' })
-                      }
-                    })
-                  }
-                }}
-                style={{
-                  padding: '7px 12px', borderRadius: 10, border: `1px solid ${T.border}`,
-                  background: 'rgba(255,255,255,0.04)', color: T.text, fontSize: 11, fontWeight: 700,
-                  cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6
-                }}
-              >
-                📋 Copy to {surveyCadence==='2_weeks' ? (targetWeek===calendarWeek? 'Week 1' : targetWeek===nextWeek ? 'Week 2' : 'This Week') : (targetWeek === calendarWeek ? 'Next Week' : 'This Week')}
-              </button>
               <div style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 background: targetWeek === calendarWeek ? 'rgba(16,185,129,0.1)' : T.accentBg,
@@ -856,80 +732,94 @@ export default function SettingsPage() {
                 borderRadius: 8, padding: '4px 10px', fontSize: 11,
                 color: targetWeek === calendarWeek ? '#34d399' : T.accent,
               }}>
-                <Calendar size={12} /> {targetWeek === calendarWeek ? `Live now · ${targetWeek}` : surveyCadence==='2_weeks' && targetWeek===week2 ? `Survey Week 2 · ${targetWeek}` : `Survey week · ${targetWeek}`}
+                <Calendar size={12} /> {targetWeek === calendarWeek ? `Live now · ${targetWeek}` : `Survey week · ${targetWeek}`}
               </div>
             </div>
           </div>
 
-          {surveyCadence==='2_weeks' ? (
+          {targetWeek !== calendarWeek && (
             <div style={{
               marginBottom: 18, padding: '10px 14px', borderRadius: 10, fontSize: 12,
               background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.20)', color: T.textSub,
             }}>
-              Fortnight: upload CSV for <b style={{ color: T.text }}>Week 1</b> and <b style={{ color: T.text }}>Week 2</b> separately.
-            </div>
-          ) : targetWeek !== calendarWeek && (
-            <div style={{
-              marginBottom: 18, padding: '10px 14px', borderRadius: 10, fontSize: 12,
-              background: 'rgba(99,102,241,0.07)', border: '1px solid rgba(99,102,241,0.20)', color: T.textSub,
-            }}>
-              Editing next week's survey menu.
+              Editing next week's survey menu (12 meals).
             </div>
           )}
 
-          {/* CSV Menu Import */}
-          <div style={{
-            marginBottom: 20, padding: 18, borderRadius: 16,
-            boxSizing: 'border-box',
-            background: 'linear-gradient(135deg, rgba(99,102,241,0.07), rgba(99,102,241,0.02))',
-            border: '1px solid rgba(99,102,241,0.22)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <FileSpreadsheet size={15} color="#818cf8" />
-              <span style={{ fontSize: 13, fontWeight: 800, color: '#a5b4fc', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Import Menu from CSV</span>
+          {/* CSV Menu Import (Optimized & Frictionless) */}
+          <div
+            onDragOver={e => { e.preventDefault(); setCsvDragOver(true) }}
+            onDragLeave={() => setCsvDragOver(false)}
+            onDrop={e => {
+              e.preventDefault()
+              setCsvDragOver(false)
+              if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                handleCSVFile(e.dataTransfer.files[0])
+              }
+            }}
+            style={{
+              marginBottom: 20, padding: 20, borderRadius: 18,
+              boxSizing: 'border-box',
+              background: csvDragOver
+                ? 'linear-gradient(135deg, rgba(99,102,241,0.18), rgba(16,185,129,0.1))'
+                : 'linear-gradient(135deg, rgba(99,102,241,0.08), rgba(99,102,241,0.02))',
+              border: `2px ${csvDragOver ? 'dashed #818cf8' : 'solid rgba(99,102,241,0.25)'}`,
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+              <FileSpreadsheet size={18} color="#818cf8" />
+              <span style={{ fontSize: 13.5, fontWeight: 900, color: '#a5b4fc', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Simple CSV Menu Importer
+              </span>
+              <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 999, background: 'rgba(99,102,241,0.15)', color: '#818cf8' }}>
+                12 Meals (Mon–Sat)
+              </span>
               {autoSaving && <span style={{ marginLeft: 'auto', fontSize: 11, color: T.textSub }}>Auto-saving…</span>}
               {!autoSaving && autoSavedAt && !csvStatus && (
                 <span style={{ marginLeft: 'auto', fontSize: 11, color: '#34d399', whiteSpace: 'nowrap' }}>● Auto-saved {autoSavedAt.toLocaleTimeString()}</span>
               )}
             </div>
-            <p style={{ fontSize: 12, color: T.textSub, margin: '0 0 12px' }}>
-              CSV headings: <b style={{ color: '#c7d2fe' }}>Monday Lunch, Monday Dinner …</b> — uploads to <b>{targetWeek}</b> only.
+            
+            <p style={{ fontSize: 12, color: T.textSub, margin: '0 0 14px', lineHeight: 1.5 }}>
+              Drag & drop your CSV file here, or click to upload. Sets up all 12 meal slots for <b style={{ color: T.text }}>{targetWeek === calendarWeek ? 'This Week' : 'Next Week'} ({targetWeek})</b>.
             </p>
+
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'stretch' }}>
               <button
                 type="button"
                 disabled={csvLoading}
                 onClick={() => fileInputRef.current && fileInputRef.current.click()}
                 style={{
-                  flex: '1 1 240px', padding: '14px 16px', borderRadius: 12,
+                  flex: '1 1 220px', padding: '13px 18px', borderRadius: 12,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                   background: '#6366f1', color: '#fff', border: 'none', cursor: csvLoading ? 'wait' : 'pointer',
                   fontSize: 13, fontWeight: 800, fontFamily: 'inherit',
-                  boxShadow: '0 8px 20px rgba(99,102,241,0.35)',
-                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  boxShadow: '0 6px 18px rgba(99,102,241,0.35)',
+                  transition: 'all 0.2s',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 12px 26px rgba(99,102,241,0.45)' }}
-                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 8px 20px rgba(99,102,241,0.3)' }}
               >
-                <Upload size={18} /> {csvLoading ? 'Reading file…' : 'Upload CSV Menu'}
+                <Upload size={17} /> {csvLoading ? 'Reading & Parsing…' : 'Upload CSV Menu'}
               </button>
+
               <button
                 type="button"
                 onClick={downloadCSVTemplate}
                 style={{
-                  flex: '0 0 auto', padding: '14px 16px', borderRadius: 12,
+                  flex: '0 0 auto', padding: '13px 16px', borderRadius: 12,
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  background: 'transparent', color: '#a5b4fc',
-                  border: `1.5px dashed rgba(129,140,248,0.5)`,
-                  cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'inherit',
+                  background: 'rgba(255,255,255,0.03)', color: '#a5b4fc',
+                  border: `1.5px dashed rgba(129,140,248,0.45)`,
+                  cursor: 'pointer', fontSize: 12.5, fontWeight: 700, fontFamily: 'inherit',
                   transition: 'background 0.2s',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(129,140,248,0.08)' }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(129,140,248,0.1)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
               >
-                <Download size={16} /> Template
+                <Download size={15} /> Download Sample CSV
               </button>
             </div>
+
             <input
               ref={fileInputRef}
               type="file"
@@ -937,15 +827,78 @@ export default function SettingsPage() {
               style={{ display: 'none' }}
               onChange={e => handleCSVFile(e.target.files && e.target.files[0])}
             />
+
+            {/* Rich Import Status & 1-Click Publish */}
             {csvStatus && (
               <div style={{
-                marginTop: 12, padding: '10px 12px', borderRadius: 10, fontSize: 12, lineHeight: 1.5,
-                background: csvStatus.type === 'success' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                marginTop: 14, padding: '14px 16px', borderRadius: 12, fontSize: 12.5, lineHeight: 1.5,
+                background: csvStatus.type === 'success' ? 'rgba(16,185,129,0.09)' : 'rgba(239,68,68,0.1)',
                 border: `1px solid ${csvStatus.type === 'success' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
                 color: csvStatus.type === 'success' ? '#34d399' : '#f87171',
                 fontWeight: 600,
               }}>
-                {csvStatus.text}
+                <div style={{ marginBottom: csvSummary ? 10 : 0 }}>
+                  {csvStatus.text}
+                </div>
+
+                {csvSummary && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                    {csvSummary.map(s => (
+                      <span
+                        key={s.day}
+                        style={{
+                          fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 8,
+                          background: (s.lunchCount > 0 && s.dinnerCount > 0) ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)',
+                          color: (s.lunchCount > 0 && s.dinnerCount > 0) ? '#34d399' : '#f59e0b',
+                          border: `1px solid ${(s.lunchCount > 0 && s.dinnerCount > 0) ? 'rgba(16,185,129,0.25)' : 'rgba(245,158,11,0.25)'}`,
+                        }}
+                      >
+                        {capDay(s.day).substring(0, 3)}: {s.lunchCount}L / {s.dinnerCount}D
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {csvStatus.type === 'success' && (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      disabled={publishing}
+                      onClick={async () => {
+                        setPublishing(true)
+                        try {
+                          const rows = Object.entries(menu).map(([day, val]) => ({
+                            day_name: day,
+                            week_start: targetWeek,
+                            day_ar: val.ar || '',
+                            lunch: val.lunch,
+                            dinner: val.dinner,
+                            publish_at: null,
+                          }))
+                          const { error: pErr } = await supabase.from('weekly_menu').upsert(rows, { onConflict: 'week_start,day_name' })
+                          if (pErr) throw pErr
+                          queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] })
+                          await supabase.from('app_settings').delete().eq('key', 'draft_data')
+                          setHasDraft(false)
+                          setMsg({ text: `🚀 Menu published live to ${targetWeek}! Members will now see this menu.`, type: 'success' })
+                        } catch (err) {
+                          setMsg({ text: `Publish error: ${err.message}`, type: 'error' })
+                        } finally {
+                          setPublishing(false)
+                        }
+                      }}
+                      style={{
+                        padding: '8px 16px', borderRadius: 8, border: 'none',
+                        background: '#10b981', color: '#fff', fontSize: 12, fontWeight: 900,
+                        cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
+                        boxShadow: '0 4px 12px rgba(16,185,129,0.3)',
+                      }}
+                    >
+                      🚀 Publish Live to {targetWeek === calendarWeek ? 'This Week' : 'Next Week'} Now
+                    </button>
+                    <span style={{ fontSize: 11, color: T.textSub }}>or review edits below</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1123,237 +1076,106 @@ export default function SettingsPage() {
           )}
         </AdminCard>
 
-        {/* Publish Controls */}
+        {/* ── Publish & Notify Card ── */}
         <AdminCard>
-          <SectionHeader>📢 Publish Schedule</SectionHeader>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <p style={{ fontSize: 12, color: T.textSub, margin: 0 }}>
-              Set when the <strong style={{ color: T.accent }}>{targetWeek === calendarWeek ? 'current' : 'next'}</strong> week's menu ({targetWeek}) becomes visible to users. Until published, users will not see it.
-            </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, minWidth: 220 }}>
-                <label htmlFor="publishAt" style={{ display: 'block', color: T.textSub, fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 6 }}>
-                  Schedule Publish At
-                </label>
-                <input
-                  type="datetime-local"
-                  id="publishAt"
-                  name="publishAt"
-                  value={publishAt}
-                  onChange={e => { markDirty(); setPublishAt(e.target.value) }}
-                  style={{
-                    width: '100%', boxSizing: 'border-box',
-                    padding: '10px 14px', borderRadius: 8,
-                    background: T.inputBg, border: `1px solid ${T.inputBorder}`,
-                    color: T.text, fontSize: 13, outline: 'none', fontFamily: 'inherit',
-                  }}
-                />
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignSelf: 'flex-end', paddingBottom: 2 }}>
-                <Btn
-                  type="button"
-                  variant="ghost"
-                  onClick={async () => {
-                    const now = new Date()
-                    now.setMinutes(now.getMinutes() - now.getTimezoneOffset())
-                    markDirty(); setPublishAt(now.toISOString().slice(0, 16))
-                  }}
-                >
-                  <Clock size={14} /> Now
-                </Btn>
-                {surveyCadence === '2_weeks' ? (
-                  <Btn
-                    type="button"
-                    disabled={publishing}
-                    onClick={async () => {
-                      if (!window.confirm(`Publish BOTH Week 1 (${nextWeek}) and Week 2 (${week2}) menus? Each week will be saved independently to weekly_menu.`)) return
-                      setPublishing(true)
-                      setMsg({ text: '', type: 'success' })
-                      const publishTimestamp = new Date().toISOString()
-                      
-                      const w1Menu = targetWeek === nextWeek ? menu : (fortnightCache[nextWeek]?.menu || menu)
-                      const w2Menu = targetWeek === week2 ? menu : (fortnightCache[week2]?.menu || BLANK_MENU)
+          <SectionHeader>🚀 Publish Menu &amp; Notify Members</SectionHeader>
+          <p style={{ fontSize: 12, color: T.textSub, margin: '0 0 18px', lineHeight: 1.6 }}>
+            Publishes the <strong style={{ color: T.accent }}>{targetWeek === calendarWeek ? 'This Week' : 'Next Week'}</strong> menu ({targetWeek}) to the database
+            and immediately sends a push notification + in-app alert to <strong style={{ color: T.text }}>all members</strong>.
+          </p>
+          <button
+            type="button"
+            disabled={publishing}
+            onClick={async () => {
+              if (!window.confirm(`Publish menu for ${targetWeek} and notify ALL members now?`)) return
+              setPublishing(true)
+              setMsg({ text: '', type: 'success' })
+              try {
+                const publishTimestamp = new Date().toISOString()
 
-                      const rows1 = Object.entries(w1Menu).map(([day, val]) => ({
-                        day_name: day, week_start: nextWeek, day_ar: val.ar || '', lunch: val.lunch, dinner: val.dinner, publish_at: publishTimestamp,
-                      }))
-                      const rows2 = Object.entries(w2Menu).map(([day, val]) => ({
-                        day_name: day, week_start: week2, day_ar: val.ar || '', lunch: val.lunch, dinner: val.dinner, publish_at: publishTimestamp,
-                      }))
+                // 1. Save helpline + dish config
+                await supabase.from('app_settings').upsert([
+                  { key: 'helpline_number', value: helpline || '+91 98765 43210' },
+                  { key: 'dish_input_config', value: JSON.stringify(dishInputConfig) },
+                ], { onConflict: 'key' })
 
-                      const { error: err1 } = await supabase.from('weekly_menu').upsert(rows1, { onConflict: 'week_start,day_name' })
-                      const { error: err2 } = await supabase.from('weekly_menu').upsert(rows2, { onConflict: 'week_start,day_name' })
+                // 2. Upsert menu rows for selected week only
+                const menuRows = Object.entries(menu).map(([day, val]) => ({
+                  day_name: day,
+                  week_start: targetWeek,
+                  day_ar: val.ar || ARABIC_DAYS[day] || '',
+                  lunch: val.lunch,
+                  dinner: val.dinner,
+                  publish_at: null,
+                }))
+                const { error: menuErr } = await supabase
+                  .from('weekly_menu')
+                  .upsert(menuRows, { onConflict: 'week_start,day_name' })
+                if (menuErr) throw menuErr
 
-                      setPublishing(false)
-                      if (err1 || err2) {
-                        setMsg({ text: `Publish error: ${(err1 || err2).message}`, type: 'error' })
-                      } else {
-                        queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] })
-                        await supabase.from('app_settings').delete().eq('key', 'draft_data')
-                        setHasDraft(false)
-                        setMsg({ text: `✅ Successfully published Fortnight menus: Week 1 (${nextWeek}) and Week 2 (${week2})!`, type: 'success' })
-                      }
-                    }}
-                    style={{ whiteSpace: 'nowrap', background: 'rgba(99,102,241,0.18)', border: '1px solid #818cf8', color: '#c7d2fe' }}
-                  >
-                    🚀 Publish Fortnight (W1 & W2)
-                  </Btn>
-                ) : (
-                  <Btn
-                    type="button"
-                    disabled={publishing}
-                    onClick={async () => {
-                      if (!window.confirm(`Publish this menu to BOTH This Week (${calendarWeek}) AND Next Week (${nextWeek})?`)) return
-                      setPublishing(true)
-                      setMsg({ text: '', type: 'success' })
-                      const publishTimestamp = new Date().toISOString()
-                      const rows1 = Object.entries(menu).map(([day, val]) => ({
-                        day_name: day, week_start: calendarWeek, day_ar: val.ar || '', lunch: val.lunch, dinner: val.dinner, publish_at: publishTimestamp,
-                      }))
-                      const rows2 = Object.entries(menu).map(([day, val]) => ({
-                        day_name: day, week_start: nextWeek, day_ar: val.ar || '', lunch: val.lunch, dinner: val.dinner, publish_at: publishTimestamp,
-                      }))
-                      const { error: err1 } = await supabase.from('weekly_menu').upsert(rows1, { onConflict: 'week_start,day_name' })
-                      const { error: err2 } = await supabase.from('weekly_menu').upsert(rows2, { onConflict: 'week_start,day_name' })
-                      setPublishing(false)
-                      if (err1 || err2) {
-                        setMsg({ text: `Publish error: ${(err1 || err2).message}`, type: 'error' })
-                      } else {
-                        queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] })
-                        await supabase.from('app_settings').delete().eq('key', 'draft_data')
-                        setHasDraft(false)
-                        setMsg({ text: `✅ Successfully published menu to BOTH This Week (${calendarWeek}) and Next Week (${nextWeek})!`, type: 'success' })
-                      }
-                    }}
-                    style={{ whiteSpace: 'nowrap', background: 'rgba(255,255,255,0.06)', border: `1px solid ${T.border}`, color: T.text }}
-                  >
-                    Publish for Both Weeks
-                  </Btn>
-                )}
-                <Btn
-                  type="button"
-                  disabled={publishing}
-                  onClick={async () => {
-                    setPublishing(true)
-                    setMsg({ text: '', type: 'success' })
-                    const isFuture = publishAt && new Date(publishAt).getTime() > Date.now()
-                    const publishTimestamp = isFuture ? new Date(publishAt).toISOString() : new Date().toISOString()
+                queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] })
 
-                    const settingsDefaults = [
-                      { key: 'helpline_number', value: helpline || '+91 98765 43210' },
-                      { key: 'dish_input_config', value: JSON.stringify(dishInputConfig) },
-                    ]
+                // 3. Clear draft
+                await supabase.from('app_settings').delete().eq('key', 'draft_data')
+                setHasDraft(false)
 
-                    const menuRows = Object.entries(menu).map(([day, val]) => ({
-                      day_name: day,
-                      week_start: targetWeek,
-                      day_ar: val.ar || '',
-                      lunch: val.lunch,
-                      dinner: val.dinner,
-                      publish_at: publishTimestamp,
-                    }))
+                // 4. In-app notifications to all members (chunked)
+                const { data: allUsers } = await supabase.from('user_stats').select('user_id').limit(5000)
+                const notifRows = (allUsers || []).map(u => ({
+                  user_id: u.user_id,
+                  title: '🍽️ New Weekly Menu Available',
+                  message: `The menu for ${targetWeek === calendarWeek ? 'this week' : 'next week'} (${targetWeek}) is now live! Check it out in the app.`,
+                  type: 'menu',
+                  url: '/menu',
+                  sender_name: 'Al-Mawaid',
+                }))
+                for (let i = 0; i < notifRows.length; i += 200) {
+                  await supabase.from('notifications').insert(notifRows.slice(i, i + 200))
+                }
 
-                    const { error: settingsErr } = await supabase
-                      .from('app_settings')
-                      .upsert(settingsDefaults, { onConflict: 'key' })
-
-                    if (settingsErr) {
-                      setMsg({ text: `Publish failed (settings): ${settingsErr.message}`, type: 'error' })
-                    } else {
-                      const { error: menuErr } = await supabase
-                        .from('weekly_menu')
-                        .upsert(menuRows, { onConflict: 'week_start,day_name' })
-
-                      if (menuErr) {
-                        setMsg({ text: `Publish failed (menu): ${menuErr.message}`, type: 'error' })
-                      } else {
-                        queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] })
-                        await supabase.from('app_settings').delete().eq('key', 'draft_data')
-                        setHasDraft(false)
-                        const publishingLiveWeek = targetWeek === calendarWeek
-
-                        if (!isFuture && publishingLiveWeek) {
-                          const { data: existingNotice } = await supabase
-                            .from('notices').select('id').eq('type', 'menu')
-                            .ilike('message', `%${targetWeek}%`).maybeSingle()
-                          if (!existingNotice) {
-                            try {
-                              await supabase.from('notices').insert({
-                                title: '🍽️ New Weekly Menu Available',
-                                message: `The menu for week of ${targetWeek} is now live! Check it out in the app.`,
-                                url: '/', type: 'menu',
-                              })
-                            } catch (_) { }
-                          }
-                          try {
-                            await supabase.functions.invoke('send-push', {
-                              body: {
-                                title: 'Al-Mawaid · New menu is live',
-                                body: `This week’s thali menu (${targetWeek}) is ready — open the app to see lunch & dinner.`,
-                                target_type: 'all',
-                                user_id: null,
-                                url: '/',
-                              }
-                            })
-                          } catch (pushErr) {
-                            console.warn('[Settings] Menu publish push notification failed:', pushErr)
-                          }
-                          setMsg({ text: `✅ Changes published and push notification sent!`, type: 'success' })
-                        } else if (isFuture) {
-                          setMsg({ text: `✅ Changes scheduled for ${new Date(publishAt).toLocaleString()}`, type: 'success' })
-                        } else {
-                          try {
-                            const { data: surveyRows } = await supabase.from('app_settings').select('key,value')
-                            const surveyCfg = {}
-                            ;(surveyRows || []).forEach(r => { surveyCfg[r.key] = r.value })
-                            const surveyOpen = isSurveyOpen(surveyCfg)
-                            if (surveyOpen) {
-                              const { data: markerRow } = await supabase
-                                .from('app_settings').select('value').eq('key', 'survey_notified_week').maybeSingle()
-                              if (markerRow?.value !== targetWeek) {
-                                await supabase.functions.invoke('send-push', {
-                                  body: {
-                                    title: '📝 Weekly Survey is Open',
-                                    body: `Next week's menu is ready — fill your weekly survey to choose your meals.`,
-                                    target_type: 'all',
-                                    notify_in_app: true,
-                                    type: 'survey',
-                                    sender_name: 'Al-Mawaid',
-                                    url: '/'
-                                  }
-                                })
-                                await supabase.from('app_settings')
-                                  .upsert({ key: 'survey_notified_week', value: targetWeek, updated_at: new Date().toISOString() }, { onConflict: 'key' })
-                              }
-                            }
-                          } catch (surveyErr) {
-                            console.warn('Survey-open notification failed:', surveyErr)
-                          }
-                          setMsg({ text: `✅ Next week's menu (${targetWeek}) published — it will appear in the survey form and Menu page once that week begins.`, type: 'success' })
-                        }
-                        setPublishAt(publishTimestamp.slice(0, 16))
-                      }
+                // 5. Push notification to all devices
+                try {
+                  await supabase.functions.invoke('send-push', {
+                    body: {
+                      title: '🍽️ Al-Mawaid · New Menu is Live',
+                      body: `The ${targetWeek === calendarWeek ? "this week's" : "next week's"} thali menu (${targetWeek}) is ready — tap to see lunch & dinner!`,
+                      target_type: 'all',
+                      user_id: null,
+                      url: '/menu',
+                      notify_in_app: false,
+                      sender_name: 'Al-Mawaid',
                     }
-                    setPublishing(false)
-                  }}
-                >
-                  <Send size={14} /> {publishing ? 'Publishing…' : 'Publish & Notify'}
-                </Btn>
-              </div>
-            </div>
-            {publishAt && (
-              <div style={{
-                fontSize: 11, color: T.textSub, marginTop: 4,
-                padding: '8px 12px', borderRadius: 8,
-                background: T.accentBg, border: `1px solid ${T.accentBorder}`,
-              }}>
-                <Calendar size={12} style={{ marginRight: 6, verticalAlign: 'middle' }} />
-                {new Date(publishAt).getTime() > Date.now()
-                  ? `Menu will go live on ${new Date(publishAt).toLocaleString()}`
-                  : 'Menu is live and visible to users'}
-              </div>
-            )}
-          </div>
+                  })
+                } catch (pushErr) {
+                  console.warn('[Settings] Push notification failed (menu published OK):', pushErr)
+                }
+
+                setMsg({ text: `✅ Menu published for ${targetWeek} — all members have been notified!`, type: 'success' })
+              } catch (err) {
+                setMsg({ text: `Publish failed: ${err.message}`, type: 'error' })
+              } finally {
+                setPublishing(false)
+              }
+            }}
+            style={{
+              width: '100%', padding: '16px 24px', borderRadius: 14, border: 'none',
+              background: publishing ? 'rgba(16,185,129,0.3)' : 'linear-gradient(135deg, #10b981, #059669)',
+              color: '#fff', fontSize: 15, fontWeight: 900,
+              cursor: publishing ? 'wait' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+              boxShadow: publishing ? 'none' : '0 6px 24px rgba(16,185,129,0.35)',
+              transition: 'all 0.2s', fontFamily: 'inherit',
+              letterSpacing: '0.02em',
+            }}
+            onMouseEnter={e => { if (!publishing) e.currentTarget.style.transform = 'translateY(-1px)' }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)' }}
+          >
+            <Send size={18} />
+            {publishing
+              ? 'Publishing & Notifying Members…'
+              : `Publish ${targetWeek === calendarWeek ? 'This Week' : 'Next Week'} Menu & Notify All Members`
+            }
+          </button>
         </AdminCard>
 
         {msg.text && <Alert msg={msg.text} type={msg.type} />}

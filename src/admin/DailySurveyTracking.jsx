@@ -35,10 +35,8 @@ const pickStopInfo = (reqs, selDateStr, meal) => {
 export default function DailySurveyTracking() {
   const [appSettings, setAppSettings] = useState({})
   const surveyWeekId = useCallback(() => getSurveyTargetWeek(appSettings), [appSettings])
-  const targetWeeks = useMemo(() => getSurveyTargetWeeks(appSettings), [appSettings])
-  const targetWeek = targetWeeks[0] || surveyWeekId()
-  const weeklyMenuRaw = useWeeklyMenu(targetWeeks.length > 1 ? targetWeeks : targetWeek) || {}
-  const weeklyMenu = targetWeeks.length > 1 ? (weeklyMenuRaw.__byWeek?.[targetWeek] || weeklyMenuRaw) : weeklyMenuRaw
+  const targetWeek = useMemo(() => getSurveyTargetWeek(appSettings), [appSettings])
+  const weeklyMenu = useWeeklyMenu(targetWeek) || {}
   const [searchParams] = useSearchParams()
   const urlMeal = searchParams.get('meal')
   const [loading, setLoading] = useState(true)
@@ -791,25 +789,6 @@ export default function DailySurveyTracking() {
             ))}
           </div>
 
-          {/* Week Quick Select Tabs */}
-          {targetWeeks.length > 1 && (
-            <div style={{ display: 'flex', background: T.inputBg, padding: 3, borderRadius: 12, border: `1px solid ${T.border}` }}>
-              {targetWeeks.map((tw, idx) => {
-                const isSelected = weekFilter === tw
-                return (
-                  <button key={tw} onClick={() => setWeekFilter(tw)}
-                    style={{
-                      padding: '6px 12px', borderRadius: 8, border: 'none',
-                      background: isSelected ? T.accentGrad : 'transparent',
-                      color: isSelected ? '#fff' : T.textSub,
-                      fontSize: 10, fontWeight: 700, cursor: 'pointer', transition: '0.2s', whiteSpace: 'nowrap'
-                    }}>
-                    {formatWeekRange(tw)} (W{idx + 1})
-                  </button>
-                )
-              })}
-            </div>
-          )}
 
           {/* Week Filter Dropdown */}
           <select value={weekFilter} onChange={e => setWeekFilter(e.target.value)} name="weekFilter"

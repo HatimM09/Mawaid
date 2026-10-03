@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Home, FileText, User, X, Bell, ClipboardList, Utensils } from 'lucide-react'
+import { Sparkles, UtensilsCrossed, ClipboardCheck, MessageSquareText, UserCircle2, X, BellRing } from 'lucide-react'
 import { supabase } from '../lib/firebaseClient'
 import { ThemeCtx, useAuth } from '../admin/context'
 import { updateSystemTheme } from '../admin/ui'
@@ -42,6 +42,7 @@ export default function ThaliUserApp() {
   const [dragOffset, setDragOffset] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
   const [appSettings, setAppSettings] = useState({})
+  const appSettingsRef = useRef(appSettings)
   const [, setClockTick] = useState(0)
 
   const loadAppSettings = useCallback(async () => {
@@ -50,6 +51,7 @@ export default function ThaliUserApp() {
       const settings = {}
       data.forEach(row => settings[row.key] = row.value)
       setAppSettings(settings)
+      appSettingsRef.current = settings
     } else {
       setAppSettings({})
     }
@@ -139,28 +141,10 @@ export default function ThaliUserApp() {
   }, [loadAppSettings])
 
   // ── Native Notification System (Supabase Realtime) ──
+  // Load unread count once on mount — NOT on every appSettings change
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission()
-    }
-
-    // Shared notice-targeting check: whether the user is currently "eating" a
-    // granted slot. Merge override responses so override users are targeted
-    // correctly (their normal table may be empty).
-    const computeIsEating = async () => {
-      const dayNum = new Date().getDay()
-      if (dayNum === 0) return false
-      const h = new Date().getHours()
-      const weekId = getSurveyTargetWeek(appSettings)
-      const days = ['', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-      const today = days[dayNum]
-      const mealName = h < 15 ? 'lunch' : 'dinner'
-      const dayKey = today.substring(0, 3).toLowerCase()
-      const mealKey = mealName === 'lunch' ? 'l' : 'd'
-      
-      const { data: subData } = await fetchUserSurveyRow(user.id, weekId)
-      const status = subData ? subData[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
-      return status === 'Applied'
     }
 
     const loadUnread = async () => {
@@ -173,33 +157,50 @@ export default function ThaliUserApp() {
         .gt('created_at', lastRead)
 
       if (!error && data) {
-        try {
-          const isEating = await computeIsEating()
-          
-          const filtered = data.filter(notice => {
-            const toneStr = notice.tone || ''
-            if (toneStr.includes(':opt_in')) return isEating
-            if (toneStr.includes(':opt_out')) return !isEating
-            return true
-          })
-          setUnreadCount(filtered.length)
-          // Mark as seen so they don't reappear on next login
-          localStorage.setItem('almawaid_last_notice_read', new Date().toISOString())
-        } catch {
-          setUnreadCount(data.length)
-          localStorage.setItem('almawaid_last_notice_read', new Date().toISOString())
-        }
+        setUnreadCount(data.length)
+        // DON'T auto-mark as read here — user must open notifications page to mark read
       }
     }
     loadUnread()
+  }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Realtime subscription for live toast banners — stable channel, no appSettings dependency
+  useEffect(() => {
+    if (!user?.id) return
+
+    // Shared notice-targeting check
+    const computeIsEating = async () => {
+      const dayNum = new Date().getDay()
+      if (dayNum === 0) return false
+      const h = new Date().getHours()
+      const weekId = getSurveyTargetWeek(appSettingsRef.current)
+      const days = ['', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+      const today = days[dayNum]
+      const mealName = h < 15 ? 'lunch' : 'dinner'
+      const dayKey = today.substring(0, 3).toLowerCase()
+      const mealKey = mealName === 'lunch' ? 'l' : 'd'
+      
+      const { data: subData } = await fetchUserSurveyRow(user.id, weekId)
+      const status = subData ? subData[`${dayKey}_${mealKey}_status`] : 'Not Submitted'
+      return status === 'Applied'
+    }
 
     const channel = supabase
       .channel('global-notices')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notices' }, async (payload) => {
         const notice = payload.new
+        if (!notice || !notice.id) return
+        
+        // Prevent showing toast if already seen or previously dismissed
         if (seenNoticeIds.current.has(notice.id)) return
         seenNoticeIds.current.add(notice.id)
-        try { localStorage.setItem('almawaid_seen_notices', JSON.stringify([...seenNoticeIds.current])) } catch { /* ignore */ }
+        try { localStorage.setItem('almawaid_seen_notices', JSON.stringify([...seenNoticeIds.current].slice(-200))) } catch { /* ignore */ }
+        
+        // Only show live in-app toast banner for truly fresh notices (< 30 seconds old)
+        // Prevents replay of existing notices on network reconnection or channel re-subscribe
+        const createdAtMs = notice.created_at ? new Date(notice.created_at).getTime() : Date.now()
+        const isFresh = (Date.now() - createdAtMs) < 30000
+
         let isForMe = !notice.target_user_id || notice.target_user_id === user?.id
 
         if (isForMe && notice.tone) {
@@ -217,24 +218,22 @@ export default function ThaliUserApp() {
         }
 
         if (isForMe) {
-          setToastNotice(notice)
           setUnreadCount(prev => prev + 1)
-          // Play notification chime for important broadcasts
-          if (notice.title || notice.sender_name) {
-            playNotificationChime()
+          if (isFresh) {
+            setToastNotice(notice)
+            // Play notification chime for important broadcasts
+            if (notice.title || notice.sender_name) {
+              playNotificationChime()
+            }
+            const bodyLen = (notice.body || '').length
+            const toastDuration = Math.max(5000, Math.min(bodyLen * 40, 10000))
+            setTimeout(() => setToastNotice(null), toastDuration)
           }
-          // Note: we deliberately do NOT also fire a native Notification here —
-          // background delivery is handled by the push service worker, and showing
-          // both a toast AND a native popup for the same notice duplicates alerts.
-          // Proportional timing: longer content = longer display
-          const bodyLen = (notice.body || '').length
-          const toastDuration = Math.max(6000, Math.min(bodyLen * 50, 12000))
-          setTimeout(() => setToastNotice(null), toastDuration)
         }
       })
       .subscribe()
     return () => supabase.removeChannel(channel)
-  }, [user, appSettings])
+  }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const markNotificationsRead = useCallback(() => {
     localStorage.setItem('almawaid_last_notice_read', new Date().toISOString())
@@ -256,11 +255,11 @@ export default function ThaliUserApp() {
   }, [activeTab, surveyTabVisible])
 
   const tabs = [
-    { id: 'home', label: 'Home', Icon: Home, aria: 'Home Dashboard' },
-    { id: 'menu', label: 'Menu', Icon: Utensils, aria: 'Weekly Menu' },
-    ...(surveyTabVisible ? [{ id: 'survey', label: 'Survey', Icon: ClipboardList, aria: 'Weekly Survey' }] : []),
-    { id: 'post', label: 'Requests', Icon: FileText, aria: 'My Requests & Queries' },
-    { id: 'profile', label: 'Profile', Icon: User, aria: 'My Profile & Settings' },
+    { id: 'home', label: 'Home', Icon: Sparkles, aria: 'Home Dashboard' },
+    { id: 'menu', label: 'Menu', Icon: UtensilsCrossed, aria: 'Weekly Menu' },
+    ...(surveyTabVisible ? [{ id: 'survey', label: 'Survey', Icon: ClipboardCheck, aria: 'Weekly Survey' }] : []),
+    { id: 'post', label: 'Requests', Icon: MessageSquareText, aria: 'My Requests & Queries' },
+    { id: 'profile', label: 'Profile', Icon: UserCircle2, aria: 'My Profile & Settings' },
   ]
   const tabLabels = { home: 'AL-MAWAID', menu: 'WEEKLY MENU', survey: 'WEEKLY SURVEY', post: 'REQUESTS', profile: 'PROFILE' }
 
@@ -282,7 +281,7 @@ export default function ThaliUserApp() {
                   {new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                 </span>
                 <button onClick={() => setActiveTab('profile')} style={{ position: 'relative', background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-                  <Bell size={18} color={unreadCount > 0 ? t.accent : t.textSub} style={{ opacity: unreadCount > 0 ? 1 : 0.5 }} />
+                  <BellRing size={18} color={unreadCount > 0 ? t.accent : t.textSub} style={{ opacity: unreadCount > 0 ? 1 : 0.5 }} />
                   {unreadCount > 0 && (
                     <div style={{ position: 'absolute', top: -2, right: -2, minWidth: 16, height: 16, borderRadius: 8, background: '#e05555', color: '#fff', fontSize: 9, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', boxShadow: '0 2px 6px rgba(224,85,85,0.5)', animation: 'pulse 2s infinite' }}>{unreadCount > 9 ? '9+' : unreadCount}</div>
                   )}

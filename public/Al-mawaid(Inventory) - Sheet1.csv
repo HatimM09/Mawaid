@@ -1,0 +1,256 @@
+Category ,Sub-division ,Min. Quantity ,KG/Pcs
+Groceries,Sugar,20,kg
+Groceries,Salt,10,kg
+Groceries,Tea,5,kg
+Groceries,Jaggery(Gud),10,kg
+Groceries,Coffee,2,pcs
+Groceries,Sunflower Oil,5,pcs
+Groceries,Olive Oil,1,pcs
+Groceries,Mustard Oil,2,pcs
+Groceries,Ghee ,5,kg
+Groceries,Butter 100gm,30,pcs
+Groceries,Milk,60,kg
+Groceries,Dahi,10,kg
+Groceries,Cheese ,12,kg
+Groceries,Bread,10,pcs
+Groceries,Toast ,30,kg
+Groceries,Parle G,20,pcs
+Groceries,Krackjack,20,pcs
+Groceries,Monacco,20,pcs
+Groceries,20-20,20,pcs
+Groceries,Good Day,20,pcs
+Groceries,Cheese Crackers,20,pcs
+Groceries,Noodles,15,pcs
+Groceries,Maggie 280gm,120,pcs
+Groceries,Pasta ,10,kg
+Groceries,Sewaiya ,5,kg
+Groceries,Cornflour ,10,kg
+Groceries,Cornflakes,12,pcs
+Groceries,Chocos,12,pcs
+Groceries,Vinegar,12,pcs
+Groceries,Baking Soda ,1,kg
+Groceries,Baking Powder,1,kg
+Groceries,Paneer ,15,kg
+Groceries,Butter 500gm,60,pcs
+Groceries,Frozen Matar,10,kg
+Groceries,Frozen Corn,10,kg
+Groceries,French Fries 2.5kg ,10,pcs
+Groceries,Jam 4kg ,2,pcs
+Groceries,Honey Kilonji Sachet,3000,pcs
+Groceries,Honey   ,40,kg
+Groceries,Frozen Beans,7,kg
+Groceries,Frozen Garlic,10,kg
+Groceries,Ginger Paste 5kg,15,pcs
+Groceries,Garlic Paste 5kg,15,pcs
+Groceries,Kasuri Methi,1,pcs
+Groceries,Khaman Atta,12,kg
+Groceries,Egg Trays ,15,pcs
+Groceries,pasteurized Milk,20,Carton
+Groceries,Chicken broth powder,12,pcs
+Groceries,Lamb broth powder ,6,pcs
+Groceries,Kala namak,3,kg
+Groceries,Black olives ,6,pcs
+Groceries,Jalapeno,6,pcs
+Groceries,Milk maid,12,pcs
+Groceries,Khajoor,10,kg
+Groceries,Tahina sauce ,6,pcs
+Groceries,Nariyal chura,3,kg
+Groceries,Nariyal whole,8,pcs
+Groceries,Coconut powder,5,kg
+Groceries,Custard powder,5,kg
+Groceries,Kilonji,0.5,kg
+Groceries,Tukmariya,0.5,kg
+Groceries,Coconut oil,3,kg
+Groceries,Gund,2,kg
+Groceries,Kaju,5,kg
+Groceries,Kaju tukdi,5,kg
+Groceries,Badam,5,kg
+Groceries,Kishmish,3,kg
+Groceries,Pista,3,kg
+Groceries,Zardalu,3,kg
+Groceries,Akhrot,3,kg
+Groceries,Anjeer,3,kg
+Groceries,Foil paper,12,pcs
+Groceries,Butter paper,2,kg
+Groceries,Safra,1,Carton
+Groceries,Cup 150ml,50,pcs
+Groceries,Cup 90ml,20,pcs
+Groceries,Cup 210ml,50,pcs
+Groceries,Hand gloves,10,pcs
+Groceries,Tissues,10,pcs
+Groceries,Nimbu sat,1,kg
+Groceries,Steel kucha,12,pcs
+Groceries,Sponge ,12,pcs
+Groceries,Kari masala,10,kg
+Groceries,Kandhela wheat,10,kg
+Groceries,Kashmiri lal(Whole),3,kg
+Groceries,Tomato Mirchi,10,kg
+Groceries,Imli,5,kg
+Groceries,Milk powder,5,kg
+Groceries,Frozen Tikki Veg,20,pcs
+Groceries,Frozen Tikki Chicken,2,pcs
+Groceries,Barik Sev,5,kg
+Groceries,Ratlami Sev,5,kg
+Groceries,Masala Bundi,5,kg
+Groceries,Sadi Bundi,5,kg
+Groceries,Masala Sing ,5,kg
+Groceries,Chana ,2,kg
+Groceries,Wafers Tomato,5,kg
+Groceries,Wafers Pudina ,5,kg
+Groceries,Wafers Kala Miri,5,kg
+Groceries,Makino Chips,48,pcs
+Groceries,Bikano Salted wafers,48,pcs
+Groceries,Kurkure,150,pcs
+Groceries,Icecream 200gm,1,pcs
+Groceries,Iceccream 500gm,1,pcs
+Groceries,Soda ,1,pcs
+Groceries,Icecream 900gm,1,pcs
+Grains ,Rice Basmati,90,kg
+Grains ,Rice Kani,90,kg
+Grains ,Wheat Flour(Atta),90,kg
+Grains ,Makki Atta,20,kg
+Grains ,Besan ,20,kg
+Grains ,Maida ,20,kg
+Grains ,Poha ,10,kg
+Grains ,Daliya ,6,kg
+Grains ,Suji,10,kg
+Grains ,Oats,5,kg
+Pulses,Tuwar Dal,5,kg
+Pulses,Akkha Masoor,8,kg
+Pulses,Masoor Dal,5,kg
+Pulses,Chana Dal,5,kg
+Pulses,Urad Dal,5,kg
+Pulses,Moong Dal,5,kg
+Pulses,Moong Chilka ,8,kg
+Pulses,Akkha Moong ,5,kg
+Pulses,Kabuli Chana ,10,kg
+Pulses,Desi Chana ,10,kg
+Pulses,Rajma ,5,kg
+Pulses,Soybeans ,5,kg
+Pulses,White Chana ,12,kg
+Vegetables,Onion,50,kg
+Vegetables,Tomato,10,kg
+Vegetables,potato,15,kg
+Vegetables,Dhaniya ,1,kg
+Vegetables,Mirchi,1,kg
+Vegetables,Pudina ,0.5,kg
+Vegetables,Garlic ,1,kg
+Vegetables,Ginger,1,kg
+Vegetables,Bhindi,1,kg
+Vegetables,Dudhi,1,kg
+Vegetables,Gavar ,1,kg
+Vegetables,Bengan,1,kg
+Vegetables,Lettuce ,1,kg
+Vegetables,Red Cabbage ,1,kg
+Vegetables,Flower Gobi,1,kg
+Vegetables,Patta Gobi,1,kg
+Vegetables,Shimla ,1,kg
+Vegetables,Red Shimla ,1,kg
+Vegetables,Yellow Shimla ,1,kg
+Vegetables,Tindori,1,kg
+Vegetables,Fansi,1,kg
+Vegetables,Methi ,1,kg
+Vegetables,Palak,1,kg
+Vegetables,Gajar,1,kg
+Vegetables,Broccoli,1,kg
+Vegetables,Matar,1,kg
+Vegetables,Beetroot ,1,kg
+Fruits,Apple ,1,kg
+Fruits,Mango ,1,kg
+Fruits,Grapes ,1,kg
+Fruits,Chiku,1,kg
+Fruits,Shehtoot,1,kg
+Fruits,Pineapple,1,kg
+Fruits,Anar,1,kg
+Fruits,Watermelon,1,kg
+Fruits,Muskmelon,1,kg
+Fruits,Kiwi,1,kg
+Fruits,Strawberry,1,kg
+Fruits,Papaya,1,kg
+Fruits,Banana,1,kg
+Fruits,Jaamfal,1,kg
+Fruits,Plum,1,kg
+Fruits,Pear,1,kg
+Spices,Kashmiri Lal Mirchi,10,kg
+Spices,Dhaniya Powder,10,kg
+Spices,Dhana Jeeru Powder,10,kg
+Spices,Haldi powder,10,kg
+Spices,Jeera ,10,kg
+Spices,Elaichi,2,kg
+Spices,Pav bhaji masala,1,kg
+Spices,Kitchen King masala,1,kg
+Spices,Chat Masala,1,kg
+Spices,Panipuri Masala,1,kg
+Spices,Jaljeera Masala,1,kg
+Spices,Tandoori Masala,2,kg
+Spices,Chola Masala,1,kg
+Spices,Sambhar Masala,1,kg
+Spices,Rai,1,kg
+Spices,Nihari Masala,12,pcs
+Spices,Fish Masala,12,pcs
+Spices,Mutton Masala,12,pcs
+Spices,Kabab Masala,12,pcs
+Spices,Biryani Masala,12,pcs
+Spices,Malai Biryani Masala,12,pcs
+Syrup & Juices,Rose Syrup,4,pcs
+Syrup & Juices,Rasmalai Syrup,2,pcs
+Syrup & Juices,Litchi Syrup,2,pcs
+Syrup & Juices,Whole Strawberry Syrup,2,pcs
+Syrup & Juices,Mango Syrup,2,pcs
+Syrup & Juices,Chocolate Syrup,2,pcs
+Syrup & Juices,Lemon Syrup,14,pcs
+Syrup & Juices,Jeera Masala Syrup,14,pcs
+Syrup & Juices,Kala Kattha Syrup ,14,pcs
+Syrup & Juices,Blue Coracco Syrup,14,pcs
+Syrup & Juices,Green Mint Syrup,14,pcs
+Syrup & Juices,Khus Syrup,14,pcs
+Syrup & Juices,Kaccha Aam Syrup,14,pcs
+Syrup & Juices,Falsa Syrup,14,pcs
+Syrup & Juices,Cream Milk Syrup,10,kg
+Syrup & Juices,Badam Pista Syrup,10,kg
+Syrup & Juices,Cold Coffee Syrup,14,pcs
+Sauces & Dressings,Tomato Ketchup,24,pcs
+Sauces & Dressings,Mayonnaise,12,pcs
+Sauces & Dressings,Tandoori Mayonnaise,12,pcs
+Sauces & Dressings,Cheese Spread,12,pcs
+Sauces & Dressings,Thousand Island Sauce ,6,pcs
+Sauces & Dressings,Bbq Sauce ,6,pcs
+Sauces & Dressings,Korean Sauce ,6,pcs
+Sauces & Dressings,Schezwan Chutney(Chings),10,pcs
+Sauces & Dressings,Schezwan Sauce ,6,pcs
+Sauces & Dressings,Red Chilly Sauce ,1,pcs
+Sauces & Dressings,Green Chilli Sauce ,1,pcs
+Sauces & Dressings,Soya Sauce ,12,pcs
+Sauces & Dressings,Pizza pasta sauce ,12,pcs
+Crockery,Spoon Glass,60,pcs
+Crockery,Spoon Steel,200,pcs
+Crockery,Oval Plate ,12,pcs
+Crockery,Round Plate Big ,12,pcs
+Crockery,round Plate Small,12,pcs
+Crockery,Bowl 900ml,12,pcs
+Crockery,Bowl 510ml,12,pcs
+Crockery,Chutney Bowl,12,pcs
+Crockery,Round Plate Medium,12,pcs
+Crockery,Namak Dani Glass,30,pcs
+Crockery,Thaal ,12,pcs
+Crockery,Chumli,12,pcs
+Crockery,Safra Set Brown,1,pcs
+Crockery,Safra Set Green,1,pcs
+Crockery,safra Set sea Green ,1,pcs
+Crockery,Melamine Plate Big ,12,pcs
+Crockery,Melamine Plate Medium,12,pcs
+Crockery,Melamine Bowl Big ,12,pcs
+Crockery,Melamine Bowl Medium,12,pcs
+Crockery,Melamine Bowl Small,12,pcs
+Crockery,Glass,72,pcs
+Crockery,Jug Plastic,12,pcs
+Crockery,Jug Glass,12,pcs
+Crockery,Trays ,12,pcs
+Crockery,Tea Serving Trays,12,pcs
+Crockery,Thermos ,12,pcs
+Crockery,Thaal Racks,1,pcs
+Crockery,Acrylic Glass,72,pcs
+Crockery,Infrared Induction ,3,pcs
+Crockery,Namak Dani Melamine ,12,pcs
+Crockery,Pizza Cutter ,1,pcs
+Crockery,Icecream Scoop,1,pcs

@@ -94,10 +94,7 @@ export async function fetchUserSurveyRow(userId, weekId) {
   return { data: null, error: dayErr || null }
 }
 
-// ── Multi-week (2-week cadence) helpers — single journey, isolated storage ──
-// Each week stays as separate rows keyed by week_id; UI merges them client-side
-// so responses never overlay or jumble.
-
+// ── Survey response helpers (1-week cadence: Mon-Sat, 12 meals total) ──
 export async function fetchUserSurveyRows(userId, weekIds) {
   const ids = Array.isArray(weekIds) ? weekIds.filter(Boolean) : [weekIds].filter(Boolean)
   if (!ids.length) return { data: {}, error: null }
@@ -107,23 +104,21 @@ export async function fetchUserSurveyRows(userId, weekIds) {
   return { data: map, error: null }
 }
 
-// Count filled meal slots (l/d status present) across one or many flats
+// Count filled meal slots (l/d status present, max 12 per week)
 export function countFilledSlotsForRows(rowOrMap, weekIds) {
   const DKS = ['mon','tue','wed','thu','fri','sat']
   let total = 0
   if (rowOrMap && typeof rowOrMap === 'object' && !Array.isArray(rowOrMap) && weekIds && Array.isArray(weekIds)) {
-    // map weekId -> flat
     for (const wid of weekIds) {
       const row = rowOrMap[wid]
       if (!row) continue
       for (const dk of DKS) for (const mk of ['l','d']) if (row[`${dk}_${mk}_status`]) total++
     }
-    return total
+    return Math.min(12, total)
   }
-  // single flat or array
   const rows = Array.isArray(rowOrMap) ? rowOrMap : [rowOrMap]
   for (const row of rows) if (row) for (const dk of DKS) for (const mk of ['l','d']) if (row[`${dk}_${mk}_status`]) total++
-  return total
+  return Math.min(12, total)
 }
 
 export function isWeekComplete(flatRow) {
