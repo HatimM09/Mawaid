@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   ClipboardList, Lock, CheckCircle2, Pencil, ArrowRight,
   Calendar, Clock3, Sun, Moon, AlertCircle, RefreshCw
@@ -33,7 +33,7 @@ export default function SurveyPage({ appSettings = {} }) {
   const [surveyMap, setSurveyMap] = useState({}) // weekId -> flat row
   const [loading, setLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
-  const initialLoadDone = React.useRef(false)
+  const initialLoadDone = useRef(false)
 
   const surveyOpen = isSurveyOpen(appSettings, user?.id)
   const totalMeals = 12
@@ -490,11 +490,20 @@ export default function SurveyPage({ appSettings = {} }) {
                   return (
                     <div
                       key={mealKey}
+                      onClick={() => {
+                        if (canEditThisDay) {
+                          setOpenDay(day)
+                          setOpenMeal(mealKey)
+                          setShowSurvey(true)
+                        }
+                      }}
                       style={{
                         padding: '10px 12px',
                         borderRadius: 12,
                         background: t.inputBg,
-                        border: `1px solid ${t.border}`
+                        border: `1px solid ${t.border}`,
+                        cursor: canEditThisDay ? 'pointer' : 'default',
+                        transition: 'all 0.15s ease'
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>

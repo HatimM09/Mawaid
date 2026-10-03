@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react'
 import { AlertCircle, ChevronLeft } from 'lucide-react'
 import { useTheme } from '../admin/context'
 
@@ -39,10 +40,10 @@ export const ErrorBanner = ({ msg }) => (
 
 export const Avatar = ({ avatarUrl, name, email, size = 56 }) => {
   const t = useTheme()
-  const [imgError, setImgError] = React.useState(false)
+  const [imgError, setImgError] = useState(false)
   const initials = (name || email || 'U').charAt(0).toUpperCase()
 
-  React.useEffect(() => {
+  useEffect(() => {
     setImgError(false)
   }, [avatarUrl])
 

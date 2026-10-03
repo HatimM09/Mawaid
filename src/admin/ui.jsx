@@ -1,5 +1,5 @@
 // src/admin/ui.jsx — shared admin UI primitives
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useId } from 'react'
 import { AlertCircle, X, Maximize2, Minimize2, Trash2 } from 'lucide-react'
 import { eraseSurveySlot } from '../lib/surveyRows'
 import { isRotiItem } from '../hooks/useSurvey'
@@ -281,7 +281,7 @@ export const Badge = ({ children, color = 'var(--accent-cyan)', style = {} }) =>
 }
 
 export const Input = ({ label, rightAction, ...props }) => {
-  const reactId = React.useId()
+  const reactId = useId()
   const baseAutoId = label ? label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') : 'field'
   const autoId = props.id || `${baseAutoId}_${reactId.replace(/:/g, '')}`
   return (
@@ -305,7 +305,7 @@ export const Input = ({ label, rightAction, ...props }) => {
 }
 
 export const Select = ({ label, children, ...props }) => {
-  const reactId = React.useId()
+  const reactId = useId()
   const baseAutoId = label ? label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') : 'field'
   const autoId = props.id || `${baseAutoId}_${reactId.replace(/:/g, '')}`
   return (
