@@ -10,7 +10,7 @@ import {
   normalizeDishValue, denormalizeDishValue, getPctColor,
   mergeDishSnapshot, getSlotDishes,
 } from '../hooks/useSurvey'
-import { submitSurveyRow, beginSurvey } from '../lib/submitSurvey'
+import { submitSurveyRow, submitSurveyRows, submitSurvey, beginSurvey } from '../lib/submitSurvey'
 import { fetchUserSurveyRow, fetchUserSurveyRows } from '../lib/surveyRows'
 
 // ── Static theme (fallback / default) ──────────────────────────────

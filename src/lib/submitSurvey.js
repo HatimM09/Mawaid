@@ -267,3 +267,7 @@ export async function submitSurveyRows(payloads) {
   }
   return { data: results.flatMap(r => r.data || []), error: null }
 }
+
+export const submitSurvey = submitSurveyRow
+export default submitSurveyRow
+
