@@ -353,14 +353,16 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     })
   }, [resolveWeekMenu, liveAppSettings])
 
+  const activeUserId = user?.id || user?.user_id
+
   // Load
   const loadData = useCallback(async () => {
     try {
-      if (user?.id) {
-        const { data: u } = await supabase.from('user_stats').select('thali_number,email,snack_defaults').eq('user_id', user.id).maybeSingle()
+      if (activeUserId) {
+        const { data: u } = await supabase.from('user_stats').select('thali_number,email,snack_defaults').eq('user_id', activeUserId).maybeSingle()
         if (u) { setUserData(prev => prev.thali_no ? prev : { thali_no: u.thali_number || '', email: u.email || user?.email || '' }); if (u.snack_defaults) setSnackDefaults(prev => prev || u.snack_defaults) }
       }
-      const { data: row } = await fetchUserSurveyRow(user?.id, targetWeekId)
+      const { data: row } = await fetchUserSurveyRow(activeUserId, targetWeekId)
       setExistingRow(row || null)
       setDataLoaded(true)
       if (row) {
@@ -372,19 +374,19 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
         setSurveySubmitted(allLocked)
       }
     } catch { setDataLoaded(true) }
-  }, [user?.id, targetWeekId, hydrateFromRow])
+  }, [activeUserId, targetWeekId, hydrateFromRow, user?.email])
   useEffect(() => { loadData() }, [loadData])
 
   // Realtime
   useEffect(() => {
-    if (!user?.id) return
-    const ch = supabase.channel(`survey-sync-${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses', filter: `user_id=eq.${user.id}` }, async () => {
-        const { data: row } = await fetchUserSurveyRow(user?.id, targetWeekId)
+    if (!activeUserId) return
+    const ch = supabase.channel(`survey-sync-${activeUserId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'survey_day_responses', filter: `user_id=eq.${activeUserId}` }, async () => {
+        const { data: row } = await fetchUserSurveyRow(activeUserId, targetWeekId)
         if (row) { setExistingRow(row); hydrateFromRow(row) }
       }).subscribe()
     return () => supabase.removeChannel(ch)
-  }, [user?.id, targetWeekId, hydrateFromRow])
+  }, [activeUserId, targetWeekId, hydrateFromRow])
 
   // Position to first incomplete
   const positionedRef = useRef(false)
@@ -406,30 +408,68 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
   const handleStartSurvey = () => {
     try { localStorage.setItem('almawaid_survey_intro_seen', '1') } catch {}
     setShowIntro(false)
-    if (user?.id && targetWeekId) beginSurvey(user.id, [targetWeekId])
+    if (activeUserId && targetWeekId) beginSurvey(activeUserId, [targetWeekId])
     setCurrentDayIndex(0)
   }
 
   // Build payload
-  const buildPayloadForSlot = useCallback((dayIdx) => {
+  const buildPayloadForSlot = useCallback((dayIdx, isFinalSubmit = false) => {
     const tDay = DAYS[dayIdx] || currentDay
     const tDayKey = tDay.substring(0,3).toLowerCase()
     const tState = weekData[tDayKey] || createEmptyDay()
     const tMenu = resolveWeekMenu(tDay)
     const tLunchDishes = tMenu?.lunch?.length ? tMenu.lunch : (getSlotDishes(existingRow, tDay, 'lunch', []).length ? getSlotDishes(existingRow, tDay, 'lunch', []) : parseDishArray(DEFAULT_MENU[tDayKey]?.lunch))
     const tDinnerDishes = tMenu?.dinner?.length ? tMenu.dinner : (getSlotDishes(existingRow, tDay, 'dinner', []).length ? getSlotDishes(existingRow, tDay, 'dinner', []) : parseDishArray(DEFAULT_MENU[tDayKey]?.dinner))
-    const lStatus = tState.lunchWantsFood === true ? 'Applied' : tState.lunchWantsFood === false ? 'Skipped' : null
-    const dStatus = tState.dinnerWantsFood === true ? 'Applied' : tState.dinnerWantsFood === false ? 'Skipped' : null
-    const payload = { user_id: user?.id, week_id: targetWeekId, day: tDayKey, thali_number: userData.thali_no, email: userData.email || '', updated_at: new Date().toISOString() }
+    
+    // Check local state first, fallback to existing row if untouched in this session
+    let lStatus = tState.lunchWantsFood === true ? 'Applied' : tState.lunchWantsFood === false ? 'Skipped' : null
+    let dStatus = tState.dinnerWantsFood === true ? 'Applied' : tState.dinnerWantsFood === false ? 'Skipped' : null
+    if (!lStatus && existingRow?.[`${tDayKey}_l_status`]) lStatus = existingRow[`${tDayKey}_l_status`]
+    if (!dStatus && existingRow?.[`${tDayKey}_d_status`]) dStatus = existingRow[`${tDayKey}_d_status`]
+
+    const nowIso = new Date().toISOString()
+    const payload = {
+      user_id: activeUserId,
+      week_id: targetWeekId,
+      day: tDayKey,
+      thali_number: userData.thali_no,
+      email: userData.email || user?.email || '',
+      updated_at: nowIso
+    }
+    if (isFinalSubmit) {
+      payload.submitted_at = nowIso
+    }
+
     let snap = mergeDishSnapshot(existingRow, tDay, 'lunch', tLunchDishes)
     snap = mergeDishSnapshot({ dish_snapshot: snap }, tDay, 'dinner', tDinnerDishes)
     payload.dish_snapshot = snap
     if (lStatus) payload[`${tDayKey}_l_status`] = lStatus
     if (dStatus) payload[`${tDayKey}_d_status`] = dStatus
-    if (lStatus === 'Applied') { tLunchDishes.forEach((dish, idx) => { const val = tState.lunchResponses?.[dish]; const isCount = isCountInput(liveAppSettings, tDay, 'lunch', idx); if (val !== undefined && val !== null) payload[`${tDayKey}_l_dish_${idx+1}`] = denormalizeDishValue(val, dish, isCount); else payload[`${tDayKey}_l_dish_${idx+1}`] = isRotiItem(dish) ? 'Yes' : isCount ? '1' : '100%' }) }
-    if (dStatus === 'Applied') { tDinnerDishes.forEach((dish, idx) => { const val = tState.dinnerResponses?.[dish]; const isCount = isCountInput(liveAppSettings, tDay, 'dinner', idx); if (val !== undefined && val !== null) payload[`${tDayKey}_d_dish_${idx+1}`] = denormalizeDishValue(val, dish, isCount); else payload[`${tDayKey}_d_dish_${idx+1}`] = isRotiItem(dish) ? 'Yes' : isCount ? '1' : '100%' }) }
+
+    if (lStatus === 'Applied') {
+      tLunchDishes.forEach((dish, idx) => {
+        const val = tState.lunchResponses?.[dish] ?? existingRow?.[`${tDayKey}_l_dish_${idx+1}`]
+        const isCount = isCountInput(liveAppSettings, tDay, 'lunch', idx)
+        if (val !== undefined && val !== null && val !== '') {
+          payload[`${tDayKey}_l_dish_${idx+1}`] = denormalizeDishValue(val, dish, isCount)
+        } else {
+          payload[`${tDayKey}_l_dish_${idx+1}`] = isRotiItem(dish) ? 'Yes' : isCount ? '1' : '100%'
+        }
+      })
+    }
+    if (dStatus === 'Applied') {
+      tDinnerDishes.forEach((dish, idx) => {
+        const val = tState.dinnerResponses?.[dish] ?? existingRow?.[`${tDayKey}_d_dish_${idx+1}`]
+        const isCount = isCountInput(liveAppSettings, tDay, 'dinner', idx)
+        if (val !== undefined && val !== null && val !== '') {
+          payload[`${tDayKey}_d_dish_${idx+1}`] = denormalizeDishValue(val, dish, isCount)
+        } else {
+          payload[`${tDayKey}_d_dish_${idx+1}`] = isRotiItem(dish) ? 'Yes' : isCount ? '1' : '100%'
+        }
+      })
+    }
     return payload
-  }, [currentDay, weekData, existingRow, user?.id, userData, liveAppSettings, resolveWeekMenu, targetWeekId])
+  }, [currentDay, weekData, existingRow, activeUserId, userData, user?.email, liveAppSettings, resolveWeekMenu, targetWeekId])
 
   const saveSlot = useCallback(async (dayIdx) => {
     if (loading) return false
@@ -443,17 +483,16 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
       const { error } = await submitSurveyRow(payload)
       if (error) throw error
       dirtyRef.current.delete(tDayKey)
-      const { data: row } = await fetchUserSurveyRow(user?.id, targetWeekId)
+      const { data: row } = await fetchUserSurveyRow(activeUserId, targetWeekId)
       if (row) setExistingRow(row)
       setSyncMsg(`Saved ${cap(tDay)} · ${formatWeekRange(targetWeekId)}`)
       return true
     } catch(err) { setErrorToast(`Save failed: ${err?.message || 'Please try again.'}`); return false }
     finally { setLoading(false) }
-  }, [loading, currentDay, weekData, buildPayloadForSlot, user?.id, targetWeekId])
+  }, [loading, currentDay, weekData, buildPayloadForSlot, activeUserId, targetWeekId])
 
   // Save ALL filled & dirty slots across the week
-  const saveAllSlots = useCallback(async () => {
-    if (loading) return false
+  const saveAllSlots = useCallback(async (isFinalSubmit = false) => {
     setLoading(true)
     try {
       const payloads = []
@@ -461,27 +500,27 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
         const d = DAYS[dIdx]
         const dk = d.substring(0,3).toLowerCase()
         const st = weekData[dk]
-        if (st && (st.lunchWantsFood !== null || st.dinnerWantsFood !== null)) {
-          payloads.push(buildPayloadForSlot(dIdx))
+        const hasLocal = st && (st.lunchWantsFood !== null || st.dinnerWantsFood !== null)
+        const hasExisting = existingRow && (existingRow[`${dk}_l_status`] || existingRow[`${dk}_d_status`])
+        if (hasLocal || hasExisting || isFinalSubmit) {
+          payloads.push(buildPayloadForSlot(dIdx, isFinalSubmit))
         }
       }
       if (payloads.length > 0) {
-        for (const p of payloads) {
-          const { error } = await submitSurveyRow(p)
-          if (error) throw error
-        }
+        const res = await submitSurveyRows(payloads)
+        if (res.error) throw res.error
         dirtyRef.current.clear()
-        const { data: row } = await fetchUserSurveyRow(user?.id, targetWeekId)
+        const { data: row } = await fetchUserSurveyRow(activeUserId, targetWeekId)
         if (row) setExistingRow(row)
       }
       return true
     } catch(err) { setErrorToast(`Save failed: ${err?.message || 'Please try again.'}`); return false }
     finally { setLoading(false) }
-  }, [loading, weekData, buildPayloadForSlot, user?.id, targetWeekId])
+  }, [weekData, existingRow, buildPayloadForSlot, activeUserId, targetWeekId])
 
   const handleClose = useCallback(async () => {
     if (dirtyRef.current.size > 0 && !surveySubmitted) {
-      try { await saveAllSlots() } catch {}
+      try { await saveAllSlots(false) } catch {}
     }
     onClose()
   }, [onClose, surveySubmitted, saveAllSlots])
@@ -615,32 +654,63 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
   }
 
   const handleSubmitWeekly = async () => {
-    if (!isDayComplete) { setErrorToast(`Complete both Lunch & Dinner for ${currentDayName} first.`); return }
-    const saved = await saveAllSlots()
-    if (!saved) return
-    const { data: freshRow } = await fetchUserSurveyRow(user?.id, targetWeekId)
-    if (freshRow) setExistingRow(freshRow)
-    const missing = []
-    DAYS.forEach(d => {
-      const dk = d.substring(0,3).toLowerCase()
-      if (!freshRow?.[`${dk}_l_status`]) missing.push({ day: d, meal: 'lunch' })
-      if (!freshRow?.[`${dk}_d_status`]) missing.push({ day: d, meal: 'dinner' })
-    })
-    if (missing.length > 0) {
-      setSubmitResult({ type: 'missing', title: 'Survey Incomplete', message: `${missing.length} meal${missing.length > 1 ? 's' : ''} still need filling before locking.`, missingSlots: missing })
+    if (!isDayComplete) {
+      setErrorToast(`Complete both Lunch & Dinner for ${currentDayName} first.`)
       return
     }
+
+    // Verify all 6 days are answered either in weekData or existingRow
+    const missing = []
+    let firstMissingDayIdx = -1
+    DAYS.forEach((d, idx) => {
+      const dk = d.substring(0,3).toLowerCase()
+      const localSt = weekData[dk]
+      const hasLocalLunch = localSt && localSt.lunchWantsFood !== null
+      const hasLocalDinner = localSt && localSt.dinnerWantsFood !== null
+      const hasServerLunch = Boolean(existingRow?.[`${dk}_l_status`])
+      const hasServerDinner = Boolean(existingRow?.[`${dk}_d_status`])
+
+      if (!hasLocalLunch && !hasServerLunch) {
+        missing.push({ day: d, meal: 'lunch' })
+        if (firstMissingDayIdx === -1) firstMissingDayIdx = idx
+      }
+      if (!hasLocalDinner && !hasServerDinner) {
+        missing.push({ day: d, meal: 'dinner' })
+        if (firstMissingDayIdx === -1) firstMissingDayIdx = idx
+      }
+    })
+
+    if (missing.length > 0) {
+      setSubmitResult({
+        type: 'missing',
+        title: 'Survey Incomplete',
+        message: `${missing.length} meal${missing.length > 1 ? 's' : ''} still need filling before locking.`,
+        missingSlots: missing
+      })
+      if (firstMissingDayIdx !== -1) {
+        setCurrentDayIndex(firstMissingDayIdx)
+      }
+      return
+    }
+
     setLoading(true)
     try {
-      if (user?.id) {
-        const nowIso = new Date().toISOString()
-        await supabase.from('survey_day_responses').update({ submitted_at: nowIso, updated_at: nowIso }).eq('user_id', user.id).eq('week_id', targetWeekId)
-      }
-      setSurveySubmitted(true); setShowSuccess(true); setTimeout(() => { setShowSuccess(false); onClose() }, 2400)
+      // Save all 6 days with submitted_at timestamp in survey_day_responses
+      const saved = await saveAllSlots(true)
+      if (!saved) return
+
+      setSurveySubmitted(true)
+      setShowSuccess(true)
+      setTimeout(() => {
+        setShowSuccess(false)
+        onClose()
+      }, 2400)
     } catch(e) {
-      console.warn('stamp', e)
-      setSurveySubmitted(true); setShowSuccess(true); setTimeout(() => { setShowSuccess(false); onClose() }, 2400)
-    } finally { setLoading(false) }
+      console.warn('Survey submission error:', e)
+      setErrorToast(`Submission failed: ${e?.message || 'Please try again.'}`)
+    } finally {
+      setLoading(false)
+    }
   }
 
   // INTRO

@@ -80,11 +80,13 @@ export function flattenDayRow(rows) {
 
 // Load one member's flat row for a week from canonical survey_day_responses.
 export async function fetchUserSurveyRow(userId, weekId) {
+  if (!userId || !weekId) return { data: null, error: null }
+  const cleanWeekId = String(weekId).trim().split('T')[0]
   const { data: dayData, error: dayErr } = await supabase
     .from('survey_day_responses')
     .select('*')
     .eq('user_id', userId)
-    .eq('week_id', weekId)
+    .eq('week_id', cleanWeekId)
 
   if (dayData && dayData.length > 0) {
     const flat = flattenDayRow(dayData)

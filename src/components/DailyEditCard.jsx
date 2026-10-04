@@ -274,8 +274,9 @@ export default function DailyEditCard({
           }
         })
       }
+      const activeUserId = user?.id || user?.user_id
       const res = await submitSurveyRow({
-        user_id: user.id,
+        user_id: activeUserId,
         week_id: mi.weekId,
         day: dayKey,
         meal: mi.meal,

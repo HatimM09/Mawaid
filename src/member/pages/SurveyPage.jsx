@@ -35,15 +35,17 @@ export default function SurveyPage({ appSettings = {} }) {
   const [isSyncing, setIsSyncing] = useState(false)
   const initialLoadDone = useRef(false)
 
-  const surveyOpen = isSurveyOpen(appSettings, user?.id)
+  const activeUserId = user?.id || user?.user_id
+  const surveyOpen = isSurveyOpen(appSettings, activeUserId)
   const totalMeals = 12
 
   const loadSurvey = useCallback(async () => {
+    if (!activeUserId) return
     const isFirst = !initialLoadDone.current
     if (isFirst) setLoading(true)
     else setIsSyncing(true)
     try {
-      const { data: map } = await fetchUserSurveyRows(user.id, [primaryWeekId])
+      const { data: map } = await fetchUserSurveyRows(activeUserId, [primaryWeekId])
       setSurveyMap(map || {})
       initialLoadDone.current = true
     } catch {
@@ -51,27 +53,28 @@ export default function SurveyPage({ appSettings = {} }) {
     }
     setLoading(false)
     setIsSyncing(false)
-  }, [user?.id, primaryWeekId])
+  }, [activeUserId, primaryWeekId])
 
   const silentRefresh = useCallback(async () => {
+    if (!activeUserId) return
     setIsSyncing(true)
     try {
-      const { data: map } = await fetchUserSurveyRows(user.id, [primaryWeekId])
+      const { data: map } = await fetchUserSurveyRows(activeUserId, [primaryWeekId])
       if (map) setSurveyMap(map)
     } catch {}
     setIsSyncing(false)
-  }, [user?.id, primaryWeekId])
+  }, [activeUserId, primaryWeekId])
 
   useEffect(() => { loadSurvey() }, [loadSurvey])
 
   // Realtime updates
   useEffect(() => {
-    if (!user?.id) return
+    if (!activeUserId) return
     let debounce = null
-    const ch = supabase.channel(`survey-page-realtime-${user.id}`)
+    const ch = supabase.channel(`survey-page-realtime-${activeUserId}`)
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'survey_day_responses',
-        filter: `user_id=eq.${user.id}`
+        filter: `user_id=eq.${activeUserId}`
       }, () => {
         if (debounce) clearTimeout(debounce)
         debounce = setTimeout(() => silentRefresh(), 250)
@@ -81,7 +84,7 @@ export default function SurveyPage({ appSettings = {} }) {
       if (debounce) clearTimeout(debounce)
       supabase.removeChannel(ch)
     }
-  }, [user?.id, silentRefresh])
+  }, [activeUserId, silentRefresh])
 
   const isAnyMealEditable = useMemo(() => (
     DAYS.some(d =>

@@ -1,5 +1,5 @@
 // src/lib/submitSurvey.js
-// Single audited write path for member survey responses.
+// Single audited write path for member survey responses into survey_day_responses.
 import { supabase } from './firebaseClient'
 import { DAY_KEYS, getSurveyTargetWeek } from '../common/utils'
 
@@ -37,14 +37,32 @@ async function logClientWrite({ user_id, week_id, day, action = 'submit', payloa
   }
 }
 
+const normalizeStatus = (s) => {
+  if (s === null || s === undefined) return null
+  const str = String(s).trim()
+  const lower = str.toLowerCase()
+  if (lower === 'applied' || lower === 'opted_in' || lower === 'yes' || lower === 'true') return 'Applied'
+  if (lower === 'skipped' || lower === 'opted_out' || lower === 'no' || lower === 'false') return 'Skipped'
+  if (str === 'Applied' || str === 'Skipped' || str === 'opted_in' || str === 'opted_out') return str
+  return null
+}
+
+const sanitizeDishValue = (val) => {
+  if (val === null || val === undefined) return null
+  if (typeof val === 'object') {
+    if (val.status === 'no' || val.status === 'Skipped' || val.status === 'skipped') return 'No'
+    if (val.value !== undefined && val.value !== null) return String(val.value)
+    return JSON.stringify(val)
+  }
+  const s = String(val).trim()
+  return s === '' ? null : s
+}
+
 /**
- * Upsert one survey_day_responses row for the signed-in member.
- * The payload carries day-scoped keys (mon_l_status, mon_l_dish_1, …) which
- * are stored day-local (l_status, l_dish_1, …) on the matching day row.
- * survey_submissions_flat is no longer written — survey_day_responses is the
- * single source of truth for live sync.
+ * Upsert one or more survey_day_responses rows for the member.
+ * survey_day_responses is the single source of truth for all survey responses.
  * @param {object} payload - the partial row (user_id, week_id, day, slot
- *   statuses, dish values, dish_snapshot, edit_metadata, …)
+ *   statuses, dish values, dish_snapshot, edit_metadata, submitted_at, …)
  * @returns {Promise<{data: any, error: any}>}
  */
 export async function submitSurveyRow(payload) {
@@ -53,13 +71,38 @@ export async function submitSurveyRow(payload) {
     return { data: null, error: new Error('Invalid survey payload.') }
   }
 
-  let userId = payload.user_id || payload.userId
+  let userId = payload.user_id || payload.userId || payload.id
   if (!userId) {
     try {
       const { data: authData } = await supabase.auth.getUser()
       userId = authData?.user?.id
     } catch {}
   }
+  if (!userId) {
+    try {
+      const { data: sessData } = await supabase.auth.getSession()
+      userId = sessData?.session?.user?.id
+    } catch {}
+  }
+
+  let thaliNo = payload.thali_number || payload.thaliNumber
+  let userEmail = payload.email
+
+  // If user_id is still missing but we have email or thali_number, resolve from user_stats
+  if (!userId && (thaliNo || userEmail)) {
+    try {
+      let query = supabase.from('user_stats').select('user_id, thali_number, email')
+      if (thaliNo) query = query.eq('thali_number', String(thaliNo).replace(/^#/, ''))
+      else if (userEmail) query = query.eq('email', userEmail)
+      const { data: u } = await query.maybeSingle()
+      if (u?.user_id) {
+        userId = u.user_id
+        if (!thaliNo && u.thali_number) thaliNo = u.thali_number
+        if (!userEmail && u.email) userEmail = u.email
+      }
+    } catch {}
+  }
+
   if (!userId) {
     return { data: null, error: new Error('User not authenticated. Please refresh and sign in.') }
   }
@@ -68,9 +111,10 @@ export async function submitSurveyRow(payload) {
   if (!weekId) {
     try { weekId = getSurveyTargetWeek() } catch {}
   }
+  if (weekId) {
+    weekId = String(weekId).trim().split('T')[0]
+  }
 
-  let thaliNo = payload.thali_number || payload.thaliNumber
-  let userEmail = payload.email
   if (!thaliNo || !userEmail) {
     try {
       const { data: u } = await supabase.from('user_stats').select('thali_number, email').eq('user_id', userId).maybeSingle()
@@ -81,7 +125,8 @@ export async function submitSurveyRow(payload) {
     } catch {}
   }
 
-  const thaliLabel = thaliNo ? `Thali ${thaliNo}` : 'A member'
+  const cleanThali = thaliNo ? String(thaliNo).replace(/^#/, '').trim() : null
+  const thaliLabel = cleanThali ? `Thali ${cleanThali}` : 'A member'
 
   // Identify all days represented in this payload
   let targetDays = []
@@ -97,15 +142,6 @@ export async function submitSurveyRow(payload) {
     const err = new Error('Cannot determine the survey day for this save.')
     logClientWrite({ user_id: userId, week_id: weekId, day: null, action: 'submit', payload, status: 'error', error: err.message })
     return { data: null, error: err }
-  }
-
-  const normalizeStatus = (s) => {
-    if (!s) return null
-    const str = String(s).trim()
-    const lower = str.toLowerCase()
-    if (lower === 'applied' || lower === 'opted_in') return 'Applied'
-    if (lower === 'skipped' || lower === 'opted_out') return 'Skipped'
-    return str
   }
 
   const ALLOWED_COLUMNS = new Set([
@@ -133,8 +169,18 @@ export async function submitSurveyRow(payload) {
       }
     }
 
-    if (rawRow.l_status) rawRow.l_status = normalizeStatus(rawRow.l_status)
-    if (rawRow.d_status) rawRow.d_status = normalizeStatus(rawRow.d_status)
+    if (rawRow.l_status !== undefined) rawRow.l_status = normalizeStatus(rawRow.l_status)
+    if (rawRow.d_status !== undefined) rawRow.d_status = normalizeStatus(rawRow.d_status)
+
+    // Sanitize all dish fields into valid strings or null
+    for (let i = 1; i <= 5; i++) {
+      if (rawRow[`l_dish_${i}`] !== undefined) {
+        rawRow[`l_dish_${i}`] = sanitizeDishValue(rawRow[`l_dish_${i}`])
+      }
+      if (rawRow[`d_dish_${i}`] !== undefined) {
+        rawRow[`d_dish_${i}`] = sanitizeDishValue(rawRow[`d_dish_${i}`])
+      }
+    }
 
     // If a meal is explicitly Skipped, safely clear dish columns so stale values do not persist
     if (rawRow.l_status === 'Skipped') {
@@ -149,7 +195,7 @@ export async function submitSurveyRow(payload) {
     const updatedAt = payload.updated_at || payload.updatedAt || new Date().toISOString()
     const submittedAt = payload.submitted_at || payload.submittedAt
 
-    if (thaliNo !== undefined) rawRow.thali_number = thaliNo
+    if (cleanThali !== undefined && cleanThali !== null) rawRow.thali_number = cleanThali
     if (userEmail !== undefined) rawRow.email = userEmail
     if (dishSnapshot !== undefined) rawRow.dish_snapshot = dishSnapshot
     if (editMetadata !== undefined) rawRow.edit_metadata = editMetadata
@@ -170,6 +216,7 @@ export async function submitSurveyRow(payload) {
   const { data, error } = await supabase
     .from('survey_day_responses')
     .upsert(dayRows, { onConflict: 'user_id,week_id,day' })
+
   if (error) {
     console.error('[submitSurvey] Day upsert failed:', error)
     for (const day of targetDays) {
@@ -178,9 +225,11 @@ export async function submitSurveyRow(payload) {
     notifyAdmins(`${thaliLabel}: survey save failed — ${error.message}`)
     return { data: null, error }
   }
+
   for (const day of targetDays) {
     logClientWrite({ user_id: userId, week_id: weekId, day, action: 'submit', payload, status: 'success' })
   }
+
   return { data, error: null }
 }
 
@@ -196,7 +245,8 @@ export async function beginSurvey(userId, weekId) {
   const weekIds = Array.isArray(weekId) ? weekId.filter(Boolean) : [weekId]
   if (!weekIds.length) return
   try {
-    const seedRows = weekIds.flatMap(wid => DAY_KEYS.map(day => ({ user_id: userId, week_id: wid, day })))
+    const cleanIds = weekIds.map(w => String(w).trim().split('T')[0])
+    const seedRows = cleanIds.flatMap(wid => DAY_KEYS.map(day => ({ user_id: userId, week_id: wid, day })))
     const { error: seedErr } = await supabase
       .from('survey_day_responses')
       .upsert(seedRows, { onConflict: 'user_id,week_id,day', ignoreDuplicates: true })
@@ -206,7 +256,7 @@ export async function beginSurvey(userId, weekId) {
   }
 }
 
-// Batch helper for 2-week journey: save multiple day payloads in sequence (keeps logs per day)
+// Batch helper: save multiple day payloads in sequence or single batch
 export async function submitSurveyRows(payloads) {
   if (!Array.isArray(payloads) || !payloads.length) return { data: null, error: null }
   const results = []
