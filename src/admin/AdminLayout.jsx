@@ -160,15 +160,26 @@ export default function AdminLayout() {
       .channel('global-notices')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notices' }, (payload) => {
         const notice = payload.new
+        if (!notice || !notice.id) return
         if (seenNoticeIds.current.has(notice.id)) return
         seenNoticeIds.current.add(notice.id)
-        try { localStorage.setItem('almawaid_seen_notices', JSON.stringify([...seenNoticeIds.current])) } catch {}
+        try { localStorage.setItem('almawaid_seen_notices', JSON.stringify([...seenNoticeIds.current].slice(-200))) } catch {}
+
+        // Suppress routine menu publications from popping up repeatedly in admin dashboard
+        if (notice.type === 'menu') return
+
+        // Only show live in-app toast banner for truly fresh notices (< 30 seconds old)
+        const createdAtMs = notice.created_at ? new Date(notice.created_at).getTime() : Date.now()
+        const isFresh = (Date.now() - createdAtMs) < 30000
+        if (!isFresh) return
+
         // Skip if notice was created before the last read timestamp (already seen)
         const lastRead = localStorage.getItem('almawaid_last_notice_read')
         if (lastRead && new Date(notice.created_at).getTime() <= new Date(lastRead).getTime()) return
+
         setToastNotice(notice)
         if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification(notice.title || 'Broadcast Sent', { body: notice.body || '', icon: '/al-mawaid.png' })
+          new Notification(notice.title || 'Broadcast Sent', { body: notice.body || notice.message || '', icon: '/al-mawaid.png' })
         }
         setTimeout(() => setToastNotice(null), 8000)
       })

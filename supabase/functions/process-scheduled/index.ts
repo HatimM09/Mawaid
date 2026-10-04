@@ -233,7 +233,7 @@ serve(async (_req: Request) => {
     if (dueMenus?.length) {
       const distinctWeeks = Array.from(new Set(dueMenus.map((m: any) => m.week_start)))
       for (const weekStart of distinctWeeks) {
-        // Safe deduplication: check if already notified with limit(1)
+        // Robust deduplication: check if already notified in notices or notifications
         const { data: existingNotice } = await supabase
           .from('notices')
           .select('id')
@@ -241,7 +241,14 @@ serve(async (_req: Request) => {
           .ilike('message', `%${weekStart}%`)
           .limit(1)
 
-        if (!existingNotice || existingNotice.length === 0) {
+        const { data: existingNotif } = await supabase
+          .from('notifications')
+          .select('id')
+          .eq('type', 'menu')
+          .ilike('message', `%${weekStart}%`)
+          .limit(1)
+
+        if ((!existingNotice || existingNotice.length === 0) && (!existingNotif || existingNotif.length === 0)) {
           await supabase.from('notices').insert({
             title: '🍽️ New Weekly Menu Available',
             message: `The menu for week of ${weekStart} is now live! Check it out in the app.`,

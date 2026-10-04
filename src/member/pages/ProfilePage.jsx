@@ -1280,11 +1280,7 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
           }
           
           const now = new Date()
-          const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000)
-          
           const filtered = data.filter(notice => {
-            const noticeDate = new Date(notice.created_at || notice.scheduled_at)
-            if (noticeDate < fortyEightHoursAgo) return false
             const toneStr = notice.tone || ''
             if (toneStr.includes(':opt_in')) return isEating
             if (toneStr.includes(':opt_out')) return !isEating
