@@ -788,9 +788,13 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
           {/* Search & Filter Bar */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
             <div style={{ flex: 1, minWidth: 200, position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <label htmlFor="managerSearchInput" style={{ display: 'none' }}>Search Members</label>
               <Search size={16} color={t.textSub} style={{ position: 'absolute', left: 12 }} />
               <input
+                id="managerSearchInput"
+                name="managerSearch"
                 type="text"
+                autoComplete="off"
                 value={managerSearch}
                 onChange={(e) => setManagerSearch(e.target.value)}
                 placeholder="Search member, thali #, phone…"
@@ -1163,9 +1167,14 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
 
             {/* Editable Amount Display */}
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 14 }}>
+              <label htmlFor="payerAmountInput" style={{ display: 'none' }}>Payment Amount</label>
               <span style={{ fontSize: 24, fontWeight: 700, color: t.accent }}>₹</span>
               <input
+                id="payerAmountInput"
+                name="payerAmount"
                 type="number"
+                min="1"
+                step="any"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 style={{
@@ -1478,11 +1487,16 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
 
             <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
+                <label htmlFor="recordAmountInput" style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
                   Amount Paid (₹) *
                 </label>
                 <input
+                  id="recordAmountInput"
+                  name="recordAmount"
                   type="number"
+                  min="1"
+                  step="any"
+                  autoComplete="off"
                   required
                   value={recordAmount}
                   onChange={(e) => setRecordAmount(e.target.value)}
@@ -1491,11 +1505,14 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
+                <label htmlFor="recordUtrInput" style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
                   Google Pay UPI Reference / UTR # {isManager ? "(Optional)" : "(Optional)"}
                 </label>
                 <input
+                  id="recordUtrInput"
+                  name="recordUtr"
                   type="text"
+                  autoComplete="off"
                   value={utrNumber}
                   onChange={(e) => setUtrNumber(e.target.value)}
                   placeholder="e.g. 427819283921"
@@ -1504,11 +1521,14 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
+                <label htmlFor="recordNoteInput" style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
                   Remark / Note
                 </label>
                 <input
+                  id="recordNoteInput"
+                  name="recordNote"
                   type="text"
+                  autoComplete="off"
                   value={recordNote}
                   onChange={(e) => setRecordNote(e.target.value)}
                   placeholder="e.g. Monthly Contribution"
@@ -1548,11 +1568,16 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
 
             <form onSubmit={handleSaveSettings} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
+                <label htmlFor="configDueInput" style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
                   Standard Due Amount (₹)
                 </label>
                 <input
+                  id="configDueInput"
+                  name="configDue"
                   type="number"
+                  min="1"
+                  step="any"
+                  autoComplete="off"
                   required
                   value={defaultDue}
                   onChange={(e) => setDefaultDue(Number(e.target.value))}
@@ -1561,11 +1586,14 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
+                <label htmlFor="configUpiInput" style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
                   Receiver UPI ID (VPA)
                 </label>
                 <input
+                  id="configUpiInput"
+                  name="configUpi"
                   type="text"
+                  autoComplete="off"
                   required
                   value={configuredUpiId}
                   onChange={(e) => setConfiguredUpiId(e.target.value)}
@@ -1574,11 +1602,14 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
+                <label htmlFor="configPayeeInput" style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
                   Payee / Business Name
                 </label>
                 <input
+                  id="configPayeeInput"
+                  name="configPayee"
                   type="text"
+                  autoComplete="off"
                   required
                   value={payeeName}
                   onChange={(e) => setPayeeName(e.target.value)}
@@ -1587,11 +1618,14 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
+                <label htmlFor="configTitleInput" style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
                   Payment Cycle / Title
                 </label>
                 <input
+                  id="configTitleInput"
+                  name="configTitle"
                   type="text"
+                  autoComplete="off"
                   required
                   value={paymentTitle}
                   onChange={(e) => setPaymentTitle(e.target.value)}
@@ -1747,11 +1781,14 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
 
             <form onSubmit={handleSendCustomNotification} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
+                <label htmlFor="notifyTitleInput" style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
                   Notification Title *
                 </label>
                 <input
+                  id="notifyTitleInput"
+                  name="notifyTitle"
                   type="text"
+                  autoComplete="off"
                   required
                   value={notifyTitle}
                   onChange={(e) => setNotifyTitle(e.target.value)}
@@ -1772,10 +1809,13 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
+                <label htmlFor="notifyBodyInput" style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
                   Message Content *
                 </label>
                 <textarea
+                  id="notifyBodyInput"
+                  name="notifyBody"
+                  autoComplete="off"
                   required
                   rows={4}
                   value={notifyBody}
