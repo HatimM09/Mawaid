@@ -49,6 +49,19 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   const [recordNote, setRecordNote] = useState('')
   const [submittingRecord, setSubmittingRecord] = useState(false)
 
+  // Dynamic synchronization when appSettings change from realtime or parent
+  useEffect(() => {
+    if (appSettings.upi_id) setConfiguredUpiId(appSettings.upi_id)
+    if (appSettings.upi_payee_name) setPayeeName(appSettings.upi_payee_name)
+    if (appSettings.default_payment_due) {
+      const newDue = Number(appSettings.default_payment_due)
+      setDefaultDue(newDue)
+      setAmount(newDue.toString())
+    }
+    if (appSettings.payment_title) setPaymentTitle(appSettings.payment_title)
+    if (appSettings.payment_enabled !== undefined) setIsPaymentActive(appSettings.payment_enabled !== 'false')
+  }, [appSettings])
+
   // Manager State
   const [managerSearch, setManagerSearch] = useState('')
   const [managerFilter, setManagerFilter] = useState('all') // 'all' | 'unpaid' | 'paid' | 'forfeit' | 'submitted'
@@ -451,15 +464,22 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   const handleSaveSettings = async (e) => {
     e.preventDefault()
     try {
-      await Promise.all([
-        supabase.from('app_settings').upsert({ key: 'upi_id', value: configuredUpiId }),
-        supabase.from('app_settings').upsert({ key: 'upi_payee_name', value: payeeName }),
-        supabase.from('app_settings').upsert({ key: 'default_payment_due', value: String(defaultDue) }),
-        supabase.from('app_settings').upsert({ key: 'payment_title', value: paymentTitle }),
-        supabase.from('app_settings').upsert({ key: 'payment_enabled', value: String(isPaymentActive) })
-      ])
-      toast.success('Payment settings updated successfully!')
+      const items = [
+        { key: 'upi_id', value: configuredUpiId.trim() },
+        { key: 'upi_payee_name', value: payeeName.trim() },
+        { key: 'default_payment_due', value: String(defaultDue) },
+        { key: 'payment_title', value: paymentTitle.trim() },
+        { key: 'payment_enabled', value: String(isPaymentActive) }
+      ]
+
+      for (const item of items) {
+        const { error } = await supabase.from('app_settings').upsert(item)
+        if (error) throw error
+      }
+
+      toast.success('Payment settings updated! All users will see the new due amount.')
       setShowSettingsModal(false)
+      loadData()
     } catch (err) {
       console.error('Error saving settings:', err)
       toast.error('Could not save settings')

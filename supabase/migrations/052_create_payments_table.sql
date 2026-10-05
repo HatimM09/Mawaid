@@ -96,6 +96,17 @@ CREATE POLICY "Payment managers can update user stats"
   ON public.user_stats FOR UPDATE
   USING (public.is_payment_manager());
 
+-- Grant payment manager permission to manage app_settings (due amount, UPI ID, titles, visibility)
+DROP POLICY IF EXISTS "Payment managers can insert app settings" ON public.app_settings;
+CREATE POLICY "Payment managers can insert app settings"
+  ON public.app_settings FOR INSERT
+  WITH CHECK (public.is_payment_manager());
+
+DROP POLICY IF EXISTS "Payment managers can update app settings" ON public.app_settings;
+CREATE POLICY "Payment managers can update app settings"
+  ON public.app_settings FOR UPDATE
+  USING (public.is_payment_manager());
+
 -- Insert default app_settings for UPI and Payment Dues if not set
 INSERT INTO public.app_settings (key, value)
 VALUES 
