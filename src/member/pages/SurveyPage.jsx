@@ -15,7 +15,7 @@ import SurveyModal from '../../components/SurveyModal'
 import { DAYS } from '../constants'
 import { isSurveyOpen, canEditMeal, getSurveyWindowLabel } from '../survey'
 import { fetchUserSurveyRows, fetchUserSurveyRow } from '../../lib/surveyRows'
-import { getSlotDishes } from '../../hooks/useSurvey'
+import { getSlotDishes, getDishSnapshot } from '../../hooks/useSurvey'
 
 export default function SurveyPage({ appSettings = {} }) {
   const t = useTheme()
@@ -199,13 +199,21 @@ export default function SurveyPage({ appSettings = {} }) {
       return (weeklyMenu[day] || {})[meal] || []
     })()
 
-    const dishList = getSlotDishes(flat, day, meal, menuDishes)
-    const dishes = dishList.length > 0
-      ? dishList
-      : Array.from({ length: 5 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => flat?.[`${dk}_${mk}_dish_${i + 1}`])
+    const cleanMenu = Array.isArray(menuDishes) ? menuDishes.filter(Boolean) : []
+    const snapshotList = getDishSnapshot(flat, day, meal) || []
+    const cleanSnapshot = Array.isArray(snapshotList) ? snapshotList.filter(Boolean) : []
+    const dishes = cleanMenu.length > 0
+      ? cleanMenu
+      : cleanSnapshot.length > 0
+        ? cleanSnapshot
+        : Array.from({ length: 5 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => flat?.[`${dk}_${mk}_dish_${i + 1}`])
 
     return dishes.map((d, i) => {
-      const val = flat?.[`${dk}_${mk}_dish_${i + 1}`]
+      let pos = i
+      if (cleanSnapshot.length > 0 && cleanSnapshot.includes(d)) {
+        pos = cleanSnapshot.indexOf(d)
+      }
+      const val = flat?.[`${dk}_${mk}_dish_${pos + 1}`]
       if (val === undefined || val === null || val === '') return null
       return { dish: d, val }
     }).filter(Boolean)

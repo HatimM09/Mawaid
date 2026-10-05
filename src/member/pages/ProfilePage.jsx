@@ -11,7 +11,7 @@ import { supabase } from '../../lib/firebaseClient'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
 import { getSurveyTargetWeek, getSurveyTargetWeeks, getSurveyCadence, formatWeekRange, getCalendarWeekDate, addWeeks } from '../../common/utils'
-import { getSlotDishes, isRotiItem } from '../../hooks/useSurvey'
+import { getSlotDishes, getDishSnapshot, isRotiItem } from '../../hooks/useSurvey'
 import ErrorBoundary from '../../components/ErrorBoundary'
 import { fetchLatestUserSurveyRow, fetchUserSurveyRow, fetchUserSurveyRows } from '../../lib/surveyRows'
 import { ProfileSkeleton, ListPageSkeleton, RequestsSkeleton, NotificationsSkeleton, KhidmatTeamSkeleton } from '../../common/Skeleton'
@@ -418,19 +418,25 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
           : null
 
         const menuDishes = menu?.[day]?.[meal] || menu?.[day.toLowerCase()]?.[meal] || menu?.[dayKey]?.[meal] || []
-        const dishList = getSlotDishes(data, day, meal, menuDishes)
-        const nameList = dishList.length > 0
-          ? dishList
-          : menuDishes.length > 0
-            ? menuDishes
+        const cleanMenu = Array.isArray(menuDishes) ? menuDishes.filter(Boolean) : []
+        const snapshotList = getDishSnapshot(data, day, meal) || []
+        const cleanSnapshot = Array.isArray(snapshotList) ? snapshotList.filter(Boolean) : []
+        const nameList = cleanMenu.length > 0
+          ? cleanMenu
+          : cleanSnapshot.length > 0
+            ? cleanSnapshot
             : Array.from({ length: 5 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => data && data[`${dayKey}_${mealKey}_dish_${i + 1}`] !== undefined && data[`${dayKey}_${mealKey}_dish_${i + 1}`] !== null && data[`${dayKey}_${mealKey}_dish_${i + 1}`] !== '')
 
         const dishResponses = {}
         if (status === 'Applied') {
           nameList.forEach((d, i) => {
-            const val = data?.[`${dayKey}_${mealKey}_dish_${i + 1}`]
+            let pos = i
+            if (cleanSnapshot.length > 0 && cleanSnapshot.includes(d)) {
+              pos = cleanSnapshot.indexOf(d)
+            }
+            const val = data?.[`${dayKey}_${mealKey}_dish_${pos + 1}`]
             if (val !== undefined && val !== null && val !== '') {
-              const lower = String(val).toLowerCase()
+              const lower = String(val).toLowerCase().trim()
               if (lower === 'yes') dishResponses[d] = 'yes'
               else if (lower === 'no') dishResponses[d] = 'no'
               else if (typeof val === 'string' && val.endsWith('%')) dishResponses[d] = val

@@ -3,7 +3,7 @@ import { UtensilsCrossed, SunMedium, MoonStar, ChevronDown, CalendarDays, Sparkl
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
 import { getCalendarWeekDate, addWeeks, isTwoWeekCadence } from '../../common/utils'
-import { getSlotDishes } from '../../hooks/useSurvey'
+import { getSlotDishes, getDishSnapshot } from '../../hooks/useSurvey'
 import { WeeklyMenuSkeleton } from '../../common/Skeleton'
 import { DAYS, getTodayKey } from '../constants'
 import { fetchUserSurveyRow } from '../../lib/surveyRows'
@@ -62,19 +62,22 @@ export default function WeeklyMenuPage({ appSettings = {} }) {
     if (!userSurvey) return null
     const dayKey = day.substring(0, 3).toLowerCase()
     const mealKey = meal === 'lunch' ? 'l' : 'd'
-    const dishes = getSlotDishes(userSurvey, day, meal, weeklyMenu[day]?.[meal] || [])
+    const snapshotList = getDishSnapshot(userSurvey, day, meal) || []
     let pos = idx
-    if (dishName) {
-      const p = dishes.indexOf(dishName)
-      if (p !== -1) pos = p
+    if (dishName && snapshotList.length > 0 && snapshotList.includes(dishName)) {
+      pos = snapshotList.indexOf(dishName)
     }
     const col = `${dayKey}_${mealKey}_dish_${pos + 1}`
     const val = userSurvey[col]
-    if (val === 'Yes') return 'yes'
-    if (val === 'No') return 'no'
-    if (typeof val === 'string' && val.endsWith('%')) return parseInt(val.replace('%', ''))
-    if (typeof val === 'string' && /^\d+$/.test(val)) return parseInt(val)
-    return null
+    if (val === undefined || val === null || val === '') return null
+    const str = String(val).trim()
+    const lower = str.toLowerCase()
+    if (lower === 'yes') return 'yes'
+    if (lower === 'no') return 'no'
+    if (typeof val === 'number') return val
+    if (str.endsWith('%')) return parseInt(str.replace('%', '')) || str
+    if (/^\d+$/.test(str)) return parseInt(str)
+    return val
   }
 
   if (!weeklyMenu) return <WeeklyMenuSkeleton />

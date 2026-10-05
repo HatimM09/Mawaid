@@ -260,8 +260,12 @@ export const getDishSnapshot = (row, day, meal) => {
   } catch { return null }
 }
 
-export const getSlotDishes = (row, day, meal, fallbackDishes = []) =>
-  getDishSnapshot(row, day, meal) || (Array.isArray(fallbackDishes) ? fallbackDishes : [])
+export const getSlotDishes = (row, day, meal, fallbackDishes = []) => {
+  if (Array.isArray(fallbackDishes) && fallbackDishes.length > 0) {
+    return fallbackDishes
+  }
+  return getDishSnapshot(row, day, meal) || []
+}
 
 export const mergeDishSnapshot = (existing, day, meal, dishes) => {
   if (!Array.isArray(dishes) || dishes.length === 0) {
