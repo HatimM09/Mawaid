@@ -23,13 +23,14 @@ export default function ThaliUserApp() {
   const pathname = window.location.pathname.toLowerCase()
   const tabParam = initialParams.get('tab')
   const isAlerts = initialParams.get('alerts') === '1'
+  const isPayments = pathname.includes('/payments') || tabParam === 'payments' || initialParams.get('payments') === '1'
   const isSurvey = pathname.includes('/survey') || tabParam === 'survey'
   const isMenu = pathname.includes('/menu') || tabParam === 'menu'
   const isPost = pathname.includes('/post') || tabParam === 'post'
-  const isProfile = pathname.includes('/profile') || tabParam === 'profile' || isAlerts
+  const isProfile = pathname.includes('/profile') || tabParam === 'profile' || isAlerts || isPayments
 
   const initialTab = isSurvey ? 'survey' : isMenu ? 'menu' : isPost ? 'post' : isProfile ? 'profile' : 'home'
-  const initialSubPage = isAlerts ? 'notifications' : 'main'
+  const initialSubPage = isAlerts ? 'notifications' : isPayments ? 'payments' : 'main'
   const [activeTab, setActiveTab] = useState(initialTab)
   const [activeSubPage, setActiveSubPage] = useState(initialSubPage)
   const [theme, setTheme] = useState(() => localStorage.getItem('almawaid_theme') || 'dark')
@@ -112,7 +113,10 @@ export default function ThaliUserApp() {
   useEffect(() => {
     const handleAppNavigate = (e) => {
       const url = e.detail?.url || ''
-      if (url.includes('/profile/notifications') || url.includes('alerts=1')) {
+      if (url.includes('/profile/payments') || url.includes('payments=1') || url.includes('tab=payments')) {
+        setActiveTab('profile')
+        setActiveSubPage('payments')
+      } else if (url.includes('/profile/notifications') || url.includes('alerts=1')) {
         setActiveTab('profile')
         setActiveSubPage('notifications')
       } else if (url.includes('/survey') || url.includes('tab=survey')) {
@@ -382,7 +386,13 @@ export default function ThaliUserApp() {
           )
         })()}
 
-        {activeTab === 'home' && <HomePage onGoToSurvey={() => { loadAppSettings(); setActiveTab('survey') }} appSettings={appSettings} />}
+        {activeTab === 'home' && (
+          <HomePage
+            onGoToSurvey={() => { loadAppSettings(); setActiveTab('survey') }}
+            onGoToPayments={() => { setActiveTab('profile'); setActiveSubPage('payments') }}
+            appSettings={appSettings}
+          />
+        )}
         {activeTab === 'menu' && <WeeklyMenuPage appSettings={appSettings} />}
         {activeTab === 'survey' && <SurveyPage appSettings={appSettings} />}
 

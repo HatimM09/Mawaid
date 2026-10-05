@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { ScanLine, SunMedium, MoonStar, Clock, ChevronRight, UtensilsCrossed, Star, Check, ClipboardCheck } from 'lucide-react'
+import { ScanLine, SunMedium, MoonStar, Clock, ChevronRight, UtensilsCrossed, Star, Check, ClipboardCheck, CreditCard, ArrowUpRight } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/firebaseClient'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
@@ -14,7 +14,7 @@ import { isSurveyOpen, canEditMeal, getEditWindow } from '../survey'
 import { Card, Btn, Avatar } from '../ui'
 import { fetchUserSurveyRow } from '../../lib/surveyRows'
 
-export default function HomePage({ appSettings = {} }) {
+export default function HomePage({ appSettings = {}, onGoToSurvey, onGoToPayments }) {
   const t = useTheme()
   const { user } = useAuth()
 
@@ -318,6 +318,72 @@ export default function HomePage({ appSettings = {} }) {
           }}
           appSettings={appSettings}
         />
+      )}
+
+      {/* Payment Due Quick Action Card */}
+      {appSettings.payment_enabled !== 'false' && (
+        <div
+          style={{
+            margin: '0 0 16px',
+            padding: '14px 16px',
+            borderRadius: 18,
+            background: 'linear-gradient(135deg, rgba(66, 133, 244, 0.08) 0%, rgba(52, 211, 153, 0.06) 100%)',
+            border: `1.5px solid ${t.borderActive || 'rgba(197,160,89,0.3)'}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.15)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+            <div style={{
+              width: 40,
+              height: 40,
+              borderRadius: 12,
+              background: 'linear-gradient(135deg, #4285F4 0%, #34A853 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              boxShadow: '0 4px 12px rgba(66, 133, 244, 0.3)'
+            }}>
+              <CreditCard size={20} color="#ffffff" />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.accent }}>
+                {appSettings.payment_title || 'Monthly Contribution'}
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: t.text, display: 'flex', alignItems: 'center', gap: 6, marginTop: 1 }}>
+                <span>Due: ₹{Number(appSettings.default_payment_due || 1500).toLocaleString('en-IN')}</span>
+                <span style={{ fontSize: 11, color: t.textSub, opacity: 0.7 }}>• GPay</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button
+              onClick={() => onGoToPayments?.()}
+              style={{
+                padding: '8px 14px',
+                borderRadius: 12,
+                border: 'none',
+                background: 'linear-gradient(135deg, #4285F4 0%, #34A853 60%, #FBBC05 90%, #EA4335 100%)',
+                color: '#ffffff',
+                fontSize: 12,
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                boxShadow: '0 4px 14px rgba(66, 133, 244, 0.3)'
+              }}
+            >
+              <span>Pay Now</span>
+              <ArrowUpRight size={14} />
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Time-based Daily Survey Edit button — shows during lunch/dinner edit window */}

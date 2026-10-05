@@ -4,7 +4,7 @@ import {
   MessageCircle, Phone, MapPin, Check, KeyRound, Eye, EyeOff, LogOut,
   X, ChevronRight, Calendar, CalendarDays, Sun, Moon, SunMedium, MoonStar, ArrowRight,
   CheckCircle2, ShieldCheck, HeartHandshake, Layers, FileText, HelpCircle, LifeBuoy, Clock,
-  PlayCircle, PauseCircle, PlusCircle, MinusCircle
+  PlayCircle, PauseCircle, PlusCircle, MinusCircle, CreditCard, Wallet
 } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/firebaseClient'
@@ -19,11 +19,13 @@ import { THEMES } from '../theme'
 import { DAYS } from '../constants'
 import { isSurveyOpen, getSurveyWindowMessage } from '../survey'
 import { Card, Avatar, SectionLabel, BackHeader, Btn, EmptyState, ErrorBanner } from '../ui'
+import PaymentsPage from './PaymentsPage'
 
 export default function ProfilePage({ theme, setTheme, markRead, appSettings, activeSubPage: externalSubPage, setActiveSubPage: externalSetSubPage, onGoToSurvey }) {
   const [internalSubPage, setInternalSubPage] = useState('main')
   const activeSubPage = externalSubPage !== undefined ? externalSubPage : internalSubPage
   const setActiveSubPage = externalSetSubPage || setInternalSubPage
+  if (activeSubPage === 'payments') return <PaymentsPage onBack={() => setActiveSubPage('main')} appSettings={appSettings} />
   if (activeSubPage === 'surveys') return <MySurveysPage onBack={() => setActiveSubPage('main')} appSettings={appSettings} onGoToSurvey={onGoToSurvey} />
   if (activeSubPage === 'requests') return <MyRequestsPage onBack={() => setActiveSubPage('main')} />
   if (activeSubPage === 'khidmat') return <KhidmatTeamPage onBack={() => setActiveSubPage('main')} />
@@ -133,6 +135,7 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
 
       </Card>
       <SectionLabel>My Activity</SectionLabel>
+      <NavCard label="Dues & Payments" icon={<CreditCard size={20} color="#fff" />} desc="Google Pay, payment dues & tracking history" onClick={() => onNav('payments')} />
       <NavCard label="My Identity QR" icon={<ScanLine size={20} color="#fff" />} desc="Show your QR code for thali collection" onClick={() => setShowQR(true)} />
       <NavCard label="My Surveys" icon={<ClipboardCheck size={20} color="#fff" />} desc="View your weekly survey responses" onClick={() => onNav('surveys')} />
       <NavCard label="My Requests" icon={<img src="/al-mawaid.png" alt="" style={{ width: 22, height: 22, objectFit: 'contain' }} />} desc="Resume, stop & extra food requests" onClick={() => onNav('requests')} />
