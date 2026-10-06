@@ -121,7 +121,8 @@ export const MEALS = ['lunch', 'dinner']
 
 // ── Survey cadence (1 week · 12 meals: Mon-Sat Lunch & Dinner) ──
 export const SURVEY_CADENCE_ONE = '1_week'
-export const SURVEY_CADENCE_TWO = '1_week'
+// @deprecated — two-week cadence was retired; kept as an alias so old imports don't break.
+export const SURVEY_CADENCE_TWO = SURVEY_CADENCE_ONE
 
 export const getSurveyCadence = (_appSettings = {}) => SURVEY_CADENCE_ONE
 export const isTwoWeekCadence = (_appSettings = {}) => false
@@ -171,6 +172,33 @@ export const toLocalDateStr = (d) => {
 
 export const getDayKey = (day) => day.substring(0, 3).toLowerCase()
 export const getMealKey = (meal) => meal === 'lunch' ? 'l' : 'd'
+
+// ── Canonical timewise meal resolution (single source of truth) ──
+// Lunch is served before 15:00, dinner 15:00–20:00, after 20:00 the kitchen
+// prepares for the next day so the TV/tracker defaults back to lunch.
+// Previously three copies of this logic drifted (14:00 vs 15:00 cutoffs),
+// which made the same scan show lunch on one screen and dinner on another.
+export const getCurrentMealByTime = (now = new Date()) => {
+  const mins = now.getHours() * 60 + now.getMinutes()
+  if (mins < 15 * 60) return 'lunch'
+  if (mins < 20 * 60) return 'dinner'
+  return 'lunch'
+}
+
+/**
+ * Resolve which week_id the tracker / TV scan should read for a given day.
+ * Single algorithm shared by the list loader and the QR-scan fallback so a
+ * scan can never disagree with the on-screen columns:
+ *  - explicit admin weekFilter wins
+ *  - on Sunday the serving week has rolled over → survey target week
+ *  - otherwise the current calendar (serving) week
+ */
+export const resolveTrackerWeekId = (appSettings = {}, weekFilter = 'all') => {
+  if (weekFilter && weekFilter !== 'all') return weekFilter
+  const isSunday = new Date().getDay() === 0
+  if (isSunday) return getSurveyTargetWeek(appSettings)
+  return getCalendarWeekDate()
+}
 
 /**
  * Returns the week_id (YYYY-MM-DD Monday) that OWNS a given real date for

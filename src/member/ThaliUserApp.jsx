@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Sparkles, UtensilsCrossed, ClipboardCheck, MessageSquareText, UserCircle2, X, BellRing } from 'lucide-react'
+import { Sparkles, UtensilsCrossed, ClipboardCheck, MessageSquareText, UserCircle2, BellRing } from 'lucide-react'
 import { supabase } from '../lib/firebaseClient'
 import { ThemeCtx, useAuth } from '../admin/context'
 import { updateSystemTheme } from '../admin/ui'
 import OfflineBanner from '../components/OfflineBanner'
 import { getSurveyTargetWeek } from '../common/utils'
 import { fetchUserSurveyRow } from '../lib/surveyRows'
+import { setAppBadgeCount, clearAppBadge } from '../lib/appBadge'
 
 import { THEMES } from './theme'
 import { isSurveyOpen } from './survey'
 import { GeoBg, GlobalStyles } from './ui'
-import { playNotificationChime } from './sound'
 import HomePage from './pages/HomePage'
 import WeeklyMenuPage from './pages/WeeklyMenuPage'
 import SurveyPage from './pages/SurveyPage'
@@ -27,21 +27,20 @@ export default function ThaliUserApp() {
   const isSurvey = pathname.includes('/survey') || tabParam === 'survey'
   const isMenu = pathname.includes('/menu') || tabParam === 'menu'
   const isPost = pathname.includes('/post') || tabParam === 'post'
-  const isProfile = pathname.includes('/profile') || tabParam === 'profile' || isAlerts || isPayments
+  // Deep-linkable alert/payment pages: works for both fresh loads (OS
+  // notification tap → service worker openWindow) and in-app navigation.
+  const isNotifPath = pathname.includes('/profile/notifications') || pathname.includes('/notifications')
+  const isPayPath = pathname.includes('/profile/payments') || pathname.includes('/payments')
+  const isProfile = pathname.includes('/profile') || tabParam === 'profile' || isAlerts || isPayments || isNotifPath || isPayPath
 
   const initialTab = isSurvey ? 'survey' : isMenu ? 'menu' : isPost ? 'post' : isProfile ? 'profile' : 'home'
-  const initialSubPage = isAlerts ? 'notifications' : isPayments ? 'payments' : 'main'
+  const initialSubPage = (isAlerts || isNotifPath) ? 'notifications' : (isPayments || isPayPath) ? 'payments' : 'main'
   const [activeTab, setActiveTab] = useState(initialTab)
   const [activeSubPage, setActiveSubPage] = useState(initialSubPage)
   const [theme, setTheme] = useState(() => localStorage.getItem('almawaid_theme') || 'dark')
   const t = THEMES[theme] || THEMES.dark
   const [unreadCount, setUnreadCount] = useState(0)
-  const [toastNotice, setToastNotice] = useState(null)
   const seenNoticeIds = useRef(new Set(JSON.parse(localStorage.getItem('almawaid_seen_notices') || '[]')))
-  const dragStartY = useRef(null)
-  const dragY = useRef(0)
-  const [dragOffset, setDragOffset] = useState(0)
-  const [isDragging, setIsDragging] = useState(false)
   const [appSettings, setAppSettings] = useState({})
   const appSettingsRef = useRef(appSettings)
   const [, setClockTick] = useState(0)
@@ -103,6 +102,25 @@ export default function ThaliUserApp() {
     }
   }, [theme])
 
+  // ── Consume a pending push deep-link (stored when the tap arrived before the
+  // app/tabs were mounted — e.g. cold start from an OS notification) ──
+  useEffect(() => {
+    let pending = null
+    try {
+      pending = sessionStorage.getItem('almawaid_pending_deep_link')
+      sessionStorage.removeItem('almawaid_pending_deep_link')
+    } catch {
+      console.debug('[deep-link] session storage unavailable')
+    }
+    if (pending) {
+      // Dispatch after mount so the app-navigate handler below routes it.
+      const t = setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('app-navigate', { detail: { url: pending } }))
+      }, 50)
+      return () => clearTimeout(t)
+    }
+  }, [])
+
   // ── Handle deep links from notifications (SW clicks / PushManager) ──
   useEffect(() => {
     if (activeSubPage !== 'main') {
@@ -144,31 +162,46 @@ export default function ThaliUserApp() {
     return () => window.removeEventListener('app-navigate', handleAppNavigate)
   }, [loadAppSettings])
 
-  // ── Native Notification System (Supabase Realtime) ──
+  // ── Alerts badge (no in-app popup — notifications arrive via OS push and
+  // are stored in the Alerts tab). Realtime only bumps the badge silently. ──
+  const refreshUnread = useCallback(async () => {
+    if (!user) return
+    const lastRead = localStorage.getItem('almawaid_last_notice_read') || '1970-01-01T00:00:00.000Z'
+    const { data, error } = await supabase
+      .from('notices')
+      .select('*')
+      .or(`target_user_id.is.null,target_user_id.eq.${user.id}`)
+      .gt('created_at', lastRead)
+
+    if (!error && data) {
+      setUnreadCount(data.length)
+      // DON'T auto-mark as read here — user must open notifications page to mark read
+    }
+  }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mirror the Alerts count onto the launcher app icon (Badging API).
+  useEffect(() => {
+    setAppBadgeCount(unreadCount)
+  }, [unreadCount])
+
   // Load unread count once on mount — NOT on every appSettings change
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission()
     }
+    refreshUnread()
+  }, [refreshUnread])
 
-    const loadUnread = async () => {
-      if (!user) return
-      const lastRead = localStorage.getItem('almawaid_last_notice_read') || '1970-01-01T00:00:00.000Z'
-      const { data, error } = await supabase
-        .from('notices')
-        .select('*')
-        .or(`target_user_id.is.null,target_user_id.eq.${user.id}`)
-        .gt('created_at', lastRead)
+  // Silent refresh when a push arrives while the app is open (PushManager
+  // dispatches this instead of showing any popup).
+  useEffect(() => {
+    const onPush = () => refreshUnread()
+    window.addEventListener('notifications-updated', onPush)
+    return () => window.removeEventListener('notifications-updated', onPush)
+  }, [refreshUnread])
 
-      if (!error && data) {
-        setUnreadCount(data.length)
-        // DON'T auto-mark as read here — user must open notifications page to mark read
-      }
-    }
-    loadUnread()
-  }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Realtime subscription for live toast banners — stable channel, no appSettings dependency
+  // Realtime subscription for the Alerts badge — stable channel, no appSettings dependency.
+  // Silent: no banner, no chime. The OS push is the notification; the tab stores it.
   useEffect(() => {
     if (!user?.id) return
 
@@ -189,21 +222,32 @@ export default function ThaliUserApp() {
       return status === 'Applied'
     }
 
+
     const channel = supabase
       .channel('global-notices')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notices' }, async (payload) => {
         const notice = payload.new
         if (!notice || !notice.id) return
         
-        // Prevent showing toast if already seen or previously dismissed
+        // Prevent double-counting the badge on re-subscribes
         if (seenNoticeIds.current.has(notice.id)) return
         seenNoticeIds.current.add(notice.id)
         try { localStorage.setItem('almawaid_seen_notices', JSON.stringify([...seenNoticeIds.current].slice(-200))) } catch { /* ignore */ }
+
+        // Content-based survey dedup check
+        const titleStr = (notice.title || '').trim()
+        const bodyStr = (notice.body || notice.message || '').trim()
+        const isSurveyNotice = notice.type === 'survey' || notice.type === 'survey_reminder' ||
+          titleStr.toLowerCase().includes('survey') || bodyStr.toLowerCase().includes('survey')
         
-        // Only show live in-app toast banner for truly fresh notices (< 30 seconds old)
-        // Prevents replay of existing notices on network reconnection or channel re-subscribe
-        const createdAtMs = notice.created_at ? new Date(notice.created_at).getTime() : Date.now()
-        const isFresh = (Date.now() - createdAtMs) < 30000
+        if (isSurveyNotice) {
+          const surveyKey = `notice_survey_${titleStr}_${bodyStr}`.replace(/\s+/g, '_').substring(0, 80)
+          const lastSurveyToast = sessionStorage.getItem(surveyKey)
+          if (lastSurveyToast && (Date.now() - Number(lastSurveyToast)) < 15 * 60 * 1000) {
+            return // Skip rapid duplicate survey badge bumps within 15 min
+          }
+          sessionStorage.setItem(surveyKey, String(Date.now()))
+        }
 
         let isForMe = !notice.target_user_id || notice.target_user_id === user?.id
 
@@ -223,25 +267,16 @@ export default function ThaliUserApp() {
 
         if (isForMe) {
           setUnreadCount(prev => prev + 1)
-          if (isFresh) {
-            setToastNotice(notice)
-            // Play notification chime for important broadcasts
-            if (notice.title || notice.sender_name) {
-              playNotificationChime()
-            }
-            const bodyLen = (notice.body || '').length
-            const toastDuration = Math.max(5000, Math.min(bodyLen * 40, 10000))
-            setTimeout(() => setToastNotice(null), toastDuration)
-          }
         }
       })
       .subscribe()
     return () => supabase.removeChannel(channel)
-  }, [user?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user?.id])
 
   const markNotificationsRead = useCallback(() => {
     localStorage.setItem('almawaid_last_notice_read', new Date().toISOString())
     setUnreadCount(0)
+    clearAppBadge()
   }, [])
 
   const handleSetTheme = (id) => { setTheme(id); localStorage.setItem('almawaid_theme', id) }
@@ -303,88 +338,6 @@ export default function ThaliUserApp() {
           </div>
           {/* Header cleared by removing wave and reducing heights for mobile */}
         </header>
-
-        {/* ── Premium Toast Notification ── */}
-        {toastNotice && (() => {
-          const senderInitial = (toastNotice.sender_name || 'A').charAt(0).toUpperCase()
-          const hasMedia = toastNotice.media && toastNotice.media[0]
-          return (
-          <div
-            onClick={() => { setActiveTab('profile'); setActiveSubPage('notifications'); setToastNotice(null) }}
-            onTouchStart={(e) => {
-              dragStartY.current = e.touches[0].clientY
-              dragY.current = 0
-              setIsDragging(true)
-            }}
-            onTouchMove={(e) => {
-              if (dragStartY.current === null) return
-              const delta = e.touches[0].clientY - dragStartY.current
-              if (delta > 0) {
-                e.preventDefault()
-                dragY.current = delta * 0.5
-                setDragOffset(dragY.current)
-              }
-            }}
-            onTouchEnd={() => {
-              setIsDragging(false)
-              if (dragY.current > 80) {
-                setToastNotice(null)
-              }
-              setDragOffset(0)
-              dragStartY.current = null
-              dragY.current = 0
-            }}
-            style={{
-              position: 'fixed', top: 16, left: '50%',
-              width: 'calc(100% - 32px)', maxWidth: 400, zIndex: 10000,
-              background: 'rgba(14,12,10,0.96)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: 18, overflow: 'hidden',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
-              cursor: 'pointer',
-              backdropFilter: 'blur(20px)',
-              transform: dragOffset > 0
-                ? `translateX(-50%) translateY(${dragOffset}px)`
-                : 'translateX(-50%)',
-              transition: isDragging
-                ? 'none'
-                : 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-              animation: dragOffset === 0 && !isDragging
-                ? 'slideDown 0.5s cubic-bezier(0.4, 0, 0.2, 1)'
-                : undefined,
-            }}
-          >
-            {hasMedia && (
-              <div style={{
-                width: '100%', height: 120,
-                background: `url(${toastNotice.media[0]}) center/cover no-repeat`,
-                borderBottom: '1px solid rgba(255,255,255,0.06)'
-              }} />
-            )}
-            <div style={{ padding: 14, display: 'flex', gap: 12 }}>
-              <div style={{
-                width: 40, height: 40, borderRadius: 12,
-                background: 'var(--accent-grad)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0, color: '#0a0d14', fontSize: 15, fontWeight: 800
-              }}>
-                {senderInitial}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-primary)', letterSpacing: '0.04em', marginBottom: 1, textTransform: 'uppercase' }}>
-                  {toastNotice.sender_name || 'Al-Mawaid'}
-                </div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 1 }}>{toastNotice.title}</div>
-                {toastNotice.body && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.5 }}>{toastNotice.body}</div>}
-              </div>
-              <button onClick={(e) => { e.stopPropagation(); setToastNotice(null) }} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: 'rgba(255,255,255,0.35)', width: 26, height: 26, borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
-                <X size={13} />
-              </button>
-            </div>
-            <div style={{ height: 2, background: 'linear-gradient(90deg, var(--accent-primary), transparent)', animation: `toastCountdown ${Math.max(6, Math.min((toastNotice.body || '').length * 0.05, 12))}s linear forwards` }} />
-          </div>
-          )
-        })()}
 
         {activeTab === 'home' && (
           <HomePage

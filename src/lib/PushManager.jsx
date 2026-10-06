@@ -1,11 +1,17 @@
 // src/lib/PushManager.jsx
 // Handles:
-//   1. Capacitor Native Push (FCM — native Android push)
-//   2. Web Push API (browser push — works when tab is closed)
-//   3. Supabase Realtime (in-app toast — instant when tab is open)
+//   1. Capacitor Native Push (FCM — native Android push, works outside the app)
+//   2. Web Push API (browser/OS push via service worker — works when tab is closed)
+//   3. Deep-link routing: tapping an outside notification opens the app on the
+//      related action page (via 'app-navigate' + a pending-link fallback for
+//      cold starts where the app wasn't mounted yet).
+//
+// NOTE: There are intentionally NO in-app popup toasts here. Notifications are
+// delivered by the OS outside the app/website and are stored in the Alerts tab
+// (/profile/notifications inbox + notices). Realtime events below only refresh
+// those lists (badge + inbox) silently.
 
-import { useEffect, useRef, useState } from 'react'
-import toast from 'react-hot-toast'
+import { useEffect, useRef } from 'react'
 import { supabase } from '../lib/firebaseClient'
 
 function isNative() {
@@ -53,68 +59,30 @@ async function savePushSubscription(userId, subscription) {
   }
 }
 
+export const PENDING_DEEP_LINK_KEY = 'almawaid_pending_deep_link'
+
 function navigateTo(url) {
   if (!url || url === '/') return
+  // Persist for cold starts: if the app/tabs aren't mounted yet (login screen,
+  // fresh service-worker openWindow), ThaliUserApp consumes this on mount.
+  try {
+    sessionStorage.setItem(PENDING_DEEP_LINK_KEY, url)
+  } catch {
+    console.debug('[PushManager] session storage unavailable')
+  }
   window.dispatchEvent(new CustomEvent('app-navigate', {
     detail: { url, source: 'push' }
   }))
 }
 
-function showToast({ title, body, url, image, sender_name }) {
-  toast(
-    (t) => (
-      <div
-        onClick={() => { navigateTo(url || '/profile/notifications'); toast.dismiss(t.id) }}
-        style={{ cursor: 'pointer', display: 'flex', gap: 12, alignItems: 'flex-start' }}
-      >
-        {image ? (
-          <div style={{
-            width: 44, height: 44, borderRadius: 10, flexShrink: 0, overflow: 'hidden',
-          }}>
-            <img src={image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          </div>
-        ) : (
-          <div style={{
-            width: 36, height: 36, borderRadius: 8, flexShrink: 0,
-            background: 'var(--accent-grad)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 15,
-          }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0a0d14" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-            </svg>
-          </div>
-        )}
-        <div style={{ minWidth: 0, flex: 1 }}>
-          {sender_name && (
-            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-primary)', letterSpacing: '0.04em', marginBottom: 1, textTransform: 'uppercase' }}>
-              {sender_name}
-            </div>
-          )}
-          <div style={{ fontWeight: 700, fontSize: 13, color: '#fff' }}>
-            {title || 'Al-Mawaid'}
-          </div>
-          {body && <div style={{ fontSize: 12, lineHeight: 1.4, color: 'rgba(255,255,255,0.65)', marginTop: 2 }}>{body}</div>}
-        </div>
-      </div>
-    ),
-    {
-      duration: body ? Math.max(5000, Math.min(body.length * 40, 10000)) : 5000,
-      style: {
-        background: 'rgba(20,16,10,0.95)',
-        backdropFilter: 'blur(12px)',
-        color: '#fff',
-        border: '1px solid rgba(255,255,255,0.1)',
-        borderRadius: 14,
-        padding: '12px 14px',
-        maxWidth: 380,
-      },
-    }
-  )
+// Tell open alerts lists to refresh silently (no popup, no sound).
+function notifyListsUpdated(info = {}) {
+  window.dispatchEvent(new CustomEvent('notifications-updated', { detail: info }))
 }
 
 // ── Subscribe to Supabase Realtime notification channel ───────────────────────
+// Silent: only refreshes the Alerts tab / inbox lists + badge. The visible
+// notification itself is delivered by the OS outside the app (Web Push / FCM).
 function subscribeRealtime(realtimeChannel, user, cancelledRef, retryCount = 0) {
   const MAX_RETRIES = 3
   if (cancelledRef.current || realtimeChannel.current) return
@@ -135,14 +103,40 @@ function subscribeRealtime(realtimeChannel, user, cancelledRef, retryCount = 0) 
         filter: `user_id=eq.${user.id}`,
       },
       (payload) => {
-        const { message, type, title, url, sender_name, silent } = payload.new
-        if (silent) return // Skip toast for silent notifications
-        // Dedup: skip if this notification was already shown
-        const dedupKey = `toast_${payload.new.id || (title + '_' + message)}`
-        if (sessionStorage.getItem(dedupKey)) return
-        sessionStorage.setItem(dedupKey, '1')
-        setTimeout(() => { try { sessionStorage.removeItem(dedupKey) } catch {} }, 6000)
-        showToast({ title: title || 'Al-Mawaid', body: message, url, sender_name })
+        const { id, message, type, title, url, silent } = payload.new || {}
+        if (silent) return // Silent bookkeeping rows never surface
+
+        const titleText = (title || 'Al-Mawaid').trim()
+        const bodyText = (message || '').trim()
+        const isSurveyType = type === 'survey' || type === 'survey_reminder' ||
+          titleText.toLowerCase().includes('survey') || bodyText.toLowerCase().includes('survey')
+
+        // Content-based signature key for robust deduplication across different IDs / rapid cron ticks
+        const rawContentSig = `${type || 'info'}_${titleText}_${bodyText}`
+        const contentKey = `push_seen_${rawContentSig.replace(/\s+/g, '_').substring(0, 100)}`
+        const idKey = id ? `push_id_${id}` : null
+
+        const now = Date.now()
+
+        // 1. Skip if this exact notification ID was already handled in this session
+        if (idKey && sessionStorage.getItem(idKey)) return
+        if (idKey) {
+          sessionStorage.setItem(idKey, String(now))
+          setTimeout(() => { try { sessionStorage.removeItem(idKey) } catch (e) { console.debug('[PushManager] cleanup skipped', e && e.message) } }, 120000)
+        }
+
+        // 2. Content signature cooldown (survey notifications: 15 min cooldown; standard: 60 sec)
+        const lastSeenStr = sessionStorage.getItem(contentKey)
+        const cooldownMs = isSurveyType ? 15 * 60 * 1000 : 60 * 1000
+        if (lastSeenStr && (now - Number(lastSeenStr)) < cooldownMs) {
+          return
+        }
+        sessionStorage.setItem(contentKey, String(now))
+        setTimeout(() => { try { sessionStorage.removeItem(contentKey) } catch (e) { console.debug('[PushManager] cleanup skipped', e && e.message) } }, cooldownMs)
+
+        // No in-app popup: the OS-level push (Web Push / FCM) already notified
+        // the user outside the app. Just refresh the Alerts tab + badge.
+        notifyListsUpdated({ id, type, title: titleText, body: bodyText, url })
       }
     )
     .subscribe((status) => {
@@ -231,16 +225,13 @@ export default function PushManager() {
             })
             PushNotifications.addListener('pushNotificationReceived', (n) => {
               console.log('[PushManager] Native push received while foregrounded:', n?.title)
-              const notifTitle = n.title || n.data?.title || 'Al-Mawaid'
-              const notifBody = n.body || n.data?.body
-              const notifUrl = n.data?.url || '/profile/notifications'
-              const notifSender = n.data?.sender_name || 'Al-Mawaid'
-              const dedupKey = `toast_native_${notifTitle}_${notifBody}`
-              if (!sessionStorage.getItem(dedupKey)) {
-                sessionStorage.setItem(dedupKey, '1')
-                setTimeout(() => { try { sessionStorage.removeItem(dedupKey) } catch {} }, 6000)
-                showToast({ title: notifTitle, body: notifBody, url: notifUrl, sender_name: notifSender })
-              }
+              // No in-app popup — the Alerts tab badge + inbox update silently.
+              // (On Android the tray notification still appears when backgrounded.)
+              notifyListsUpdated({
+                title: n.title || n.data?.title || 'Al-Mawaid',
+                body: n.body || n.data?.body,
+                url: n.data?.url || '/profile/notifications',
+              })
             })
             // ── Deep link: user taps notification → navigate to correct in-app page ──
             PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
@@ -270,7 +261,7 @@ export default function PushManager() {
             const swReg = await navigator.serviceWorker.ready
             const urlBase64ToUint8Array = (bs) => {
               const p = '='.repeat((4 - bs.length % 4) % 4)
-              return new Uint8Array(atob((bs + p).replace(/\-/g, '+').replace(/_/g, '/')).split('').map(c => c.charCodeAt(0)))
+              return new Uint8Array(atob((bs + p).replace(/-/g, '+').replace(/_/g, '/')).split('').map(c => c.charCodeAt(0)))
             }
             let sub
             try {
@@ -315,12 +306,11 @@ export default function PushManager() {
           if (!event?.data) return
           setTimeout(() => {
             if (event.data?.type === 'PUSH_RECEIVED') {
-              showToast({
+              // No in-app popup — refresh Alerts tab lists silently.
+              notifyListsUpdated({
                 title: event.data.title,
                 body: event.data.body,
                 url: event.data.url,
-                image: event.data.image,
-                sender_name: event.data.sender_name,
               })
             }
             if (event.data?.type === 'NOTIFICATION_DEEP_LINK') {
@@ -342,7 +332,7 @@ export default function PushManager() {
         }
       }
 
-      // User-specific in-app toasts (native + web)
+      // Silent Alerts-tab refresh for this user (native + web)
       setTimeout(() => subscribeRealtime(realtimeChannel, user, cancelledRef), 2000)
     }
 

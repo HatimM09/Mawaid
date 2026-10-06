@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { DAYS, parseHm, getSurveyCadence, isTwoWeekCadence, getSurveyTotalSlots, getSurveyTargetWeeks, formatWeekRange } from '../common/utils'
+import { DAYS, parseHm } from '../common/utils'
 
 export const isRotiItem = (dish) => {
   const rotiKeywords = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
@@ -196,55 +195,7 @@ export const denormalizeDishValue = (val, dish, isCount) => {
 }
 
 // ── Survey cadence re-exports (so consumers import from one place) ──
-export { getSurveyCadence, isTwoWeekCadence, getSurveyTotalSlots, getSurveyTargetWeeks, formatWeekRange }
-
-// Count helpers for 12-meal weekly progress
-export const countFilledSlots = (flatRow) => {
-  if (!flatRow) return 0
-  const row = flatRow
-  const DKS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat']
-  let total = 0
-  for (const dk of DKS) {
-    for (const mk of ['l', 'd']) {
-      if (row[`${dk}_${mk}_status`]) total++
-    }
-  }
-  return Math.min(12, total)
-}
-
-// Compute progress for 12-meal weekly survey
-export const computeProgress = (appSettings, surveyDataMap) => {
-  const total = 12
-  const filled = (() => {
-    if (!surveyDataMap) return 0
-    if (Array.isArray(surveyDataMap)) {
-      const row = surveyDataMap[0]
-      if (!row) return 0
-      let c = 0
-      for (const dk of ['mon', 'tue', 'wed', 'thu', 'fri', 'sat']) {
-        for (const mk of ['l', 'd']) {
-          if (row[`${dk}_${mk}_status`]) c++
-        }
-      }
-      return Math.min(12, c)
-    }
-    if (typeof surveyDataMap === 'object') {
-      const rows = Object.values(surveyDataMap).filter(Boolean)
-      if (rows.length) {
-        const row = rows[0]
-        let c = 0
-        for (const dk of ['mon', 'tue', 'wed', 'thu', 'fri', 'sat']) {
-          for (const mk of ['l', 'd']) {
-            if (row[`${dk}_${mk}_status`]) c++
-          }
-        }
-        return Math.min(12, c)
-      }
-    }
-    return 0
-  })()
-  return { filled, total, pct: Math.round((filled / total) * 100) }
-}
+export { getSurveyCadence, isTwoWeekCadence, getSurveyTotalSlots, getSurveyTargetWeeks, formatWeekRange } from '../common/utils'
 
 // ── Dish-snapshot helpers ──
 export const getSlotKey = (day, meal) =>
@@ -278,37 +229,6 @@ export const mergeDishSnapshot = (existing, day, meal, dishes) => {
   } catch { obj = {} }
   obj[getSlotKey(day, meal)] = dishes
   return obj
-}
-
-// ── Auto-save hook ──
-export const useSurveyAutoSave = () => {
-  const [autoSaveStatus, setAutoSaveStatus] = useState('idle')
-  const saveTimerRef = useRef(null)
-
-  const debouncedSave = useCallback(async (saveFn) => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    setAutoSaveStatus('saving')
-    try {
-      await saveFn()
-      setAutoSaveStatus('saved')
-      setTimeout(() => setAutoSaveStatus(prev => prev === 'saved' ? 'idle' : prev), 2000)
-    } catch { setAutoSaveStatus('idle') }
-  }, [])
-
-  const scheduleSave = useCallback(async (saveFn, delay = 600) => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    return new Promise((resolve) => {
-      saveTimerRef.current = setTimeout(async () => {
-        resolve(await debouncedSave(saveFn))
-      }, delay)
-    })
-  }, [debouncedSave])
-
-  useEffect(() => {
-    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current) }
-  }, [])
-
-  return { autoSaveStatus, scheduleSave, setAutoSaveStatus }
 }
 
 // ── Survey window messages (used by member app) ──

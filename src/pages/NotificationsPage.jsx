@@ -240,16 +240,14 @@ export default function NotificationsPage() {
     }))
   }, [notifications])
 
-  // Handle notification click (mark read + navigate)
+  // Handle notification click (mark read + open the related action page).
+  // Uses a full navigation so it works from anywhere: the app boots on the
+  // right tab via pathname parsing (survey / menu / requests / alerts).
   const handleNotificationClick = (item) => {
     if (!item.read_at) markAsRead([item.id])
     if (item.url) {
       if (item.url.startsWith('http://') || item.url.startsWith('https://')) {
         window.open(item.url, '_blank')
-      } else if (item.url.includes('survey')) {
-        window.dispatchEvent(new CustomEvent('app-navigate', { detail: { url: '/survey' } }))
-      } else if (item.url.includes('menu')) {
-        window.dispatchEvent(new CustomEvent('app-navigate', { detail: { url: '/menu' } }))
       } else if (item.url !== '/') {
         window.location.href = item.url
       }

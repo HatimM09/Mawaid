@@ -10,16 +10,17 @@ import {
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { 
   T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner, Grid,
-  SectionHeader, Modal, PackingTVView, fmtDate, ErrorBanner
+  SectionHeader, Modal, PackingTVView, ErrorBanner
 } from './ui'
 
 import { 
-  getSurveyTargetWeek, getCalendarWeekDate, dayBelongsToCalendarWeek, 
-  DAYS, DAY_KEYS, toLocalDateStr, isStoppedOnDay, parseDishArray,
-  getSurveyTargetWeeks, formatWeekRange, formatWeekShort, isTwoWeekCadence 
+  getSurveyTargetWeek, getCalendarWeekDate,
+  DAYS, toLocalDateStr, isStoppedOnDay, parseDishArray,
+  getSurveyTargetWeeks, formatWeekRange, formatWeekShort,
+  getCurrentMealByTime, resolveTrackerWeekId
 } from '../common/utils'
-import { getPctColor, getSlotDishes, isRotiItem, isCountInput } from '../hooks/useSurvey'
-import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot, flattenDayRows } from '../lib/surveyRows'
+import { getPctColor, isRotiItem, isCountInput } from '../hooks/useSurvey'
+import { fetchUserSurveyRow, fetchAllUserRows, flattenDayRows, buildMealDishMap } from '../lib/surveyRows'
 
 // Pick the stop request whose dates best describe the current stopped period
 // (prefer the newest stop that actually covers the day, else the newest stop).
@@ -46,11 +47,7 @@ export default function DailySurveyTracking() {
     if (d === 0) return 'monday' 
     return ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'][d]
   })
-  const getAutoMeal = useCallback(() => {
-    const h = new Date().getHours() + new Date().getMinutes() / 60
-    if (h >= 20 || h < 14) return 'lunch'
-    return 'dinner'
-  }, [])
+  const getAutoMeal = useCallback(() => getCurrentMealByTime(), [])
   const [meal, setMeal] = useState(() => {
     if (urlMeal === 'lunch' || urlMeal === 'dinner') return urlMeal
     return getAutoMeal()
@@ -131,12 +128,9 @@ export default function DailySurveyTracking() {
       const mealKey = meal === 'lunch' ? 'l' : 'd'
       const statusKey = `${dayKey}_${mealKey}_status`
 
-      const calWeek = getCalendarWeekDate()
-      const targetWeeksList = getSurveyTargetWeeks(appSettings)
-      const primaryTarget = targetWeeksList[0] || surveyWeekId()
-      const isSunday = new Date().getDay() === 0
-      const defaultWeek = isSunday ? primaryTarget : calWeek
-      const activeWeekId = (weekFilter && weekFilter !== 'all') ? weekFilter : defaultWeek
+      // Same algorithm as the list loader — a scan can never disagree with
+      // the on-screen columns about which week a day belongs to.
+      const activeWeekId = resolveTrackerWeekId(appSettings, weekFilter)
 
       // Fetch survey row for this user in activeWeekId
       let row = {}
@@ -214,38 +208,10 @@ export default function DailySurveyTracking() {
         })
       } catch {}
       const dayNameLower = day.toLowerCase()
-      const dayMenu = freshMenu[dayNameLower] || (weeklyMenuRaw.__byWeek?.[resolvedWeekId]?.[dayNameLower]) || displayMenu[dayNameLower] || weeklyMenu[dayNameLower] || weeklyMenu[day] || {}
+      const dayMenu = freshMenu[dayNameLower] || (weeklyMenu.__byWeek?.[resolvedWeekId]?.[dayNameLower]) || displayMenu[dayNameLower] || weeklyMenu[dayNameLower] || weeklyMenu[day] || {}
 
-      const scanBuildDishMap = (mealName, menuList) => {
-        const mk = mealName === 'lunch' ? 'l' : 'd'
-        const dk = day.substring(0, 3).toLowerCase()
-        const cleanMenuList = Array.isArray(menuList) ? menuList.filter(Boolean) : []
-        const snapshotList = getSlotDishes(row, day, mealName, null)
-        const cleanSnapshot = Array.isArray(snapshotList) ? snapshotList.filter(Boolean) : []
-        const names = cleanMenuList.length > 0 ? cleanMenuList : (cleanSnapshot.length > 0 ? cleanSnapshot : [])
-        const result = {}
-        result._status = row ? row[`${dk}_${mk}_status`] : null
-
-        names.forEach((d, idx) => {
-          let pos = idx
-          if (cleanSnapshot.length > 0 && cleanSnapshot.includes(d)) {
-            pos = cleanSnapshot.indexOf(d)
-          }
-          const val = (row && pos >= 0) ? row[`${dk}_${mk}_dish_${pos + 1}`] : null
-          if (val !== undefined && val !== null && val !== '') {
-            if (isRotiItem(d)) {
-              result[d] = String(val).toLowerCase() === 'yes' ? 'yes' : 'no'
-            } else {
-              const lowerVal = String(val).toLowerCase()
-              if (lowerVal === 'yes' || lowerVal === 'no') result[d] = lowerVal
-              else result[d] = val
-            }
-          } else {
-            result[d] = null
-          }
-        })
-        return result
-      }
+      const scanBuildDishMap = (mealName, menuList) =>
+        buildMealDishMap(row, day, mealName, menuList, isRotiItem)
 
       const lunchMap = scanBuildDishMap('lunch', dayMenu.lunch || [])
       const dinnerMap = scanBuildDishMap('dinner', dayMenu.dinner || [])
@@ -381,8 +347,6 @@ export default function DailySurveyTracking() {
 
       setAppSettings(prev => JSON.stringify(prev) === JSON.stringify(settingsMap) ? prev : settingsMap)
 
-      const targetWeekId = getSurveyTargetWeek(settingsMap)
-
       const { data: users, error: usersError } = await supabase
         .from('user_stats')
         .select('user_id, name, thali_number, email, avatar_url')
@@ -395,11 +359,8 @@ export default function DailySurveyTracking() {
 
       // Collect distinct week_ids for filter
       const targetWeeksList = getSurveyTargetWeeks(settingsMap)
-      const primaryTarget = targetWeeksList[0] || getSurveyTargetWeek(settingsMap)
       const cal = getCalendarWeekDate()
-      const isSunday = new Date().getDay() === 0
-      const defaultWeek = isSunday ? primaryTarget : cal
-      const effectiveWeek = (weekFilter && weekFilter !== 'all') ? weekFilter : defaultWeek
+      const effectiveWeek = resolveTrackerWeekId(settingsMap, weekFilter)
 
       const allWeeks = [...new Set([
         ...targetWeeksList,
@@ -464,41 +425,8 @@ export default function DailySurveyTracking() {
 
       setLoadError(null)
 
-      const dayKey = day.substring(0, 3).toLowerCase()
-      const mealKey = meal === 'lunch' ? 'l' : 'd'
-      const statusKey = `${dayKey}_${mealKey}_status`
-      
-      const buildDishMap = (r, dayName, mealName, menuList) => {
-        const mk = mealName === 'lunch' ? 'l' : 'd'
-        const dk = String(dayName || day).substring(0, 3).toLowerCase()
-        const cleanMenuList = Array.isArray(menuList) ? menuList.filter(Boolean) : []
-        const snapshotList = getSlotDishes(r, dayName, mealName, null)
-        const cleanSnapshot = Array.isArray(snapshotList) ? snapshotList.filter(Boolean) : []
-        const names = cleanMenuList.length > 0 ? cleanMenuList : (cleanSnapshot.length > 0 ? cleanSnapshot : [])
-        const result = {}
-        const rawStatus = r ? r[`${dk}_${mk}_status`] : null
-        result._status = (rawStatus === 'Applied' || rawStatus === 'Skipped') ? rawStatus : null
-
-        names.forEach((d, idx) => {
-          let pos = idx
-          if (cleanSnapshot.length > 0 && cleanSnapshot.includes(d)) {
-            pos = cleanSnapshot.indexOf(d)
-          }
-          const val = (r && pos >= 0) ? r[`${dk}_${mk}_dish_${pos + 1}`] : null
-          if (val !== undefined && val !== null && val !== '') {
-            if (isRotiItem(d)) {
-              result[d] = String(val).toLowerCase() === 'yes' ? 'yes' : 'no'
-            } else {
-              const lowerVal = String(val).toLowerCase()
-              if (lowerVal === 'yes' || lowerVal === 'no') result[d] = lowerVal
-              else result[d] = val
-            }
-          } else {
-            result[d] = null
-          }
-        })
-        return result
-      }
+      const buildDishMap = (r, dayName, mealName, menuList) =>
+        buildMealDishMap(r, dayName || day, mealName, menuList, isRotiItem)
 
       // Resolve the menus for all target weeks & candidate weeks
       const weekMenusMap = {}
@@ -520,7 +448,7 @@ export default function DailySurveyTracking() {
         }
       } catch {}
 
-      const activeDisplayMenu = weekMenusMap[effectiveWeek] || (weeklyMenuRaw.__byWeek?.[effectiveWeek]) || weeklyMenu || {}
+      const activeDisplayMenu = weekMenusMap[effectiveWeek] || (weeklyMenu.__byWeek?.[effectiveWeek]) || weeklyMenu || {}
       setDisplayMenu(activeDisplayMenu)
 
       const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -546,7 +474,7 @@ export default function DailySurveyTracking() {
         const resp = candidates.find(r => r.week_id === effectiveWeek) || {}
 
         const userWeekId = effectiveWeek
-        const userWeekMenu = weekMenusMap[userWeekId] || (weeklyMenuRaw.__byWeek?.[userWeekId]) || activeDisplayMenu || {}
+        const userWeekMenu = weekMenusMap[userWeekId] || (weeklyMenu.__byWeek?.[userWeekId]) || activeDisplayMenu || {}
         const dayKeyLower = day.toLowerCase()
         const dayMenu = userWeekMenu[dayKeyLower] || userWeekMenu[day] || activeDisplayMenu[dayKeyLower] || {}
         const buildCurMeal = buildDishMap(resp, day, meal, dayMenu[meal] || [])
@@ -555,6 +483,8 @@ export default function DailySurveyTracking() {
         const stoppedInfo = stoppedMap[u.user_id]
         const isStopped = !!stoppedInfo
         const baseStatus = buildCurMeal._status
+        const dayKey = day.substring(0, 3).toLowerCase()
+        const mealKey = meal === 'lunch' ? 'l' : 'd'
         const isOverride = (resp && (resp._isOverride || resp.edit_metadata?.[`${dayKey}_${mealKey}_override`]))
         // Per-dish COUNT vs PORTION map from the tracker's menu order, so the
         // TV popup never guesses the type from the value or grid position.

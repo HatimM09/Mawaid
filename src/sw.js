@@ -107,16 +107,9 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil(
     (async () => {
-      // If the app is open and focused, skip the native popup — the in-app
-      // Supabase Realtime toast already surfaces the alert. Only show a native
-      // notification when the app is in the background, otherwise members get
-      // both a toast AND a system notification for the same message.
-      try {
-        const windowClients = await clients.matchAll({ type: 'window', includeUncontrolled: true })
-        const focused = windowClients.find((c) => c.focused)
-        if (focused) return
-      } catch { /* fall through to showing the notification */ }
-
+      // Always show the OS-level notification — even when the app is open and
+      // focused. There are no in-app popups anymore; the system notification
+      // IS the alert, and tapping it deep-links into the related action page.
       await self.registration.showNotification(displayTitle, notificationOptions)
     })()
   )

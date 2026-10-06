@@ -32,6 +32,16 @@ export default function HomePage({ appSettings = {}, onGoToSurvey, onGoToPayment
   const [weeklySurveySubmitted, setWeeklySurveySubmitted] = useState(false)
   const todayKey = getTodayKey()
 
+  // Dues / Payment Display Condition:
+  // Must be strictly hidden when payment_enabled is 'false', false, '0', 'off', or when member is exempt
+  const isPaymentDisplayActive = useMemo(() => {
+    if (profileData?.payment_exempt) return false
+    const val = appSettings.payment_enabled
+    if (val === undefined || val === null) return true // default on if not explicitly disabled
+    if (val === false || val === 'false' || val === '0' || val === 'off' || val === 'disabled') return false
+    return true
+  }, [appSettings.payment_enabled, profileData?.payment_exempt])
+
   // Auto-edit card state — auto-popup when edit window opens
   const [showDailyEditCard, setShowDailyEditCard] = useState(false)
   const [dailyEditMealInfo, setDailyEditMealInfo] = useState(null)
@@ -144,7 +154,12 @@ export default function HomePage({ appSettings = {}, onGoToSurvey, onGoToPayment
         fetchUserSurveyRow(user.id, weekId).then(r => r.data),
       ])
       if (profile) {
-        const updated = { name: profile.name || '', thali_number: profile.thali_number || '', avatar_url: profile.avatar_url || '' }
+        const updated = {
+          name: profile.name || '',
+          thali_number: profile.thali_number || '',
+          avatar_url: profile.avatar_url || '',
+          payment_exempt: Boolean(profile.payment_exempt)
+        }
         setProfileData(updated)
         try { localStorage.setItem(`almawaid_user_profile_${user?.id || 'anon'}`, JSON.stringify(updated)) } catch { /* ignore */ }
       }
@@ -320,43 +335,43 @@ export default function HomePage({ appSettings = {}, onGoToSurvey, onGoToPayment
         />
       )}
 
-      {/* Payment Due Quick Action Card */}
-      {appSettings.payment_enabled !== 'false' && (
+      {/* Payment Due Quick Action Card — Completely removed when Display is OFF or user is exempt */}
+      {isPaymentDisplayActive && (
         <div
           style={{
             margin: '0 0 16px',
             padding: '14px 16px',
             borderRadius: 18,
-            background: 'linear-gradient(135deg, rgba(66, 133, 244, 0.08) 0%, rgba(52, 211, 153, 0.06) 100%)',
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(197, 160, 89, 0.06) 100%)',
             border: `1.5px solid ${t.borderActive || 'rgba(197,160,89,0.3)'}`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 12,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.15)'
+            boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+            boxSizing: 'border-box'
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
             <div style={{
-              width: 40,
-              height: 40,
+              width: 38,
+              height: 38,
               borderRadius: 12,
-              background: 'linear-gradient(135deg, #4285F4 0%, #34A853 100%)',
+              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               flexShrink: 0,
-              boxShadow: '0 4px 12px rgba(66, 133, 244, 0.3)'
+              boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
             }}>
-              <CreditCard size={20} color="#ffffff" />
+              <CreditCard size={19} color="#ffffff" />
             </div>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', color: t.accent }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: t.accent }}>
                 {appSettings.payment_title || 'Monthly Contribution'}
               </div>
               <div style={{ fontSize: 14, fontWeight: 700, color: t.text, display: 'flex', alignItems: 'center', gap: 6, marginTop: 1 }}>
                 <span>Due: ₹{Number(appSettings.default_payment_due || 1500).toLocaleString('en-IN')}</span>
-                <span style={{ fontSize: 11, color: t.textSub, opacity: 0.7 }}>• GPay</span>
               </div>
             </div>
           </div>
@@ -368,7 +383,7 @@ export default function HomePage({ appSettings = {}, onGoToSurvey, onGoToPayment
                 padding: '8px 14px',
                 borderRadius: 12,
                 border: 'none',
-                background: 'linear-gradient(135deg, #4285F4 0%, #34A853 60%, #FBBC05 90%, #EA4335 100%)',
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                 color: '#ffffff',
                 fontSize: 12,
                 fontWeight: 800,
@@ -376,10 +391,10 @@ export default function HomePage({ appSettings = {}, onGoToSurvey, onGoToPayment
                 display: 'flex',
                 alignItems: 'center',
                 gap: 5,
-                boxShadow: '0 4px 14px rgba(66, 133, 244, 0.3)'
+                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)'
               }}
             >
-              <span>Pay Now</span>
+              <span>Pay Dues</span>
               <ArrowUpRight size={14} />
             </button>
           </div>

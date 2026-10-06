@@ -61,7 +61,8 @@ const calculateNextTrigger = (delivery, timeStr, dayStr) => {
   target.setHours(h, m, 0, 0)
 
   if (delivery === 'recurring_daily') {
-    if (target.getTime() <= now.getTime()) {
+    // If target time is within the next 2 minutes or in past, schedule for tomorrow
+    if (target.getTime() <= now.getTime() + 120000) {
       target.setDate(target.getDate() + 1)
     }
     return target.toISOString()
@@ -71,7 +72,7 @@ const calculateNextTrigger = (delivery, timeStr, dayStr) => {
     const dayMap = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 }
     const targetDayNum = dayMap[dayStr?.toLowerCase()] ?? 6
     let diffDays = (targetDayNum - now.getDay() + 7) % 7
-    if (diffDays === 0 && target.getTime() <= now.getTime()) {
+    if (diffDays === 0 && target.getTime() <= now.getTime() + 120000) {
       diffDays = 7
     }
     target.setDate(target.getDate() + diffDays)
@@ -301,10 +302,10 @@ export default function NotificationsAdminPage() {
             body: entry.body,
             user_id: entry.target_type === 'specific' ? entry.target_user_id : null,
             target_type: entry.target_type === 'all' ? null : entry.target_type,
-            url: '/',
+            url: '/profile/notifications',
             image_url: entry.media_url || undefined,
             sender_name: entry.sender_name || 'Admin',
-            notify_in_app: true,
+            notify_in_app: false, // In-app notification already inserted above
           }
         })
         if (pushError) throw pushError
@@ -348,11 +349,13 @@ export default function NotificationsAdminPage() {
     const checkAndProcessDue = async () => {
       try {
         const now = new Date().toISOString()
+        // Atomic lock: update to 'processing' so multiple runners don't duplicate
         const { data: dueItems } = await supabase
           .from('broadcast_schedule')
-          .select('*')
+          .update({ status: 'processing' })
           .eq('status', 'scheduled')
           .lte('scheduled_for', now)
+          .select('*')
           .limit(10)
 
         if (dueItems && dueItems.length > 0) {
@@ -369,7 +372,7 @@ export default function NotificationsAdminPage() {
     checkAndProcessDue()
     timer = setInterval(checkAndProcessDue, 25000)
     return () => clearInterval(timer)
-  }, [processSingleBroadcast])
+  }, [processSingleBroadcast, fetchAll])
 
   const handleSend = async () => {
     if (!form.title || !form.body) {
@@ -465,7 +468,7 @@ export default function NotificationsAdminPage() {
               body: form.body,
               user_id: form.target_type === 'specific' ? form.target_user_id : null,
               target_type: form.target_type === 'all' ? null : form.target_type,
-              url: '/',
+            url: '/profile/notifications',
               image_url: form.media_url || undefined,
               sender_name: form.sender_name,
               notify_in_app: true,
@@ -666,7 +669,7 @@ export default function NotificationsAdminPage() {
             body: entry.body,
             user_id: entry.target_type === 'specific' ? entry.target_user_id : null,
             target_type: entry.target_type === 'all' ? null : entry.target_type,
-            url: '/',
+            url: '/profile/notifications',
             image_url: entry.media_url || undefined,
             sender_name: entry.sender_name || 'Admin',
             big_picture_url: entry.media_url || undefined,
@@ -2139,3 +2142,5 @@ export default function NotificationsAdminPage() {
     </PageWrap>
   )
 }
+
+

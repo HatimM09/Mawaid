@@ -1,5 +1,25 @@
 # Al-Mawaid Releases
 
+## v2.1.8 — 2026-10-06
+
+### Survey
+- No auto-select: every dish starts unselected, member taps each choice; strict 12-meal completion gating.
+- Bright celebratory survey theme with selection animations (pop, card flash, summary pills, pick counters).
+
+### Notifications (outside-app)
+- Removed all in-app popup toasts/banners (member + admin); OS-level push only, stored in Alerts tab + inbox.
+- Notification tap opens the app on the related action page (fixed broadcast URLs, SW always notifies, cold-start deep links).
+- App-icon notification badge (Badging API) + maskable PWA icons (auto device-shape).
+
+### Payments
+- Reliable Pay: generic UPI chooser with receiver + 2-decimal amount prefilled; auto-split above ₹1L cap; VPA validation.
+- Copy & Pay tab and manual UTR entry removed; receipts auto-generate on return with PDF download (slip modal, history rows, receipt view).
+- Security wall (validation, cooldown, idempotency, amount integrity), unfinished-payment recovery banner, dispute/refund flow + Refund Policy sheet.
+- Monthly dues tracker (6-month strip, due banner, Pay Balance, monthly self-reminder) + PWA bottom-sheet modals.
+
+### Build
+- Version bumped to 2.1.8 (live-link: Android loads https://al-mawaid.vercel.app?v=2.1.8, no new AAB needed).
+
 ## v2.1.4 (versionCode 42) — 2026-08-21
 
 ### Bug fixes

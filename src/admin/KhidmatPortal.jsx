@@ -13,11 +13,12 @@ import { T as SharedT, updateSystemTheme, Modal, SurveyResponseDisplay, Btn as S
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { Scan, X, RefreshCw } from 'lucide-react'
 import { 
-  getCalendarWeekDate, getSurveyTargetWeek, getSurveyTargetWeeks, 
-  DAYS, DAY_KEYS, toLocalDateStr, isStoppedOnDay, parseDishArray, formatWeekRange 
+  getCalendarWeekDate, getSurveyTargetWeek,
+  DAYS, toLocalDateStr, isStoppedOnDay, parseDishArray, formatWeekRange,
+  getCurrentMealByTime
 } from '../common/utils'
-import { getSlotDishes, isRotiItem, isCountInput } from '../hooks/useSurvey'
-import { fetchUserSurveyRow, fetchAllUserRows, flattenDayRows } from '../lib/surveyRows'
+import { isRotiItem } from '../hooks/useSurvey'
+import { fetchUserSurveyRow, fetchAllUserRows, buildMealDishMap, normalizeMealStatus } from '../lib/surveyRows'
 import RequestsAdminPage from './RequestsAdminPage'
 import QueriesAdminPage from './QueriesAdminPage'
 import DailySurveyTracking from './DailySurveyTracking'
@@ -357,16 +358,8 @@ export default function KhidmatPortal() {
   // Track if user has manually toggled meal view
   const [lastManualMeal, setLastManualMeal] = useState(null)
 
-  // Time-based meal logic: Lunch until 3pm, Dinner 3pm-8pm
-  function getCurrentMealByTime() {
-    const hour = new Date().getHours()
-    const minutes = new Date().getMinutes()
-    const timeInMinutes = hour * 60 + minutes
-    // Lunch: before 15:00 (3pm), Dinner: 15:00-20:00 (3pm-8pm)
-    if (timeInMinutes < 15 * 60) return 'lunch'
-    if (timeInMinutes < 20 * 60) return 'dinner'
-    return 'lunch' // After 8pm, default to lunch for next day
-  }
+  // Time-based meal state uses the shared getCurrentMealByTime() util
+  // (matches tracker + TV: lunch <15:00, dinner 15:00–20:00).
 
   // Sync with time unless admin has overridden
   useEffect(() => {
@@ -494,7 +487,12 @@ export default function KhidmatPortal() {
         ]
         if (isStoppedOnDay(allReqs, selDateStr, currentMeal)) {
           isStopped = true
-          stopInfo = (allReqs || []).filter(r => r.kind === 'stop')[0] || null
+          const covering = (allReqs || [])
+            .filter(r => r.kind === 'stop')
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0]
+          stopInfo = covering
+            ? { from_date: covering.from_date, to_date: covering.to_date, meal_type: covering.meal_type }
+            : null
         }
         isStoppedLunch = isStoppedOnDay(allReqs, selDateStr, 'lunch')
         isStoppedDinner = isStoppedOnDay(allReqs, selDateStr, 'dinner')
@@ -507,47 +505,40 @@ export default function KhidmatPortal() {
         .eq('week_start', activeWeekId)
         .maybeSingle()
 
+      // Canonical dish-map (same builder as tracker + profile) plus an
+      // explicit per-dish COUNT/PORTION/ROTI map so the TV never has to
+      // guess the input type from the value or grid position.
       const buildMealData = (mealName) => {
-        const mealKey = mealName === 'lunch' ? 'l' : 'd'
-        const statusKey = `${dayKey}_${mealKey}_status`
-        const status = row ? row[statusKey] : null
-        const dishes = {}
-        const currentList = parseDishArray(menuRow?.[mealName])
-        const snapshotList = getSlotDishes(row, today, mealName, null)
-        const names = currentList.length > 0 ? currentList : (snapshotList || [])
-        
-        names.forEach((dish, idx) => {
-          let pos = idx
-          if (snapshotList && snapshotList.includes(dish)) pos = snapshotList.indexOf(dish)
-          const val = row ? row[`${dayKey}_${mealKey}_dish_${pos + 1}`] : null
-          if (val !== undefined && val !== null && val !== '') {
-            if (isRotiItem(dish)) {
-              dishes[dish] = String(val).toLowerCase() === 'yes' ? 'yes' : 'no'
-            } else {
-              const lv = String(val).toLowerCase()
-              dishes[dish] = (lv === 'yes' || lv === 'no') ? lv : val
-            }
-          } else {
-            dishes[dish] = null
-          }
+        const menuList = parseDishArray(menuRow?.[mealName])
+        const dishes = buildMealDishMap(row, today, mealName, menuList, isRotiItem)
+        const rawStatus = normalizeMealStatus(dishes._status)
+        const dishTypes = {}
+        Object.keys(dishes).filter(k => k !== '_status').forEach((d) => {
+          dishTypes[d] = isRotiItem(d) ? 'roti' : 'percentage'
         })
-
         const isMealStopped = mealName === 'lunch' ? isStoppedLunch : isStoppedDinner
-        return { status: isMealStopped ? 'Skipped' : (status || 'Not Submitted'), dishes }
+        return {
+          status: isMealStopped ? 'Skipped' : (rawStatus || 'Not Submitted'),
+          dishes,
+          dishTypes,
+        }
       }
 
       // Use scanned meal (which respects admin override) or current meal
       const mealToShow = scannedMeal || currentMeal
       const lunchData = buildMealData('lunch')
       const dinnerData = buildMealData('dinner')
-      
+      const curData = mealToShow === 'lunch' ? lunchData : dinnerData
+
       setScannedUser({
         ...u,
         week_id: activeWeekId,
         week_range: formatWeekRange(activeWeekId),
         stopped: isStopped,
         stopInfo,
-        status: isStopped ? 'Skipped' : (mealToShow === 'lunch' ? lunchData.status : dinnerData.status),
+        status: isStopped ? 'Skipped' : curData.status,
+        dishResponses: curData.dishes,
+        dishTypes: curData.dishTypes,
         currentDay: today,
         currentMeal: mealToShow,
         lunch: lunchData,

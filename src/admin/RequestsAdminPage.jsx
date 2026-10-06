@@ -130,7 +130,7 @@ export default function RequestsAdminPage() {
           ? `Your ${typeLabel} request was approved. You’re all set.`
           : `Your ${typeLabel} request couldn’t be approved. Open the app for details.`
 
-        // Insert in-app notification for real-time toast
+        // Store in the Alerts inbox (no in-app popup)
         await supabase.from('notifications').insert({
           user_id: userId,
           title,
@@ -140,7 +140,7 @@ export default function RequestsAdminPage() {
           sender_name: 'Al-Mawaid'
         })
 
-        // Send push notification for when app is closed
+        // Outside-app OS push (works when app is closed)
         await supabase.functions.invoke('send-push', {
           body: {
             title,
@@ -345,3 +345,4 @@ export default function RequestsAdminPage() {
     </PageWrap>
   )
 }
+

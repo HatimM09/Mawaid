@@ -3,7 +3,7 @@ import React, { useState, useEffect, useId } from 'react'
 import { AlertCircle, X, Maximize2, Minimize2, Trash2 } from 'lucide-react'
 import { eraseSurveySlot } from '../lib/surveyRows'
 import { isRotiItem } from '../hooks/useSurvey'
-import { formatWeekRange } from '../common/utils'
+import { formatWeekRange, getCurrentMealByTime } from '../common/utils'
 
 export const T = {
   bg: 'var(--bg-deep)',
@@ -438,6 +438,8 @@ export const Alert = ({ msg, type = 'error' }) => {
   )
 }
 
+// (ErrorBanner is defined once at the bottom of this file.)
+
 export const Modal = ({ isOpen, onClose, title, children, maxWidth = 440 }) => {
   if (!isOpen) return null
   return (
@@ -552,14 +554,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
     }
   }, [])
 
-  const getTimeBasedMeal = () => {
-    const hour = new Date().getHours()
-    const minutes = new Date().getMinutes()
-    const timeInMinutes = hour * 60 + minutes
-    if (timeInMinutes < 15 * 60) return 'lunch'
-    if (timeInMinutes < 20 * 60) return 'dinner'
-    return 'lunch'
-  }
+  const getTimeBasedMeal = () => getCurrentMealByTime()
 
   const [selectedMeal, setSelectedMeal] = useState(meal || (mealOverride && currentMeal ? currentMeal : getTimeBasedMeal()))
   useEffect(() => {
@@ -1350,7 +1345,7 @@ export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => 
    )
 }
 
-export const ErrorBanner = ({ message, onDismiss }) => (
+export const ErrorBanner = ({ message, msg, onDismiss }) => (
   <div style={{
     display: 'flex', alignItems: 'center', gap: 12,
     padding: '12px 16px', borderRadius: 14,
@@ -1360,7 +1355,7 @@ export const ErrorBanner = ({ message, onDismiss }) => (
     marginBottom: 16,
   }}>
     <AlertCircle size={18} style={{ flexShrink: 0 }} />
-    <span style={{ flex: 1 }}>{message}</span>
+    <span style={{ flex: 1 }}>{message || msg}</span>
     {onDismiss && (
       <button onClick={onDismiss} style={{
         background: 'none', border: 'none', color: '#ef4444',

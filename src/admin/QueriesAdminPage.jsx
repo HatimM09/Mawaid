@@ -70,7 +70,7 @@ export default function QueriesAdminPage() {
     if (status === 'in_progress' && existing?.user_id) {
       try {
         const subjectLabel = existing.subject || 'Query'
-        // Insert in-app notification for real-time toast
+        // Store in the Alerts inbox (no in-app popup)
         await supabase.from('notifications').insert({
           user_id: existing.user_id,
           title: 'Al-Mawaid · Query in progress',
@@ -78,7 +78,7 @@ export default function QueriesAdminPage() {
           url: '/post',
           type: 'query_reply'
         })
-        // Send push notification for when app is closed
+        // Outside-app OS push (works when app is closed)
         await supabase.functions.invoke('send-push', {
           body: {
             title: 'Al-Mawaid · Query in progress',
@@ -97,7 +97,7 @@ export default function QueriesAdminPage() {
     if (status === 'resolved' && existing?.user_id) {
       try {
         const subjectLabel = existing.subject || 'Query'
-        // Insert in-app notification for real-time toast
+        // Store in the Alerts inbox (no in-app popup)
         await supabase.from('notifications').insert({
           user_id: existing.user_id,
           title: '✅ Query Resolved',
@@ -105,7 +105,7 @@ export default function QueriesAdminPage() {
           url: '/post',
           type: 'query_resolved'
         })
-        // Send push notification for when app is closed
+        // Outside-app OS push (works when app is closed)
         await supabase.functions.invoke('send-push', {
           body: {
             title: 'Al-Mawaid · Query closed',
@@ -142,7 +142,7 @@ export default function QueriesAdminPage() {
           const subjectLabel = q.subject || 'Query'
           const shortMessage = trimmedReply.length > 80 ? trimmedReply.slice(0, 80) + '…' : trimmedReply
           const shortBody = trimmedReply.length > 100 ? trimmedReply.slice(0, 100) + '…' : trimmedReply
-          // Insert in-app notification for real-time toast
+          // Store in the Alerts inbox (no in-app popup)
           await supabase.from('notifications').insert({
             user_id: userId,
             title: 'Al-Mawaid · Reply from admin',
@@ -150,7 +150,7 @@ export default function QueriesAdminPage() {
             url: '/post',
             type: 'query_reply'
           })
-          // Send push notification
+          // Outside-app OS push
           await supabase.functions.invoke('send-push', {
             body: {
               title: 'Al-Mawaid · Reply from admin',
@@ -333,3 +333,4 @@ export default function QueriesAdminPage() {
     </PageWrap>
   )
 }
+

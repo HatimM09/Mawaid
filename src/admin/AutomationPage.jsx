@@ -327,7 +327,7 @@ export default function AutomationPage() {
       const userIds = (all || []).map(u => u.user_id).filter(Boolean)
       let sent = 0, failed = 0
       try {
-        const { data: pushResult, error: pushError } = await supabase.functions.invoke('send-push', { body: { title, body, target_type: 'all', url: '/', sender_name: 'Al-Mawaid' } })
+        const { data: pushResult, error: pushError } = await supabase.functions.invoke('send-push', { body: { title, body, target_type: 'all', url: '/profile/notifications', sender_name: 'Al-Mawaid' } })
         if (pushError) throw pushError
         sent = pushResult?.sent || 0; failed = pushResult?.failed || 0
       } catch (err) { console.error('Broadcast push trigger error:', err); failed = userIds.length }

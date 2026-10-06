@@ -6,9 +6,9 @@ import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { RefreshCw, Search, Filter, Utensils, Download, User as UserIcon, Calendar as CalendarIcon, Scan, X, Trash2 } from 'lucide-react'
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Grid, Modal, SectionHeader, SurveyResponseDisplay, PackingTVView, fmtDate, fmtDateTime, ErrorBanner } from './ui'
-import { getSurveyTargetWeek, DAYS, MEALS, parseDishArray, formatWeekRange } from '../common/utils'
-import { getSlotDishes, isRotiItem, isCountInput } from '../hooks/useSurvey'
-import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot } from '../lib/surveyRows'
+import { getSurveyTargetWeek, DAYS, MEALS, parseDishArray, formatWeekRange, getCurrentMealByTime } from '../common/utils'
+import { isRotiItem, isCountInput, getDishSnapshot } from '../hooks/useSurvey'
+import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot, buildMealDishMap } from '../lib/surveyRows'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
 } from 'recharts'
@@ -40,10 +40,7 @@ export default function SurveysPage() {
     const today = dayNames[d]
     return ['monday','tuesday','wednesday','thursday','friday','saturday'].includes(today) ? today : 'monday'
   })
-  const [mealFilter, setMealFilter] = useState(() => {
-    const h = new Date().getHours() + new Date().getMinutes() / 60
-    return (h >= 20 || h < 14) ? 'lunch' : 'dinner'
-  })
+  const [mealFilter, setMealFilter] = useState(() => getCurrentMealByTime())
   const [search, setSearch] = useState('')
   const [chartData, setChartData] = useState([])
   const [selectedUser, setSelectedUser] = useState(null)
@@ -125,34 +122,8 @@ export default function SurveysPage() {
     }
   }
 
-  const buildAllDishes = (row, dayName, mealName, fallbackList) => {
-    const dk = dayName.substring(0, 3).toLowerCase()
-    const mk = mealName === 'lunch' ? 'l' : 'd'
-    const snapshotList = getSlotDishes(row, dayName, mealName, null)
-    const cleanSnapshot = Array.isArray(snapshotList) ? snapshotList.filter(Boolean) : []
-    const menuList = Array.isArray(fallbackList) ? fallbackList.filter(Boolean) : []
-    const dishList = menuList.length > 0 ? menuList : (cleanSnapshot.length > 0 ? cleanSnapshot : [])
-    const res = {}
-    res._status = row ? row[`${dk}_${mk}_status`] : 'Not Submitted'
-    dishList.forEach((d, idx) => {
-      let pos = idx
-      if (cleanSnapshot.length > 0 && cleanSnapshot.includes(d)) pos = cleanSnapshot.indexOf(d)
-      const v = (row && pos >= 0) ? row[`${dk}_${mk}_dish_${pos + 1}`] : null
-      if (v !== undefined && v !== null && v !== '') {
-        const rotiKw = ['roti', 'naan', 'paratha', 'bread', 'chapati', 'puri']
-        if (rotiKw.some(k => d.toLowerCase().includes(k))) {
-          res[d] = String(v).toLowerCase() === 'yes' ? 'yes' : 'no'
-        } else {
-          const lv = String(v).toLowerCase()
-          if (lv === 'yes' || lv === 'no') res[d] = lv
-          else res[d] = v
-        }
-      } else {
-        res[d] = null
-      }
-    })
-    return res
-  }
+  const buildAllDishes = (row, dayName, mealName, fallbackList) =>
+    buildMealDishMap(row, dayName, mealName, fallbackList, isRotiItem)
 
   const processDirectScan = async (rawUserId) => {
     try {
@@ -178,8 +149,6 @@ export default function SurveysPage() {
       if (!u) return
       
       const targetUserId = u.user_id || u.id
-      const dayKey = dayFilter.substring(0, 3).toLowerCase()
-      const mealKey = mealFilter === 'lunch' ? 'l' : 'd'
       const weekId = (weekFilter && weekFilter !== 'all') ? weekFilter : surveyWeekId()
       
       const { data: row } = await fetchUserSurveyRow(targetUserId, weekId)
@@ -339,7 +308,8 @@ export default function SurveysPage() {
             if (status) {
               const dishResponses = {}
               const dayMenu = weeklyMenu[day.toLowerCase()] || weeklyMenu[day] || {}
-              const dishList = getSlotDishes(row, day, meal, dayMenu[meal] || [])
+              const menuDishes = Array.isArray(dayMenu[meal]) ? dayMenu[meal].filter(Boolean) : []
+              const dishList = menuDishes.length > 0 ? menuDishes : (getDishSnapshot(row, day, meal) || [])
               const dishes = dishList.length > 0
                 ? dishList
                 : Array.from({ length: 14 }, (_, i) => `Dish ${i + 1}`).filter((_, i) => row && row[`${dayKey}_${mealKey}_dish_${i + 1}`] !== undefined && row[`${dayKey}_${mealKey}_dish_${i + 1}`] !== null && row[`${dayKey}_${mealKey}_dish_${i + 1}`] !== '')

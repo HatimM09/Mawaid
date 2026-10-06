@@ -10,10 +10,10 @@ import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/firebaseClient'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
-import { getSurveyTargetWeek, getSurveyTargetWeeks, getSurveyCadence, formatWeekRange, getCalendarWeekDate, addWeeks } from '../../common/utils'
-import { getSlotDishes, getDishSnapshot, isRotiItem } from '../../hooks/useSurvey'
+import { getSurveyTargetWeek, getSurveyTargetWeeks, formatWeekRange, getCalendarWeekDate, addWeeks } from '../../common/utils'
+import { getDishSnapshot, isRotiItem } from '../../hooks/useSurvey'
 import ErrorBoundary from '../../components/ErrorBoundary'
-import { fetchLatestUserSurveyRow, fetchUserSurveyRow, fetchUserSurveyRows } from '../../lib/surveyRows'
+import { fetchUserSurveyRow, fetchUserSurveyRows } from '../../lib/surveyRows'
 import { ProfileSkeleton, ListPageSkeleton, RequestsSkeleton, NotificationsSkeleton, KhidmatTeamSkeleton } from '../../common/Skeleton'
 import { THEMES } from '../theme'
 import { DAYS } from '../constants'
@@ -135,7 +135,7 @@ function ProfileMainPage({ theme, setTheme, onNav }) {
 
       </Card>
       <SectionLabel>My Activity</SectionLabel>
-      <NavCard label="Dues & Payments" icon={<CreditCard size={20} color="#fff" />} desc="Google Pay, payment dues & tracking history" onClick={() => onNav('payments')} />
+      <NavCard label="Dues & Payments" icon={<CreditCard size={20} color="#fff" />} desc="Instant UPI pay, dues & tracking history" onClick={() => onNav('payments')} />
       <NavCard label="My Identity QR" icon={<ScanLine size={20} color="#fff" />} desc="Show your QR code for thali collection" onClick={() => setShowQR(true)} />
       <NavCard label="My Surveys" icon={<ClipboardCheck size={20} color="#fff" />} desc="View your weekly survey responses" onClick={() => onNav('surveys')} />
       <NavCard label="My Requests" icon={<img src="/al-mawaid.png" alt="" style={{ width: 22, height: 22, objectFit: 'contain' }} />} desc="Resume, stop & extra food requests" onClick={() => onNav('requests')} />
@@ -303,23 +303,19 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
   const targetWeeks = useMemo(() => getSurveyTargetWeeks(appSettings), [appSettings])
   const primaryTargetWeek = targetWeeks[0] || nextWeekId
 
-  // Exactly 2 tabs: This Week & Next Week
-  const weekTabs = useMemo(() => [
-    {
-      id: calendarWeekId,
-      label: 'This Week',
-      weekId: calendarWeekId,
-      range: formatWeekRange(calendarWeekId),
-      isServing: true,
-    },
-    {
-      id: nextWeekId,
-      label: 'Next Week',
-      weekId: nextWeekId,
-      range: formatWeekRange(nextWeekId),
-      isTarget: true,
-    }
-  ], [calendarWeekId, nextWeekId])
+  // Tabs always include the week the survey form actually writes to
+  // (primaryTargetWeek), so a fully-filled week can never appear empty here.
+  const weekTabs = useMemo(() => {
+    const ids = [...new Set([calendarWeekId, primaryTargetWeek, nextWeekId])].filter(Boolean)
+    return ids.map((wid) => ({
+      id: wid,
+      label: wid === calendarWeekId ? 'This Week' : wid === primaryTargetWeek ? 'Survey Week' : 'Next Week',
+      weekId: wid,
+      range: formatWeekRange(wid),
+      isServing: wid === calendarWeekId,
+      isTarget: wid === primaryTargetWeek,
+    }))
+  }, [calendarWeekId, primaryTargetWeek, nextWeekId])
 
   const [activeTab, setActiveTab] = useState(calendarWeekId)
 
@@ -344,12 +340,13 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
 
   const loadData = useCallback(async () => {
     try {
-      const { data: map } = await fetchUserSurveyRows(user.id, [calendarWeekId, nextWeekId])
+      const weekIds = [...new Set([calendarWeekId, primaryTargetWeek, nextWeekId])].filter(Boolean)
+      const { data: map } = await fetchUserSurveyRows(user.id, weekIds)
       setSurveysByWeek(map || {})
     } catch {
       setSurveysByWeek({})
     }
-  }, [user.id, calendarWeekId, nextWeekId])
+  }, [user.id, calendarWeekId, primaryTargetWeek, nextWeekId])
 
   useEffect(() => {
     loadData().finally(() => setLoading(false))
@@ -366,7 +363,8 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
     return () => supabase.removeChannel(subscription)
   }, [user?.id, loadData])
 
-  // Smart initial tab switch: if current week has no responses but next week has responses, switch to next week
+  // Smart initial tab switch: jump to the survey week when it holds the
+  // responses (this is the week the survey form fills).
   useEffect(() => {
     if (!loading && Object.keys(surveysByWeek).length > 0) {
       const countFor = (r) => {
@@ -378,13 +376,13 @@ function MySurveysPage({ onBack, appSettings: initialAppSettings = {}, onGoToSur
         })
         return c
       }
-      const nextCount = countFor(surveysByWeek[nextWeekId])
+      const targetCount = countFor(surveysByWeek[primaryTargetWeek])
       const curCount = countFor(surveysByWeek[calendarWeekId])
-      if (nextCount > 0 && curCount === 0 && activeTab === calendarWeekId) {
-        setActiveTab(nextWeekId)
+      if (targetCount > 0 && curCount === 0 && activeTab === calendarWeekId) {
+        setActiveTab(primaryTargetWeek)
       }
     }
-  }, [loading, surveysByWeek, nextWeekId, calendarWeekId, activeTab])
+  }, [loading, surveysByWeek, primaryTargetWeek, calendarWeekId, activeTab])
 
   const formatDishVal = (val, dish) => {
     if (val === 'yes' || val === 'Yes') return '✅ Yes'
@@ -1385,14 +1383,21 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
                     const toneColor = (item.tone || '').split(':')[0] || t.accent
                     const initial = (item.sender_name || 'A').charAt(0).toUpperCase()
                     const hasMedia = item.media && item.media[0]
+                    // Actionable alerts (e.g. dues reminders) tap through to the related page.
+                    const actionUrl = item.url && item.url !== '/' ? item.url : null
                     return (
-                      <div key={item.id} style={{
-                        marginBottom: 10, borderRadius: 18, overflow: 'hidden',
-                        background: `linear-gradient(135deg, ${toneColor}06, ${t.card})`,
-                        border: `1px solid ${toneColor}18`,
-                        boxShadow: `0 2px 12px rgba(0,0,0,0.12)`,
-                        transition: 'all 0.25s'
-                      }}>
+                      <div
+                        key={item.id}
+                        onClick={actionUrl ? () => window.dispatchEvent(new CustomEvent('app-navigate', { detail: { url: actionUrl } })) : undefined}
+                        style={{
+                          marginBottom: 10, borderRadius: 18, overflow: 'hidden',
+                          background: `linear-gradient(135deg, ${toneColor}06, ${t.card})`,
+                          border: `1px solid ${toneColor}18`,
+                          boxShadow: `0 2px 12px rgba(0,0,0,0.12)`,
+                          transition: 'all 0.25s',
+                          cursor: actionUrl ? 'pointer' : 'default',
+                        }}
+                      >
                         {hasMedia && (
                           <div style={{
                             width: '100%', height: 140,
@@ -1426,6 +1431,11 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
                               <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.6, fontFamily: "'DM Sans',sans-serif" }}>
                                 {item.body}
                               </div>
+                              {actionUrl && (
+                                <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 800, color: toneColor, fontFamily: "'DM Sans',sans-serif" }}>
+                                  Tap to open →
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>

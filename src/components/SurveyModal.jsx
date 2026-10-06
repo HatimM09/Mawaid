@@ -1,68 +1,48 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { X, ChevronLeft, ChevronRight, Check, AlertTriangle, Play, Sun, Moon, Lock, CalendarRange, Layers } from 'lucide-react'
 import { supabase } from '../lib/firebaseClient'
-import { useAuth, useTheme } from '../admin/context'
-import { useWeeklyMenu, getMenuForWeekDay } from '../common/useWeeklyMenu'
-import { DAYS, getSurveyTargetWeek, getSurveyTargetWeeks, getSurveyCadence, isTwoWeekCadence, getSurveyTotalSlots, formatWeekRange, parseDishArray } from '../common/utils'
+import { useAuth } from '../admin/context'
+import { useWeeklyMenu } from '../common/useWeeklyMenu'
+import { DAYS, getSurveyTargetWeek, formatWeekRange, parseDishArray } from '../common/utils'
 import { DEFAULT_MENU } from '../common/constants'
 import {
   isRotiItem, isCountInput, canEditMeal, isSurveyOpen,
   normalizeDishValue, denormalizeDishValue, getPctColor,
   mergeDishSnapshot, getSlotDishes,
 } from '../hooks/useSurvey'
-import { submitSurveyRow, submitSurveyRows, submitSurvey, beginSurvey } from '../lib/submitSurvey'
-import { fetchUserSurveyRow, fetchUserSurveyRows } from '../lib/surveyRows'
+import { submitSurveyRow, submitSurveyRows, beginSurvey } from '../lib/submitSurvey'
+import { fetchUserSurveyRow } from '../lib/surveyRows'
 
-// ── Static theme (fallback / default) ──────────────────────────────
+// ── Bright survey theme (always vivid/high-contrast) ────────────────────
+// The survey is the one place every member must tap through, so it uses its
+// own bright celebratory palette regardless of the app's dark/light theme:
+// warm cream sheet, dark cocoa text, vivid green/red/amber/blue choices.
 const BASE_THEME = {
-  bg: '#0d0d1a',
-  card: 'rgba(255,255,255,0.03)',
-  border: 'rgba(139,92,246,0.15)',
-  accent: '#D4AF37',
-  accentGrad: 'linear-gradient(135deg,#D4AF37,#B8860B)',
-  accentBg: 'rgba(212,175,55,0.1)',
-  accentBorder: 'rgba(212,175,55,0.3)',
-  text: '#f0f0f5',
-  textSub: 'rgba(240,240,245,0.5)',
-  inputBg: 'rgba(255,255,255,0.05)',
-  yesColor: '#4CAF50',
-  yesBg: 'rgba(76,175,80,0.15)',
-  noColor: '#F44336',
-  noBg: 'rgba(244,67,54,0.15)',
-  overlay: 'rgba(5,5,10,0.80)',
-  successOverlay: 'rgba(0,0,0,0.90)',
-  modalBg: 'linear-gradient(165deg,#12121f 0%,#0d0d1a 60%)',
-  modalBorder: 'rgba(212,175,55,0.35)',
-  loadingOverlay: 'rgba(13,13,26,0.85)',
-  softBg: 'rgba(255,255,255,0.03)',
-  softBorder: 'rgba(255,255,255,0.05)',
+  bg: '#FFF9EF',
+  card: '#FFFFFF',
+  border: '#F0DDAE',
+  accent: '#D97706',
+  accentGrad: 'linear-gradient(135deg,#FBBF24,#F59E0B)',
+  accentBg: '#FEF3C7',
+  accentBorder: '#F59E0B',
+  text: '#3A2C14',
+  textSub: '#8A7A63',
+  inputBg: '#FFFFFF',
+  yesColor: '#16A34A',
+  yesBg: '#DCFCE7',
+  noColor: '#DC2626',
+  noBg: '#FEE2E2',
+  overlay: 'rgba(24,16,4,0.72)',
+  successOverlay: 'rgba(255,251,235,0.97)',
+  modalBg: 'linear-gradient(165deg,#FFFEFB 0%,#FFF7E6 60%,#FFFBEB 100%)',
+  modalBorder: '#F59E0B',
+  loadingOverlay: 'rgba(255,251,235,0.9)',
+  softBg: '#FFF7E6',
+  softBorder: '#F3DFAE',
 }
 
-function buildTheme(appT) {
-  if (!appT) return BASE_THEME
-  const light = appT.id === 'bright'
-  return {
-    ...BASE_THEME,
-    bg: appT.bg || BASE_THEME.bg,
-    card: appT.card || BASE_THEME.card,
-    border: appT.border || BASE_THEME.border,
-    accent: appT.accent || BASE_THEME.accent,
-    accentGrad: appT.accentGrad || BASE_THEME.accentGrad,
-    accentBg: appT.accentBg || BASE_THEME.accentBg,
-    accentBorder: appT.accentBorder || BASE_THEME.accentBorder,
-    text: appT.text || BASE_THEME.text,
-    textSub: appT.textSub || BASE_THEME.textSub,
-    inputBg: appT.inputBg || BASE_THEME.inputBg,
-    overlay: light ? 'rgba(45,36,22,0.55)' : 'rgba(5,5,10,0.80)',
-    successOverlay: light ? 'rgba(253,251,247,0.94)' : 'rgba(0,0,0,0.90)',
-    modalBg: light
-      ? 'linear-gradient(165deg,#ffffff 0%,#faf4e8 60%)'
-      : 'linear-gradient(165deg,#12121f 0%,#0d0d1a 60%)',
-    modalBorder: light ? 'rgba(184,134,11,0.4)' : 'rgba(212,175,55,0.35)',
-    loadingOverlay: light ? 'rgba(253,251,247,0.88)' : 'rgba(13,13,26,0.85)',
-    softBg: light ? 'rgba(184,134,11,0.07)' : 'rgba(255,255,255,0.03)',
-    softBorder: light ? 'rgba(184,134,11,0.18)' : 'rgba(255,255,255,0.05)',
-  }
+function buildTheme() {
+  return { ...BASE_THEME }
 }
 
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : '')
@@ -77,6 +57,15 @@ const SURVEY_STYLES = `
 @keyframes surveyModalIn { 0%{opacity:0;transform:translateY(28px) scale(0.97)} 100%{opacity:1;transform:translateY(0) scale(1)} }
 @keyframes surveyFadeIn { 0%{opacity:0;transform:translateY(8px)} 100%{opacity:1;transform:translateY(0)} }
 @keyframes shimmer { 0%{ transform: translateX(-100%) } 100%{ transform: translateX(200%) } }
+@keyframes dishPickPop { 0%{transform:scale(0.88)} 45%{transform:scale(1.07)} 70%{transform:scale(0.98)} 100%{transform:scale(1)} }
+@keyframes dishCardFlash { 0%{box-shadow:0 0 0 0 rgba(245,158,11,0.55)} 100%{box-shadow:0 0 0 14px rgba(245,158,11,0)} }
+@keyframes dishCheckBurst { 0%{transform:scale(0) rotate(-30deg);opacity:0} 55%{transform:scale(1.25) rotate(6deg);opacity:1} 100%{transform:scale(1) rotate(0)} }
+.dish-pick-btn { -webkit-tap-highlight-color: transparent; }
+.dish-pick-btn:active { transform: scale(0.94) !important; }
+.dish-pick-pop { animation: dishPickPop 0.34s cubic-bezier(0.34,1.56,0.64,1); }
+.dish-card-flash { animation: dishCardFlash 0.55s ease-out; }
+.dish-check-burst { display:inline-block; animation: dishCheckBurst 0.4s cubic-bezier(0.34,1.56,0.64,1); }
+.dish-count-pop { animation: dishPickPop 0.3s cubic-bezier(0.34,1.56,0.64,1); }
 `
 
 const createEmptyDay = () => ({ lunchWantsFood: null, lunchResponses: {}, dinnerWantsFood: null, dinnerResponses: {} })
@@ -91,124 +80,171 @@ const createInitialWeekDataForWeeks = (weekIds) => {
 
 // ────────────────────────────────────────────────────────────────────
 // DishRow — defined OUTSIDE the main component so it is stable across renders
+// Bright, explicit states: NOTHING is ever pre-selected. An unanswered dish
+// shows a dashed amber "TAP TO CHOOSE" frame; a chosen dish shows a solid
+// vivid frame plus a summary pill with the exact picked value.
 // ────────────────────────────────────────────────────────────────────
+const DISH_FONT = "'DM Sans',sans-serif"
+
+function ChoiceBtn({ selected, color, onClick, children, style: extra = {}, popKey }) {
+  return (
+    <button key={popKey} type="button" onClick={onClick}
+      className={selected ? 'dish-pick-btn dish-pick-pop' : 'dish-pick-btn'}
+      style={{
+        flex: 1, minHeight: 48, padding: '13px 8px', borderRadius: 13,
+        border: selected ? `2px solid ${color}` : '2px solid #EADFC6',
+        background: selected ? color : '#FFFFFF',
+        color: selected ? '#FFFFFF' : '#6B5D43',
+        fontSize: 13.5, fontWeight: 900, cursor: 'pointer', fontFamily: DISH_FONT,
+        boxShadow: selected ? `0 6px 18px ${color}55` : '0 1px 3px rgba(90,70,30,0.10)',
+        transition: 'all 0.18s', touchAction: 'manipulation',
+        WebkitTapHighlightColor: 'transparent', ...extra,
+      }}>
+      {children}
+    </button>
+  )
+}
+
 function DishRow({ dish, idx, mealType, value, onChange, T, appSettings, currentDay, snackDefaults }) {
   const isRoti = isRotiItem(dish)
   const isCount = !isRoti && isCountInput(appSettings, currentDay, mealType, idx)
   const profileCount = snackDefaults?.[`dish_${idx + 1}`]
   const maxVal = (profileCount !== undefined && profileCount !== null && profileCount >= 0) ? profileCount : 99
-  const optGrad = (color) => `linear-gradient(145deg,${color}30 0%,${color}10 55%,${color}05 100%)`
-  const optShadow = (color) => `0 6px 20px ${color}40,inset 0 1px 0 rgba(255,255,255,0.12)`
-  const Sheen = () => (<span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,0.14),transparent)', pointerEvents: 'none', borderRadius: 'inherit' }} />)
-  const StatusPill = ({ label, color }) => (<span style={{ fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em', padding: '3px 10px', borderRadius: 100, whiteSpace: 'nowrap', background: `${color}1a`, color, border: `1px solid ${color}55`, animation: 'surveyBadgePop 0.3s ease' }}>{label}</span>)
+
+  // Human-readable summary of the CURRENT selection — always visible once chosen
+  const summary = (() => {
+    if (isRoti) {
+      if (value === 'yes') return { label: '✅ YES — I want this', color: T.yesColor }
+      if (value === 'no') return { label: '❌ NO — skip this', color: T.noColor }
+      return null
+    }
+    if (isCount) {
+      if (value && typeof value === 'object' && value.status === 'yes') {
+        const n = value.value || 1
+        return { label: `✅ ${n} ${n === 1 ? 'PERSON' : 'PERSONS'}`, color: T.yesColor }
+      }
+      if (value === 'no') return { label: '❌ SKIP THIS DISH', color: T.noColor }
+      return null
+    }
+    if (typeof value === 'number') {
+      const c = getPctColor(value) || T.accent
+      return { label: value === 0 ? '❌ 0% — none for me' : `✅ ${value}% portion`, color: c }
+    }
+    return null
+  })()
+  const answered = !!summary
+  const frameColor = answered ? summary.color : '#F59E0B'
+
+  const cardStyle = {
+    marginBottom: 10, padding: '13px 14px', borderRadius: 16, position: 'relative',
+    background: answered ? '#FFFFFF' : '#FFFBEB',
+    border: answered ? `2px solid ${frameColor}` : '2px dashed #F59E0B',
+    boxShadow: answered ? `0 4px 16px ${frameColor}22` : 'none',
+    transition: 'all 0.2s',
+  }
+  // Replay-key signature: changing selection remounts the flash + pill + pop.
+  const sig = answered ? summary.label : 'pending'
+  const flash = <div key={`flash-${dish}-${sig}`} className="dish-card-flash" style={{ position: 'absolute', inset: -2, borderRadius: 17, border: `2px solid ${frameColor}`, pointerEvents: 'none' }} />
+  const titleStyle = { fontSize: 14, fontWeight: 800, color: '#3A2C14', fontFamily: DISH_FONT }
+  const pendingPill = (
+    <span style={{ fontSize: 10, fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: '#FEF3C7', color: '#B45309', border: '1.5px dashed #F59E0B', whiteSpace: 'nowrap', animation: 'surveyBadgePop 0.3s ease' }}>
+      👆 TAP TO CHOOSE
+    </span>
+  )
+  const donePill = answered && (
+    <span key={`pill-${dish}-${sig}`} style={{ fontSize: 11, fontWeight: 900, padding: '4px 10px', borderRadius: 999, background: '#FFFFFF', color: summary.color, border: `2px solid ${summary.color}`, whiteSpace: 'nowrap', boxShadow: `0 2px 8px ${summary.color}33`, animation: 'surveyBadgePop 0.3s ease' }}>
+      {summary.label}
+    </span>
+  )
 
   if (isRoti) {
-    const selColor = value === 'yes' ? T.yesColor : value === 'no' ? T.noColor : null
     return (
-      <div style={{ marginBottom: 8, padding: '12px 14px', borderRadius: 14, position: 'relative', overflow: 'hidden', background: selColor ? `linear-gradient(145deg,${selColor}1a,${T.card})` : T.card, border: `1.5px solid ${selColor || T.border}`, boxShadow: selColor ? `0 6px 18px ${selColor}18` : 'none', transition: 'all 0.25s' }}>
-        {selColor && <div style={{ position: 'absolute', top: -20, right: -20, width: 90, height: 90, borderRadius: '50%', background: selColor, filter: 'blur(36px)', opacity: 0.14, pointerEvents: 'none' }} />}
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 700, color: T.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</div>
-            {value && <StatusPill label={value === 'yes' ? '✅ Selected' : '❌ Skipped'} color={selColor} />}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {['yes', 'no'].map(opt => {
-              const isSel = value === opt
-              const color = opt === 'yes' ? T.yesColor : T.noColor
-              return (
-                <button key={opt} type="button" onClick={() => onChange(dish, opt)}
-                  style={{ flex: 1, minHeight: 44, padding: '12px 8px', borderRadius: 12, border: `1.5px solid ${isSel ? color : T.border}`, background: isSel ? optGrad(color) : 'transparent', color: isSel ? color : T.textSub, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', transform: isSel ? 'scale(1.02)' : 'scale(1)', boxShadow: isSel ? optShadow(color) : 'none', position: 'relative', overflow: 'hidden', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
-                  {isSel && <Sheen />}{opt === 'yes' ? '✅ Yes, please' : '❌ No, skip'}
-                </button>
-              )
-            })}
-          </div>
+      <div style={cardStyle}>
+        {flash}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <div style={titleStyle}>🫓 {dish}</div>
+          {answered ? donePill : pendingPill}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <ChoiceBtn popKey={`roti-yes-${value === 'yes'}`} selected={value === 'yes'} color={T.yesColor} onClick={() => onChange(dish, 'yes')}>✅ Yes, please</ChoiceBtn>
+          <ChoiceBtn popKey={`roti-no-${value === 'no'}`} selected={value === 'no'} color={T.noColor} onClick={() => onChange(dish, 'no')}>❌ No, skip</ChoiceBtn>
         </div>
       </div>
     )
   }
+
   if (isCount) {
     const isYes = value && typeof value === 'object' && value.status === 'yes'
     const isSkipped = value === 'no'
     const countNum = isYes ? (value.value || 1) : 0
     const atMax = maxVal > 0 ? countNum >= maxVal : true
     const showInitial = value === undefined || value === null
-    const selColor = isYes ? T.yesColor : isSkipped ? T.noColor : null
     return (
-      <div style={{ marginBottom: 8, padding: '12px 14px', borderRadius: 14, position: 'relative', overflow: 'hidden', background: selColor ? `linear-gradient(145deg,${selColor}1a,${T.card})` : T.card, border: `1.5px solid ${selColor || T.border}`, boxShadow: selColor ? `0 6px 18px ${selColor}18` : 'none', transition: 'all 0.25s' }}>
-        {selColor && <div style={{ position: 'absolute', top: -20, right: -20, width: 90, height: 90, borderRadius: '50%', background: selColor, filter: 'blur(36px)', opacity: 0.14, pointerEvents: 'none' }} />}
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 700, color: T.text, marginBottom: 10, fontFamily: "'DM Sans',sans-serif", display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span>{dish}</span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {isYes && <StatusPill label={`✅ ${countNum} ${countNum === 1 ? 'person' : 'persons'}`} color={T.yesColor} />}
-              {isSkipped && <StatusPill label="❌ Skipped" color={T.noColor} />}
-              {maxVal < 99 && <span style={{ fontSize: 10, color: T.accent, fontWeight: 800, background: T.accentBg, padding: '3px 8px', borderRadius: 6, border: `1px solid ${T.border}` }}>Max: {maxVal}</span>}
-            </span>
-          </div>
-          {showInitial && (
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button type="button" onClick={() => onChange(dish, { status: 'yes', value: Math.max(1, Math.min(maxVal || 99, 1)) })}
-                style={{ flex: 1, minHeight: 44, padding: '12px 8px', borderRadius: 12, border: `1.5px solid ${T.yesColor}`, background: optGrad(T.yesColor), color: T.yesColor, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', boxShadow: `0 6px 18px ${T.yesColor}30`, position: 'relative', overflow: 'hidden', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
-                <Sheen />✅ Yes, I want</button>
-              <button type="button" onClick={() => onChange(dish, 'no')}
-                style={{ flex: 1, minHeight: 44, padding: '12px 8px', borderRadius: 12, border: `1.5px solid ${T.noColor}`, background: optGrad(T.noColor), color: T.noColor, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.22s', position: 'relative', overflow: 'hidden', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
-                <Sheen />❌ No, skip</button>
-            </div>
-          )}
-          {isSkipped && (
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <div style={{ padding: '9px 16px', borderRadius: 10, background: optGrad(T.noColor), border: `1px solid ${T.noColor}50`, color: T.noColor, fontSize: 13, fontWeight: 800, fontFamily: "'DM Sans',sans-serif" }}>❌ Skipped</div>
-              <button type="button" onClick={() => onChange(dish, { status: 'yes', value: Math.max(1, Math.min(maxVal || 99, 1)) })}
-                style={{ marginLeft: 'auto', minHeight: 42, padding: '10px 20px', borderRadius: 12, border: `1.5px solid ${T.accent}`, background: `linear-gradient(145deg,${T.accentBg},transparent)`, color: T.accent, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>✅ Add back</button>
-            </div>
-          )}
-          {isYes && (
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: `linear-gradient(145deg,${T.yesColor}1f,${T.card})`, borderRadius: 14, padding: '6px 8px', border: `1px solid ${T.yesColor}40`, boxShadow: `0 4px 16px ${T.yesColor}18` }}>
-                <button type="button" onClick={() => onChange(dish, { status: 'yes', value: Math.max(1, countNum - 1) })} disabled={countNum <= 1}
-                  style={{ width: 44, height: 44, borderRadius: 12, border: `1px solid ${countNum <= 1 ? T.border : T.yesColor + '50'}`, background: T.inputBg, color: countNum <= 1 ? T.textSub : T.text, cursor: countNum <= 1 ? 'not-allowed' : 'pointer', fontSize: 22, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: countNum <= 1 ? 0.4 : 1, transition: 'all 0.2s', touchAction: 'manipulation' }}>−</button>
-                <div style={{ textAlign: 'center', minWidth: 60 }}>
-                  <div style={{ fontSize: 28, fontWeight: 900, color: T.yesColor, lineHeight: 1, fontFamily: "'DM Sans',sans-serif" }}>{countNum}</div>
-                  <div style={{ fontSize: 9.5, color: T.textSub, fontWeight: 700 }}>{countNum === 1 ? 'person' : 'persons'}</div>
-                </div>
-                <button type="button" onClick={() => { if (!atMax) onChange(dish, { status: 'yes', value: Math.min(maxVal, countNum + 1) }) }} disabled={atMax}
-                  style={{ width: 44, height: 44, borderRadius: 12, border: `1px solid ${atMax ? T.border : T.yesColor + '50'}`, background: T.inputBg, color: atMax ? T.textSub : T.text, cursor: atMax ? 'not-allowed' : 'pointer', fontSize: 22, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: atMax ? 0.35 : 1, transition: 'all 0.2s', touchAction: 'manipulation' }}>+</button>
-              </div>
-              <button type="button" onClick={() => onChange(dish, 'no')}
-                style={{ marginLeft: 'auto', minHeight: 42, padding: '11px 18px', borderRadius: 12, border: `1.5px solid ${T.noColor}50`, background: 'transparent', color: T.noColor, fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>❌ Skip</button>
-            </div>
-          )}
+      <div style={cardStyle}>
+        {flash}
+        <div style={{ fontSize: 14, fontWeight: 800, color: '#3A2C14', marginBottom: 10, fontFamily: DISH_FONT, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span>🍛 {dish}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {answered ? donePill : pendingPill}
+            {maxVal < 99 && <span style={{ fontSize: 10, color: T.accent, fontWeight: 800, background: T.accentBg, padding: '3px 8px', borderRadius: 6, border: `1px solid ${T.accentBorder}` }}>Max: {maxVal}</span>}
+          </span>
         </div>
+        {showInitial && (
+          <div style={{ display: 'flex', gap: 10 }}>
+            <ChoiceBtn popKey={`count-${dish}-init-yes`} selected={false} color={T.yesColor} onClick={() => onChange(dish, { status: 'yes', value: Math.max(1, Math.min(maxVal || 99, 1)) })}>✅ Yes, I want</ChoiceBtn>
+            <ChoiceBtn popKey={`count-${dish}-init-no`} selected={false} color={T.noColor} onClick={() => onChange(dish, 'no')}>❌ No, skip</ChoiceBtn>
+          </div>
+        )}
+        {isSkipped && (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div key={`skip-${dish}`} className="dish-pick-pop" style={{ padding: '10px 18px', borderRadius: 12, background: T.noColor, color: '#fff', fontSize: 13, fontWeight: 900, fontFamily: DISH_FONT, boxShadow: `0 4px 14px ${T.noColor}44` }}>❌ Skipped</div>
+            <button type="button" onClick={() => onChange(dish, { status: 'yes', value: Math.max(1, Math.min(maxVal || 99, 1)) })}
+              className="dish-pick-btn"
+              style={{ marginLeft: 'auto', minHeight: 44, padding: '10px 20px', borderRadius: 12, border: `2px solid ${T.accent}`, background: '#FFFFFF', color: T.accent, fontSize: 13, fontWeight: 900, cursor: 'pointer', fontFamily: DISH_FONT, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>↩️ Add back</button>
+          </div>
+        )}
+        {isYes && (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#F0FDF4', borderRadius: 14, padding: '6px 8px', border: `2px solid ${T.yesColor}`, boxShadow: `0 4px 16px ${T.yesColor}22` }}>
+              <button type="button" onClick={() => onChange(dish, { status: 'yes', value: Math.max(1, countNum - 1) })} disabled={countNum <= 1}
+                className="dish-pick-btn"
+                style={{ width: 44, height: 44, borderRadius: 12, border: `2px solid ${countNum <= 1 ? '#EADFC6' : T.yesColor}`, background: '#fff', color: countNum <= 1 ? '#B9A87F' : T.yesColor, cursor: countNum <= 1 ? 'not-allowed' : 'pointer', fontSize: 22, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: countNum <= 1 ? 0.5 : 1, transition: 'all 0.2s', touchAction: 'manipulation' }}>−</button>
+              <div style={{ textAlign: 'center', minWidth: 64 }}>
+                <div key={`count-${dish}-${countNum}`} className="dish-count-pop" style={{ fontSize: 30, fontWeight: 900, color: T.yesColor, lineHeight: 1, fontFamily: DISH_FONT }}>{countNum}</div>
+                <div style={{ fontSize: 10, color: '#5F7A63', fontWeight: 800 }}>{countNum === 1 ? 'person' : 'persons'}</div>
+              </div>
+              <button type="button" onClick={() => { if (!atMax) onChange(dish, { status: 'yes', value: Math.min(maxVal, countNum + 1) }) }} disabled={atMax}
+                className="dish-pick-btn"
+                style={{ width: 44, height: 44, borderRadius: 12, border: `2px solid ${atMax ? '#EADFC6' : T.yesColor}`, background: atMax ? '#fff' : T.yesColor, color: atMax ? '#B9A87F' : '#fff', cursor: atMax ? 'not-allowed' : 'pointer', fontSize: 22, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: atMax ? 0.5 : 1, transition: 'all 0.2s', touchAction: 'manipulation' }}>+</button>
+            </div>
+            <button type="button" onClick={() => onChange(dish, 'no')}
+              className="dish-pick-btn"
+              style={{ marginLeft: 'auto', minHeight: 44, padding: '11px 18px', borderRadius: 12, border: `2px solid ${T.noColor}`, background: '#fff', color: T.noColor, fontSize: 12.5, fontWeight: 900, cursor: 'pointer', fontFamily: DISH_FONT, touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>❌ Skip dish</button>
+          </div>
+        )}
       </div>
     )
   }
-  const pctColor = getPctColor(value)
-  const hasResp = typeof value === 'number'
-  const selColor2 = pctColor || T.accent
+
+  // Percentage / portion dish — nothing pre-selected; user taps 0–100%
   return (
-    <div style={{ marginBottom: 8, padding: '12px 14px', borderRadius: 14, position: 'relative', overflow: 'hidden', background: hasResp ? `linear-gradient(145deg,${selColor2}1a,${T.card})` : T.card, border: `1.5px solid ${hasResp ? selColor2 : T.border}`, boxShadow: hasResp ? `0 6px 18px ${selColor2}18` : 'none', transition: 'all 0.25s' }}>
-      {hasResp && <div style={{ position: 'absolute', top: -20, right: -20, width: 90, height: 90, borderRadius: '50%', background: selColor2, filter: 'blur(36px)', opacity: 0.14, pointerEvents: 'none' }} />}
-      <div style={{ position: 'relative', zIndex: 1 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 700, color: T.text, fontFamily: "'DM Sans',sans-serif" }}>{dish}</div>
-          {hasResp && <StatusPill label={`${value}% selected`} color={selColor2} />}
-        </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {[0, 25, 50, 75, 100].map(pct => {
-            const pc = getPctColor(pct)
-            const isSel = value === pct
-            const color = pc || T.accent
-            return (
-              <button key={pct} type="button" onClick={() => onChange(dish, pct)}
-                style={{ flex: 1, minHeight: 44, padding: '12px 2px', borderRadius: 12, border: `1.5px solid ${isSel ? color : T.border}`, background: isSel ? optGrad(color) : 'transparent', color: isSel ? color : T.textSub, fontSize: 13, fontWeight: isSel ? 900 : 700, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", transition: 'all 0.2s ease', transform: isSel ? 'scale(1.03)' : 'scale(1)', outline: isSel ? `2px solid ${color}44` : 'none', outlineOffset: 1 }}
-              >
-                {pct}%
-              </button>
-            )
-          })}
-        </div>
+    <div style={cardStyle}>
+      {flash}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <div style={titleStyle}>🍽️ {dish}</div>
+        {answered ? donePill : pendingPill}
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        {[0, 25, 50, 75, 100].map(pct => {
+          const color = getPctColor(pct) || T.accent
+          const isSel = value === pct
+          return (
+            <ChoiceBtn key={`pct-${dish}-${pct}`} popKey={`pct-${dish}-${pct}-${isSel ? 'on' : 'off'}`} selected={isSel} color={color}
+              onClick={() => onChange(dish, pct)} style={{ fontSize: 14, padding: '13px 2px' }}>
+              {isSel ? `✓ ${pct}%` : `${pct}%`}
+            </ChoiceBtn>
+          )
+        })}
       </div>
     </div>
   )
@@ -220,8 +256,8 @@ function DishRow({ dish, idx, mealType, value, onChange, T, appSettings, current
 
 export default function SurveyModal({ onClose, appSettings = {}, initialDay, initialMeal, initialWeekId }) {
   const { user } = useAuth()
-  const appT = useTheme()
-  const T = useMemo(() => buildTheme(appT), [appT])
+  // Bright survey sheet — intentionally independent of the app theme.
+  const T = useMemo(() => buildTheme(), [])
   const [liveAppSettings, setLiveAppSettings] = useState(appSettings || {})
   useEffect(() => {
     if (appSettings && Object.keys(appSettings).length > 0) setLiveAppSettings(appSettings)
@@ -296,35 +332,63 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
   const dinnerEditable = canEditMeal(currentDay, targetWeekId, 'dinner', liveAppSettings)
   const dayEditable = surveyOpen || lunchEditable || dinnerEditable
 
-  // Validation
+  // Validation — a dish counts as answered ONLY when the user tapped it.
+  // Nothing is ever pre-filled: missing values stay unanswered (null).
   const isDishAnswered = useCallback((dish, val, isCount) => {
     if (isRotiItem(dish)) return val === 'yes' || val === 'no'
     if (isCount) return val === 'no' || (val && typeof val === 'object' && val.status === 'yes' && val.value > 0)
     return typeof val === 'number'
   }, [])
-  const isLunchComplete = lunchWantsFood === false || (lunchWantsFood === true && lunchDishes.length === 0) || (lunchWantsFood === true && lunchDishes.length > 0 && lunchDishes.every((dish, idx) => isDishAnswered(dish, lunchResponses[dish], isCountInput(liveAppSettings, currentDay, 'lunch', idx))))
-  const isDinnerComplete = dinnerWantsFood === false || (dinnerWantsFood === true && dinnerDishes.length === 0) || (dinnerWantsFood === true && dinnerDishes.length > 0 && dinnerDishes.every((dish, idx) => isDishAnswered(dish, dinnerResponses[dish], isCountInput(liveAppSettings, currentDay, 'dinner', idx))))
+
+  // Strict per-meal completion: skipped counts as done; "wants food" counts
+  // as done only when EVERY menu dish has an explicit user choice (local
+  // state first, saved server row as fallback).
+  const isMealDone = useCallback((dayName, meal) => {
+    const dk = dayName.substring(0, 3).toLowerCase()
+    const mk = meal === 'lunch' ? 'l' : 'd'
+    const menu = resolveWeekMenu(dayName)?.[meal] || []
+    const st = weekData[dk]
+    const localWant = st ? (meal === 'lunch' ? st.lunchWantsFood : st.dinnerWantsFood) : null
+    const localResp = st ? (meal === 'lunch' ? st.lunchResponses : st.dinnerResponses) : {}
+    if (localWant === false) return true
+    if (localWant === true) {
+      if (menu.length === 0) return true
+      return menu.every((dish, idx) => isDishAnswered(dish, localResp?.[dish], isCountInput(liveAppSettings, dayName, meal, idx)))
+    }
+    const srvStatus = existingRow?.[`${dk}_${mk}_status`]
+    if (!srvStatus) return false
+    if (srvStatus === 'Skipped' || srvStatus === 'opted_out') return true
+    if (menu.length === 0) return true
+    return menu.every((_, idx) => {
+      const v = existingRow?.[`${dk}_${mk}_dish_${idx + 1}`]
+      return v !== undefined && v !== null && v !== ''
+    })
+  }, [weekData, existingRow, resolveWeekMenu, liveAppSettings, isDishAnswered])
+
+  const isLunchComplete = isMealDone(currentDay, 'lunch')
+  const isDinnerComplete = isMealDone(currentDay, 'dinner')
   const isDayComplete = lunchWantsFood !== null && dinnerWantsFood !== null && isLunchComplete && isDinnerComplete
 
-  // Progress (12 meals max)
+  // Visible "what I picked" counters for the open day
+  const lunchPicked = lunchDishes.filter((d, i) => isDishAnswered(d, lunchResponses[d], isCountInput(liveAppSettings, currentDay, 'lunch', i))).length
+  const dinnerPicked = dinnerDishes.filter((d, i) => isDishAnswered(d, dinnerResponses[d], isCountInput(liveAppSettings, currentDay, 'dinner', i))).length
+
+  // Progress counts only fully-decided meals (12 max)
   const totalFilled = useMemo(() => {
     let c = 0
     DAYS.forEach(d => {
-      const dk = d.substring(0,3).toLowerCase()
-      const st = weekData[dk]
-      if (st) {
-        if (st.lunchWantsFood !== null) c++
-        if (st.dinnerWantsFood !== null) c++
-      }
+      if (isMealDone(d, 'lunch')) c++
+      if (isMealDone(d, 'dinner')) c++
     })
     return Math.min(12, c)
-  }, [weekData])
+  }, [isMealDone])
   const pctGlobal = Math.round((totalFilled / totalSlots) * 100)
 
   useEffect(()=>{ if(!errorToast) return; const t=setTimeout(()=>setErrorToast(null),4000); return()=>clearTimeout(t)}, [errorToast])
   useEffect(()=>{ if(!syncMsg) return; const t=setTimeout(()=>setSyncMsg(null),2400); return()=>clearTimeout(t)}, [syncMsg])
 
-  // Hydrate helper
+  // Hydrate helper — restores ONLY what the user explicitly saved.
+  // Dishes without a saved value stay unanswered (never auto-filled).
   const hydrateFromRow = useCallback((row) => {
     if (!row) return
     setWeekData(prev => {
@@ -341,11 +405,25 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
         const entry = { ...next[dk] }
         if (lVal === 'Applied' || lVal === 'opted_in') {
           entry.lunchWantsFood = true
-          const m = {}; lDishes.forEach((dish, i) => { const raw = row[`${dk}_l_dish_${i+1}`]; if (raw !== undefined && raw !== null && raw !== '') m[dish] = normalizeDishValue(raw, dish, isCountInput(liveAppSettings, d, 'lunch', i)); else m[dish] = isRotiItem(dish) ? 'yes' : isCountInput(liveAppSettings, d, 'lunch', i) ? { status: 'yes', value: 1 } : 100 }); entry.lunchResponses = m
+          const m = {}
+          lDishes.forEach((dish, i) => {
+            const raw = row[`${dk}_l_dish_${i+1}`]
+            if (raw !== undefined && raw !== null && raw !== '') {
+              m[dish] = normalizeDishValue(raw, dish, isCountInput(liveAppSettings, d, 'lunch', i))
+            }
+          })
+          entry.lunchResponses = m
         } else if (lVal === 'Skipped' || lVal === 'opted_out') { entry.lunchWantsFood = false; entry.lunchResponses = {} }
         if (dVal === 'Applied' || dVal === 'opted_in') {
           entry.dinnerWantsFood = true
-          const m = {}; dDishes.forEach((dish, i) => { const raw = row[`${dk}_d_dish_${i+1}`]; if (raw !== undefined && raw !== null && raw !== '') m[dish] = normalizeDishValue(raw, dish, isCountInput(liveAppSettings, d, 'dinner', i)); else m[dish] = isRotiItem(dish) ? 'yes' : isCountInput(liveAppSettings, d, 'dinner', i) ? { status: 'yes', value: 1 } : 100 }); entry.dinnerResponses = m
+          const m = {}
+          dDishes.forEach((dish, i) => {
+            const raw = row[`${dk}_d_dish_${i+1}`]
+            if (raw !== undefined && raw !== null && raw !== '') {
+              m[dish] = normalizeDishValue(raw, dish, isCountInput(liveAppSettings, d, 'dinner', i))
+            }
+          })
+          entry.dinnerResponses = m
         } else if (dVal === 'Skipped' || dVal === 'opted_out') { entry.dinnerWantsFood = false; entry.dinnerResponses = {} }
         next[dk] = entry
       })
@@ -450,10 +528,9 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
       tLunchDishes.forEach((dish, idx) => {
         const val = tState.lunchResponses?.[dish] ?? existingRow?.[`${tDayKey}_l_dish_${idx+1}`]
         const isCount = isCountInput(liveAppSettings, tDay, 'lunch', idx)
+        // Only explicit user choices are written — never invent a default.
         if (val !== undefined && val !== null && val !== '') {
           payload[`${tDayKey}_l_dish_${idx+1}`] = denormalizeDishValue(val, dish, isCount)
-        } else {
-          payload[`${tDayKey}_l_dish_${idx+1}`] = isRotiItem(dish) ? 'Yes' : isCount ? '1' : '100%'
         }
       })
     }
@@ -461,10 +538,9 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
       tDinnerDishes.forEach((dish, idx) => {
         const val = tState.dinnerResponses?.[dish] ?? existingRow?.[`${tDayKey}_d_dish_${idx+1}`]
         const isCount = isCountInput(liveAppSettings, tDay, 'dinner', idx)
+        // Only explicit user choices are written — never invent a default.
         if (val !== undefined && val !== null && val !== '') {
           payload[`${tDayKey}_d_dish_${idx+1}`] = denormalizeDishValue(val, dish, isCount)
-        } else {
-          payload[`${tDayKey}_d_dish_${idx+1}`] = isRotiItem(dish) ? 'Yes' : isCount ? '1' : '100%'
         }
       })
     }
@@ -542,39 +618,17 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
       return wd
     })
   }
+  // Tapping "Yes, I want food" only opens the dish list — every dish starts
+  // UNSELECTED and the user must tap each one. No auto-select, ever.
   const handleOptInLunch = () => {
-    updateActive(prev => {
-      const next = { ...prev, lunchWantsFood: true }
-      const lMap = { ...next.lunchResponses }
-      lunchDishes.forEach((d, idx) => {
-        if (lMap[d] === undefined || lMap[d] === null) {
-          if (isRotiItem(d)) lMap[d] = 'yes'
-          else if (isCountInput(liveAppSettings, currentDay, 'lunch', idx)) { const mx = snackDefaults?.[`dish_${idx+1}`] ?? 99; lMap[d] = mx === 0 ? 'no' : { status: 'yes', value: 1 } }
-          else lMap[d] = 100
-        }
-      })
-      next.lunchResponses = lMap
-      return next
-    })
+    updateActive(prev => ({ ...prev, lunchWantsFood: true }))
   }
   const handleSkipLunch = () => {
     updateActive(prev => ({ ...prev, lunchWantsFood: false, lunchResponses: {} }))
     setTimeout(() => dinnerCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 180)
   }
   const handleOptInDinner = () => {
-    updateActive(prev => {
-      const next = { ...prev, dinnerWantsFood: true }
-      const dMap = { ...next.dinnerResponses }
-      dinnerDishes.forEach((d, idx) => {
-        if (dMap[d] === undefined || dMap[d] === null) {
-          if (isRotiItem(d)) dMap[d] = 'yes'
-          else if (isCountInput(liveAppSettings, currentDay, 'dinner', idx)) { const mx = snackDefaults?.[`dish_${idx+1}`] ?? 99; dMap[d] = mx === 0 ? 'no' : { status: 'yes', value: 1 } }
-          else dMap[d] = 100
-        }
-      })
-      next.dinnerResponses = dMap
-      return next
-    })
+    updateActive(prev => ({ ...prev, dinnerWantsFood: true }))
   }
   const handleSkipDinner = () => {
     updateActive(prev => ({ ...prev, dinnerWantsFood: false, dinnerResponses: {} }))
@@ -659,22 +713,17 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
       return
     }
 
-    // Verify all 6 days are answered either in weekData or existingRow
+    // Every meal must be fully decided — skipped, or every dish explicitly chosen.
     const missing = []
     let firstMissingDayIdx = -1
     DAYS.forEach((d, idx) => {
-      const dk = d.substring(0,3).toLowerCase()
-      const localSt = weekData[dk]
-      const hasLocalLunch = localSt && localSt.lunchWantsFood !== null
-      const hasLocalDinner = localSt && localSt.dinnerWantsFood !== null
-      const hasServerLunch = Boolean(existingRow?.[`${dk}_l_status`])
-      const hasServerDinner = Boolean(existingRow?.[`${dk}_d_status`])
-
-      if (!hasLocalLunch && !hasServerLunch) {
+      const lunchDone = isMealDone(d, 'lunch')
+      const dinnerDone = isMealDone(d, 'dinner')
+      if (!lunchDone) {
         missing.push({ day: d, meal: 'lunch' })
         if (firstMissingDayIdx === -1) firstMissingDayIdx = idx
       }
-      if (!hasLocalDinner && !hasServerDinner) {
+      if (!dinnerDone) {
         missing.push({ day: d, meal: 'dinner' })
         if (firstMissingDayIdx === -1) firstMissingDayIdx = idx
       }
@@ -770,7 +819,9 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
   return (
     <div onClick={handleClose} style={{ position:'fixed', inset:0, zIndex:10001, background:T.overlay, backdropFilter:'blur(14px)', display:'flex', alignItems:'center', justifyContent:'center', padding:'clamp(8px,2.5vw,20px)', overflowY:'auto' }}>
       <style>{SURVEY_STYLES}</style>
-      <div ref={modalScrollRef} onClick={e=>e.stopPropagation()} style={{ background:T.modalBg, borderRadius:24, padding:'clamp(14px,3vw,22px)', maxWidth:780, width:'100%', boxSizing:'border-box', border:`1.5px solid ${T.modalBorder}`, boxShadow:'0 30px 80px rgba(0,0,0,0.55)', position:'relative', overflowX:'hidden', overflowY:'auto', maxHeight:'calc(100dvh - 24px)', WebkitOverflowScrolling:'touch', animation:'surveyModalIn 0.35s ease-out' }}>
+      <div ref={modalScrollRef} onClick={e=>e.stopPropagation()} style={{ background:T.modalBg, borderRadius:24, padding:'clamp(14px,3vw,22px)', maxWidth:780, width:'100%', boxSizing:'border-box', border:`2px solid ${T.modalBorder}`, boxShadow:'0 30px 80px rgba(120,70,0,0.30)', position:'relative', overflowX:'hidden', overflowY:'auto', maxHeight:'calc(100dvh - 24px)', WebkitOverflowScrolling:'touch', animation:'surveyModalIn 0.35s ease-out' }}>
+        {/* Bright rainbow ribbon — the survey sheet is always vivid */}
+        <div style={{ height:6, borderRadius:999, background:'linear-gradient(90deg,#F59E0B,#16A34A,#3B82F6,#8B5CF6,#EC4899)', marginBottom:12 }} />
         {loading && (<div style={{ position:'absolute', inset:0, zIndex:999, borderRadius:24, background:T.loadingOverlay, backdropFilter:'blur(8px)', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:12 }}><div style={{ width:40, height:40, borderRadius:'50%', border:`3px solid`, borderColor:`${T.accent} transparent ${T.accent} ${T.accent}`, animation:'spin 0.8s linear infinite' }} /><div style={{ fontSize:13, color:T.accent, fontWeight:700, fontFamily:"'DM Sans',sans-serif" }}>Saving…</div></div>)}
         {errorToast && (<div style={{ position:'sticky', top:0, zIndex:998, marginBottom:12, padding:'12px 16px', borderRadius:12, background:'rgba(244,67,54,0.15)', border:`1px solid ${T.noColor}`, display:'flex', alignItems:'center', gap:10 }}><AlertTriangle size={18} color={T.noColor}/><span style={{ flex:1, fontSize:12, color:T.text, fontFamily:"'DM Sans',sans-serif" }}>{errorToast}</span><button onClick={()=>setErrorToast(null)} style={{ background:'transparent', border:'none', color:T.textSub, cursor:'pointer', touchAction:'manipulation' }}><X size={14}/></button></div>)}
 
@@ -792,12 +843,12 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
         )}
 
         {/* Progress Bar (12 meals) */}
-        <div style={{ marginBottom:12, padding:10, borderRadius:16, background:'rgba(255,255,255,0.03)', border:`1px solid ${T.border}` }}>
+        <div style={{ marginBottom:12, padding:12, borderRadius:16, background:'#FFFFFF', border:'2px solid #F0DDAE', boxShadow:'0 2px 8px rgba(90,70,30,0.06)' }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
-            <span style={{ fontSize:10, fontWeight:800, letterSpacing: '0.12em', textTransform:'uppercase', color:T.textSub, fontFamily:"'DM Sans',sans-serif", display:'flex', alignItems:'center', gap:6 }}><Layers size={12} color={T.accent}/> Weekly Progress</span>
-            <span style={{ fontSize:12, fontWeight:900, color:T.text, background:T.accentBg, border:`1px solid ${T.accentBorder}`, padding:'2px 8px', borderRadius:999 }}>{totalFilled} / 12 meals · {pctGlobal}%</span>
+            <span style={{ fontSize:10, fontWeight:800, letterSpacing: '0.12em', textTransform:'uppercase', color:'#8A7A63', fontFamily:"'DM Sans',sans-serif", display:'flex', alignItems:'center', gap:6 }}><Layers size={12} color={T.accent}/> Weekly Progress</span>
+            <span style={{ fontSize:12, fontWeight:900, color:'#3A2C14', background:T.accentBg, border:`1.5px solid ${T.accentBorder}`, padding:'2px 10px', borderRadius:999 }}>{totalFilled} / 12 meals · {pctGlobal}%</span>
           </div>
-          <div style={{ height:10, borderRadius:999, background:T.inputBg, border:`1px solid ${T.border}`, overflow:'hidden', padding:2, position:'relative' }}>
+          <div style={{ height:12, borderRadius:999, background:'#F5EAD0', border:'1px solid #EADFC6', overflow:'hidden', padding:2, position:'relative' }}>
             <div style={{ height:'100%', width:`${pctGlobal}%`, borderRadius:999, background: pctGlobal===100?'linear-gradient(90deg,#10b981,#34d399)':T.accentGrad, boxShadow: pctGlobal>0?`0 2px 12px ${T.accent}30`:'none', transition:'width 0.6s cubic-bezier(0.32,0.72,0,1)', position:'relative', overflow:'hidden' }}>
               <span style={{ position:'absolute', inset:0, background:'linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent)', transform:'translateX(-100%)', animation: pctGlobal>0?'shimmer 1.6s ease-in-out infinite':'none' }} />
             </div>
@@ -807,12 +858,9 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
         {/* Day Navigation Tabs — 6 days Mon-Sat */}
         <div style={{ display:'flex', gap:6, marginBottom:14, overflowX:'auto', paddingBottom:4, scrollbarWidth:'none' }}>
           {DAYS.map((d, idx)=>{
-            const dk = d.substring(0,3).toLowerCase()
             const isCur = idx === currentDayIndex
-            const dayLocal = weekData[dk]
-            const isDoneLocal = dayLocal && dayLocal.lunchWantsFood !== null && dayLocal.dinnerWantsFood !== null
-            const isDoneServer = existingRow && existingRow[`${dk}_l_status`] && existingRow[`${dk}_d_status`]
-            const isDone = isDoneLocal || isDoneServer
+            // Tick only when both meals are truly decided (no auto-select).
+            const isDone = isMealDone(d, 'lunch') && isMealDone(d, 'dinner')
             return (
               <button key={d} type="button" onClick={()=>handleSelectDay(idx)}
                 style={{ flex:1, minWidth:50, minHeight:46, padding:'9px 4px', borderRadius:12, border:`1.5px solid ${isCur?T.accent: isDone?T.yesColor+'60':T.border}`, background: isCur?(T.accentBg||'rgba(212,175,55,0.12)'): isDone?'rgba(76,175,80,0.08)':T.card, color: isCur?T.accent: isDone?T.yesColor:T.textSub, fontSize:12, fontWeight: isCur?900:700, cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', gap:3, transition:'all 0.2s', touchAction:'manipulation', WebkitTapHighlightColor:'transparent', boxShadow: isCur?`0 4px 14px ${T.accentBg}`:'none' }}>
@@ -824,20 +872,26 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
         </div>
 
         {/* LUNCH CARD */}
-        <div style={{ marginBottom:14, padding:'16px 18px', borderRadius:18, background: lunchWantsFood===true?`linear-gradient(145deg,${T.accentBg},${T.card})`:T.card, border:`1.5px solid ${lunchWantsFood===true?T.accent: lunchWantsFood===false?T.noColor+'60':T.border}`, boxShadow: lunchWantsFood===true?`0 8px 24px ${T.accentBg}`:'none', transition:'all 0.28s' }}>
+        <div style={{ marginBottom:14, padding:'16px 18px', borderRadius:20, background: lunchWantsFood===true?'#FFFBEB':'#FFFFFF', border:`2px solid ${lunchWantsFood===true?'#F59E0B': lunchWantsFood===false?T.noColor:'#F0DDAE'}`, boxShadow: lunchWantsFood===true?'0 8px 24px rgba(245,158,11,0.18)':'0 2px 8px rgba(90,70,30,0.06)', transition:'all 0.28s' }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12, flexWrap:'wrap', gap:8 }}>
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-              <div style={{ width:34, height:34, borderRadius:10, background:T.accentBg, display:'flex', alignItems:'center', justifyContent:'center' }}><Sun size={18} color={T.accent}/></div>
+              <div style={{ width:40, height:40, borderRadius:12, background:'linear-gradient(135deg,#FBBF24,#F59E0B)', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 4px 12px rgba(245,158,11,0.35)' }}><Sun size={20} color="#fff"/></div>
               <div>
-                <div style={{ fontSize:15, fontWeight:800, color:T.text, fontFamily:"'Playfair Display',serif" }}>☀️ {currentDayName} Lunch</div>
-                <div style={{ fontSize:11, color:T.textSub, fontFamily:"'DM Sans',sans-serif" }}>{lunchWantsFood===null?`Would you like Lunch?`: lunchWantsFood? 'Dishes selected':'Lunch skipped'}</div>
+                <div style={{ fontSize:16, fontWeight:900, color:'#3A2C14', fontFamily:"'Playfair Display',serif" }}>☀️ {currentDayName} Lunch</div>
+                <div style={{ fontSize:11.5, color:'#8A7A63', fontWeight:600, fontFamily:"'DM Sans',sans-serif" }}>
+                  {lunchWantsFood===null ? `Tap Yes below, then pick every dish 👇` : lunchWantsFood ? (isLunchComplete ? `✅ All ${lunchDishes.length} dishes selected` : `👆 Pick each dish — ${lunchPicked} of ${lunchDishes.length} done`) : 'Lunch skipped for this day'}
+                </div>
               </div>
             </div>
-            {lunchWantsFood!==null && (<span style={{ fontSize:10.5, fontWeight:900, padding:'3px 10px', borderRadius:100, background: lunchWantsFood?T.yesBg:T.noBg, color: lunchWantsFood?T.yesColor:T.noColor, border:`1px solid ${lunchWantsFood?T.yesColor:T.noColor}50` }}>{lunchWantsFood? (isLunchComplete?'✅ Complete':'⏳ In progress'):'❌ Skipped'}</span>)}
+            {lunchWantsFood!==null && (
+              <span style={{ fontSize:11, fontWeight:900, padding:'4px 12px', borderRadius:100, background: lunchWantsFood ? (isLunchComplete ? '#16A34A' : '#F59E0B') : T.noColor, color:'#fff', boxShadow:`0 3px 10px ${lunchWantsFood ? (isLunchComplete ? '#16A34A55' : '#F59E0B55') : `${T.noColor}55`}` }}>
+                {lunchWantsFood ? (isLunchComplete ? `✅ ${lunchPicked}/${lunchDishes.length} SELECTED` : `⏳ ${lunchPicked}/${lunchDishes.length} PICKED`) : '❌ SKIPPED'}
+              </span>
+            )}
           </div>
           <div style={{ display:'flex', gap:10, marginBottom: lunchWantsFood===true?14:0 }}>
-            <button type="button" onClick={handleOptInLunch} style={{ flex:1, minHeight:46, padding:'13px 14px', borderRadius:12, border:`2px solid ${lunchWantsFood===true?T.yesColor:T.border}`, background: lunchWantsFood===true?T.yesBg:'rgba(76,175,80,0.05)', color:T.yesColor, cursor:'pointer', fontSize:13.5, fontWeight:800, fontFamily:"'DM Sans',sans-serif", transition:'all 0.22s', transform: lunchWantsFood===true?'scale(1.01)':'scale(1)', boxShadow: lunchWantsFood===true?`0 4px 16px ${T.yesColor}30`:'none', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}>✅ Yes, I want food</button>
-            <button type="button" onClick={handleSkipLunch} style={{ flex:1, minHeight:46, padding:'13px 14px', borderRadius:12, border:`2px solid ${lunchWantsFood===false?T.noColor:T.border}`, background: lunchWantsFood===false?T.noBg:'rgba(244,67,54,0.05)', color:T.noColor, cursor:'pointer', fontSize:13.5, fontWeight:800, fontFamily:"'DM Sans',sans-serif", transition:'all 0.22s', transform: lunchWantsFood===false?'scale(1.01)':'scale(1)', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}>❌ No, I'll skip</button>
+            <button key={`lunch-yes-${lunchWantsFood===true}`} type="button" onClick={handleOptInLunch} className={lunchWantsFood===true ? 'dish-pick-btn dish-pick-pop' : 'dish-pick-btn'} style={{ flex:1, minHeight:48, padding:'13px 14px', borderRadius:13, border:`2px solid ${lunchWantsFood===true?'#16A34A':'#EADFC6'}`, background: lunchWantsFood===true?'#16A34A':'#FFFFFF', color: lunchWantsFood===true?'#fff':'#16A34A', cursor:'pointer', fontSize:14, fontWeight:900, fontFamily:"'DM Sans',sans-serif", transition:'all 0.22s', boxShadow: lunchWantsFood===true?'0 6px 18px #16A34A55':'0 1px 3px rgba(90,70,30,0.10)', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}>{lunchWantsFood===true?'✓ YES — now pick dishes below':'✅ Yes, I want food'}</button>
+            <button key={`lunch-no-${lunchWantsFood===false}`} type="button" onClick={handleSkipLunch} className={lunchWantsFood===false ? 'dish-pick-btn dish-pick-pop' : 'dish-pick-btn'} style={{ flex:1, minHeight:48, padding:'13px 14px', borderRadius:13, border:`2px solid ${lunchWantsFood===false?T.noColor:'#EADFC6'}`, background: lunchWantsFood===false?T.noColor:'#FFFFFF', color: lunchWantsFood===false?'#fff':T.noColor, cursor:'pointer', fontSize:14, fontWeight:900, fontFamily:"'DM Sans',sans-serif", transition:'all 0.22s', boxShadow: lunchWantsFood===false?`0 6px 18px ${T.noColor}55`:'0 1px 3px rgba(90,70,30,0.10)', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}>❌ No, I'll skip</button>
           </div>
           {lunchWantsFood===true && (
             <div style={{ marginTop:14, paddingTop:14, borderTop:`1px solid ${T.border}`, animation:'surveyFadeIn 0.3s ease-out' }}>
@@ -849,10 +903,10 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
                 </div>
               </div>
               {lunchDishes.length>0 ? lunchDishes.map((dish,idx)=>(<DishRow key={`lunch-${targetWeekId}-${dish}-${idx}`} dish={dish} idx={idx} mealType="lunch" value={lunchResponses[dish]} onChange={handleLunchDish} T={T} appSettings={liveAppSettings} currentDay={currentDay} snackDefaults={snackDefaults} />)) : (
-                <div style={{ padding:'20px 14px', textAlign:'center', color:T.textSub, background:'rgba(255,255,255,0.02)', borderRadius:12, border:`1px solid ${T.border}` }}>
+                <div style={{ padding:'20px 14px', textAlign:'center', background:'#FFFDF6', borderRadius:12, border:'2px dashed #F0DDAE' }}>
                   <div style={{ fontSize:20, marginBottom:4 }}>👨‍🍳</div>
-                  <div style={{ fontSize:13, fontWeight:700, color:T.text }}>👨‍🍳 Menu is being prepared by Al-Mawaid team</div>
-                  <div style={{ fontSize:11, color:T.textSub, marginTop:2 }}>Dishes for this week will appear once finalized.</div>
+                  <div style={{ fontSize:13, fontWeight:800, color:'#3A2C14' }}>Menu is being prepared by Al-Mawaid team</div>
+                  <div style={{ fontSize:11, color:'#8A7A63', marginTop:2 }}>Dishes for this week will appear once finalized.</div>
                 </div>
               )}
             </div>
@@ -860,20 +914,26 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
         </div>
 
         {/* DINNER CARD */}
-        <div ref={dinnerCardRef} style={{ marginBottom:18, padding:'16px 18px', borderRadius:18, background: dinnerWantsFood===true?`linear-gradient(145deg,rgba(139,92,246,0.07),${T.card})`:T.card, border:`1.5px solid ${dinnerWantsFood===true?'rgba(139,92,246,0.4)': dinnerWantsFood===false?T.noColor+'60':T.border}`, boxShadow: dinnerWantsFood===true?'0 8px 24px rgba(139,92,246,0.12)':'none', transition:'all 0.28s' }}>
+        <div ref={dinnerCardRef} style={{ marginBottom:18, padding:'16px 18px', borderRadius:20, background: dinnerWantsFood===true?'#F5F0FF':'#FFFFFF', border:`2px solid ${dinnerWantsFood===true?'#8B5CF6': dinnerWantsFood===false?T.noColor:'#DDD3F5'}`, boxShadow: dinnerWantsFood===true?'0 8px 24px rgba(139,92,246,0.20)':'0 2px 8px rgba(90,70,30,0.06)', transition:'all 0.28s' }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12, flexWrap:'wrap', gap:8 }}>
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-              <div style={{ width:34, height:34, borderRadius:10, background:'rgba(139,92,246,0.15)', display:'flex', alignItems:'center', justifyContent:'center' }}><Moon size={18} color="#a78bfa"/></div>
+              <div style={{ width:40, height:40, borderRadius:12, background:'linear-gradient(135deg,#8B5CF6,#6D28D9)', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 4px 12px rgba(139,92,246,0.35)' }}><Moon size={20} color="#fff"/></div>
               <div>
-                <div style={{ fontSize:15, fontWeight:800, color:T.text, fontFamily:"'Playfair Display',serif" }}>🌙 {currentDayName} Dinner</div>
-                <div style={{ fontSize:11, color:T.textSub, fontFamily:"'DM Sans',sans-serif" }}>{dinnerWantsFood===null?`Would you like Dinner?`: dinnerWantsFood? 'Dishes selected':'Dinner skipped'}</div>
+                <div style={{ fontSize:16, fontWeight:900, color:'#3A2C14', fontFamily:"'Playfair Display',serif" }}>🌙 {currentDayName} Dinner</div>
+                <div style={{ fontSize:11.5, color:'#8A7A63', fontWeight:600, fontFamily:"'DM Sans',sans-serif" }}>
+                  {dinnerWantsFood===null ? `Tap Yes below, then pick every dish 👇` : dinnerWantsFood ? (isDinnerComplete ? `✅ All ${dinnerDishes.length} dishes selected` : `👆 Pick each dish — ${dinnerPicked} of ${dinnerDishes.length} done`) : 'Dinner skipped for this day'}
+                </div>
               </div>
             </div>
-            {dinnerWantsFood!==null && (<span style={{ fontSize:10.5, fontWeight:900, padding:'3px 10px', borderRadius:100, background: dinnerWantsFood?T.yesBg:T.noBg, color: dinnerWantsFood?T.yesColor:T.noColor, border:`1px solid ${dinnerWantsFood?T.yesColor:T.noColor}50` }}>{dinnerWantsFood? (isDinnerComplete?'✅ Complete':'⏳ In progress'):'❌ Skipped'}</span>)}
+            {dinnerWantsFood!==null && (
+              <span style={{ fontSize:11, fontWeight:900, padding:'4px 12px', borderRadius:100, background: dinnerWantsFood ? (isDinnerComplete ? '#16A34A' : '#8B5CF6') : T.noColor, color:'#fff', boxShadow:'0 3px 10px rgba(0,0,0,0.15)' }}>
+                {dinnerWantsFood ? (isDinnerComplete ? `✅ ${dinnerPicked}/${dinnerDishes.length} SELECTED` : `⏳ ${dinnerPicked}/${dinnerDishes.length} PICKED`) : '❌ SKIPPED'}
+              </span>
+            )}
           </div>
           <div style={{ display:'flex', gap:10, marginBottom: dinnerWantsFood===true?14:0 }}>
-            <button type="button" onClick={handleOptInDinner} style={{ flex:1, minHeight:46, padding:'13px 14px', borderRadius:12, border:`2px solid ${dinnerWantsFood===true?T.yesColor:T.border}`, background: dinnerWantsFood===true?T.yesBg:'rgba(76,175,80,0.05)', color:T.yesColor, cursor:'pointer', fontSize:13.5, fontWeight:800, fontFamily:"'DM Sans',sans-serif", transition:'all 0.22s', transform: dinnerWantsFood===true?'scale(1.01)':'scale(1)', boxShadow: dinnerWantsFood===true?`0 4px 16px ${T.yesColor}30`:'none', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}>✅ Yes, I want food</button>
-            <button type="button" onClick={handleSkipDinner} style={{ flex:1, minHeight:46, padding:'13px 14px', borderRadius:12, border:`2px solid ${dinnerWantsFood===false?T.noColor:T.border}`, background: dinnerWantsFood===false?T.noBg:'rgba(244,67,54,0.05)', color:T.noColor, cursor:'pointer', fontSize:13.5, fontWeight:800, fontFamily:"'DM Sans',sans-serif", transition:'all 0.22s', transform: dinnerWantsFood===false?'scale(1.01)':'scale(1)', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}>❌ No, I'll skip</button>
+            <button key={`dinner-yes-${dinnerWantsFood===true}`} type="button" onClick={handleOptInDinner} className={dinnerWantsFood===true ? 'dish-pick-btn dish-pick-pop' : 'dish-pick-btn'} style={{ flex:1, minHeight:48, padding:'13px 14px', borderRadius:13, border:`2px solid ${dinnerWantsFood===true?'#16A34A':'#EADFC6'}`, background: dinnerWantsFood===true?'#16A34A':'#FFFFFF', color: dinnerWantsFood===true?'#fff':'#16A34A', cursor:'pointer', fontSize:14, fontWeight:900, fontFamily:"'DM Sans',sans-serif", transition:'all 0.22s', boxShadow: dinnerWantsFood===true?'0 6px 18px #16A34A55':'0 1px 3px rgba(90,70,30,0.10)', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}>{dinnerWantsFood===true?'✓ YES — now pick dishes below':'✅ Yes, I want food'}</button>
+            <button key={`dinner-no-${dinnerWantsFood===false}`} type="button" onClick={handleSkipDinner} className={dinnerWantsFood===false ? 'dish-pick-btn dish-pick-pop' : 'dish-pick-btn'} style={{ flex:1, minHeight:48, padding:'13px 14px', borderRadius:13, border:`2px solid ${dinnerWantsFood===false?T.noColor:'#EADFC6'}`, background: dinnerWantsFood===false?T.noColor:'#FFFFFF', color: dinnerWantsFood===false?'#fff':T.noColor, cursor:'pointer', fontSize:14, fontWeight:900, fontFamily:"'DM Sans',sans-serif", transition:'all 0.22s', boxShadow: dinnerWantsFood===false?`0 6px 18px ${T.noColor}55`:'0 1px 3px rgba(90,70,30,0.10)', touchAction:'manipulation', WebkitTapHighlightColor:'transparent' }}>❌ No, I'll skip</button>
           </div>
           {dinnerWantsFood===true && (
             <div style={{ marginTop:14, paddingTop:14, borderTop:`1px solid ${T.border}`, animation:'surveyFadeIn 0.3s ease-out' }}>
@@ -885,10 +945,10 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
                 </div>
               </div>
               {dinnerDishes.length>0 ? dinnerDishes.map((dish,idx)=>(<DishRow key={`dinner-${targetWeekId}-${dish}-${idx}`} dish={dish} idx={idx} mealType="dinner" value={dinnerResponses[dish]} onChange={handleDinnerDish} T={T} appSettings={liveAppSettings} currentDay={currentDay} snackDefaults={snackDefaults} />)) : (
-                <div style={{ padding:'20px 14px', textAlign:'center', color:T.textSub, background:'rgba(255,255,255,0.02)', borderRadius:12, border:`1px solid ${T.border}` }}>
+                <div style={{ padding:'20px 14px', textAlign:'center', background:'#FFFDF6', borderRadius:12, border:'2px dashed #DDD3F5' }}>
                   <div style={{ fontSize:20, marginBottom:4 }}>👨‍🍳</div>
-                  <div style={{ fontSize:13, fontWeight:700, color:T.text }}>👨‍🍳 Menu is being prepared by Al-Mawaid team</div>
-                  <div style={{ fontSize:11, color:T.textSub, marginTop:2 }}>Dishes for this week will appear once finalized.</div>
+                  <div style={{ fontSize:13, fontWeight:800, color:'#3A2C14' }}>Menu is being prepared by Al-Mawaid team</div>
+                  <div style={{ fontSize:11, color:'#8A7A63', marginTop:2 }}>Dishes for this week will appear once finalized.</div>
                 </div>
               )}
             </div>

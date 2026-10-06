@@ -106,32 +106,51 @@ export async function fetchUserSurveyRows(userId, weekIds) {
   return { data: map, error: null }
 }
 
-// Count filled meal slots (l/d status present, max 12 per week)
-export function countFilledSlotsForRows(rowOrMap, weekIds) {
-  const DKS = ['mon','tue','wed','thu','fri','sat']
-  let total = 0
-  if (rowOrMap && typeof rowOrMap === 'object' && !Array.isArray(rowOrMap) && weekIds && Array.isArray(weekIds)) {
-    for (const wid of weekIds) {
-      const row = rowOrMap[wid]
-      if (!row) continue
-      for (const dk of DKS) for (const mk of ['l','d']) if (row[`${dk}_${mk}_status`]) total++
+// Canonical status normalization shared by member + admin readers.
+export function normalizeMealStatus(s) {
+  if (s === 'Applied' || s === 'opted_in') return 'Applied'
+  if (s === 'Skipped' || s === 'opted_out') return 'Skipped'
+  return null
+}
+
+// Canonical dish-map builder shared by the tracker list, QR-scan fallback,
+// Khidmat portal and member "My Surveys".
+// Names come from the live menu first, dish_snapshot second (snapshot order is
+// authoritative for the positional l_dish_N / d_dish_N columns), so the TV,
+// tracker and profile can never disagree on dish order or values.
+export function buildMealDishMap(flatRow, day, mealName, menuList, isRotiFn) {
+  const dk = String(day || '').substring(0, 3).toLowerCase()
+  const mk = mealName === 'lunch' ? 'l' : 'd'
+  const cleanMenu = Array.isArray(menuList) ? menuList.filter(Boolean) : []
+  let snapshotList = []
+  try {
+    const snap = flatRow?.dish_snapshot
+    const obj = typeof snap === 'string' ? JSON.parse(snap) : snap
+    const list = obj?.[`${dk}_${mk}`]
+    if (Array.isArray(list)) snapshotList = list.filter(Boolean)
+  } catch { snapshotList = [] }
+  const names = cleanMenu.length > 0 ? cleanMenu : snapshotList
+  const result = {}
+  const rawStatus = flatRow ? flatRow[`${dk}_${mk}_status`] : null
+  result._status = normalizeMealStatus(rawStatus)
+  names.forEach((d, idx) => {
+    let pos = idx
+    if (snapshotList.length > 0 && snapshotList.includes(d)) {
+      pos = snapshotList.indexOf(d)
     }
-    return Math.min(12, total)
-  }
-  const rows = Array.isArray(rowOrMap) ? rowOrMap : [rowOrMap]
-  for (const row of rows) if (row) for (const dk of DKS) for (const mk of ['l','d']) if (row[`${dk}_${mk}_status`]) total++
-  return Math.min(12, total)
-}
-
-export function isWeekComplete(flatRow) {
-  if (!flatRow) return false
-  const DKS = ['mon','tue','wed','thu','fri','sat']
-  return DKS.every(dk => flatRow[`${dk}_l_status`] && flatRow[`${dk}_d_status`])
-}
-
-export function areAllWeeksComplete(flatMap, weekIds) {
-  const ids = Array.isArray(weekIds) ? weekIds : [weekIds].filter(Boolean)
-  return ids.every(wid => isWeekComplete(flatMap?.[wid]))
+    const val = flatRow && pos >= 0 ? flatRow[`${dk}_${mk}_dish_${pos + 1}`] : null
+    if (val !== undefined && val !== null && val !== '') {
+      if (isRotiFn && isRotiFn(d)) {
+        result[d] = String(val).toLowerCase() === 'yes' ? 'yes' : 'no'
+      } else {
+        const lv = String(val).toLowerCase().trim()
+        result[d] = (lv === 'yes' || lv === 'no') ? lv : val
+      }
+    } else {
+      result[d] = null
+    }
+  })
+  return result
 }
 
 // Load the member's MOST RECENT week (latest week_id with any saved day).
@@ -145,17 +164,6 @@ export async function fetchLatestUserSurveyRow(userId) {
 
   const latest = weeks && weeks.length ? weeks[0].week_id : null
   if (latest) return fetchUserSurveyRow(userId, latest)
-
-  try {
-    const { data: flatWeeks } = await supabase
-      .from('survey_submissions_flat')
-      .select('week_id')
-      .eq('user_id', userId)
-      .order('week_id', { ascending: false })
-      .limit(1)
-    const flatLatest = flatWeeks && flatWeeks.length ? flatWeeks[0].week_id : null
-    if (flatLatest) return fetchUserSurveyRow(userId, flatLatest)
-  } catch {}
 
   return { data: null, error: null }
 }
@@ -181,14 +189,6 @@ export async function fetchWeekRowsMulti(weekIds) {
   // Tag rows with week_id already present; merged is concatenation (week_id disambiguates)
   const merged = results.flatMap(r => r.data || [])
   return { data: merged, error: null }
-}
-
-export async function fetchWeekRowsGrouped(weekIds) {
-  const ids = Array.isArray(weekIds) ? weekIds.filter(Boolean) : [weekIds].filter(Boolean)
-  const results = await Promise.all(ids.map(wid => fetchWeekRows(wid)))
-  const map = {}
-  ids.forEach((wid, i) => { map[wid] = results[i]?.data || [] })
-  return { data: map, error: null }
 }
 
 // Admin: erase one member's lunch or dinner for a single day.

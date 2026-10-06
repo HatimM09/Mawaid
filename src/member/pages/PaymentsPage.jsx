@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   CreditCard, ArrowUpRight, CheckCircle2, Copy, Check, QrCode,
   Receipt, ShieldCheck, Clock, RefreshCw, AlertCircle, Sparkles,
@@ -11,6 +11,7 @@ import toast from 'react-hot-toast'
 import { supabase } from '../../lib/firebaseClient'
 import { useAuth, useTheme } from '../../admin/context'
 import { BackHeader, Card, Btn, EmptyState } from '../ui'
+import { downloadPayslipPdf } from '../../lib/payslipPdf'
 
 export default function PaymentsPage({ onBack, appSettings = {} }) {
   const t = useTheme()
@@ -39,9 +40,20 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   const [amount, setAmount] = useState(defaultDue.toString())
   const [customNote, setCustomNote] = useState('')
   const [copiedUpi, setCopiedUpi] = useState(false)
+  const [paymentMethodTab, setPaymentMethodTab] = useState('instant') // 'instant' | 'qr'
   const [showQRModal, setShowQRModal] = useState(false)
+  // Manager-only manual record (members never type UTR — slips auto-generate)
   const [showRecordModal, setShowRecordModal] = useState(false)
   const [selectedReceipt, setSelectedReceipt] = useState(null)
+  // Auto pay-slip state (member): receipt generated the moment they return
+  // from their UPI app — no manual entry needed.
+  const [lastSlip, setLastSlip] = useState(null)
+  const [showSlipModal, setShowSlipModal] = useState(false)
+  const [finalizingPay, setFinalizingPay] = useState(false)
+  const finalizingRef = useRef(false)
+  // Unfinished-attempt recovery banner (debited-but-no-receipt safety net)
+  const [showPendingBanner, setShowPendingBanner] = useState(false)
+  const [showRefundPolicy, setShowRefundPolicy] = useState(false)
 
   // Record Form state
   const [utrNumber, setUtrNumber] = useState('')
@@ -157,32 +169,120 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   }, [userProfile, paymentTitle])
 
   // Copy UPI ID to clipboard
-  const handleCopyUpi = () => {
+  const handleCopyUpi = (showExtendedToast = false) => {
     navigator.clipboard.writeText(configuredUpiId)
     setCopiedUpi(true)
-    toast.success('UPI ID copied to clipboard!')
-    setTimeout(() => setCopiedUpi(false), 2000)
+    if (showExtendedToast) {
+      toast.success(`Copied "${configuredUpiId}"! Open your UPI app & select "Pay to UPI ID" to bypass bank web limits.`, {
+        duration: 5000,
+        icon: '📋'
+      })
+    } else {
+      toast.success('UPI ID copied to clipboard!')
+    }
+    setTimeout(() => setCopiedUpi(false), 2500)
   }
 
-  // Construct fail-safe UPI URL matching NPCI & Google Pay specifications
-  const numericAmount = Math.max(1, parseFloat(amount) || 0)
-  const sanitizedNote = (customNote || `Al-Mawaid Thali Contribution`).replace(/[^a-zA-Z0-9 -]/g, '').trim()
-  const txnRefId = useMemo(() => `ALM${Date.now().toString().slice(-8)}`, [amount])
+  // Construct 100% fail-safe P2P UPI URL matching NPCI specifications
+  // CRITICAL FIX: 'tr' (Transaction Ref ID) must NOT be passed to P2P personal VPAs.
+  // When 'tr' is present without a registered merchant code, Indian banks (HDFC, SBI, ICICI, etc.)
+  // treat the payment as an unverified merchant intent and reject with "Payment limit exceeded" / "Bank limit exceeded".
+  //
+  // RELIABILITY RULES (why "bank limit exceeded" happens and how we prevent it):
+  //  1. Amount is always sent with 2 decimals (am=1500.00) — bare integers are
+  //     rejected by several PSPs as a malformed collect request.
+  //  2. One tap never exceeds the UPI per-transaction cap (₹1,00,000). Bigger
+  //     dues are auto-split into parts paid one after another.
+  //  3. The primary Pay button fires the generic upi://pay intent (system app
+  //     chooser with receiver + amount prefilled) instead of a hardcoded
+  //     single-app deep link that fails when that app is missing/mishandled.
+  //  4. The receiver VPA is format-validated before launch so a misconfigured
+  //     ID fails loudly here instead of inside the bank app.
+  const UPI_TXN_LIMIT = 100000
+  const numericAmount = Math.max(0, parseFloat(amount) || 0)
+  // NPCI-safe: always two decimals, e.g. 1500.00
+  const formattedAmount = numericAmount.toFixed(2)
+  const sanitizedNote = (customNote || `Al-Mawaid Thali Contribution`).replace(/[^a-zA-Z0-9 -]/g, '').slice(0, 45).trim()
 
-  const upiUrl = useMemo(() => {
+  const isUpiIdValid = useMemo(() => {
+    const v = (configuredUpiId || '').trim()
+    return /^[\w.-]{2,256}@[a-zA-Z]{2,64}$/.test(v)
+  }, [configuredUpiId])
+
+  // Split dues above the per-transaction cap into bank-safe parts.
+  const payParts = useMemo(() => {
+    if (!(numericAmount > 0)) return []
+    const parts = []
+    let remaining = Math.round(numericAmount * 100) / 100
+    while (remaining > 0) {
+      const take = Math.min(UPI_TXN_LIMIT, remaining)
+      parts.push(Number(take.toFixed(2)))
+      remaining = Number((remaining - take).toFixed(2))
+    }
+    return parts
+  }, [numericAmount])
+  const needsSplit = payParts.length > 1
+
+  // ── Monthly dues engine ──
+  // Every month carries an expected contribution (defaultDue). Paid = sum of
+  // this member's recorded payments in that calendar month.
+  const monthKeyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  const monthLabelOf = (key) => {
+    try {
+      const [y, m] = key.split('-').map(Number)
+      return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
+    } catch { return key }
+  }
+  const monthOptions = useMemo(() => {
+    const out = []
+    const now = new Date()
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      out.push({ key: monthKeyOf(d), label: monthLabelOf(monthKeyOf(d)), current: i === 0 })
+    }
+    return out
+  }, [])
+  const currentMonthKey = monthKeyOf(new Date())
+  const paidByMonth = useMemo(() => {
+    const map = {}
+    ;(myPayments || []).forEach(p => {
+      if (!p?.created_at) return
+      const k = monthKeyOf(new Date(p.created_at))
+      map[k] = (map[k] || 0) + (Number(p.amount) || 0)
+    })
+    return map
+  }, [myPayments])
+  const monthStatusOf = useCallback((key) => {
+    const paid = paidByMonth[key] || 0
+    if (paid >= defaultDue) return 'paid'
+    if (paid > 0) return 'partial'
+    return 'unpaid'
+  }, [paidByMonth, defaultDue])
+  const currentBalance = Math.max(0, Number((defaultDue - (paidByMonth[currentMonthKey] || 0)).toFixed(2)))
+
+  // Generate UPI URI for standard protocol or direct app deep links.
+  // `partAmount` lets split-dues fire one prefilled intent per part.
+  const generateUpiUrl = useCallback((appType = 'upi', partAmount = null) => {
     const cleanUpi = (configuredUpiId || 'murtazacool558@okhdfcbank').trim()
     const cleanPayee = (payeeName || 'Al-Mawaid').trim()
+    const amt = partAmount != null ? Number(partAmount).toFixed(2) : formattedAmount
+
+    // Clean query parameters without 'tr' or 'tid' to ensure pure P2P transfer
     const query = [
       `pa=${encodeURIComponent(cleanUpi)}`,
       `pn=${encodeURIComponent(cleanPayee)}`,
-      `am=${numericAmount.toFixed(2)}`,
+      `am=${encodeURIComponent(amt)}`,
       `cu=INR`,
-      `tn=${encodeURIComponent(sanitizedNote)}`,
-      `tr=${encodeURIComponent(txnRefId)}`
+      `tn=${encodeURIComponent(sanitizedNote)}`
     ].join('&')
 
+    if (appType === 'gpay') return `tez://upi/pay?${query}`
+    if (appType === 'phonepe') return `phonepe://pay?${query}`
+    if (appType === 'paytm') return `paytmmp://pay?${query}`
     return `upi://pay?${query}`
-  }, [configuredUpiId, payeeName, numericAmount, sanitizedNote, txnRefId])
+  }, [configuredUpiId, payeeName, formattedAmount, sanitizedNote])
+
+  const upiUrl = useMemo(() => generateUpiUrl('upi'), [generateUpiUrl])
 
   // Detect Mobile device vs Desktop
   const isMobileDevice = useMemo(() => {
@@ -190,15 +290,98 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
   }, [])
 
-  // Initiate Payment via Google Pay / UPI with zero errors & smart device fallback
-  const handlePayViaGooglePay = () => {
-    if (numericAmount <= 0) {
-      toast.error('Please enter a valid amount (minimum ₹1)')
+  // Universal Payment Trigger.
+  // Default is the generic upi://pay intent: Android shows the app chooser with
+  // the receiver UPI ID + exact amount prefilled, so the member pays inside
+  // their own trusted UPI app (safest + most compatible). App-specific deep
+  // links are offered as secondary shortcuts only.
+  //
+  // No manual UTR typing: the attempt is stashed as a pending payment, and the
+  // moment the member returns from their UPI app a receipt row is auto-created
+  // (status 'submitted' for manager verification) with a downloadable pay slip.
+  const [activePart, setActivePart] = useState(0)
+  const pendingKey = useMemo(() => `almawaid_pending_pay_${user?.id || 'anon'}`, [user?.id])
+
+  const stashPendingPay = useCallback((entry) => {
+    try { localStorage.setItem(pendingKey, JSON.stringify(entry)) } catch (e) { console.debug('[pay] pending stash unavailable', e && e.message) }
+  }, [pendingKey])
+  const clearPendingPay = useCallback(() => {
+    try { localStorage.removeItem(pendingKey) } catch (e) { console.debug('[pay] pending clear unavailable', e && e.message) }
+  }, [pendingKey])
+  const readPendingPay = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(pendingKey)
+      return raw ? JSON.parse(raw) : null
+    } catch (e) { console.debug('[pay] pending read unavailable', e && e.message); return null }
+  }, [pendingKey])
+
+  const handleLaunchPayment = (appType = 'upi', partIdx = 0, amountOverride = null) => {
+    // ── SECURITY WALL: every launch must pass all checks or it never fires ──
+    if (!user?.id) {
+      toast.error('Please sign in again to pay securely.')
+      return
+    }
+    const total = amountOverride != null ? Number(amountOverride) : numericAmount
+    if (!Number.isFinite(total) || !(total >= 1)) {
+      toast.error('Please enter a valid amount (minimum ₹1).')
+      return
+    }
+    if (total > 100 * UPI_TXN_LIMIT) {
+      toast.error('Amount is unusually large. Please contact support to pay this.')
+      return
+    }
+    if (!isUpiIdValid) {
+      toast.error('Receiver UPI ID is not configured correctly. Please contact support.')
+      return
+    }
+    if (!(payeeName || '').trim()) {
+      toast.error('Receiver name is missing. Please contact support.')
+      return
+    }
+    // One attempt at a time: finish or discard the previous one first.
+    const existing = readPendingPay()
+    if (existing && existing.launchedAt && (Date.now() - existing.launchedAt) < 30 * 60 * 1000) {
+      setShowPendingBanner(true)
+      toast.error('Please complete or discard your unfinished payment first.')
+      return
+    }
+    // Cooldown: no rapid double-taps / duplicate intents.
+    const lastLaunch = Number(localStorage.getItem(`almawaid_last_launch_${user.id}`) || 0)
+    if (Date.now() - lastLaunch < 10000) {
+      toast.error('Please wait a moment before paying again.')
+      return
+    }
+    const parts = (() => {
+      const out = []
+      let remaining = Math.round(total * 100) / 100
+      while (remaining > 0) {
+        const take = Math.min(UPI_TXN_LIMIT, remaining)
+        out.push(Number(take.toFixed(2)))
+        remaining = Number((remaining - take).toFixed(2))
+      }
+      return out
+    })()
+    const partAmount = parts[partIdx] != null ? parts[partIdx] : total
+    if (!(partAmount > 0) || partAmount > UPI_TXN_LIMIT) {
+      toast.error(`Each payment must be between ₹1 and ₹${UPI_TXN_LIMIT.toLocaleString('en-IN')}`)
       return
     }
 
-    setRecordAmount(numericAmount.toString())
-    setRecordNote(sanitizedNote)
+    setActivePart(partIdx)
+    // Stash BEFORE leaving to the bank app — the auto-receipt is built from this.
+    // client_ref makes every attempt idempotent: a double return can never
+    // create two dues records for one payment.
+    const clientRef = `${user.id}-${monthKeyOf(new Date())}-${Number(partAmount.toFixed(2))}-${Date.now()}`
+    stashPendingPay({
+      clientRef,
+      amount: Number(partAmount.toFixed(2)),
+      note: parts.length > 1 ? `${sanitizedNote} (Part ${partIdx + 1}/${parts.length})` : sanitizedNote,
+      upi: (configuredUpiId || '').trim(),
+      payee: (payeeName || 'Al-Mawaid').trim(),
+      month: monthKeyOf(new Date()),
+      launchedAt: Date.now(),
+    })
+    try { localStorage.setItem(`almawaid_last_launch_${user.id}`, String(Date.now())) } catch (e) { console.debug('[pay] launch stamp unavailable', e && e.message) }
 
     if (!isMobileDevice) {
       // Desktop / Laptop: Show high-res QR code for scanning
@@ -206,29 +389,218 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       return
     }
 
-    // Mobile: Launch Google Pay via standard UPI protocol
+    // Mobile: fire the intent; receiver + amount arrive prefilled in the UPI app
     try {
-      // Setup tracking modal on return
-      setTimeout(() => {
-        setShowRecordModal(true)
-      }, 1500)
-
-      // Use hidden link trigger for universal browser compatibility (avoids popup blockers)
+      const targetUrl = generateUpiUrl(appType, partAmount)
       const link = document.createElement('a')
-      link.href = upiUrl
+      link.href = targetUrl
       link.rel = 'noreferrer'
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
+      // No record modal anymore — the receipt auto-generates on return.
     } catch (e) {
-      console.warn('Direct UPI launch failed, opening QR fallback:', e)
-      setShowQRModal(true)
+      console.warn('Direct app launch failed, falling back to standard UPI:', e)
+      const fallbackUrl = generateUpiUrl('upi', partAmount)
+      window.location.href = fallbackUrl
     }
   }
 
-  // Submit payment record into Supabase & Notify Mulla Murtaza Hamid
+  // Auto-receipt: called when the member returns from their UPI app (or taps
+  // "I've Paid" on the QR modal). Creates the dues record + pay slip with zero
+  // typing. Status stays 'submitted' until a manager verifies it.
+  // SECURITY: amount comes ONLY from the stashed attempt (re-validated), and
+  // client_ref makes repeat returns idempotent — one payment, one record.
+  const finalizeAutoPayment = useCallback(async (pending) => {
+    if (!pending || finalizingRef.current || !user?.id) return false
+    const safeAmount = Number(pending.amount)
+    if (!Number.isFinite(safeAmount) || !(safeAmount >= 1) || safeAmount > UPI_TXN_LIMIT) {
+      toast.error('This saved attempt looks invalid and was discarded for your safety.')
+      clearPendingPay()
+      setShowPendingBanner(false)
+      return false
+    }
+    finalizingRef.current = true
+    setFinalizingPay(true)
+    try {
+      // Idempotency: a double return / double tap must not duplicate dues.
+      if (pending.clientRef) {
+        const { data: dup } = await supabase
+          .from('user_payments')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('metadata->>client_ref', pending.clientRef)
+          .limit(1)
+        if (dup && dup.length) {
+          setLastSlip(dup[0])
+          setShowSlipModal(true)
+          clearPendingPay()
+          setShowPendingBanner(false)
+          toast.success('Receipt already saved — showing it again, no double charge recorded.')
+          return true
+        }
+      }
+      const payload = {
+        user_id: user.id,
+        user_name: userProfile?.name || user?.email?.split('@')[0] || 'User',
+        user_email: userProfile?.email || user?.email || '',
+        thali_number: userProfile?.thali_number ? String(userProfile.thali_number) : '',
+        amount: safeAmount,
+        currency: 'INR',
+        status: 'submitted',
+        transaction_ref: 'AUTO-UPI',
+        upi_id: pending.upi || configuredUpiId,
+        payee_name: pending.payee || payeeName,
+        payment_method: 'UPI Auto',
+        note: pending.note || paymentTitle,
+        metadata: { client_ref: pending.clientRef || null, source: 'auto-return', month: pending.month || null },
+        created_at: new Date().toISOString()
+      }
+      const { data, error } = await supabase.from('user_payments').insert([payload]).select().single()
+      if (error) throw error
+
+      setMyPayments(prev => [data, ...prev])
+      setAllPayments(prev => [data, ...prev])
+      setLastSlip(data)
+      setShowSlipModal(true)
+      clearPendingPay()
+      setShowPendingBanner(false)
+      toast.success('Payment recorded — your receipt is ready!')
+
+      // Notify managers (same channel as manual records)
+      try {
+        const { data: managers } = await supabase
+          .from('user_stats')
+          .select('user_id')
+          .or('name.ilike.%Murtaza%,email.ilike.%murtaza%,role.eq.admin')
+        if (managers && managers.length > 0) {
+          await supabase.from('notices').insert(managers.map(mgr => ({
+            title: '💳 New Payment Received',
+            body: `${userProfile?.name || 'A Member'} (Thali #${userProfile?.thali_number || '—'}) paid ₹${Number(pending.amount)}. Auto-recorded — please verify in Payments Hub.`,
+            sender_name: 'Al-Mawaid Payments',
+            target_user_id: mgr.user_id,
+            tone: '#34d399',
+            created_at: new Date().toISOString()
+          })))
+        }
+      } catch (noticeErr) {
+        console.warn('Manager notify notice failed:', noticeErr)
+      }
+      return true
+    } catch (err) {
+      console.error('Auto payment record failed:', err)
+      toast.error('Could not save your receipt. Please check connection and try again.')
+      return false
+    } finally {
+      finalizingRef.current = false
+      setFinalizingPay(false)
+    }
+  }, [user?.id, user?.email, userProfile, configuredUpiId, payeeName, paymentTitle, clearPendingPay])
+
+  // On open: surface any unfinished attempt (debited-but-no-receipt safety net).
+  useEffect(() => {
+    if (isManager) return
+    const pending = readPendingPay()
+    if (pending && pending.launchedAt && (Date.now() - pending.launchedAt) < 30 * 60 * 1000) {
+      setShowPendingBanner(true)
+    }
+  }, [readPendingPay, isManager])
+
+  // Dispute / refund request on a recorded payment. Flags the row and opens a
+  // support ticket managers already triage (with reply + resolve alerts).
+  const raiseDispute = useCallback(async (payment) => {
+    if (!payment?.id || !user?.id) return
+    if (!window.confirm(`Raise a refund / issue request for ₹${Number(payment.amount).toFixed(2)} paid on ${new Date(payment.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}?\n\nOur team will verify with the bank and refund or adjust your dues.`)) return
+    try {
+      const dispute = { status: 'open', raised_at: new Date().toISOString(), amount: Number(payment.amount) }
+      const { error: updErr } = await supabase
+        .from('user_payments')
+        .update({ metadata: { ...(payment.metadata || {}), dispute } })
+        .eq('id', payment.id)
+      if (updErr) throw updErr
+      const ref = payment.transaction_ref || 'AUTO-UPI'
+      await supabase.from('queries').insert([{
+        user_id: user.id,
+        subject: `Refund Request — ₹${Number(payment.amount).toFixed(2)}`,
+        comment: `[Refund Request] Payment of ₹${Number(payment.amount).toFixed(2)} on ${new Date(payment.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} (Ref: ${ref}). Issue: amount debited but ${payment.status === 'verified' ? 'needs refund/adjustment' : 'receipt needs verification'}. Please verify with the bank and refund or adjust my dues.`,
+        status: 'open',
+      }])
+      setMyPayments(prev => prev.map(p => p.id === payment.id ? { ...p, metadata: { ...(p.metadata || {}), dispute } } : p))
+      toast.success('Refund request raised — our team will verify and refund if the debit is confirmed.')
+    } catch (e) {
+      console.error('[dispute] failed:', e)
+      toast.error('Could not raise the request. Please try again or contact support.')
+    }
+  }, [user?.id])
+
+  // When the member comes back from their bank/UPI app, the stashed attempt
+  // becomes a real dues record + pay slip automatically.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || isManager) return
+      const pending = readPendingPay()
+      if (!pending || !pending.launchedAt) return
+      const awayMs = Date.now() - pending.launchedAt
+      if (awayMs < 4000 || awayMs > 30 * 60 * 1000) {
+        if (awayMs > 30 * 60 * 1000) clearPendingPay()
+        return
+      }
+      finalizeAutoPayment(pending)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [readPendingPay, clearPendingPay, finalizeAutoPayment, isManager])
+
+  // Monthly dues self-reminder: once per month, an unpaid member gets one
+  // Alerts-tab entry (badge + inbox) pointing at Dues & Payments.
+  useEffect(() => {
+    if (loading || !user?.id || isManager) return
+    if (monthStatusOf(currentMonthKey) !== 'unpaid') return
+    const flag = `almawaid_dues_reminder_${currentMonthKey}`
+    let seen = null
+    try { seen = localStorage.getItem(flag) } catch (e) { console.debug('[dues-reminder] storage unavailable', e && e.message) }
+    if (seen) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+        const { data: existing } = await supabase
+          .from('notices')
+          .select('id')
+          .eq('target_user_id', user.id)
+          .like('title', '%Thali Contribution Due%')
+          .gte('created_at', monthStart)
+          .limit(1)
+        if (cancelled || (existing && existing.length)) return
+        await supabase.from('notices').insert([{
+          title: `Thali Contribution Due — ${monthLabelOf(currentMonthKey)}`,
+          body: `Your contribution of ₹${Number(defaultDue).toFixed(2)} for ${monthLabelOf(currentMonthKey)} is pending. Tap to pay securely via UPI.`,
+          message: `Your contribution of ₹${Number(defaultDue).toFixed(2)} for ${monthLabelOf(currentMonthKey)} is pending.`,
+          sender_name: 'Al-Mawaid Dues',
+          target_user_id: user.id,
+          tone: '#f59e0b',
+          type: 'reminder',
+          url: '/profile/payments',
+          scheduled_at: new Date().toISOString(),
+          created_at: new Date().toISOString()
+        }])
+        try { localStorage.setItem(flag, '1') } catch (e) { console.debug('[dues-reminder] storage unavailable', e && e.message) }
+      } catch (e) {
+        console.warn('[dues-reminder] skipped:', e?.message || e)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [loading, user?.id, isManager, monthStatusOf, currentMonthKey, defaultDue])
+
+  // Manager-only manual record (cash / bank transfer). Members never reach
+  // here — their receipts auto-generate when they return from the UPI app.
   const handleRecordPayment = async (e) => {
     e?.preventDefault()
+    if (!isManager) return
     const targetUser = selectedUserToPay || userProfile
     const payAmt = parseFloat(recordAmount) || numericAmount
     if (payAmt <= 0) {
@@ -249,7 +621,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
         transaction_ref: utrNumber.trim() || (isManager ? 'MANUAL_RECORD' : null),
         upi_id: configuredUpiId,
         payee_name: payeeName,
-        payment_method: 'Google Pay',
+        payment_method: 'UPI Pay',
         note: recordNote || paymentTitle,
         created_at: new Date().toISOString()
       }
@@ -359,11 +731,11 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     setNotifyTargetUser(targetUser)
     if (targetUser) {
       setNotifyTitle(`Payment Reminder - ${paymentTitle}`)
-      setNotifyBody(`Dear ${targetUser.name || 'Member'}, your thali contribution of ₹${defaultDue} is pending. Please open your Al-Mawaid app and pay via Google Pay.`)
+      setNotifyBody(`Dear ${targetUser.name || 'Member'}, your thali contribution of ₹${defaultDue} is pending. Please open your Al-Mawaid app and pay via your UPI app.`)
     } else {
       const activeUnpaidCount = allUsers.filter(u => !u.payment_exempt && allPayments.filter(p => p.user_id === u.user_id).length === 0).length
       setNotifyTitle(`Thali Contribution Reminder`)
-      setNotifyBody(`Dear Member, your monthly thali contribution of ₹${defaultDue} is due. Please pay via Google Pay on your portal. Thank you for your support.`)
+      setNotifyBody(`Dear Member, your monthly thali contribution of ₹${defaultDue} is due. Please pay via your UPI app on your portal. Thank you for your support.`)
     }
     setNotifyTemplate('standard')
     setShowNotifyModal(true)
@@ -375,13 +747,13 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     const nameStr = notifyTargetUser?.name || 'Member'
     if (tempKey === 'standard') {
       setNotifyTitle('Thali Contribution Reminder')
-      setNotifyBody(`Dear ${nameStr}, this is a gentle reminder that your thali contribution of ₹${defaultDue} is due. Please pay via Google Pay on the Al-Mawaid portal.`)
+      setNotifyBody(`Dear ${nameStr}, this is a gentle reminder that your thali contribution of ₹${defaultDue} is due. Please pay via your UPI app on the Al-Mawaid portal.`)
     } else if (tempKey === 'urgent') {
       setNotifyTitle('⚠️ Urgent: Payment Due')
-      setNotifyBody(`Dear ${nameStr}, your thali contribution of ₹${defaultDue} is pending. Kindly clear the dues via Google Pay today to avoid any interruption in thali services.`)
+      setNotifyBody(`Dear ${nameStr}, your thali contribution of ₹${defaultDue} is pending. Kindly clear the dues via your UPI app today to avoid any interruption in thali services.`)
     } else if (tempKey === 'final') {
       setNotifyTitle('🔔 Final Notice: Thali Contribution')
-      setNotifyBody(`Salam ${nameStr}, this is the final reminder for this month's thali contribution of ₹${defaultDue}. Please pay using Google Pay (UPI: ${configuredUpiId}).`)
+      setNotifyBody(`Salam ${nameStr}, this is the final reminder for this month's thali contribution of ₹${defaultDue}. Please pay using your UPI app (UPI: ${configuredUpiId}).`)
     }
   }
 
@@ -455,7 +827,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     const cleanPhone = targetUser.phone.replace(/[^\d]/g, '')
     const phoneWithCountry = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone
     const text = encodeURIComponent(
-      `Salam ${targetUser.name || 'Bhai'},\n\nThis is a gentle reminder regarding your Al-Mawaid Thali contribution of *₹${defaultDue}* for ${paymentTitle}.\n\nPlease pay directly via Google Pay to UPI ID: *${configuredUpiId}*.\n\nThank you,\n*Mulla Murtaza Hamid*\nAl-Mawaid Management`
+      `Salam ${targetUser.name || 'Bhai'},\n\nThis is a gentle reminder regarding your Al-Mawaid Thali contribution of *₹${defaultDue}* for ${paymentTitle}.\n\nPlease pay directly via your UPI app to UPI ID: *${configuredUpiId}*.\n\nThank you,\n*Mulla Murtaza Hamid*\nAl-Mawaid Management`
     )
     window.open(`https://wa.me/${phoneWithCountry}?text=${text}`, '_blank')
   }
@@ -554,7 +926,12 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   }, [allUsers, allPayments, managerFilter, managerSearch, hideForfeited])
 
   return (
-    <main style={{ flex: 1, padding: '16px 16px 120px', maxWidth: 740, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+    <main style={{
+      flex: 1,
+      padding: '16px 16px calc(120px + env(safe-area-inset-bottom, 0px))',
+      maxWidth: 740, margin: '0 auto', width: '100%',
+      boxSizing: 'border-box', overflowX: 'hidden', minWidth: 0,
+    }}>
       <BackHeader title={isManager && portalMode === 'manager' ? "Payment Management Hub" : "Dues & Payments"} onBack={onBack} />
 
       {/* Role Switcher Banner */}
@@ -610,7 +987,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
             }}
           >
             <CreditCard size={16} />
-            <span>My Google Pay</span>
+            <span>Pay Dues</span>
           </button>
         </div>
       )}
@@ -1109,239 +1486,563 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       )}
 
       {/* ══════════════════════════════════════════════════════════════════════
-          VIEW 2: INDIVIDUAL PAYER SCREEN (Google Pay + Personal Receipts)
+          VIEW 2: INDIVIDUAL PAYER SCREEN (UPI + Personal Receipts)
          ══════════════════════════════════════════════════════════════════════ */}
       {(!isManager || portalMode === 'payer') && (
-        <div>
-          {/* Outstanding Due & Quick Pay Banner */}
+        <div style={{ width: '100%', boxSizing: 'border-box' }}>
+          {/* ══════════════════════════════════════════════════════════════════════
+              PAYMENT CARD CONTAINER (Strictly contained, Zero Overlap, Mobile-Optimized)
+             ══════════════════════════════════════════════════════════════════════ */}
           <div style={{
             position: 'relative',
-            borderRadius: 24,
+            borderRadius: 22,
             overflow: 'hidden',
-            background: 'linear-gradient(135deg, #131b2e 0%, #0a0d18 100%)',
-            border: `1.5px solid ${t.borderActive || 'rgba(197,160,89,0.3)'}`,
-            boxShadow: '0 12px 36px rgba(0,0,0,0.4)',
-            padding: '24px 20px',
-            marginBottom: 20
+            background: t.card,
+            border: `1.5px solid ${t.borderActive || t.border}`,
+            boxShadow: '0 12px 36px rgba(0,0,0,0.25)',
+            padding: '18px 16px',
+            marginBottom: 20,
+            boxSizing: 'border-box',
+            width: '100%'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <span style={{ fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.12em', color: t.accent, background: t.accentBg, padding: '3px 9px', borderRadius: 20, border: `1px solid ${t.accentBorder}` }}>
-                    {paymentTitle}
+            {/* Gold ribbon — professional dues identity in every theme */}
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0, height: 4,
+              background: 'linear-gradient(90deg,#B8860B,#F0C239,#10b981,#B8860B)',
+            }} />
+            {/* Header: Title, Thali # & Refresh */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0 }}>
+                <span style={{
+                  fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em',
+                  color: t.accent, background: t.accentBg, padding: '3px 8px', borderRadius: 12,
+                  border: `1px solid ${t.accentBorder}`, whiteSpace: 'nowrap'
+                }}>
+                  {paymentTitle}
+                </span>
+
+                {userProfile?.thali_number && (
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                    Thali #{userProfile.thali_number}
                   </span>
-                  {userProfile?.thali_number && (
-                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
-                      Thali #{userProfile.thali_number}
-                    </span>
-                  )}
-                  {userProfile?.payment_exempt && (
-                    <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: 'rgba(148,163,184,0.15)', color: '#94a3b8', border: '1px solid rgba(148,163,184,0.3)' }}>
-                      Exempt / Forfeited
-                    </span>
-                  )}
-                </div>
-                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'rgba(255,255,255,0.85)', fontFamily: "'DM Sans', sans-serif" }}>
-                  Amount Due to Pay
-                </h2>
+                )}
+
+                {userProfile?.payment_exempt && (
+                  <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 8, background: 'rgba(148,163,184,0.15)', color: '#94a3b8', border: '1px solid rgba(148,163,184,0.3)', whiteSpace: 'nowrap' }}>
+                    Exempt
+                  </span>
+                )}
               </div>
 
               <button
                 onClick={() => { setRefreshing(true); loadData() }}
                 style={{
-                  background: 'rgba(255,255,255,0.06)',
-                  border: 'none',
-                  borderRadius: 10,
-                  padding: 6,
-                  color: 'rgba(255,255,255,0.6)',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
+                  background: t.inputBg, border: 'none', borderRadius: 8,
+                  padding: '6px 8px', color: t.textSub, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, flexShrink: 0
                 }}
-                title="Refresh payments"
+                title="Refresh Status"
               >
-                <RefreshCw size={14} className={refreshing ? 'spin' : ''} />
+                <RefreshCw size={13} className={refreshing ? 'spin' : ''} />
+                <span>Sync</span>
               </button>
             </div>
 
-            {/* Editable Amount Display */}
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 14 }}>
-              <label htmlFor="payerAmountInput" style={{ display: 'none' }}>Payment Amount</label>
-              <span style={{ fontSize: 24, fontWeight: 700, color: t.accent }}>₹</span>
-              <input
-                id="payerAmountInput"
-                name="payerAmount"
-                type="number"
-                min="1"
-                step="any"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  borderBottom: `2px dashed ${t.accent}`,
-                  color: '#ffffff',
-                  fontSize: 34,
-                  fontWeight: 800,
-                  fontFamily: "'Playfair Display', serif",
-                  width: '180px',
-                  outline: 'none',
-                  padding: '0 4px'
-                }}
-              />
-              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginLeft: 4 }}>
-                (Tap to edit)
-              </span>
-            </div>
+            {/* Unfinished-attempt recovery: money may have left the bank with no receipt yet */}
+            {showPendingBanner && (() => {
+              const pending = readPendingPay()
+              if (!pending) return null
+              return (
+                <div style={{
+                  marginBottom: 14, padding: '12px 14px', borderRadius: 14,
+                  background: 'linear-gradient(135deg, rgba(239,68,68,0.12), rgba(245,158,11,0.08))',
+                  border: '1.5px solid rgba(239,68,68,0.45)',
+                  boxShadow: '0 6px 20px rgba(239,68,68,0.15)',
+                  boxSizing: 'border-box'
+                }}>
+                  <div style={{ fontSize: 13, fontWeight: 900, color: '#f87171', marginBottom: 2 }}>
+                    ⚠️ Unfinished payment of ₹{Number(pending.amount).toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: t.textSub, lineHeight: 1.5, marginBottom: 10 }}>
+                    If money left your bank account, complete your receipt now. If you cancelled in the bank app, discard it — nothing was recorded.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => finalizeAutoPayment(pending)}
+                      disabled={finalizingPay}
+                      style={{ flex: 2, padding: '10px', borderRadius: 11, border: 'none', background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', fontSize: 12.5, fontWeight: 900, cursor: finalizingPay ? 'wait' : 'pointer', opacity: finalizingPay ? 0.7 : 1 }}
+                    >
+                      {finalizingPay ? 'Saving…' : '✅ Complete My Receipt'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { clearPendingPay(); setShowPendingBanner(false) }}
+                      style={{ flex: 1, padding: '10px', borderRadius: 11, border: `1px solid ${t.border}`, background: 'transparent', color: t.textSub, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      Discard
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
 
-            {/* Quick Amount Selector Pills */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-              {[500, 1000, 1500, 2000, 3000].map(val => (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => setAmount(val.toString())}
-                  style={{
-                    padding: '4px 12px',
-                    borderRadius: 20,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    border: `1px solid ${Number(amount) === val ? t.accent : 'rgba(255,255,255,0.12)'}`,
-                    background: Number(amount) === val ? t.accentBg : 'rgba(255,255,255,0.04)',
-                    color: Number(amount) === val ? t.accent : 'rgba(255,255,255,0.7)',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  ₹{val}
-                </button>
-              ))}
-            </div>
-
-            {/* Receiver UPI Info Strip */}
+            {/* Amount Label & Dynamic Editable Amount Box */}
             <div style={{
-              background: 'rgba(0,0,0,0.3)',
-              borderRadius: 14,
-              padding: '10px 14px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 18,
-              border: '1px solid rgba(255,255,255,0.06)'
+              background: t.inputBg, borderRadius: 16, padding: '14px 14px 12px',
+              border: `1px solid ${t.inputBorder || t.border}`, marginBottom: 14, boxSizing: 'border-box'
             }}>
-              <div>
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  Receiver UPI VPA
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#f0f4f8', fontFamily: 'monospace', marginTop: 1 }}>
-                  {configuredUpiId}
-                </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Payable Contribution
+                </span>
+                <span style={{ fontSize: 10, color: t.accent, fontWeight: 600 }}>
+                  Tap amount to edit
+                </span>
               </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button
-                  onClick={handleCopyUpi}
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 26, fontWeight: 800, color: t.accent, lineHeight: 1 }}>₹</span>
+                <input
+                  id="payerAmountInput"
+                  name="payerAmount"
+                  type="number"
+                  min="1"
+                  step="any"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
                   style={{
-                    background: 'rgba(255,255,255,0.08)',
+                    background: 'transparent',
                     border: 'none',
-                    borderRadius: 8,
-                    padding: '6px 10px',
-                    color: '#fff',
-                    fontSize: 12,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    cursor: 'pointer'
+                    borderBottom: `1.5px dashed ${t.accent}`,
+                    color: t.text,
+                    fontSize: 28,
+                    fontWeight: 800,
+                    fontFamily: "'Playfair Display', serif",
+                    width: '140px',
+                    outline: 'none',
+                    padding: '2px 4px',
+                    boxSizing: 'border-box'
                   }}
-                >
-                  {copiedUpi ? <Check size={13} color="#4ade80" /> : <Copy size={13} />}
-                  <span>{copiedUpi ? 'Copied' : 'Copy'}</span>
-                </button>
-                <button
-                  onClick={() => setShowQRModal(true)}
-                  style={{
-                    background: 'rgba(255,255,255,0.08)',
-                    border: 'none',
-                    borderRadius: 8,
-                    padding: '6px 10px',
-                    color: '#fff',
-                    fontSize: 12,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    cursor: 'pointer'
-                  }}
-                  title="Show QR Code"
-                >
-                  <QrCode size={13} />
-                  <span>QR</span>
-                </button>
+                />
+              </div>
+
+              {/* Quick Amount Selector Chips (Fit cleanly in grid) */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, marginTop: 10 }}>
+                {[500, 1000, 1500, 2000, 3000].map(val => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setAmount(val.toString())}
+                    style={{
+                      padding: '5px 2px',
+                      borderRadius: 10,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      border: `1px solid ${Number(amount) === val ? t.accent : t.border}`,
+                      background: Number(amount) === val ? t.accentBg : t.inputBg,
+                      color: Number(amount) === val ? t.accent : t.textSub,
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      transition: 'all 0.15s ease',
+                      boxSizing: 'border-box',
+                      minWidth: 0
+                    }}
+                  >
+                    ₹{val}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Main Action Buttons */}
-            <div style={{ display: 'flex', gap: 10 }}>
+            {/* ── MONTHLY DUES TRACKER (6-month strip + current-month due banner) ── */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Monthly Tracking
+                </span>
+                <span style={{ fontSize: 10, color: t.textSub }}>
+                  ₹{Number(defaultDue).toFixed(2)}/month
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 6 }}>
+                {monthOptions.map(m => {
+                  const st = monthStatusOf(m.key)
+                  const paid = paidByMonth[m.key] || 0
+                  const color = st === 'paid' ? '#34d399' : st === 'partial' ? '#fbbf24' : t.textSub
+                  const bg = st === 'paid' ? t.successBg : st === 'partial' ? 'rgba(251,191,36,0.10)' : t.inputBg
+                  return (
+                    <div
+                      key={m.key}
+                      title={`${m.label}: ${st === 'paid' ? 'Paid' : st === 'partial' ? `₹${paid.toFixed(2)} paid` : 'Unpaid'}`}
+                      style={{
+                        padding: '7px 2px', borderRadius: 10, textAlign: 'center',
+                        background: bg, border: `1.5px solid ${m.current ? t.accent : t.border}`,
+                        boxShadow: m.current ? `0 0 0 1px ${t.accent}55` : 'none',
+                        minWidth: 0
+                      }}
+                    >
+                      <div style={{ fontSize: 9, fontWeight: 800, color: m.current ? t.accent : t.textSub, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {m.label.split(' ')[0]}
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 900, color, lineHeight: 1.3 }}>
+                        {st === 'paid' ? '✓' : st === 'partial' ? '◐' : '○'}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {currentBalance > 0 ? (
+                <div style={{
+                  marginTop: 8, padding: '10px 12px', borderRadius: 12,
+                  background: 'linear-gradient(135deg, rgba(245,158,11,0.14), rgba(245,158,11,0.04))',
+                  border: '1.5px solid rgba(245,158,11,0.4)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8
+                }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: '#fcd34d' }}>
+                      {monthLabelOf(currentMonthKey)} dues pending
+                    </div>
+                    <div style={{ fontSize: 11, color: t.textSub }}>
+                      Balance ₹{currentBalance.toFixed(2)}
+                      {(paidByMonth[currentMonthKey] || 0) > 0 && ` (₹${Number(paidByMonth[currentMonthKey]).toFixed(2)} received)`}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAmount(currentBalance.toFixed(2))
+                      setPaymentMethodTab('instant')
+                      setTimeout(() => handleLaunchPayment('upi', 0, currentBalance), 50)
+                    }}
+                    style={{
+                      padding: '10px 16px', borderRadius: 11, border: 'none',
+                      background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff',
+                      fontSize: 12.5, fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap',
+                      boxShadow: '0 4px 14px rgba(16,185,129,0.4)'
+                    }}
+                  >
+                    Pay Balance
+                  </button>
+                </div>
+              ) : (
+                <div style={{
+                  marginTop: 8, padding: '9px 12px', borderRadius: 12,
+                  background: 'rgba(52,211,153,0.10)', border: '1px solid rgba(52,211,153,0.35)',
+                  fontSize: 12, fontWeight: 800, color: '#34d399', textAlign: 'center'
+                }}>
+                  ✅ {monthLabelOf(currentMonthKey)} contribution cleared — Shukran!
+                </div>
+              )}
+            </div>
+
+            {/* ── PAYMENT METHOD SELECTOR (Instant Pay + Scan QR) ── */}
+            <div style={{
+              display: 'flex',
+              background: t.inputBg,
+              padding: 3,
+              borderRadius: 12,
+              border: `1px solid ${t.inputBorder || t.border}`,
+              marginBottom: 14,
+              boxSizing: 'border-box'
+            }}>
               <button
-                onClick={handlePayViaGooglePay}
+                type="button"
+                onClick={() => setPaymentMethodTab('instant')}
                 style={{
                   flex: 1,
-                  padding: '14px 18px',
-                  borderRadius: 14,
+                  padding: '7px 6px',
+                  borderRadius: 9,
                   border: 'none',
-                  background: 'linear-gradient(135deg, #4285F4 0%, #34A853 50%, #FBBC05 75%, #EA4335 100%)',
-                  color: '#ffffff',
-                  fontSize: 15,
+                  background: paymentMethodTab === 'instant' ? t.accentBg : 'transparent',
+                  color: paymentMethodTab === 'instant' ? t.accent : t.textSub,
+                  fontSize: 11,
                   fontWeight: 800,
-                  fontFamily: "'DM Sans', sans-serif",
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 8,
-                  boxShadow: '0 6px 20px rgba(66, 133, 244, 0.35)',
-                  transition: 'transform 0.15s ease',
+                  gap: 4,
+                  boxSizing: 'border-box',
+                  minWidth: 0
                 }}
               >
-                <div style={{ background: '#fff', padding: '2px 6px', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ fontSize: 13, fontWeight: 900, color: '#4285F4', fontFamily: 'sans-serif' }}>G</span>
-                  <span style={{ fontSize: 13, fontWeight: 900, color: '#EA4335', fontFamily: 'sans-serif' }}>P</span>
-                  <span style={{ fontSize: 13, fontWeight: 900, color: '#FBBC05', fontFamily: 'sans-serif' }}>a</span>
-                  <span style={{ fontSize: 13, fontWeight: 900, color: '#34A853', fontFamily: 'sans-serif' }}>y</span>
-                </div>
-                <span>Pay ₹{numericAmount}</span>
-                <ArrowUpRight size={16} />
+                <Sparkles size={12} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Instant Pay</span>
               </button>
 
               <button
-                onClick={() => {
-                  setSelectedUserToPay(null)
-                  setRecordAmount(numericAmount.toString())
-                  setRecordNote(upiTransactionNote)
-                  setShowRecordModal(true)
-                }}
+                type="button"
+                onClick={() => setPaymentMethodTab('qr')}
                 style={{
-                  padding: '14px 16px',
-                  borderRadius: 14,
-                  border: `1px solid ${t.border}`,
-                  background: 'rgba(255,255,255,0.06)',
-                  color: t.text,
-                  fontSize: 13,
-                  fontWeight: 700,
+                  flex: 1,
+                  padding: '7px 6px',
+                  borderRadius: 9,
+                  border: 'none',
+                  background: paymentMethodTab === 'qr' ? t.accentBg : 'transparent',
+                  color: paymentMethodTab === 'qr' ? t.accent : t.textSub,
+                  fontSize: 11,
+                  fontWeight: 800,
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 6
+                  justifyContent: 'center',
+                  gap: 4,
+                  boxSizing: 'border-box',
+                  minWidth: 0
                 }}
               >
-                <Receipt size={16} color={t.accent} />
-                <span>Record UTR</span>
+                <QrCode size={12} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Scan QR</span>
               </button>
             </div>
+
+            {/* ── METHOD 1: INSTANT APP PAY ── */}
+            {paymentMethodTab === 'instant' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {/* Receiver confirmation — member sees exactly where money goes */}
+                <div style={{
+                  background: t.inputBg, borderRadius: 12, padding: '10px 12px',
+                  border: `1px solid ${t.inputBorder || t.border}`, boxSizing: 'border-box'
+                }}>
+                  <div style={{ fontSize: 9, color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 800, marginBottom: 4 }}>
+                    Paying securely to
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: t.text }}>{payeeName}</div>
+                      <div style={{ fontSize: 11.5, color: t.textSub, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {isUpiIdValid ? configuredUpiId : '⚠️ Receiver UPI not configured'}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: t.accent, whiteSpace: 'nowrap' }}>
+                      ₹{formattedAmount}
+                    </div>
+                  </div>
+                </div>
+
+                {needsSplit ? (
+                  <div style={{
+                    background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)',
+                    borderRadius: 12, padding: '10px 12px', fontSize: 11.5, color: '#fcd34d', lineHeight: 1.5
+                  }}>
+                    ⚠️ Dues exceed the ₹1,00,000 per-payment bank cap, so pay in {payParts.length} safe parts below. Each part opens prefilled and auto-generates its receipt.
+                  </div>
+                ) : null}
+
+                {/* Primary Pay Button — generic UPI chooser, receiver + amount prefilled */}
+                {needsSplit ? payParts.map((part, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    disabled={finalizingPay}
+                    onClick={() => handleLaunchPayment('upi', i)}
+                    style={{
+                      width: '100%',
+                      padding: '13px 16px',
+                      borderRadius: 14,
+                      border: activePart === i ? '2px solid #10b981' : 'none',
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%)',
+                      color: '#ffffff',
+                      fontSize: 15,
+                      fontWeight: 800,
+                      fontFamily: "'DM Sans', sans-serif",
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      boxShadow: '0 6px 20px rgba(16, 185, 129, 0.35)',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    <CreditCard size={18} />
+                    <span>Pay Part {i + 1}/{payParts.length} · ₹{Number(part).toFixed(2)}</span>
+                    <ArrowUpRight size={16} />
+                  </button>
+                )) : (
+                  <button
+                    type="button"
+                    disabled={finalizingPay}
+                    onClick={() => handleLaunchPayment('upi')}
+                    style={{
+                      width: '100%',
+                      opacity: finalizingPay ? 0.7 : 1,
+                      padding: '13px 16px',
+                      borderRadius: 14,
+                      border: 'none',
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%)',
+                      color: '#ffffff',
+                      fontSize: 15,
+                      fontWeight: 800,
+                      fontFamily: "'DM Sans', sans-serif",
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                      boxShadow: '0 6px 20px rgba(16, 185, 129, 0.35)',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    <CreditCard size={18} />
+                    <span>Pay ₹{formattedAmount}</span>
+                    <ArrowUpRight size={16} />
+                  </button>
+                )}
+                <div style={{ fontSize: 10.5, color: t.textSub, textAlign: 'center', lineHeight: 1.5 }}>
+                  Opens your UPI app with receiver &amp; amount already filled — just approve inside your bank app.
+                  {' '}<button type="button" onClick={() => setShowRefundPolicy(true)} style={{ background: 'none', border: 'none', padding: 0, color: t.accent, fontSize: 10.5, fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}>Refund Policy</button>
+                </div>
+
+                {/* Secondary Fast App Shortcuts */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => handleLaunchPayment('gpay')}
+                    style={{
+                      padding: '8px 4px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(16, 185, 129, 0.35)',
+                      background: 'rgba(16, 185, 129, 0.12)',
+                      color: '#6ee7b7',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    GPay
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleLaunchPayment('phonepe')}
+                    style={{
+                      padding: '8px 4px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(103, 58, 183, 0.35)',
+                      background: 'rgba(103, 58, 183, 0.12)',
+                      color: '#c4b5fd',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    PhonePe
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleLaunchPayment('paytm')}
+                    style={{
+                      padding: '8px 4px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(0, 186, 242, 0.35)',
+                      background: 'rgba(0, 186, 242, 0.12)',
+                      color: '#7dd3fc',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    Paytm
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethodTab('qr')}
+                    style={{
+                      padding: '8px 4px',
+                      borderRadius: 10,
+                      border: `1px solid ${t.inputBorder || t.border}`,
+                      background: t.inputBg,
+                      color: t.text,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    Scan QR
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── METHOD 2: INLINE QR CODE ── */}
+            {paymentMethodTab === 'qr' && (
+              <div style={{
+                background: t.inputBg, borderRadius: 16, padding: '14px',
+                textAlign: 'center', border: `1px solid ${t.inputBorder || t.border}`, boxSizing: 'border-box'
+              }}>
+                {needsSplit ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    <div style={{ fontSize: 11.5, color: '#fcd34d', lineHeight: 1.5 }}>
+                      ⚠️ Dues exceed the ₹1,00,000 bank cap — scan &amp; pay each part separately.
+                    </div>
+                    {payParts.map((part, i) => (
+                      <div key={i}>
+                        <div style={{
+                          background: '#ffffff', padding: 12, borderRadius: 14,
+                          display: 'inline-block', margin: '0 auto 8px', boxShadow: '0 4px 16px rgba(0,0,0,0.3)'
+                        }}>
+                          <QRCodeCanvas value={generateUpiUrl('upi', part)} size={160} level="H" />
+                        </div>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: t.accent, marginBottom: 2 }}>
+                          Part {i + 1}/{payParts.length} · ₹{Number(part).toFixed(2)}
+                        </div>
+                        <div style={{ fontSize: 11, color: t.textSub, fontFamily: 'monospace', marginBottom: 6 }}>
+                          {configuredUpiId}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <div style={{
+                      background: '#ffffff', padding: 12, borderRadius: 14,
+                      display: 'inline-block', margin: '0 auto 8px', boxShadow: '0 4px 16px rgba(0,0,0,0.3)'
+                    }}>
+                      <QRCodeCanvas value={upiUrl} size={160} level="H" />
+                    </div>
+
+                    <div style={{ fontSize: 16, fontWeight: 800, color: t.accent, marginBottom: 2 }}>
+                      ₹{formattedAmount}
+                    </div>
+                    <div style={{ fontSize: 11, color: t.textSub, fontFamily: 'monospace', marginBottom: 10 }}>
+                      {configuredUpiId}
+                    </div>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => handleCopyUpi(true)}
+                  style={{
+                    width: '100%', padding: '8px', borderRadius: 10,
+                    border: `1px solid ${t.inputBorder || t.border}`, background: t.inputBg,
+                    color: t.text, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5
+                  }}
+                >
+                  {copiedUpi ? <Check size={13} color="#4ade80" /> : <Copy size={13} />}
+                  <span>{copiedUpi ? 'UPI ID Copied!' : 'Copy UPI ID'}</span>
+                </button>
+              </div>
+            )}
+
+            {/* Receipts auto-generate when you pay — nothing to type. */}
           </div>
 
           {/* Personal Transaction Tracking History */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: t.text, letterSpacing: '0.04em', textTransform: 'uppercase', fontFamily: "'DM Sans', sans-serif" }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.text, letterSpacing: '0.04em', textTransform: 'uppercase', fontFamily: "'DM Sans', sans-serif" }}>
               My Payment History
             </div>
           </div>
@@ -1351,14 +2052,14 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               Loading your payment records…
             </div>
           ) : myPayments.length === 0 ? (
-            <div style={{ padding: '36px 20px', borderRadius: 18, background: t.card, border: `1px solid ${t.border}`, textAlign: 'center' }}>
+            <div style={{ padding: '36px 20px', borderRadius: 18, background: t.card, border: `1px solid ${t.border}`, textAlign: 'center', boxSizing: 'border-box' }}>
               <Receipt size={36} color={t.accent} style={{ opacity: 0.5, marginBottom: 10 }} />
               <h3 style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 700, color: t.text }}>No payment records yet</h3>
               <p style={{ margin: '0 0 16px', fontSize: 12, color: t.textSub }}>
-                When you make a payment via Google Pay or submit your UTR reference, your receipts will appear here.
+                Pay securely above — your receipt generates automatically and appears here.
               </p>
-              <Btn primary onClick={handlePayViaGooglePay} style={{ padding: '10px 20px', fontSize: 13, display: 'inline-flex' }}>
-                Pay with Google Pay Now
+              <Btn primary onClick={() => handleLaunchPayment('upi')} style={{ padding: '10px 20px', fontSize: 13, display: 'inline-flex' }}>
+                Pay Dues Now
               </Btn>
             </div>
           ) : (
@@ -1381,11 +2082,12 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                       display: 'flex',
                       alignItems: 'center',
                       gap: 14,
-                      cursor: 'pointer'
+                      cursor: 'pointer',
+                      boxSizing: 'border-box'
                     }}
                   >
                     <div style={{
-                      width: 42, height: 42, borderRadius: 12,
+                      width: 40, height: 40, borderRadius: 12,
                       background: isVerified ? 'rgba(52, 211, 153, 0.12)' : 'rgba(197, 160, 89, 0.12)',
                       border: `1px solid ${isVerified ? 'rgba(52, 211, 153, 0.3)' : 'rgba(197, 160, 89, 0.3)'}`,
                       display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
@@ -1408,12 +2110,48 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                           {isVerified ? 'Verified' : 'Submitted'}
                         </span>
                       </div>
-                      <div style={{ fontSize: 12, color: t.textSub }}>
+                      <div style={{ fontSize: 12, color: t.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {dateStr} {p.transaction_ref && `• Ref: ${p.transaction_ref}`}
                       </div>
+                      {p.metadata?.dispute?.status === 'open' ? (
+                        <div style={{ fontSize: 10, fontWeight: 800, color: '#fbbf24', marginTop: 3 }}>
+                          ⚖️ Refund request under review
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); raiseDispute(p) }}
+                          style={{ background: 'none', border: 'none', padding: '3px 0 0', color: t.textSub, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', opacity: 0.8 }}
+                        >
+                          Report an issue / request refund
+                        </button>
+                      )}
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                      <button
+                        type="button"
+                        title="Download PDF receipt"
+                        aria-label="Download PDF receipt"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          downloadPayslipPdf({
+                            payment: p,
+                            memberName: userProfile?.name || p.user_name,
+                            thaliNumber: userProfile?.thali_number || p.thali_number,
+                            payeeUpi: p.upi_id || configuredUpiId,
+                            payeeName: p.payee_name || payeeName,
+                            monthLabel: monthLabelOf(monthKeyOf(new Date(p.created_at))),
+                          })
+                        }}
+                        style={{
+                          background: t.accentBg, border: `1px solid ${t.accentBorder}`,
+                          color: t.accent, borderRadius: 10, padding: '7px 8px', cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >
+                        <Download size={14} />
+                      </button>
                       <span style={{ fontSize: 11, color: t.accent, fontWeight: 700 }}>Receipt</span>
                       <ChevronRight size={15} color={t.textSub} />
                     </div>
@@ -1425,59 +2163,143 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
         </div>
       )}
 
-      {/* ── QR CODE MODAL ── */}
+      {/* ── QR CODE MODAL (bottom sheet — PWA safe) ── */}
       {showQRModal && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 9999,
-          background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
-        }}>
-          <div style={{
-            background: t.card, borderRadius: 24, border: `1.5px solid ${t.accentBorder}`,
-            maxWidth: 360, width: '100%', padding: 24, textAlign: 'center'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: t.text, fontFamily: "'Playfair Display', serif" }}>
-                Scan with Google Pay
+        <div
+          onClick={() => setShowQRModal(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: t.card, borderRadius: '24px 24px 0 0',
+              borderTop: `2px solid ${t.accent}`,
+              maxWidth: 420, width: '100%', padding: '14px 20px calc(20px + env(safe-area-inset-bottom, 0px))',
+              textAlign: 'center', boxSizing: 'border-box',
+              maxHeight: '92dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+            }}
+          >
+            <div style={{ width: 44, height: 4, borderRadius: 999, background: t.border, margin: '0 auto 14px' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div style={{ fontSize: 17, fontWeight: 700, color: t.text, fontFamily: "'Playfair Display', serif" }}>
+                Scan to Pay via UPI
               </div>
               <button onClick={() => setShowQRModal(false)} style={{ background: 'none', border: 'none', color: t.textSub, cursor: 'pointer', padding: 4 }}>
                 <X size={20} />
               </button>
             </div>
 
-            <div style={{ background: '#ffffff', padding: 16, borderRadius: 16, display: 'inline-block', margin: '0 auto 16px' }}>
-              <QRCodeCanvas value={upiUrl} size={220} level="H" />
+            <div style={{ background: '#ffffff', padding: 16, borderRadius: 18, display: 'inline-block', margin: '0 auto 12px', boxShadow: '0 8px 24px rgba(0,0,0,0.25)' }}>
+              <QRCodeCanvas value={needsSplit && payParts[activePart] != null ? generateUpiUrl('upi', payParts[activePart]) : upiUrl} size={210} level="H" />
             </div>
 
-            <div style={{ fontSize: 18, fontWeight: 800, color: t.accent, marginBottom: 4 }}>
-              ₹{numericAmount.toLocaleString('en-IN')}
+            <div style={{ fontSize: 20, fontWeight: 800, color: t.accent, marginBottom: 2 }}>
+              {needsSplit && payParts[activePart] != null
+                ? `Part ${activePart + 1}/${payParts.length} · ₹${Number(payParts[activePart]).toFixed(2)}`
+                : `₹${formattedAmount}`}
             </div>
-            <div style={{ fontSize: 12, color: t.textSub, fontFamily: 'monospace', marginBottom: 16 }}>
-              {configuredUpiId}
+            {needsSplit && (
+              <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+                {payParts.map((part, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setActivePart(i)}
+                    style={{
+                      padding: '6px 12px', borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: 'pointer',
+                      border: `1.5px solid ${activePart === i ? t.accent : t.border}`,
+                      background: activePart === i ? t.accentBg : 'transparent',
+                      color: activePart === i ? t.accent : t.textSub,
+                    }}
+                  >
+                    Part {i + 1}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: t.inputBg, padding: '5px 12px', borderRadius: 10,
+              fontSize: 12, color: t.textSub, fontFamily: 'monospace', marginBottom: 12,
+              border: `1px solid ${t.inputBorder || t.border}`
+            }}>
+              <span>{configuredUpiId}</span>
+              <button
+                onClick={() => handleCopyUpi(true)}
+                style={{ background: 'transparent', border: 'none', color: t.accent, cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
+                title="Copy UPI ID"
+              >
+                {copiedUpi ? <Check size={13} color="#4ade80" /> : <Copy size={13} />}
+              </button>
             </div>
 
-            <Btn primary onClick={() => { setShowQRModal(false); setShowRecordModal(true) }} style={{ width: '100%' }}>
-              I have paid — Enter UTR
+            <div style={{
+              background: 'rgba(52, 211, 153, 0.1)', border: '1px solid rgba(52, 211, 153, 0.25)',
+              borderRadius: 12, padding: '8px 12px', fontSize: 11, color: '#a7f3d0',
+              lineHeight: 1.4, marginBottom: 16, textAlign: 'left'
+            }}>
+              ✨ <b>Tip:</b> Scanning QR or copying UPI directly in your app bypasses browser web-intent bank limit errors.
+            </div>
+
+            <Btn primary onClick={() => {
+              // Paid via QR scan: finalize from the stashed attempt (or current amount).
+              const pending = readPendingPay()
+              if (pending && pending.amount > 0) {
+                setShowQRModal(false)
+                finalizeAutoPayment(pending)
+              } else if (numericAmount > 0) {
+                setShowQRModal(false)
+                stashPendingPay({
+                  amount: Number(numericAmount.toFixed(2)),
+                  note: sanitizedNote,
+                  upi: (configuredUpiId || '').trim(),
+                  payee: (payeeName || 'Al-Mawaid').trim(),
+                  month: monthKeyOf(new Date()),
+                  launchedAt: Date.now(),
+                })
+                finalizeAutoPayment(readPendingPay())
+              }
+            }} disabled={finalizingPay} style={{ width: '100%', padding: '12px' }}>
+              {finalizingPay ? 'Saving Receipt…' : '✅ I’ve Paid — Get My Receipt'}
             </Btn>
           </div>
         </div>
       )}
 
-      {/* ── RECORD PAYMENT / UTR MODAL ── */}
-      {showRecordModal && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 9999,
-          background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
-        }}>
-          <div style={{ background: t.card, borderRadius: 24, border: `1.5px solid ${t.border}`, maxWidth: 420, width: '100%', padding: 24 }}>
+      {/* ── MANAGER MANUAL RECORD MODAL (bottom sheet; members never type UTR — receipts auto-generate) ── */}
+      {showRecordModal && isManager && (
+        <div
+          onClick={() => setShowRecordModal(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: t.card, borderRadius: '24px 24px 0 0',
+              borderTop: `2px solid ${t.accent}`,
+              maxWidth: 460, width: '100%',
+              maxHeight: '92dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+              padding: '14px 20px calc(20px + env(safe-area-inset-bottom, 0px))',
+              boxSizing: 'border-box',
+            }}
+          >
+            <div style={{ width: 44, height: 4, borderRadius: 999, background: t.border, margin: '0 auto 14px' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: t.text, fontFamily: "'Playfair Display', serif" }}>
-                  {isManager && selectedUserToPay ? `Record Payment for ${selectedUserToPay.name}` : "Record Payment Details"}
+                  {selectedUserToPay ? `Record Payment for ${selectedUserToPay.name}` : "Record Payment Details"}
                 </h3>
                 <p style={{ margin: '2px 0 0', fontSize: 12, color: t.textSub }}>
-                  {isManager ? "Manually record cash or direct bank transfer" : "Log your transaction for verification"}
+                  Manually record cash or direct bank transfer
                 </p>
               </div>
               <button onClick={() => setShowRecordModal(false)} style={{ background: 'none', border: 'none', color: t.textSub, cursor: 'pointer', padding: 4 }}>
@@ -1506,7 +2328,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
 
               <div>
                 <label htmlFor="recordUtrInput" style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
-                  Google Pay UPI Reference / UTR # {isManager ? "(Optional)" : "(Optional)"}
+                  UPI Reference / UTR Number {isManager ? "(Optional)" : "(Optional)"}
                 </label>
                 <input
                   id="recordUtrInput"
@@ -1545,6 +2367,185 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                 </Btn>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── AUTO PAY-SLIP MODAL (bottom sheet — PWA safe, never cut off) ── */}
+      {showSlipModal && lastSlip && (
+        <div
+          onClick={() => setShowSlipModal(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: t.card, borderRadius: '24px 24px 0 0',
+              borderTop: `2px solid ${t.accent}`,
+              maxWidth: 460, width: '100%',
+              maxHeight: '92dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+              padding: '14px 20px calc(20px + env(safe-area-inset-bottom, 0px))',
+              boxSizing: 'border-box',
+              animation: 'slipUp 0.32s cubic-bezier(0.32,0.72,0,1)',
+            }}
+          >
+            <style>{`@keyframes slipUp { from { transform: translateY(48px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }`}</style>
+            <div style={{ width: 44, height: 4, borderRadius: 999, background: t.border, margin: '0 auto 14px' }} />
+            <div style={{ textAlign: 'center', marginBottom: 4 }}>
+              <div style={{
+                width: 60, height: 60, borderRadius: '50%', margin: '0 auto 10px',
+                background: 'linear-gradient(135deg,#10b981,#059669)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 8px 24px rgba(16,185,129,0.4)'
+              }}>
+                <Check size={30} color="#fff" strokeWidth={3} />
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: t.text, fontFamily: "'Playfair Display', serif" }}>
+                Payment Recorded
+              </div>
+              <div style={{ fontSize: 12, color: t.textSub, marginTop: 2 }}>
+                Receipt auto-generated · pending manager verification
+              </div>
+            </div>
+
+            <div style={{
+              marginTop: 14, borderRadius: 16, overflow: 'hidden',
+              border: `1.5px solid ${t.accentBorder || t.border}`, boxSizing: 'border-box'
+            }}>
+              <div style={{ background: 'linear-gradient(135deg,#131b2e,#0a0e1a)', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', color: t.accent }}>AL-MAWAID RECEIPT</div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
+                    {new Date(lastSlip.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    {' · '}
+                    {new Date(lastSlip.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: '#fff' }}>₹{Number(lastSlip.amount).toFixed(2)}</div>
+                  <div style={{
+                    display: 'inline-block', fontSize: 9.5, fontWeight: 900, padding: '2px 8px', borderRadius: 999,
+                    background: 'rgba(251,191,36,0.15)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.4)',
+                    textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 2
+                  }}>
+                    {String(lastSlip.status || 'submitted').toUpperCase()}
+                  </div>
+                </div>
+              </div>
+              <div style={{ background: t.bg, padding: '12px 16px' }}>
+                {[
+                  ['Member', userProfile?.name || lastSlip.user_name || '—'],
+                  ...(userProfile?.thali_number || lastSlip.thali_number ? [['Thali', `#${userProfile?.thali_number || lastSlip.thali_number}`]] : []),
+                  ['Paid To', `${lastSlip.payee_name || payeeName} · ${lastSlip.upi_id || configuredUpiId}`],
+                  ['Reference', lastSlip.transaction_ref || '—'],
+                  ...(lastSlip.note ? [['Remark', lastSlip.note]] : []),
+                ].map(([k, v]) => (
+                  <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '7px 0', borderBottom: `1px dashed ${t.border}`, fontSize: 12.5 }}>
+                    <span style={{ color: t.textSub, fontWeight: 600, flexShrink: 0 }}>{k}</span>
+                    <span style={{ color: t.text, fontWeight: 700, textAlign: 'right', overflowWrap: 'anywhere' }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+              <button
+                type="button"
+                onClick={() => setShowSlipModal(false)}
+                style={{ flex: 1, padding: '13px', borderRadius: 13, border: `1.5px solid ${t.border}`, background: 'transparent', color: t.textSub, fontSize: 14, fontWeight: 800, cursor: 'pointer' }}
+              >
+                Done
+              </button>
+              <button
+                type="button"
+                onClick={() => downloadPayslipPdf({
+                  payment: lastSlip,
+                  memberName: userProfile?.name || lastSlip.user_name,
+                  thaliNumber: userProfile?.thali_number || lastSlip.thali_number,
+                  payeeUpi: lastSlip.upi_id || configuredUpiId,
+                  payeeName: lastSlip.payee_name || payeeName,
+                  monthLabel: monthLabelOf(monthKeyOf(new Date(lastSlip.created_at))),
+                })}
+                style={{
+                  flex: 2, padding: '13px', borderRadius: 13, border: 'none',
+                  background: 'linear-gradient(135deg,#B8860B,#D4AF37)', color: '#0a0a0a',
+                  fontSize: 14, fontWeight: 900, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  boxShadow: '0 6px 18px rgba(212,175,55,0.35)'
+                }}
+              >
+                <Download size={16} /> Download PDF Slip
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── REFUND POLICY SHEET (bottom sheet — PWA safe) ── */}
+      {showRefundPolicy && (
+        <div
+          onClick={() => setShowRefundPolicy(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: t.card, borderRadius: '24px 24px 0 0',
+              borderTop: `2px solid ${t.accent}`,
+              maxWidth: 460, width: '100%',
+              maxHeight: '92dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+              padding: '14px 20px calc(20px + env(safe-area-inset-bottom, 0px))',
+              boxSizing: 'border-box',
+            }}
+          >
+            <div style={{ width: 44, height: 4, borderRadius: 999, background: t.border, margin: '0 auto 14px' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 12, background: t.accentBg, border: `1px solid ${t.accentBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <ShieldCheck size={20} color={t.accent} />
+              </div>
+              <div>
+                <div style={{ fontSize: 17, fontWeight: 900, color: t.text, fontFamily: "'Playfair Display', serif" }}>
+                  Payment Protection &amp; Refunds
+                </div>
+                <div style={{ fontSize: 11.5, color: t.textSub }}>
+                  Every rupee is accounted — here is exactly what happens if anything goes wrong.
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
+              {[
+                ['🛡️', 'Secured checkout', 'Every tap is validated before your bank app opens: correct receiver UPI ID, exact amount, and the ₹1,00,000 per-payment bank cap. Invalid or duplicate attempts are blocked on-device — a bad payment can never be fired.'],
+                ['⏳', 'Failed or cancelled payments', 'If you cancel inside your bank app, or the app never opens, nothing is recorded and no dues change. An unfinished attempt stays recoverable for 30 minutes, then auto-discards.'],
+                ['💸', 'Debited but no receipt?', 'Use “Complete My Receipt” on the safety banner, or tap “Report an issue / request refund” on the payment row. Your request goes straight to the management team with the amount, date and reference.'],
+                ['↩️', 'Refund promise', 'Confirmed debits that didn’t reach Al-Mawaid are refunded to source or adjusted against next month’s dues within 7 working days of verification. Bank auto-reversals for failed UPI debits typically reflect in 3–5 working days on their own.'],
+                ['🧾', 'Proof always kept', 'Every payment keeps a downloadable PDF receipt with reference number. Keep your bank UTR — it makes verification instant.'],
+              ].map(([icon, title, body]) => (
+                <div key={title} style={{ display: 'flex', gap: 10, padding: '10px 12px', borderRadius: 13, background: t.inputBg, border: `1px solid ${t.inputBorder || t.border}` }}>
+                  <div style={{ fontSize: 18, flexShrink: 0 }}>{icon}</div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: t.text, marginBottom: 2 }}>{title}</div>
+                    <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.55 }}>{body}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowRefundPolicy(false)}
+              style={{ width: '100%', marginTop: 16, padding: '13px', borderRadius: 13, border: 'none', background: t.accentGrad, color: '#0a0a0a', fontSize: 14, fontWeight: 900, cursor: 'pointer' }}
+            >
+              Got It — Pay Securely
+            </button>
           </div>
         </div>
       )}
@@ -1646,15 +2647,29 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
         </div>
       )}
 
-      {/* ── DIGITAL RECEIPT VIEW MODAL ── */}
+      {/* ── DIGITAL RECEIPT VIEW MODAL (bottom sheet — PWA safe) ── */}
       {selectedReceipt && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 9999,
-          background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
-        }}>
-          <div style={{ background: t.card, borderRadius: 24, border: `1.5px solid ${t.borderActive || t.border}`, maxWidth: 380, width: '100%', padding: 24, position: 'relative' }}>
-            <button onClick={() => setSelectedReceipt(null)} style={{ position: 'absolute', top: 18, right: 18, background: 'rgba(255,255,255,0.06)', border: 'none', color: t.textSub, cursor: 'pointer', borderRadius: 8, padding: 4 }}>
+        <div
+          onClick={() => setSelectedReceipt(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: t.card, borderRadius: '24px 24px 0 0',
+              borderTop: `2px solid ${t.accent}`,
+              maxWidth: 420, width: '100%',
+              maxHeight: '92dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+              padding: '14px 20px calc(20px + env(safe-area-inset-bottom, 0px))',
+              boxSizing: 'border-box', position: 'relative',
+            }}
+          >
+            <div style={{ width: 44, height: 4, borderRadius: 999, background: t.border, margin: '0 auto 14px' }} />
+            <button onClick={() => setSelectedReceipt(null)} style={{ position: 'absolute', top: 22, right: 18, background: t.inputBg, border: 'none', color: t.textSub, cursor: 'pointer', borderRadius: 8, padding: 4 }}>
               <X size={18} />
             </button>
 
@@ -1670,7 +2685,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               </span>
             </div>
 
-            <div style={{ background: 'rgba(0,0,0,0.25)', borderRadius: 16, padding: 16, border: '1px solid rgba(255,255,255,0.06)', marginBottom: 18 }}>
+            <div style={{ background: t.inputBg, borderRadius: 16, padding: 16, border: `1px solid ${t.inputBorder || t.border}`, marginBottom: 18 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
                 <span style={{ fontSize: 12, color: t.textSub }}>Member</span>
                 <span style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{selectedReceipt.user_name || 'Member'}</span>
@@ -1705,9 +2720,31 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               )}
             </div>
 
-            <Btn primary onClick={() => setSelectedReceipt(null)} style={{ width: '100%' }}>
-              Close
-            </Btn>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Btn primary onClick={() => setSelectedReceipt(null)} style={{ flex: 1, padding: '12px' }}>
+                Close
+              </Btn>
+              <button
+                type="button"
+                onClick={() => downloadPayslipPdf({
+                  payment: selectedReceipt,
+                  memberName: userProfile?.name || selectedReceipt.user_name,
+                  thaliNumber: userProfile?.thali_number || selectedReceipt.thali_number,
+                  payeeUpi: selectedReceipt.upi_id || configuredUpiId,
+                  payeeName: selectedReceipt.payee_name || payeeName,
+                  monthLabel: monthLabelOf(monthKeyOf(new Date(selectedReceipt.created_at))),
+                })}
+                style={{
+                  flex: 1.4, padding: '12px', borderRadius: 12, border: 'none',
+                  background: 'linear-gradient(135deg,#B8860B,#D4AF37)', color: '#0a0a0a',
+                  fontSize: 13.5, fontWeight: 900, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  boxShadow: '0 6px 18px rgba(212,175,55,0.35)'
+                }}
+              >
+                <Download size={15} /> PDF Slip
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1893,3 +2930,6 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     </main>
   )
 }
+
+
+

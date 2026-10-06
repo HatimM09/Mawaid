@@ -16,7 +16,7 @@ export default defineConfig({
       filename: 'sw.js',
       registerType: 'autoUpdate',
       injectRegister: null,
-      includeAssets: ['al-mawaid.png', 'al-mawaid.svg', 'wheat_bg.png', 'icons.svg'],
+      includeAssets: ['al-mawaid.png', 'al-mawaid.svg', 'wheat_bg.png', 'icons.svg', 'icons/*.png'],
       manifest: {
         name: 'Al-Mawaid | المَوَائِد',
         short_name: 'Al-Mawaid',
@@ -36,16 +36,28 @@ export default defineConfig({
             purpose: 'any'
           },
           {
-            src: '/al-mawaid.png',
+            src: '/icons/icon-192.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any'
           },
           {
-            src: '/al-mawaid.png',
+            src: '/icons/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any'
+          },
+          {
+            src: '/icons/icon-maskable-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable'
+          },
+          {
+            src: '/icons/icon-maskable-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
           }
         ]
       }

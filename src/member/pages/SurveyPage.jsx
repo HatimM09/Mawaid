@@ -7,22 +7,21 @@ import { supabase } from '../../lib/firebaseClient'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
 import {
-  getSurveyTargetWeek, getSurveyTargetWeeks, getSurveyTotalSlots,
-  isTwoWeekCadence, formatWeekRange, getCalendarWeekDate
+  getSurveyTargetWeek, getSurveyTargetWeeks,
+  formatWeekRange
 } from '../../common/utils'
 import { WeeklyMenuSkeleton } from '../../common/Skeleton'
 import SurveyModal from '../../components/SurveyModal'
 import { DAYS } from '../constants'
 import { isSurveyOpen, canEditMeal, getSurveyWindowLabel } from '../survey'
-import { fetchUserSurveyRows, fetchUserSurveyRow } from '../../lib/surveyRows'
-import { getSlotDishes, getDishSnapshot } from '../../hooks/useSurvey'
+import { fetchUserSurveyRows } from '../../lib/surveyRows'
+import { getDishSnapshot } from '../../hooks/useSurvey'
 
 export default function SurveyPage({ appSettings = {} }) {
   const t = useTheme()
   const { user } = useAuth()
   const weekIds = useMemo(() => getSurveyTargetWeeks(appSettings), [appSettings])
   const primaryWeekId = weekIds[0] || getSurveyTargetWeek(appSettings)
-  const calendarWeekId = getCalendarWeekDate()
   const weeklyMenu = useWeeklyMenu(primaryWeekId)
 
   const activeWeekId = primaryWeekId

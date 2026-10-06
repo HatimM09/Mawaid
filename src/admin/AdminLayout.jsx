@@ -8,7 +8,6 @@ import {
 import { updateSystemTheme } from './ui'
 import OfflineBanner from '../components/OfflineBanner'
 import { supabase } from '../lib/firebaseClient'
-import { playNotificationChime } from '../common/utils'
 
 const NAV = [
   { to: '/admin', label: 'Dashboard', Icon: LayoutDashboard, color: 'var(--accent-primary)', end: true, roles: ['admin', 'inventory_manager', 'khidmat_guzar', 'supervisor'] },
@@ -30,12 +29,7 @@ const NAV = [
 export default function AdminLayout() {
   const [adminName, setAdminName] = useState('Admin')
   const [role, setRole] = useState(localStorage.getItem('al_mawaid_portal') || 'khidmat')
-  const [toastNotice, setToastNotice] = useState(null)
   const seenNoticeIds = useRef(new Set(JSON.parse(localStorage.getItem('almawaid_seen_notices') || '[]')))
-  const dragStartY = useRef(null)
-  const dragY = useRef(0)
-  const [dragOffset, setDragOffset] = useState(0)
-  const [isDragging, setIsDragging] = useState(false)
   const [connStatus, setConnStatus] = useState('connecting')
   const [navCounts, setNavCounts] = useState({})
   const [collapsed, setCollapsed] = useState(() => {
@@ -142,7 +136,10 @@ export default function AdminLayout() {
     return () => supabase.removeChannel(channel)
   }, [loadNavCounts])
 
-  // ── Native Notification System (Realtime) ──
+  // ── Outside-app notices (Realtime) ──
+  // No in-app popup banner: notices arrive as OS-level notifications outside
+  // the app (Web Push / FCM) and are stored for the Broadcast/notices history.
+  // This listener only fires the OS Notification API when granted.
   useEffect(() => {
     // Mark existing notices as read so they don't appear on login/reconnect
     const lastRead = localStorage.getItem('almawaid_last_notice_read') || '1970-01-01T00:00:00.000Z'
@@ -165,10 +162,10 @@ export default function AdminLayout() {
         seenNoticeIds.current.add(notice.id)
         try { localStorage.setItem('almawaid_seen_notices', JSON.stringify([...seenNoticeIds.current].slice(-200))) } catch {}
 
-        // Suppress routine menu publications from popping up repeatedly in admin dashboard
+        // Suppress routine menu publications from notifying repeatedly in admin dashboard
         if (notice.type === 'menu') return
 
-        // Only show live in-app toast banner for truly fresh notices (< 30 seconds old)
+        // Only notify for truly fresh notices (< 30 seconds old)
         const createdAtMs = notice.created_at ? new Date(notice.created_at).getTime() : Date.now()
         const isFresh = (Date.now() - createdAtMs) < 30000
         if (!isFresh) return
@@ -177,11 +174,12 @@ export default function AdminLayout() {
         const lastRead = localStorage.getItem('almawaid_last_notice_read')
         if (lastRead && new Date(notice.created_at).getTime() <= new Date(lastRead).getTime()) return
 
-        setToastNotice(notice)
+        // Outside-app OS notification (no in-app banner, no chime).
         if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification(notice.title || 'Broadcast Sent', { body: notice.body || notice.message || '', icon: '/al-mawaid.png' })
+          try {
+            new Notification(notice.title || 'Broadcast Sent', { body: notice.body || notice.message || '', icon: '/al-mawaid.png' })
+          } catch {}
         }
-        setTimeout(() => setToastNotice(null), 8000)
       })
       .subscribe((status) => {
         setConnStatus(status === 'SUBSCRIBED' ? 'online' : 'offline')
@@ -455,72 +453,6 @@ export default function AdminLayout() {
             <Outlet context={{ role }} />
           </main>
         </div>
-
-        {/* ── Toast Notification Popup ── */}
-        {toastNotice && (
-          <div
-            onClick={() => setToastNotice(null)}
-            onTouchStart={(e) => {
-              dragStartY.current = e.touches[0].clientY
-              dragY.current = 0
-              setIsDragging(true)
-            }}
-            onTouchMove={(e) => {
-              if (dragStartY.current === null) return
-              const delta = e.touches[0].clientY - dragStartY.current
-              if (delta > 0) {
-                e.preventDefault()
-                dragY.current = delta * 0.5
-                setDragOffset(dragY.current)
-              }
-            }}
-            onTouchEnd={() => {
-              setIsDragging(false)
-              if (dragY.current > 80) {
-                setToastNotice(null)
-              }
-              setDragOffset(0)
-              dragStartY.current = null
-              dragY.current = 0
-            }}
-            style={{
-              position: 'fixed', top: 80, right: 20,
-              width: 'calc(100% - 40px)', maxWidth: 350, zIndex: 10000,
-              background: 'rgba(15, 12, 8, 0.95)', border: '1.5px solid rgba(212, 175, 55, 0.4)',
-              borderRadius: 20, overflow: 'hidden', display: 'flex', flexDirection: 'column',
-              boxShadow: '0 20px 50px rgba(0,0,0,0.5)', cursor: 'pointer',
-              transform: dragOffset > 0 ? `translateY(${dragOffset}px)` : 'none',
-              transition: isDragging ? 'none' : 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-              animation: dragOffset === 0 && !isDragging ? 'slideDown 0.5s cubic-bezier(0.4, 0, 0.2, 1)' : undefined,
-              backdropFilter: 'blur(20px)'
-            }}
-          >
-            {/* Media banner */}
-            {toastNotice.media && toastNotice.media[0] && (
-              <div style={{
-                width: '100%', height: 100,
-                background: `url(${toastNotice.media[0]}) center/cover no-repeat`,
-                borderBottom: '1px solid rgba(255,255,255,0.06)'
-              }} />
-            )}
-            <div style={{ padding: 16, display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-              <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--accent-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Bell size={20} color="#000" />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent-primary)', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 2 }}>
-                  {toastNotice.sender_name || 'Al-Mawaid'}
-                </div>
-                <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent-gold)', marginBottom: 2 }}>{toastNotice.title}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.5 }}>{toastNotice.body}</div>
-              </div>
-              <button onClick={(e) => { e.stopPropagation(); setToastNotice(null) }} aria-label="Dismiss notification" style={{ background: 'rgba(255,255,255,0.06)', border: 'none', color: 'rgba(255,255,255,0.4)', width: 26, height: 26, borderRadius: 8, padding: 4, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <X size={14} />
-              </button>
-            </div>
-            <div style={{height:3,background:"var(--accent-primary)",borderRadius:"0 0 20px 20px",animation:`toastCountdown ${Math.max(6, Math.min((toastNotice.body || '').length * 0.05, 12))}s linear forwards`}} />
-          </div>
-        )}
       </div>
 
       {/* Command Palette */}
