@@ -1,5 +1,16 @@
 # Al-Mawaid Releases
 
+## v2.1.9 — 2026-10-06
+
+### Payments — bank-rejection resilience
+- Pre-pay confirm sheet shows the exact intent payload (receiver VPA, payee, 2-decimal amount, note) before anything fires.
+- Alternate intent format (unique `tr` reference) + failure-diagnostics sheet explaining daily-quota / receiver-cap / blocked-intent causes with one-tap fixes.
+- Optional fallback receiver VPA (`upi_id_2`) in manager settings + "Use Alternate Receiver" option.
+- Desktop QR follows the confirmed plan; idempotent finalize; recovery banner gained "Payment failed?" entry.
+
+### Build
+- Version bumped to 2.1.9 (live-link: Android loads https://al-mawaid.vercel.app?v=2.1.9, no new AAB needed).
+
 ## v2.1.8 — 2026-10-06
 
 ### Survey

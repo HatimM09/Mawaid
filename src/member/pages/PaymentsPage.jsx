@@ -19,6 +19,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
 
   // Settings & Configuration
   const [configuredUpiId, setConfiguredUpiId] = useState(appSettings.upi_id || 'murtazacool558@okhdfcbank')
+  const [fallbackUpiId, setFallbackUpiId] = useState(appSettings.upi_id_2 || '')
   const [payeeName, setPayeeName] = useState(appSettings.upi_payee_name || 'Al-Mawaid')
   const [defaultDue, setDefaultDue] = useState(Number(appSettings.default_payment_due || 1500))
   const [paymentTitle, setPaymentTitle] = useState(appSettings.payment_title || 'Monthly Thali Contribution')
@@ -54,6 +55,14 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   // Unfinished-attempt recovery banner (debited-but-no-receipt safety net)
   const [showPendingBanner, setShowPendingBanner] = useState(false)
   const [showRefundPolicy, setShowRefundPolicy] = useState(false)
+  // Pre-pay confirmation sheet: member verifies the EXACT receiver + amount
+  // before anything fires. Never launches blind.
+  const [confirmPay, setConfirmPay] = useState(null) // {appType, partIdx, total, partAmount, partsCount, receiver, payee, note}
+  const [failHelp, setFailHelp] = useState(false)
+  // The exact plan that was fired (drives the desktop QR so it can never
+  // disagree with the launched intent).
+  const [firedPlan, setFiredPlan] = useState(null)
+  const failPending = useMemo(() => (failHelp ? readPendingPay() : null), [failHelp, readPendingPay])
 
   // Record Form state
   const [utrNumber, setUtrNumber] = useState('')
@@ -64,6 +73,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   // Dynamic synchronization when appSettings change from realtime or parent
   useEffect(() => {
     if (appSettings.upi_id) setConfiguredUpiId(appSettings.upi_id)
+    if (appSettings.upi_id_2 !== undefined) setFallbackUpiId(appSettings.upi_id_2 || '')
     if (appSettings.upi_payee_name) setPayeeName(appSettings.upi_payee_name)
     if (appSettings.default_payment_due) {
       const newDue = Number(appSettings.default_payment_due)
@@ -204,10 +214,9 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   const formattedAmount = numericAmount.toFixed(2)
   const sanitizedNote = (customNote || `Al-Mawaid Thali Contribution`).replace(/[^a-zA-Z0-9 -]/g, '').slice(0, 45).trim()
 
-  const isUpiIdValid = useMemo(() => {
-    const v = (configuredUpiId || '').trim()
-    return /^[\w.-]{2,256}@[a-zA-Z]{2,64}$/.test(v)
-  }, [configuredUpiId])
+  const isValidVpa = (v) => /^[\w.-]{2,256}@[a-zA-Z]{2,64}$/.test((v || '').trim())
+  const isUpiIdValid = useMemo(() => isValidVpa(configuredUpiId), [configuredUpiId])
+  const isFallbackValid = useMemo(() => isValidVpa(fallbackUpiId), [fallbackUpiId])
 
   // Split dues above the per-transaction cap into bank-safe parts.
   const payParts = useMemo(() => {
@@ -260,21 +269,27 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   }, [paidByMonth, defaultDue])
   const currentBalance = Math.max(0, Number((defaultDue - (paidByMonth[currentMonthKey] || 0)).toFixed(2)))
 
-  // Generate UPI URI for standard protocol or direct app deep links.
-  // `partAmount` lets split-dues fire one prefilled intent per part.
-  const generateUpiUrl = useCallback((appType = 'upi', partAmount = null) => {
-    const cleanUpi = (configuredUpiId || 'murtazacool558@okhdfcbank').trim()
-    const cleanPayee = (payeeName || 'Al-Mawaid').trim()
+  // Generate UPI URI. Pure P2P by default (no 'tr'); pass { withTr: true } for
+  // the alternate bank-compatible format (unique reference attached).
+  const generateUpiUrl = useCallback((appType = 'upi', partAmount = null, opts = {}) => {
+    const cleanUpi = (opts.receiver || configuredUpiId || 'murtazacool558@okhdfcbank').trim()
+    const cleanPayee = (opts.payee || payeeName || 'Al-Mawaid').trim()
     const amt = partAmount != null ? Number(partAmount).toFixed(2) : formattedAmount
+    const note = opts.note || sanitizedNote
 
-    // Clean query parameters without 'tr' or 'tid' to ensure pure P2P transfer
-    const query = [
+    // Clean query parameters to ensure pure P2P transfer
+    const params = [
       `pa=${encodeURIComponent(cleanUpi)}`,
       `pn=${encodeURIComponent(cleanPayee)}`,
       `am=${encodeURIComponent(amt)}`,
       `cu=INR`,
-      `tn=${encodeURIComponent(sanitizedNote)}`
-    ].join('&')
+      `tn=${encodeURIComponent(note)}`
+    ]
+    if (opts.withTr) {
+      const ref = (opts.tr || `AM${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1296).toString(36).toUpperCase()}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 32)
+      params.push(`tr=${encodeURIComponent(ref)}`)
+    }
+    const query = params.join('&')
 
     if (appType === 'gpay') return `tez://upi/pay?${query}`
     if (appType === 'phonepe') return `phonepe://pay?${query}`
@@ -366,22 +381,49 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       toast.error(`Each payment must be between ₹1 and ₹${UPI_TXN_LIMIT.toLocaleString('en-IN')}`)
       return
     }
-
     setActivePart(partIdx)
+    // Show the confirm sheet with the EXACT intent payload — member verifies
+    // receiver + amount before anything leaves the app.
+    setConfirmPay({
+      appType, partIdx, total, partAmount, partsCount: parts.length,
+      receiver: (configuredUpiId || '').trim(),
+      payee: (payeeName || 'Al-Mawaid').trim(),
+      note: parts.length > 1 ? `${sanitizedNote} (Part ${partIdx + 1}/${parts.length})` : sanitizedNote,
+    })
+  }
+
+  // Actually fire a confirmed intent. `withTr` selects the alternate
+  // bank-compatible format; `receiverOverride` pays the fallback VPA.
+  const firePayment = (plan, { withTr = false, receiverOverride = null } = {}) => {
+    if (!plan || finalizingRef.current) return
+    const receiver = (receiverOverride || plan.receiver || '').trim()
+    if (!isValidVpa(receiver)) {
+      toast.error('Receiver UPI ID is invalid. Payment blocked for your safety.')
+      return
+    }
+    const partAmount = Number(Number(plan.partAmount).toFixed(2))
+    if (!Number.isFinite(partAmount) || !(partAmount >= 1) || partAmount > UPI_TXN_LIMIT) {
+      toast.error('Payment amount failed re-validation. Please start again.')
+      return
+    }
     // Stash BEFORE leaving to the bank app — the auto-receipt is built from this.
     // client_ref makes every attempt idempotent: a double return can never
     // create two dues records for one payment.
-    const clientRef = `${user.id}-${monthKeyOf(new Date())}-${Number(partAmount.toFixed(2))}-${Date.now()}`
+    const clientRef = `${user.id}-${monthKeyOf(new Date())}-${partAmount.toFixed(2)}-${Date.now()}`
     stashPendingPay({
       clientRef,
-      amount: Number(partAmount.toFixed(2)),
-      note: parts.length > 1 ? `${sanitizedNote} (Part ${partIdx + 1}/${parts.length})` : sanitizedNote,
-      upi: (configuredUpiId || '').trim(),
-      payee: (payeeName || 'Al-Mawaid').trim(),
+      amount: partAmount,
+      note: plan.note,
+      upi: receiver,
+      payee: plan.payee,
       month: monthKeyOf(new Date()),
       launchedAt: Date.now(),
+      format: withTr ? 'with-tr' : 'p2p',
     })
     try { localStorage.setItem(`almawaid_last_launch_${user.id}`, String(Date.now())) } catch (e) { console.debug('[pay] launch stamp unavailable', e && e.message) }
+    setConfirmPay(null)
+    setFailHelp(false)
+    setFiredPlan({ appType: plan.appType, partAmount, receiver, payee: plan.payee, note: plan.note, format: withTr ? 'with-tr' : 'p2p' })
 
     if (!isMobileDevice) {
       // Desktop / Laptop: Show high-res QR code for scanning
@@ -391,7 +433,9 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
 
     // Mobile: fire the intent; receiver + amount arrive prefilled in the UPI app
     try {
-      const targetUrl = generateUpiUrl(appType, partAmount)
+      const targetUrl = generateUpiUrl(plan.appType, partAmount, {
+        receiver, payee: plan.payee, note: plan.note, withTr,
+      })
       const link = document.createElement('a')
       link.href = targetUrl
       link.rel = 'noreferrer'
@@ -401,7 +445,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       // No record modal anymore — the receipt auto-generates on return.
     } catch (e) {
       console.warn('Direct app launch failed, falling back to standard UPI:', e)
-      const fallbackUrl = generateUpiUrl('upi', partAmount)
+      const fallbackUrl = generateUpiUrl('upi', partAmount, { receiver, payee: plan.payee, note: plan.note, withTr })
       window.location.href = fallbackUrl
     }
   }
@@ -436,6 +480,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
           setShowSlipModal(true)
           clearPendingPay()
           setShowPendingBanner(false)
+          setFiredPlan(null)
           toast.success('Receipt already saved — showing it again, no double charge recorded.')
           return true
         }
@@ -465,6 +510,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       setShowSlipModal(true)
       clearPendingPay()
       setShowPendingBanner(false)
+      setFiredPlan(null)
       toast.success('Payment recorded — your receipt is ready!')
 
       // Notify managers (same channel as manual records)
@@ -838,6 +884,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     try {
       const items = [
         { key: 'upi_id', value: configuredUpiId.trim() },
+        { key: 'upi_id_2', value: (fallbackUpiId || '').trim() },
         { key: 'upi_payee_name', value: payeeName.trim() },
         { key: 'default_payment_due', value: String(defaultDue) },
         { key: 'payment_title', value: paymentTitle.trim() },
@@ -1577,10 +1624,17 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                     </button>
                     <button
                       type="button"
-                      onClick={() => { clearPendingPay(); setShowPendingBanner(false) }}
+                      onClick={() => { clearPendingPay(); setFiredPlan(null); setShowPendingBanner(false) }}
                       style={{ flex: 1, padding: '10px', borderRadius: 11, border: `1px solid ${t.border}`, background: 'transparent', color: t.textSub, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
                     >
                       Discard
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFailHelp(true)}
+                      style={{ flex: 1, padding: '10px', borderRadius: 11, border: '1px solid rgba(245,158,11,0.5)', background: 'rgba(245,158,11,0.10)', color: '#fcd34d', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      Payment failed?
                     </button>
                   </div>
                 </div>
@@ -2194,15 +2248,20 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
             </div>
 
             <div style={{ background: '#ffffff', padding: 16, borderRadius: 18, display: 'inline-block', margin: '0 auto 12px', boxShadow: '0 8px 24px rgba(0,0,0,0.25)' }}>
-              <QRCodeCanvas value={needsSplit && payParts[activePart] != null ? generateUpiUrl('upi', payParts[activePart]) : upiUrl} size={210} level="H" />
+              <QRCodeCanvas value={firedPlan ? generateUpiUrl('upi', firedPlan.partAmount, { receiver: firedPlan.receiver, payee: firedPlan.payee, note: firedPlan.note, withTr: firedPlan.format === 'with-tr' }) : (needsSplit && payParts[activePart] != null ? generateUpiUrl('upi', payParts[activePart]) : upiUrl)} size={210} level="H" />
             </div>
 
             <div style={{ fontSize: 20, fontWeight: 800, color: t.accent, marginBottom: 2 }}>
-              {needsSplit && payParts[activePart] != null
-                ? `Part ${activePart + 1}/${payParts.length} · ₹${Number(payParts[activePart]).toFixed(2)}`
-                : `₹${formattedAmount}`}
+              {firedPlan
+                ? `₹${Number(firedPlan.partAmount).toFixed(2)}`
+                : needsSplit && payParts[activePart] != null
+                  ? `Part ${activePart + 1}/${payParts.length} · ₹${Number(payParts[activePart]).toFixed(2)}`
+                  : `₹${formattedAmount}`}
             </div>
-            {needsSplit && (
+            <div style={{ fontSize: 11, color: t.textSub, fontFamily: 'monospace', marginBottom: 10 }}>
+              → {firedPlan ? firedPlan.receiver : configuredUpiId}
+            </div>
+            {needsSplit && !firedPlan && (
               <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
                 {payParts.map((part, i) => (
                   <button
@@ -2485,6 +2544,192 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
         </div>
       )}
 
+      {/* ── PRE-PAY CONFIRM SHEET: exact receiver + amount before anything fires ── */}
+      {confirmPay && (
+        <div
+          onClick={() => setConfirmPay(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: t.card, borderRadius: '24px 24px 0 0',
+              borderTop: `2px solid ${t.accent}`,
+              maxWidth: 460, width: '100%',
+              maxHeight: '92dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+              padding: '14px 20px calc(20px + env(safe-area-inset-bottom, 0px))',
+              boxSizing: 'border-box',
+            }}
+          >
+            <div style={{ width: 44, height: 4, borderRadius: 999, background: t.border, margin: '0 auto 14px' }} />
+            <div style={{ fontSize: 16, fontWeight: 900, color: t.text, textAlign: 'center' }}>
+              Confirm Your Payment
+            </div>
+            <div style={{ fontSize: 11.5, color: t.textSub, textAlign: 'center', marginTop: 2, marginBottom: 12 }}>
+              Check receiver &amp; amount — this exact request opens in your UPI app.
+            </div>
+
+            <div style={{ borderRadius: 14, overflow: 'hidden', border: `1.5px solid ${t.accentBorder || t.border}`, marginBottom: 12 }}>
+              <div style={{ background: 'linear-gradient(135deg,#131b2e,#0a0e1a)', padding: '14px 16px', textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
+                  {confirmPay.partsCount > 1 ? `Part ${confirmPay.partIdx + 1} of ${confirmPay.partsCount}` : payeeName} · {confirmPay.payee}
+                </div>
+                <div style={{ fontSize: 30, fontWeight: 900, color: '#fff', margin: '2px 0' }}>
+                  ₹{Number(confirmPay.partAmount).toFixed(2)}
+                </div>
+                <div style={{ fontSize: 12, color: t.accent, fontFamily: 'monospace', overflowWrap: 'anywhere' }}>
+                  → {confirmPay.receiver}
+                </div>
+              </div>
+              <div style={{ background: t.inputBg, padding: '10px 14px', fontSize: 10.5, color: t.textSub, fontFamily: 'monospace', lineHeight: 1.7, overflowWrap: 'anywhere' }}>
+                pa={confirmPay.receiver}<br />
+                pn={confirmPay.payee}<br />
+                am={Number(confirmPay.partAmount).toFixed(2)} · cu=INR<br />
+                tn={confirmPay.note}
+              </div>
+            </div>
+
+            <div style={{ fontSize: 11, color: t.textSub, lineHeight: 1.55, marginBottom: 12 }}>
+              ⚠️ If your bank says <b>“limit exceeded” even for ₹1</b>, your bank&apos;s <b>daily UPI quota</b> (counted across all UPI apps) is likely exhausted — try another account in your UPI app, or pay after midnight.
+            </div>
+
+            <button
+              type="button"
+              onClick={() => firePayment(confirmPay)}
+              style={{ width: '100%', padding: '14px', borderRadius: 13, border: 'none', background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', fontSize: 15, fontWeight: 900, cursor: 'pointer', boxShadow: '0 6px 18px rgba(16,185,129,0.35)', marginBottom: 8 }}
+            >
+              Pay ₹{Number(confirmPay.partAmount).toFixed(2)} in My UPI App
+            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => firePayment(confirmPay, { withTr: true })}
+                style={{ flex: 1, padding: '11px', borderRadius: 12, border: `1.5px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
+              >
+                Try Alternate Format
+              </button>
+              {isFallbackValid && confirmPay.receiver !== fallbackUpiId.trim() && (
+                <button
+                  type="button"
+                  onClick={() => firePayment(confirmPay, { receiverOverride: fallbackUpiId.trim() })}
+                  style={{ flex: 1, padding: '11px', borderRadius: 12, border: `1.5px solid ${t.border}`, background: 'transparent', color: t.text, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
+                >
+                  Use Alternate Receiver
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setConfirmPay(null)}
+                style={{ flex: 1, padding: '11px', borderRadius: 12, border: `1px solid ${t.border}`, background: 'transparent', color: t.textSub, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── PAYMENT-FAILED DIAGNOSTICS SHEET ── */}
+      {failHelp && (
+        <div
+          onClick={() => setFailHelp(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: t.card, borderRadius: '24px 24px 0 0',
+              borderTop: '2px solid #ef4444',
+              maxWidth: 460, width: '100%',
+              maxHeight: '92dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+              padding: '14px 20px calc(20px + env(safe-area-inset-bottom, 0px))',
+              boxSizing: 'border-box',
+            }}
+          >
+            <div style={{ width: 44, height: 4, borderRadius: 999, background: t.border, margin: '0 auto 14px' }} />
+            <div style={{ fontSize: 16, fontWeight: 900, color: t.text, textAlign: 'center' }}>
+              Bank Rejected the Payment?
+            </div>
+            <div style={{ fontSize: 11.5, color: t.textSub, textAlign: 'center', marginTop: 2, marginBottom: 12 }}>
+              {failPending ? `Attempted ₹${Number(failPending.amount).toFixed(2)} → ${failPending.upi || ''}` : 'Here is what usually causes it and what to do.'}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+              {[
+                ['🏦', 'Daily UPI quota exhausted (most common)', 'Your bank counts every UPI payment across ALL your apps (GPay, PhonePe, Paytm…). Once the daily quota is over, even ₹1 fails with “limit exceeded”. Fix: pay from a different bank account inside your UPI app, or retry after midnight.'],
+                ['📥', 'Receiver daily collection cap', 'One UPI ID can only receive a fixed amount per day. When many members pay together, switch to the alternate receiver below.'],
+                ['📲', 'Intent blocked by the app', 'Some bank apps reject direct deep-links. Use “Try alternate format”, or Scan QR from inside your UPI app instead.'],
+              ].map(([icon, title, body]) => (
+                <div key={title} style={{ display: 'flex', gap: 10, padding: '10px 12px', borderRadius: 13, background: t.inputBg, border: `1px solid ${t.inputBorder || t.border}` }}>
+                  <div style={{ fontSize: 18, flexShrink: 0 }}>{icon}</div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: t.text, marginBottom: 2 }}>{title}</div>
+                    <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.55 }}>{body}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {failPending && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const plan = {
+                      appType: 'upi', partIdx: 0, total: failPending.amount, partAmount: failPending.amount,
+                      partsCount: 1, receiver: failPending.upi, payee: failPending.payee, note: failPending.note,
+                    }
+                    firePayment(plan, { withTr: true })
+                  }}
+                  style={{ width: '100%', padding: '13px', borderRadius: 13, border: 'none', background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', fontSize: 14, fontWeight: 900, cursor: 'pointer' }}
+                >
+                  🔁 Retry in Alternate Format
+                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {isFallbackValid && (failPending.upi || '') !== fallbackUpiId.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const plan = {
+                          appType: 'upi', partIdx: 0, total: failPending.amount, partAmount: failPending.amount,
+                          partsCount: 1, receiver: failPending.upi, payee: failPending.payee, note: failPending.note,
+                        }
+                        firePayment(plan, { receiverOverride: fallbackUpiId.trim() })
+                      }}
+                      style={{ flex: 1, padding: '11px', borderRadius: 12, border: `1.5px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      Alternate Receiver
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { setFailHelp(false); setShowQRModal(true) }}
+                    style={{ flex: 1, padding: '11px', borderRadius: 12, border: `1.5px solid ${t.border}`, background: 'transparent', color: t.text, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
+                  >
+                    📷 Pay via QR
+                  </button>
+                </div>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setFailHelp(false)}
+              style={{ width: '100%', padding: '12px', borderRadius: 12, border: `1px solid ${t.border}`, background: 'transparent', color: t.textSub, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── REFUND POLICY SHEET (bottom sheet — PWA safe) ── */}
       {showRefundPolicy && (
         <div
@@ -2598,6 +2843,22 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                   required
                   value={configuredUpiId}
                   onChange={(e) => setConfiguredUpiId(e.target.value)}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '12px', borderRadius: 12, border: `1px solid ${t.border}`, background: t.bg, color: t.text, fontSize: 14, fontFamily: 'monospace', outline: 'none' }}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="configUpi2Input" style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
+                  Alternate Receiver UPI ID (optional fallback)
+                </label>
+                <input
+                  id="configUpi2Input"
+                  name="configUpi2"
+                  type="text"
+                  autoComplete="off"
+                  value={fallbackUpiId}
+                  onChange={(e) => setFallbackUpiId(e.target.value)}
+                  placeholder="Second VPA used when the primary hits its daily collection cap"
                   style={{ width: '100%', boxSizing: 'border-box', padding: '12px', borderRadius: 12, border: `1px solid ${t.border}`, background: t.bg, color: t.text, fontSize: 14, fontFamily: 'monospace', outline: 'none' }}
                 />
               </div>
