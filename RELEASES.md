@@ -1,5 +1,16 @@
 # Al-Mawaid Releases
 
+## v2.1.10 — 2026-10-06
+
+### Payments — Android UPI Intent integration (no Google Pay API)
+- Native intent firing via Capacitor AppLauncher (ACTION_VIEW) with web anchor fallback.
+- AndroidManifest `<queries>` for UPI apps (GPay, PhonePe, Paytm, BHIM, WhatsApp Pay) + upi/tez/phonepe/paytmmp schemes.
+- Optional merchant category code (`upi_mc`) attached as `mc` when the bank issues one; previewed on the confirm sheet.
+- Return-verify gate: nothing recorded until the member confirms the debit.
+
+### Build
+- Version bumped to 2.1.10 (live-link: Android loads https://al-mawaid.vercel.app?v=2.1.10; manifest/plugin take effect in the next signed AAB).
+
 ## v2.1.9 — 2026-10-06
 
 ### Payments — bank-rejection resilience

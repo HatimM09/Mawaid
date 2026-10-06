@@ -20,6 +20,9 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   // Settings & Configuration
   const [configuredUpiId, setConfiguredUpiId] = useState(appSettings.upi_id || 'murtazacool558@okhdfcbank')
   const [fallbackUpiId, setFallbackUpiId] = useState(appSettings.upi_id_2 || '')
+  // Optional merchant category code (issued by the bank with a merchant VPA).
+  // Included as `mc` in intents only when configured — never sent otherwise.
+  const [merchantCode, setMerchantCode] = useState(appSettings.upi_mc || '')
   const [payeeName, setPayeeName] = useState(appSettings.upi_payee_name || 'Al-Mawaid')
   const [defaultDue, setDefaultDue] = useState(Number(appSettings.default_payment_due || 1500))
   const [paymentTitle, setPaymentTitle] = useState(appSettings.payment_title || 'Monthly Thali Contribution')
@@ -59,6 +62,9 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   // before anything fires. Never launches blind.
   const [confirmPay, setConfirmPay] = useState(null) // {appType, partIdx, total, partAmount, partsCount, receiver, payee, note}
   const [failHelp, setFailHelp] = useState(false)
+  // Return-verify sheet: NEVER assume success just because the member came
+  // back — they must explicitly confirm the money left their bank account.
+  const [returnConfirm, setReturnConfirm] = useState(null)
   // The exact plan that was fired (drives the desktop QR so it can never
   // disagree with the launched intent).
   const [firedPlan, setFiredPlan] = useState(null)
@@ -74,6 +80,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   useEffect(() => {
     if (appSettings.upi_id) setConfiguredUpiId(appSettings.upi_id)
     if (appSettings.upi_id_2 !== undefined) setFallbackUpiId(appSettings.upi_id_2 || '')
+    if (appSettings.upi_mc !== undefined) setMerchantCode(appSettings.upi_mc || '')
     if (appSettings.upi_payee_name) setPayeeName(appSettings.upi_payee_name)
     if (appSettings.default_payment_due) {
       const newDue = Number(appSettings.default_payment_due)
@@ -269,13 +276,16 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   }, [paidByMonth, defaultDue])
   const currentBalance = Math.max(0, Number((defaultDue - (paidByMonth[currentMonthKey] || 0)).toFixed(2)))
 
-  // Generate UPI URI. Pure P2P by default (no 'tr'); pass { withTr: true } for
-  // the alternate bank-compatible format (unique reference attached).
+  // Generate UPI deep-link intent (NPCI linking spec). Pure P2P by default
+  // (no 'tr'); pass { withTr: true } for the alternate bank-compatible format
+  // (unique reference attached). Merchant `mc` is attached only when the bank
+  // has issued one for this receiver (upi_mc setting).
   const generateUpiUrl = useCallback((appType = 'upi', partAmount = null, opts = {}) => {
     const cleanUpi = (opts.receiver || configuredUpiId || 'murtazacool558@okhdfcbank').trim()
     const cleanPayee = (opts.payee || payeeName || 'Al-Mawaid').trim()
     const amt = partAmount != null ? Number(partAmount).toFixed(2) : formattedAmount
     const note = opts.note || sanitizedNote
+    const mc = (opts.mc || merchantCode || '').trim()
 
     // Clean query parameters to ensure pure P2P transfer
     const params = [
@@ -285,6 +295,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       `cu=INR`,
       `tn=${encodeURIComponent(note)}`
     ]
+    if (mc) params.push(`mc=${encodeURIComponent(mc)}`)
     if (opts.withTr) {
       const ref = (opts.tr || `AM${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1296).toString(36).toUpperCase()}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 32)
       params.push(`tr=${encodeURIComponent(ref)}`)
@@ -295,7 +306,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     if (appType === 'phonepe') return `phonepe://pay?${query}`
     if (appType === 'paytm') return `paytmmp://pay?${query}`
     return `upi://pay?${query}`
-  }, [configuredUpiId, payeeName, formattedAmount, sanitizedNote])
+  }, [configuredUpiId, payeeName, formattedAmount, sanitizedNote, merchantCode])
 
   const upiUrl = useMemo(() => generateUpiUrl('upi'), [generateUpiUrl])
 
@@ -394,6 +405,36 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
 
   // Actually fire a confirmed intent. `withTr` selects the alternate
   // bank-compatible format; `receiverOverride` pays the fallback VPA.
+  //
+  // FIRING (why this helper exists): a synthetic anchor click works in mobile
+  // browsers, but inside the native Android WebView custom schemes (upi://,
+  // tez://…) need an ACTION_VIEW intent — fired here via Capacitor AppLauncher
+  // when running natively, with anchor-click as the web fallback.
+  const fireUpiIntent = useCallback(async (url) => {
+    const native = typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()
+    if (native) {
+      try {
+        const { AppLauncher } = await import('@capacitor/app-launcher')
+        const { completed } = await AppLauncher.openUrl({ url })
+        if (completed) return true
+      } catch (e) {
+        console.warn('[pay] AppLauncher failed, falling back to anchor:', e?.message || e)
+      }
+    }
+    try {
+      const link = document.createElement('a')
+      link.href = url
+      link.rel = 'noreferrer'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      return true
+    } catch (e) {
+      console.warn('[pay] anchor fire failed:', e?.message || e)
+      window.location.href = url
+      return true
+    }
+  }, [])
   const firePayment = (plan, { withTr = false, receiverOverride = null } = {}) => {
     if (!plan || finalizingRef.current) return
     const receiver = (receiverOverride || plan.receiver || '').trim()
@@ -431,23 +472,12 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       return
     }
 
-    // Mobile: fire the intent; receiver + amount arrive prefilled in the UPI app
-    try {
-      const targetUrl = generateUpiUrl(plan.appType, partAmount, {
-        receiver, payee: plan.payee, note: plan.note, withTr,
-      })
-      const link = document.createElement('a')
-      link.href = targetUrl
-      link.rel = 'noreferrer'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      // No record modal anymore — the receipt auto-generates on return.
-    } catch (e) {
-      console.warn('Direct app launch failed, falling back to standard UPI:', e)
-      const fallbackUrl = generateUpiUrl('upi', partAmount, { receiver, payee: plan.payee, note: plan.note, withTr })
-      window.location.href = fallbackUrl
-    }
+    // Mobile: fire the intent; receiver + amount arrive prefilled in the UPI app.
+    // fireUpiIntent picks the correct mechanism per platform (native ACTION_VIEW
+    // vs browser anchor). Nothing is recorded here — only on explicit confirm.
+    fireUpiIntent(generateUpiUrl(plan.appType, partAmount, {
+      receiver, payee: plan.payee, note: plan.note, withTr,
+    }))
   }
 
   // Auto-receipt: called when the member returns from their UPI app (or taps
@@ -579,8 +609,8 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     }
   }, [user?.id])
 
-  // When the member comes back from their bank/UPI app, the stashed attempt
-  // becomes a real dues record + pay slip automatically.
+  // When the member comes back from their bank/UPI app, ASK them whether the
+  // money actually left their account. Nothing is recorded on return alone.
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState !== 'visible' || isManager) return
@@ -591,7 +621,8 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
         if (awayMs > 30 * 60 * 1000) clearPendingPay()
         return
       }
-      finalizeAutoPayment(pending)
+      setReturnConfirm(pending)
+      setShowPendingBanner(true)
     }
     document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('focus', onVisible)
@@ -599,7 +630,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('focus', onVisible)
     }
-  }, [readPendingPay, clearPendingPay, finalizeAutoPayment, isManager])
+  }, [readPendingPay, clearPendingPay, isManager])
 
   // Monthly dues self-reminder: once per month, an unpaid member gets one
   // Alerts-tab entry (badge + inbox) pointing at Dues & Payments.
@@ -885,6 +916,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       const items = [
         { key: 'upi_id', value: configuredUpiId.trim() },
         { key: 'upi_id_2', value: (fallbackUpiId || '').trim() },
+        { key: 'upi_mc', value: (merchantCode || '').trim() },
         { key: 'upi_payee_name', value: payeeName.trim() },
         { key: 'default_payment_due', value: String(defaultDue) },
         { key: 'payment_title', value: paymentTitle.trim() },
@@ -1611,16 +1643,23 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                     ⚠️ Unfinished payment of ₹{Number(pending.amount).toFixed(2)}
                   </div>
                   <div style={{ fontSize: 11.5, color: t.textSub, lineHeight: 1.5, marginBottom: 10 }}>
-                    If money left your bank account, complete your receipt now. If you cancelled in the bank app, discard it — nothing was recorded.
+                    Were you charged in your bank app? Confirm only if the money was debited — otherwise mark it failed.
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button
                       type="button"
-                      onClick={() => finalizeAutoPayment(pending)}
+                      onClick={() => setReturnConfirm(pending)}
                       disabled={finalizingPay}
                       style={{ flex: 2, padding: '10px', borderRadius: 11, border: 'none', background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', fontSize: 12.5, fontWeight: 900, cursor: finalizingPay ? 'wait' : 'pointer', opacity: finalizingPay ? 0.7 : 1 }}
                     >
-                      {finalizingPay ? 'Saving…' : '✅ Complete My Receipt'}
+                      {finalizingPay ? 'Saving…' : '✅ Yes, I Paid'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { clearPendingPay(); setFiredPlan(null); setShowPendingBanner(false); setFailHelp(true) }}
+                      style={{ flex: 1, padding: '10px', borderRadius: 11, border: '1px solid rgba(239,68,68,0.5)', background: 'rgba(239,68,68,0.08)', color: '#f87171', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      ❌ Failed
                     </button>
                     <button
                       type="button"
@@ -1628,13 +1667,6 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                       style={{ flex: 1, padding: '10px', borderRadius: 11, border: `1px solid ${t.border}`, background: 'transparent', color: t.textSub, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
                     >
                       Discard
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFailHelp(true)}
-                      style={{ flex: 1, padding: '10px', borderRadius: 11, border: '1px solid rgba(245,158,11,0.5)', background: 'rgba(245,158,11,0.10)', color: '#fcd34d', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
-                    >
-                      Payment failed?
                     </button>
                   </div>
                 </div>
@@ -2025,6 +2057,9 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                   >
                     Scan QR
                   </button>
+                </div>
+                <div style={{ fontSize: 10.5, color: t.textSub, textAlign: 'center', lineHeight: 1.5 }}>
+                  No UPI app opens on tap? Use the <b>Scan QR</b> tab above — scan it from inside your UPI app.
                 </div>
               </div>
             )}
@@ -2590,6 +2625,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                 pn={confirmPay.payee}<br />
                 am={Number(confirmPay.partAmount).toFixed(2)} · cu=INR<br />
                 tn={confirmPay.note}
+                {merchantCode.trim() ? (<><br />mc={merchantCode.trim()} (merchant)</>) : null}
               </div>
             </div>
 
@@ -2658,8 +2694,11 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
             <div style={{ fontSize: 16, fontWeight: 900, color: t.text, textAlign: 'center' }}>
               Bank Rejected the Payment?
             </div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#ef4444', textAlign: 'center', marginTop: 6, marginBottom: 4 }}>
+              Payment failed. Please try another UPI app or bank account.
+            </div>
             <div style={{ fontSize: 11.5, color: t.textSub, textAlign: 'center', marginTop: 2, marginBottom: 12 }}>
-              {failPending ? `Attempted ₹${Number(failPending.amount).toFixed(2)} → ${failPending.upi || ''}` : 'Here is what usually causes it and what to do.'}
+              {failPending ? `Attempted ₹${Number(failPending.amount).toFixed(2)} → ${failPending.upi || ''}` : 'This error comes from your bank, not this app — even ₹1 fails when the bank-side limit is hit.'}
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
@@ -2730,6 +2769,61 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
         </div>
       )}
 
+      {/* ── RETURN VERIFY SHEET: confirm money left the bank — never assume ── */}
+      {returnConfirm && (
+        <div
+          onClick={() => setReturnConfirm(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: t.card, borderRadius: '24px 24px 0 0',
+              borderTop: `2px solid ${t.accent}`,
+              maxWidth: 460, width: '100%',
+              maxHeight: '92dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+              padding: '14px 20px calc(20px + env(safe-area-inset-bottom, 0px))',
+              boxSizing: 'border-box', textAlign: 'center',
+            }}
+          >
+            <div style={{ width: 44, height: 4, borderRadius: 999, background: t.border, margin: '0 auto 14px' }} />
+            <div style={{ fontSize: 16, fontWeight: 900, color: t.text }}>
+              Did the payment go through?
+            </div>
+            <div style={{ fontSize: 12.5, color: t.textSub, marginTop: 4, marginBottom: 12, lineHeight: 1.55 }}>
+              You attempted <b style={{ color: t.text }}>₹{Number(returnConfirm.amount).toFixed(2)}</b> to{' '}
+              <span style={{ fontFamily: 'monospace' }}>{returnConfirm.upi}</span>.
+              <br />Please confirm from your bank app — money debited?
+            </div>
+            <button
+              type="button"
+              onClick={() => { setReturnConfirm(null); finalizeAutoPayment(returnConfirm) }}
+              disabled={finalizingPay}
+              style={{ width: '100%', padding: '14px', borderRadius: 13, border: 'none', background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', fontSize: 15, fontWeight: 900, cursor: finalizingPay ? 'wait' : 'pointer', opacity: finalizingPay ? 0.7 : 1, marginBottom: 8 }}
+            >
+              {finalizingPay ? 'Saving…' : '✅ Yes — Money Debited, Give Receipt'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setReturnConfirm(null)
+                clearPendingPay()
+                setFiredPlan(null)
+                setShowPendingBanner(false)
+                setFailHelp(true)
+              }}
+              style={{ width: '100%', padding: '13px', borderRadius: 13, border: `1.5px solid ${t.noColor || '#ef4444'}`, background: 'transparent', color: '#ef4444', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}
+            >
+              ❌ No — Payment Failed
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── REFUND POLICY SHEET (bottom sheet — PWA safe) ── */}
       {showRefundPolicy && (
         <div
@@ -2770,7 +2864,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               {[
                 ['🛡️', 'Secured checkout', 'Every tap is validated before your bank app opens: correct receiver UPI ID, exact amount, and the ₹1,00,000 per-payment bank cap. Invalid or duplicate attempts are blocked on-device — a bad payment can never be fired.'],
                 ['⏳', 'Failed or cancelled payments', 'If you cancel inside your bank app, or the app never opens, nothing is recorded and no dues change. An unfinished attempt stays recoverable for 30 minutes, then auto-discards.'],
-                ['💸', 'Debited but no receipt?', 'Use “Complete My Receipt” on the safety banner, or tap “Report an issue / request refund” on the payment row. Your request goes straight to the management team with the amount, date and reference.'],
+                ['💸', 'Debited but no receipt?', 'When you return, we always ask you to confirm before recording anything. Use “Yes, I Paid” on the safety banner, or tap “Report an issue / request refund” on the payment row. Your request goes straight to the management team with the amount, date and reference.'],
                 ['↩️', 'Refund promise', 'Confirmed debits that didn’t reach Al-Mawaid are refunded to source or adjusted against next month’s dues within 7 working days of verification. Bank auto-reversals for failed UPI debits typically reflect in 3–5 working days on their own.'],
                 ['🧾', 'Proof always kept', 'Every payment keeps a downloadable PDF receipt with reference number. Keep your bank UTR — it makes verification instant.'],
               ].map(([icon, title, body]) => (
@@ -2859,6 +2953,22 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                   value={fallbackUpiId}
                   onChange={(e) => setFallbackUpiId(e.target.value)}
                   placeholder="Second VPA used when the primary hits its daily collection cap"
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '12px', borderRadius: 12, border: `1px solid ${t.border}`, background: t.bg, color: t.text, fontSize: 14, fontFamily: 'monospace', outline: 'none' }}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="configMcInput" style={{ display: 'block', fontSize: 12, fontWeight: 700, color: t.textSub, marginBottom: 6 }}>
+                  Merchant Category Code (optional)
+                </label>
+                <input
+                  id="configMcInput"
+                  name="configMc"
+                  type="text"
+                  autoComplete="off"
+                  value={merchantCode}
+                  onChange={(e) => setMerchantCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
+                  placeholder="4-digit MCC from your bank — leave empty for personal VPA"
                   style={{ width: '100%', boxSizing: 'border-box', padding: '12px', borderRadius: 12, border: `1px solid ${t.border}`, background: t.bg, color: t.text, fontSize: 14, fontFamily: 'monospace', outline: 'none' }}
                 />
               </div>
