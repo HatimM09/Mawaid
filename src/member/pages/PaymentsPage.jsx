@@ -68,7 +68,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   // The exact plan that was fired (drives the desktop QR so it can never
   // disagree with the launched intent).
   const [firedPlan, setFiredPlan] = useState(null)
-  const failPending = useMemo(() => (failHelp ? readPendingPay() : null), [failHelp, readPendingPay])
+
 
   // Record Form state
   const [utrNumber, setUtrNumber] = useState('')
@@ -340,6 +340,8 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       return raw ? JSON.parse(raw) : null
     } catch (e) { console.debug('[pay] pending read unavailable', e && e.message); return null }
   }, [pendingKey])
+  // failPending must be declared AFTER readPendingPay to avoid temporal dead zone
+  const failPending = useMemo(() => (failHelp ? readPendingPay() : null), [failHelp, readPendingPay])
 
   const handleLaunchPayment = (appType = 'upi', partIdx = 0, amountOverride = null) => {
     // ── SECURITY WALL: every launch must pass all checks or it never fires ──
