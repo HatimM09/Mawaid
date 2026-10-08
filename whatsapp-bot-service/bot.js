@@ -12,16 +12,14 @@ import qrcode from 'qrcode-terminal'
 import pino from 'pino'
 import { createClient } from '@supabase/supabase-js'
 import dotenv from 'dotenv'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import {
   DAYS, DAY_KEYS, STAR_LABELS,
   toLocalDateStr, weekdayName, calendarWeekMonday,
-  isSurveyOpen, getSurveyTargetWeek, getSurveyWindowLabel, formatWeekRange,
-  parseDishArray, isRotiItem, isCountInput, menuForDay, resolveServingWeekId,
-  parseDishInput, parseDateInput, MEAL_ORDER, mealLabel, statusPill, normalizePhone,
+  parseDishArray, menuForDay, resolveServingWeekId,
+  normalizePhone,
 } from './logic.js'
-
-import path from 'path'
-import { fileURLToPath } from 'url'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -66,11 +64,11 @@ async function getWhatsappUser(waPhone) {
 async function getMemberByWaPhone(waPhone) {
   const link = await getWhatsappUser(waPhone)
   if (link?.user_id) {
-    const { data } = await supabase.from('user_stats').select('user_id, name, email, thali_number, phone, role').eq('user_id', link.user_id).maybeSingle()
+    const { data } = await supabase.from('user_stats').select('user_id, name, email, thali_number, phone, role, custom_due_amount, payment_exempt').eq('user_id', link.user_id).maybeSingle()
     if (data) return { member: data, linked: true }
     await supabase.from('whatsapp_users').delete().eq('wa_phone', waPhone)
   }
-  const { data: members } = await supabase.from('user_stats').select('user_id, name, email, thali_number, phone, role')
+  const { data: members } = await supabase.from('user_stats').select('user_id, name, email, thali_number, phone, role, custom_due_amount, payment_exempt')
   const want = normalizePhone(waPhone)
   if (want) {
     const hit = (members || []).find(m => m.phone && normalizePhone(m.phone) === want)
@@ -99,7 +97,7 @@ async function findMemberByThali(thaliNo) {
   // 1. Direct case-insensitive match
   const { data: direct } = await supabase
     .from('user_stats')
-    .select('user_id, name, email, thali_number, phone, role')
+    .select('user_id, name, email, thali_number, phone, role, custom_due_amount, payment_exempt')
     .ilike('thali_number', clean)
     .maybeSingle()
   if (direct) return direct
@@ -108,7 +106,7 @@ async function findMemberByThali(thaliNo) {
   const norm = clean.replace(/[\s\-_.]/g, '').toLowerCase()
   const { data: all } = await supabase
     .from('user_stats')
-    .select('user_id, name, email, thali_number, phone, role')
+    .select('user_id, name, email, thali_number, phone, role, custom_due_amount, payment_exempt')
 
   if (all && all.length) {
     const match = all.find(u => {
@@ -147,18 +145,12 @@ function renderMenuCard(dayKey, dayMenu, title) {
 function helpText(memberName, thaliNumber) {
   const tag = thaliNumber ? `(Thali #${thaliNumber})` : ''
   return `👋 *Al-Mawaid Assistant* ${tag}\n\n` +
-    `*Commands:*\n` +
+    `*Available Commands:*\n` +
     `• *MENU* — Today's thali menu\n` +
     `• *TOMORROW* — Tomorrow's menu\n` +
-    `• *SURVEY* — Fill weekly survey\n` +
-    `• *STATUS* — Your survey responses\n` +
-    `• *FEEDBACK* — Rate today's meal\n` +
-    `• *STOP* / *RESUME* — Pause/resume thali\n` +
-    `• *DUES* — Monthly contribution status\n` +
+    `• *FEEDBACK* — Rate today's Lunch or Dinner\n` +
+    `• *DUES* — View complete dues, paid amount & balance\n` +
     `• *QUERY* — Ask a question to admin\n` +
-    `• *WHOAMI* — View your linked profile\n` +
-    `• *LINK <thali>* — Link a different thali\n` +
-    `• *UNLINK* — Disconnect this number\n` +
     `• *CANCEL* — Cancel current action`
 }
 
@@ -189,7 +181,7 @@ async function handleMessage(waPhone, rawText) {
 
   // 1. Unlinked flow
   if (!member || !linked) {
-    const isStandardCommand = ['MENU', 'TODAY', 'TOMORROW', 'SURVEY', 'STATUS', 'FEEDBACK', 'STOP', 'RESUME', 'DUES', 'QUERY', 'WHOAMI', 'UNLINK', 'CANCEL', 'HELP'].includes(upper)
+    const isStandardCommand = ['MENU', 'TODAY', 'TOMORROW', 'FEEDBACK', 'DUES', 'PAYMENTS', 'QUERY', 'HELP', 'CANCEL'].includes(upper)
     const cleanThali = text.replace(/^[#\s]+|[#\s]+$/g, '').trim()
 
     if (!isStandardCommand && cleanThali.length >= 1 && cleanThali.length <= 15) {
@@ -212,43 +204,77 @@ async function handleMessage(waPhone, rawText) {
     }
   }
 
-  // 3. Active Multi-step Flows
+  // 3. Active Multi-step Flows: FEEDBACK (Meal -> Rating -> Comments)
   if (state.flow === 'feedback') {
+    // Step 1: Select Meal Type (Lunch or Dinner)
+    if (state.step === 'meal_type') {
+      const low = text.toLowerCase()
+      let meal = null
+      if (['1', 'lunch', 'l', 'dupahr', 'dopahar'].includes(low)) {
+        meal = 'lunch'
+      } else if (['2', 'dinner', 'd', 'raat', 'night'].includes(low)) {
+        meal = 'dinner'
+      }
+
+      if (!meal) {
+        return `Please choose which meal to rate:\n\n1️⃣ *Lunch*\n2️⃣ *Dinner*\n\n_(Reply with *1* for Lunch, *2* for Dinner, or type CANCEL to exit)_`
+      }
+
+      state.meal = meal
+      state.step = 'rating'
+      await setSession(waPhone, state)
+      const mealTitle = meal === 'lunch' ? 'Lunch ☀️' : 'Dinner 🌙'
+      return `⭐ Rate today's *${mealTitle}*:\n\nPlease reply with a number from *1 to 5*:\n\n` +
+        `1 = 😞 Poor\n2 = 😐 Fair\n3 = 🙂 Good\n4 = 😄 Great\n5 = 🤩 Excellent\n\n_(Or type CANCEL to exit)_`
+    }
+
+    // Step 2: Rate (1 to 5 stars)
     if (state.step === 'rating') {
       const num = parseInt(text.charAt(0), 10)
       if (isNaN(num) || num < 1 || num > 5) {
-        return `Please rate today's meal from *1* to *5* stars (1 = Poor, 5 = Excellent):`
+        const mealTitle = state.meal === 'lunch' ? 'Lunch' : 'Dinner'
+        return `Please rate ${mealTitle} with a number from *1* to *5* stars (1 = Poor, 5 = Excellent):`
       }
       state.stars = num
       state.step = 'comment'
       await setSession(waPhone, state)
-      return `⭐ *${STAR_LABELS[num]}*\n\nAny comments or suggestions for the kitchen team? (Reply with text, or type *-* to skip):`
+      const mealTitle = state.meal === 'lunch' ? 'Lunch' : 'Dinner'
+      return `⭐ *${STAR_LABELS[num]}*\n\nAny comments or suggestions for *${mealTitle}*?\n_(Reply with your comments, or type *-* to skip)_:`
     }
+
+    // Step 3: Submit Comments
     if (state.step === 'comment') {
       const comment = (text === '-' || upper === 'SKIP') ? '' : text
       const now = tzNow()
       const weekId = calendarWeekMonday(now)
-      const fullDay = weekdayName(now).toLowerCase() // Admin portal matches lowercase e.g. 'monday'
+      const fullDay = weekdayName(now).toLowerCase()
 
-      await supabase.from('daily_feedback').upsert({
+      const payload = {
         user_id: member.user_id,
         day: fullDay,
         week_id: weekId,
-        lunch_stars: state.stars,
-        dinner_stars: state.stars,
-        lunch_emoji: STAR_LABELS[state.stars] || '',
-        dinner_emoji: STAR_LABELS[state.stars] || '',
-        lunch_comment: comment || null,
-        dinner_comment: comment || null,
         created_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,day,week_id' })
+      }
 
-      // Push notification to admins for Feedback
+      if (state.meal === 'lunch') {
+        payload.lunch_stars = state.stars
+        payload.lunch_emoji = STAR_LABELS[state.stars] || ''
+        payload.lunch_comment = comment || null
+      } else {
+        payload.dinner_stars = state.stars
+        payload.dinner_emoji = STAR_LABELS[state.stars] || ''
+        payload.dinner_comment = comment || null
+      }
+
+      await supabase.from('daily_feedback').upsert(payload, { onConflict: 'user_id,day,week_id' })
+
+      // Push notification to admins
       try {
         const userName = `${member.name || 'Member'} (Thali #${member.thali_number || '—'})`
+        const mealName = state.meal === 'lunch' ? 'Lunch' : 'Dinner'
         await supabase.functions.invoke('send-push', {
           body: {
-            title: `⭐ New Meal Feedback from ${userName}`,
+            title: `⭐ New ${mealName} Feedback from ${userName}`,
             body: `${STAR_LABELS[state.stars] || state.stars + '★'}: "${comment || 'No comment'}"`,
             target_type: 'admins',
             notify_in_app: true,
@@ -258,66 +284,17 @@ async function handleMessage(waPhone, rawText) {
           }
         })
       } catch (e) {
-        // Notification failure should not interrupt chat
+        // notification failure should not block user response
       }
 
       await clearSession(waPhone)
       const dayDisplayName = fullDay.charAt(0).toUpperCase() + fullDay.slice(1)
-      return `🙏 *Thank you for your feedback!*\nYour ${dayDisplayName} review (${state.stars}★) has been recorded and is now visible on the Al-Mawaid Admin Portal.`
+      const mealDisplayName = state.meal === 'lunch' ? 'Lunch' : 'Dinner'
+      return `🙏 *Thank you for your feedback!*\nYour *${mealDisplayName}* review for ${dayDisplayName} (${state.stars}★) has been recorded and submitted to the Admin Portal.`
     }
   }
 
-  if (state.flow === 'stop_thali' || state.flow === 'resume_thali') {
-    const isStop = state.flow === 'stop_thali'
-    if (state.step === 'from_date') {
-      const date = parseDateInput(text, tzNow())
-      if (!date) return `Please enter a valid start date (e.g. \`today\`, \`tomorrow\`, or \`YYYY-MM-DD\`):`
-      state.from_date = date
-      state.step = 'to_date'
-      await setSession(waPhone, state)
-      return `📅 Got start date: *${date}*.\nNow enter the *end date* (or \`same\` / \`-\` for single day):`
-    }
-    if (state.step === 'to_date') {
-      let toDate = state.from_date
-      if (text !== '-' && text.toLowerCase() !== 'same') {
-        const parsed = parseDateInput(text, tzNow())
-        if (parsed) toDate = parsed
-      }
-
-      await supabase.from('thali_requests').insert({
-        user_id: member.user_id,
-        thali_number: member.thali_number ? String(member.thali_number) : '',
-        name: member.name || '',
-        request_type: isStop ? 'stop' : 'resume',
-        start_date: state.from_date,
-        end_date: toDate,
-        status: 'pending',
-        reason: 'Requested via WhatsApp Bot',
-      })
-
-      // Push notification to admins for Request
-      try {
-        const userName = `${member.name || 'Member'} (Thali #${member.thali_number || '—'})`
-        await supabase.functions.invoke('send-push', {
-          body: {
-            title: `📋 Thali ${isStop ? 'Stop' : 'Resume'} Request`,
-            body: `${userName} requested to ${isStop ? 'STOP' : 'RESUME'} thali from ${state.from_date} to ${toDate}`,
-            target_type: 'admins',
-            notify_in_app: true,
-            type: 'request',
-            sender_name: 'WhatsApp Bot',
-            url: '/admin/requests',
-          }
-        })
-      } catch (e) {
-        // Notification failure should not interrupt chat
-      }
-
-      await clearSession(waPhone)
-      return `✅ *Request Submitted!*\nYour request to *${isStop ? 'STOP' : 'RESUME'}* Thali #${member.thali_number} from *${state.from_date}* to *${toDate}* has been sent to the Admin Portal.`
-    }
-  }
-
+  // Active Multi-step Flows: QUERY
   if (state.flow === 'query') {
     if (text) {
       const comment = text.trim()
@@ -345,15 +322,16 @@ async function handleMessage(waPhone, rawText) {
           }
         })
       } catch (e) {
-        // Notification failure should not interrupt chat
+        // notification failure should not block chat
       }
 
       await clearSession(waPhone)
-      return `📨 *Query Received!*\nYour message has been sent directly to the Admin Portal. The administration team will review and reply to you.`
+      return `📨 *Query Received!*\nYour message has been sent directly to the Admin Portal. The administration team will review and reply soon.`
     }
   }
 
   // 4. Command Router
+
   if (upper === 'MENU' || upper === "TODAY" || upper === "TODAY'S MENU") {
     const now = tzNow()
     const appSettings = await loadAppSettings()
@@ -377,96 +355,70 @@ async function handleMessage(waPhone, rawText) {
     return renderMenuCard(dayKey, dayMenu, `Tomorrow's Menu (${dayName.toUpperCase()})`)
   }
 
-  if (upper === 'SURVEY') {
-    const now = tzNow()
-    const appSettings = await loadAppSettings()
-    const isOpen = isSurveyOpen(appSettings, now)
-    const windowLabel = getSurveyWindowLabel(appSettings)
+  if (upper === 'FEEDBACK' || upper === 'RATE') {
+    await setSession(waPhone, { flow: 'feedback', step: 'meal_type' })
+    return `⭐ *Daily Meal Feedback*\nWhich meal would you like to rate for today?\n\n1️⃣ *Lunch*\n2️⃣ *Dinner*\n\n_(Reply with *1* for Lunch, *2* for Dinner, or type CANCEL to exit)_`
+  }
 
-    if (!isOpen) {
-      return `⏳ *Survey is currently CLOSED.*\n\nSurvey window: *${windowLabel}*.\nPlease submit during active hours or check the member app.`
+  if (upper === 'DUES' || upper === 'PAYMENTS' || upper === 'PAYMENT') {
+    const appSettings = await loadAppSettings()
+    const { data: payments } = await supabase
+      .from('user_payments')
+      .select('*')
+      .eq('user_id', member.user_id)
+      .order('created_at', { ascending: false })
+
+    const validPayments = (payments || []).filter(p => p.status !== 'rejected')
+    const totalPaid = validPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+
+    let totalDue = Number(appSettings.default_payment_due || 1500)
+    if (member.payment_exempt) {
+      totalDue = 0
+    } else if (member.custom_due_amount != null) {
+      totalDue = Number(member.custom_due_amount)
     }
 
-    const targetWeek = getSurveyTargetWeek(appSettings, now)
-    return `📝 *Weekly Survey (${formatWeekRange(targetWeek)})*\n\n` +
-      `To fill survey conveniently, please open the Al-Mawaid Member Portal or reply *APPLY ALL* to opt-in for all meals Mon–Sat.`
-  }
+    const pendingBalance = Math.max(0, totalDue - totalPaid)
+    const paymentTitle = appSettings.payment_title || 'Monthly Thali Contribution'
+    const upiId = appSettings.upi_id || 'murtazacool558@okhdfcbank'
+    const payeeName = appSettings.upi_payee_name || 'Al-Mawaid'
 
-  if (upper === 'APPLY ALL') {
-    const now = tzNow()
-    const appSettings = await loadAppSettings()
-    const targetWeek = getSurveyTargetWeek(appSettings, now)
-
-    for (const day of DAY_KEYS) {
-      await supabase.from('survey_day_responses').upsert({
-        user_id: member.user_id,
-        week_id: targetWeek,
-        day: day,
-        l_status: 'Applied',
-        d_status: 'Applied',
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,week_id,day' })
+    let statusLine = ''
+    if (member.payment_exempt) {
+      statusLine = '🛡️ *Status:* Payment Exempt'
+    } else if (pendingBalance === 0 && totalPaid >= totalDue) {
+      statusLine = '✅ *Status:* All Dues Cleared'
+    } else {
+      statusLine = `⏳ *Status:* ₹${pendingBalance.toLocaleString('en-IN')} Pending`
     }
 
-    return `✅ *All Meals Mon–Sat Applied!* for week ${formatWeekRange(targetWeek)}.\nType *STATUS* to verify your responses.`
-  }
-
-  if (upper === 'STATUS') {
-    const now = tzNow()
-    const appSettings = await loadAppSettings()
-    const targetWeek = getSurveyTargetWeek(appSettings, now)
-    const { data: rows } = await supabase.from('survey_day_responses').select('*').eq('user_id', member.user_id).eq('week_id', targetWeek)
-
-    if (!rows || rows.length === 0) {
-      return `📋 *Survey Status (${formatWeekRange(targetWeek)})*\n_No responses recorded yet for this week._\nType *SURVEY* or *APPLY ALL* to submit.`
+    let historyText = ''
+    if (validPayments.length > 0) {
+      historyText = '\n📜 *Recent Payment History:*\n' + validPayments.slice(0, 3).map(p => {
+        const dt = new Date(p.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+        const st = p.status === 'verified' ? '✅ Verified' : '⏳ Recorded'
+        return `• ₹${Number(p.amount).toLocaleString('en-IN')} on ${dt} (${st})`
+      }).join('\n') + '\n'
     }
 
-    const map = {}
-    for (const r of rows) map[r.day] = r
-    let out = `📋 *Survey Responses (${formatWeekRange(targetWeek)})*\n\n`
-    for (const d of DAY_KEYS) {
-      const r = map[d]
-      out += `*${d.toUpperCase()}*: Lunch: ${statusPill(r?.l_status)} | Dinner: ${statusPill(r?.d_status)}\n`
-    }
-    return out
-  }
-
-  if (upper === 'FEEDBACK') {
-    await setSession(waPhone, { flow: 'feedback', step: 'rating' })
-    return `⭐ *Daily Meal Feedback*\nHow was today's meal? Please reply with a number from *1 to 5*:\n\n` +
-      `1 = 😞 Poor\n2 = 😐 Fair\n3 = 🙂 Good\n4 = 😄 Great\n5 = 🤩 Excellent\n\n_(Or type CANCEL to exit)_`
-  }
-
-  if (upper === 'STOP' || upper === 'STOP THALI') {
-    await setSession(waPhone, { flow: 'stop_thali', step: 'from_date' })
-    return `🛑 *Stop Thali Request*\nFrom which date do you want to stop the thali? (Reply \`today\`, \`tomorrow\`, or \`YYYY-MM-DD\`):`
-  }
-
-  if (upper === 'RESUME' || upper === 'RESUME THALI') {
-    await setSession(waPhone, { flow: 'resume_thali', step: 'from_date' })
-    return `▶️ *Resume Thali Request*\nFrom which date do you want to resume the thali? (Reply \`today\`, \`tomorrow\`, or \`YYYY-MM-DD\`):`
-  }
-
-  if (upper === 'DUES' || upper === 'PAYMENTS') {
-    const { data: payments } = await supabase.from('user_payments').select('*').eq('user_id', member.user_id).order('created_at', { ascending: false }).limit(3)
-    const appSettings = await loadAppSettings()
-    const upiId = appSettings.upi_id || 'almawaid@upi'
-    return `💳 *Contribution & Dues Status*\nThali: #${member.thali_number}\n\nUPI Payee: \`${upiId}\`\n\nFor recent payment slips and receipts, visit the *Payments* page in your Al-Mawaid app.`
+    return `💳 *Thali Contribution & Dues*\n` +
+      `Thali: *#${member.thali_number || 'N/A'}*\n` +
+      `Name: *${member.name || 'Member'}*\n\n` +
+      `📋 *Contribution Summary:*\n` +
+      `• *Purpose:* ${paymentTitle}\n` +
+      `• *Total Required Due:* ₹${totalDue.toLocaleString('en-IN')}\n` +
+      `• *Total Amount Paid:* ₹${totalPaid.toLocaleString('en-IN')}\n` +
+      `• *Remaining Balance:* ₹${pendingBalance.toLocaleString('en-IN')}\n\n` +
+      `${statusLine}\n` +
+      historyText +
+      `\n📲 *UPI Payment Details:*\n` +
+      `• UPI ID: \`${upiId}\`\n` +
+      `• Payee: *${payeeName}*`
   }
 
   if (upper === 'QUERY' || upper === 'HELP QUERY' || upper === 'SUPPORT') {
     await setSession(waPhone, { flow: 'query', step: 'text' })
     return `💬 *Support & Query*\nPlease type your message or question below, and it will be sent directly to the Jamaat admin team:`
-  }
-
-  if (upper === 'WHOAMI' || upper === 'PROFILE') {
-    return `👤 *Linked Profile Details:*\n• *Name:* ${member.name || 'Member'}\n• *Thali Number:* #${member.thali_number || 'N/A'}\n• *Phone:* ${member.phone || waPhone}\n• *Role:* ${member.role || 'member'}`
-  }
-
-  if (upper === 'UNLINK') {
-    await supabase.from('whatsapp_users').delete().eq('wa_phone', waPhone)
-    await clearSession(waPhone)
-    return `🔓 Your WhatsApp has been unlinked from Thali #${member.thali_number}. Type any number to re-link anytime.`
   }
 
   // Fallback / Help
