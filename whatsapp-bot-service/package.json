@@ -5,6 +5,7 @@
   "main": "bot.js",
   "type": "module",
   "scripts": {
+    "build": "echo 'Build OK'",
     "start": "node bot.js"
   },
   "dependencies": {
