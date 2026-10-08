@@ -228,23 +228,42 @@ async function handleMessage(waPhone, rawText) {
       const comment = (text === '-' || upper === 'SKIP') ? '' : text
       const now = tzNow()
       const weekId = calendarWeekMonday(now)
-      const fullDay = weekdayName(now)
+      const fullDay = weekdayName(now).toLowerCase() // Admin portal matches lowercase e.g. 'monday'
 
-      await supabase.from('daily_feedback').insert({
+      await supabase.from('daily_feedback').upsert({
         user_id: member.user_id,
-        user_name: member.name || '',
-        thali_number: member.thali_number ? String(member.thali_number) : null,
         day: fullDay,
         week_id: weekId,
-        taste_stars: state.stars,
-        portion_stars: state.stars,
-        overall_stars: state.stars,
-        taste_emoji: STAR_LABELS[state.stars] || '',
-        comments: comment,
-      })
+        lunch_stars: state.stars,
+        dinner_stars: state.stars,
+        lunch_emoji: STAR_LABELS[state.stars] || '',
+        dinner_emoji: STAR_LABELS[state.stars] || '',
+        lunch_comment: comment || null,
+        dinner_comment: comment || null,
+        created_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,day,week_id' })
+
+      // Push notification to admins for Feedback
+      try {
+        const userName = `${member.name || 'Member'} (Thali #${member.thali_number || '—'})`
+        await supabase.functions.invoke('send-push', {
+          body: {
+            title: `⭐ New Meal Feedback from ${userName}`,
+            body: `${STAR_LABELS[state.stars] || state.stars + '★'}: "${comment || 'No comment'}"`,
+            target_type: 'admins',
+            notify_in_app: true,
+            type: 'feedback',
+            sender_name: 'WhatsApp Bot',
+            url: '/admin/feedback',
+          }
+        })
+      } catch (e) {
+        // Notification failure should not interrupt chat
+      }
 
       await clearSession(waPhone)
-      return `🙏 *Thank you for your feedback!* Your review for ${fullDay} has been submitted.`
+      const dayDisplayName = fullDay.charAt(0).toUpperCase() + fullDay.slice(1)
+      return `🙏 *Thank you for your feedback!*\nYour ${dayDisplayName} review (${state.stars}★) has been recorded and is now visible on the Al-Mawaid Admin Portal.`
     }
   }
 
@@ -276,22 +295,61 @@ async function handleMessage(waPhone, rawText) {
         reason: 'Requested via WhatsApp Bot',
       })
 
+      // Push notification to admins for Request
+      try {
+        const userName = `${member.name || 'Member'} (Thali #${member.thali_number || '—'})`
+        await supabase.functions.invoke('send-push', {
+          body: {
+            title: `📋 Thali ${isStop ? 'Stop' : 'Resume'} Request`,
+            body: `${userName} requested to ${isStop ? 'STOP' : 'RESUME'} thali from ${state.from_date} to ${toDate}`,
+            target_type: 'admins',
+            notify_in_app: true,
+            type: 'request',
+            sender_name: 'WhatsApp Bot',
+            url: '/admin/requests',
+          }
+        })
+      } catch (e) {
+        // Notification failure should not interrupt chat
+      }
+
       await clearSession(waPhone)
-      return `✅ *Request Submitted!*\nYour request to *${isStop ? 'STOP' : 'RESUME'}* Thali #${member.thali_number} from *${state.from_date}* to *${toDate}* has been sent to admin.`
+      return `✅ *Request Submitted!*\nYour request to *${isStop ? 'STOP' : 'RESUME'}* Thali #${member.thali_number} from *${state.from_date}* to *${toDate}* has been sent to the Admin Portal.`
     }
   }
 
   if (state.flow === 'query') {
     if (text) {
+      const comment = text.trim()
+      const subject = comment.length > 50 ? comment.substring(0, 47) + '...' : comment
+
       await supabase.from('queries').insert({
         user_id: member.user_id,
-        user_name: member.name || '',
-        thali_number: member.thali_number ? String(member.thali_number) : '',
-        query_text: text,
+        subject: subject,
+        comment: comment,
         status: 'open',
       })
+
+      // Push notification to admins for Query
+      try {
+        const userName = `${member.name || 'A Member'} (Thali #${member.thali_number || '—'})`
+        await supabase.functions.invoke('send-push', {
+          body: {
+            title: '📩 New Query from ' + userName,
+            body: userName + ': "' + comment.substring(0, 80) + (comment.length > 80 ? '…"' : '"'),
+            target_type: 'admins',
+            notify_in_app: true,
+            type: 'new_query',
+            sender_name: 'WhatsApp Bot',
+            url: '/admin/queries'
+          }
+        })
+      } catch (e) {
+        // Notification failure should not interrupt chat
+      }
+
       await clearSession(waPhone)
-      return `📨 *Query Received!*\nYour message has been forwarded to the Al-Mawaid team. We will get back to you soon.`
+      return `📨 *Query Received!*\nYour message has been sent directly to the Admin Portal. The administration team will review and reply to you.`
     }
   }
 
