@@ -10,6 +10,7 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys'
 import qrcode from 'qrcode-terminal'
 import pino from 'pino'
+import http from 'http'
 import { createClient } from '@supabase/supabase-js'
 import dotenv from 'dotenv'
 import path from 'path'
@@ -26,6 +27,16 @@ const __dirname = path.dirname(__filename)
 
 dotenv.config({ path: path.join(__dirname, '.env') })
 dotenv.config({ path: path.join(__dirname, '..', '.env') })
+
+// Lightweight HTTP server for Render / Cloud healthchecks (makes deploy finish instantly)
+const PORT = process.env.PORT || 3000
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify({ status: 'online', service: 'Al-Mawaid WhatsApp Bot', timestamp: new Date().toISOString() }))
+})
+server.listen(PORT, () => {
+  console.log(`🌐 Healthcheck HTTP server listening on port ${PORT}`)
+})
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://pquusffhuholbnlmuyen.supabase.co'
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBxdXVzZmZodWhvbGJubG11eWVuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4Mzc3MTM5MCwiZXhwIjoyMDk5MzQ3MzkwfQ.iv-bPxHFZ2mtzJkfRu_3gTYmK70tu_rvuyrAxhkQiXw'
