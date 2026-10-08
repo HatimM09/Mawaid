@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
     "test": "vitest run --pool=threads",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "bot:whatsapp": "node whatsapp-bot-service/bot.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",

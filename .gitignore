@@ -7,6 +7,9 @@ dist
 
 .vercel
 .netlify
+auth_info_baileys
+whatsapp-bot-service/node_modules
+whatsapp-bot-service/auth_info_baileys
 
 # System files
 Thumbs.db

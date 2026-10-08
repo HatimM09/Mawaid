@@ -1,0 +1,17 @@
+{
+  "name": "al-mawaid-whatsapp-bot",
+  "version": "1.0.0",
+  "description": "Simple QR-code WhatsApp Bot for Al-Mawaid",
+  "main": "bot.js",
+  "type": "module",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
+    "@whiskeysockets/baileys": "^6.7.19",
+    "dotenv": "^16.4.7",
+    "pino": "^9.6.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
