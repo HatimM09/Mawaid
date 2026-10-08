@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
-// AL-MAWAID — WhatsApp QR Bot Service
-// Connects to WhatsApp via QR code scan (No Meta developer account needed)
+// AL-MAWAID — WhatsApp Interactive Portal Bot
+// Fast Button & Numbered Tap Theme with Smart Query Detection
 // ═══════════════════════════════════════════════════════════════
 
 import makeWASocket, {
@@ -142,16 +142,22 @@ function renderMenuCard(dayKey, dayMenu, title) {
   return `🍽️ *${title}*\n\n*Lunch:*\n${formatList(dayMenu.lunch)}\n\n*Dinner:*\n${formatList(dayMenu.dinner)}`
 }
 
-function helpText(memberName, thaliNumber) {
-  const tag = thaliNumber ? `(Thali #${thaliNumber})` : ''
-  return `👋 *Al-Mawaid Assistant* ${tag}\n\n` +
-    `*Available Commands:*\n` +
-    `• *MENU* — Today's thali menu\n` +
-    `• *TOMORROW* — Tomorrow's menu\n` +
-    `• *FEEDBACK* — Rate today's Lunch or Dinner\n` +
-    `• *DUES* — View complete dues, paid amount & balance\n` +
-    `• *QUERY* — Ask a question to admin\n` +
-    `• *CANCEL* — Cancel current action`
+function renderMainMenu(memberName, thaliNumber) {
+  const name = memberName ? `Welcome *${memberName}*` : 'Welcome'
+  const thali = thaliNumber ? ` | Thali *#${thaliNumber}*` : ''
+  return `✨ *AL-MAWAID THALI PORTAL* ✨\n` +
+    `${name}${thali}\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `Please select an option:\n\n` +
+    `1️⃣  *Today's Menu* 🍽️\n` +
+    `2️⃣  *Tomorrow's Menu* 📅\n` +
+    `3️⃣  *Rate Meal Feedback* ⭐\n` +
+    `4️⃣  *Contribution & Dues* 💳\n` +
+    `5️⃣  *Ask Admin a Question* 💬\n` +
+    `6️⃣  *End / Close Chat* ❌\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `👉 *Reply with 1, 2, 3, 4, 5, or 6*\n` +
+    `_(Or type any question directly to send to admin)_`
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -173,7 +179,7 @@ async function handleMessage(waPhone, rawText) {
     const found = await findMemberByThali(candidateThali)
     if (found) {
       await linkMember(waPhone, found)
-      return `✅ *Linked Successfully!*\nWelcome *${found.name || 'Member'}* — Thali #${found.thali_number}.\n\n` + helpText(found.name, found.thali_number)
+      return `✅ *Linked Successfully!*\nWelcome *${found.name || 'Member'}* — Thali #${found.thali_number}.\n\n` + renderMainMenu(found.name, found.thali_number)
     } else {
       return `❌ Thali *#${candidateThali}* was not found in Al-Mawaid records. Please check the spelling/format (e.g. \`A-12\`, \`123\`) or contact the admin.`
     }
@@ -181,30 +187,28 @@ async function handleMessage(waPhone, rawText) {
 
   // 1. Unlinked flow
   if (!member || !linked) {
-    const isStandardCommand = ['MENU', 'TODAY', 'TOMORROW', 'FEEDBACK', 'DUES', 'PAYMENTS', 'QUERY', 'HELP', 'CANCEL'].includes(upper)
     const cleanThali = text.replace(/^[#\s]+|[#\s]+$/g, '').trim()
+    const isGreeting = ['HI', 'HELLO', 'START', 'HELP', 'ASSALAMUALAIKUM', 'SALAAM', 'HEY'].includes(upper)
 
-    if (!isStandardCommand && cleanThali.length >= 1 && cleanThali.length <= 15) {
+    if (!isGreeting && cleanThali.length >= 1 && cleanThali.length <= 15) {
       const found = await findMemberByThali(cleanThali)
       if (found) {
         await linkMember(waPhone, found)
-        return `✅ *Linked Successfully!*\nWelcome *${found.name || 'Member'}* — Thali #${found.thali_number}.\n\n` + helpText(found.name, found.thali_number)
+        return `✅ *Linked Successfully!*\nWelcome *${found.name || 'Member'}* — Thali #${found.thali_number}.\n\n` + renderMainMenu(found.name, found.thali_number)
       } else if (/^[a-zA-Z0-9\-_]+$/.test(cleanThali)) {
         return `❌ Thali *#${cleanThali}* was not found in Al-Mawaid records. Please check your thali number or contact the admin.`
       }
     }
-    return `👋 *Welcome to Al-Mawaid!*\n\nTo get started, please reply with your *Thali Number* (e.g. \`123\` or \`A-45\`) to link your WhatsApp.`
+    return `👋 *Welcome to Al-Mawaid!*\n\nTo access your thali menu, feedback, and dues, please reply with your *Thali Number* (e.g. \`123\` or \`A-45\`):`
   }
 
-  // 2. Global cancel
-  if (upper === 'CANCEL' || upper === 'EXIT' || upper === 'STOP FLOW') {
-    if (state.flow) {
-      await clearSession(waPhone)
-      return `❌ Action cancelled.\n\n` + helpText(member.name, member.thali_number)
-    }
+  // 2. Global cancel / Close Chat
+  if (['6', 'CLOSE', 'END', 'EXIT', 'BYE', 'STOP', 'CANCEL'].includes(upper)) {
+    await clearSession(waPhone)
+    return `👋 *Chat Closed.*\nHave a blessed day! Type *HI* or *MENU* anytime you need assistance.`
   }
 
-  // 3. Active Multi-step Flows: FEEDBACK (Meal -> Rating -> Comments)
+  // 3. Active Multi-step Flows: FEEDBACK
   if (state.flow === 'feedback') {
     // Step 1: Select Meal Type (Lunch or Dinner)
     if (state.step === 'meal_type') {
@@ -217,15 +221,20 @@ async function handleMessage(waPhone, rawText) {
       }
 
       if (!meal) {
-        return `Please choose which meal to rate:\n\n1️⃣ *Lunch*\n2️⃣ *Dinner*\n\n_(Reply with *1* for Lunch, *2* for Dinner, or type CANCEL to exit)_`
+        return `⭐ *Daily Meal Feedback*\n━━━━━━━━━━━━━━━━━━━━━━\nPlease choose which meal to rate:\n\n1️⃣ *Lunch* ☀️\n2️⃣ *Dinner* 🌙\n\n_(Reply *1* for Lunch, *2* for Dinner, or *6* to Close)_`
       }
 
       state.meal = meal
       state.step = 'rating'
       await setSession(waPhone, state)
       const mealTitle = meal === 'lunch' ? 'Lunch ☀️' : 'Dinner 🌙'
-      return `⭐ Rate today's *${mealTitle}*:\n\nPlease reply with a number from *1 to 5*:\n\n` +
-        `1 = 😞 Poor\n2 = 😐 Fair\n3 = 🙂 Good\n4 = 😄 Great\n5 = 🤩 Excellent\n\n_(Or type CANCEL to exit)_`
+      return `⭐ *Rate ${mealTitle} for Today*\n━━━━━━━━━━━━━━━━━━━━━━\nPlease select a star rating (1 to 5):\n\n` +
+        `1️⃣ 😞 Poor (1★)\n` +
+        `2️⃣ 😐 Fair (2★)\n` +
+        `3️⃣ 🙂 Good (3★)\n` +
+        `4️⃣ 😄 Great (4★)\n` +
+        `5️⃣ 🤩 Excellent (5★)\n\n` +
+        `👉 *Reply with 1, 2, 3, 4, or 5*`
     }
 
     // Step 2: Rate (1 to 5 stars)
@@ -233,13 +242,13 @@ async function handleMessage(waPhone, rawText) {
       const num = parseInt(text.charAt(0), 10)
       if (isNaN(num) || num < 1 || num > 5) {
         const mealTitle = state.meal === 'lunch' ? 'Lunch' : 'Dinner'
-        return `Please rate ${mealTitle} with a number from *1* to *5* stars (1 = Poor, 5 = Excellent):`
+        return `Please rate ${mealTitle} by replying with a number from *1* to *5* stars:`
       }
       state.stars = num
       state.step = 'comment'
       await setSession(waPhone, state)
       const mealTitle = state.meal === 'lunch' ? 'Lunch' : 'Dinner'
-      return `⭐ *${STAR_LABELS[num]}*\n\nAny comments or suggestions for *${mealTitle}*?\n_(Reply with your comments, or type *-* to skip)_:`
+      return `⭐ *${STAR_LABELS[num]}*\n━━━━━━━━━━━━━━━━━━━━━━\nAny comments or suggestions for *${mealTitle}*?\n\n_(Reply with your comments, or type *-* to skip)_:`
     }
 
     // Step 3: Submit Comments
@@ -284,17 +293,19 @@ async function handleMessage(waPhone, rawText) {
           }
         })
       } catch (e) {
-        // notification failure should not block user response
+        // notification error should not block chat
       }
 
       await clearSession(waPhone)
       const dayDisplayName = fullDay.charAt(0).toUpperCase() + fullDay.slice(1)
       const mealDisplayName = state.meal === 'lunch' ? 'Lunch' : 'Dinner'
-      return `🙏 *Thank you for your feedback!*\nYour *${mealDisplayName}* review for ${dayDisplayName} (${state.stars}★) has been recorded and submitted to the Admin Portal.`
+      return `🙏 *Thank you for your feedback!*\n` +
+        `Your *${mealDisplayName}* review for ${dayDisplayName} (${state.stars}★) has been recorded in the Admin Portal.\n\n` +
+        `Type *MENU* to view options or *6* to Close.`
     }
   }
 
-  // Active Multi-step Flows: QUERY
+  // Active Multi-step Flows: QUERY Prompt
   if (state.flow === 'query') {
     if (text) {
       const comment = text.trim()
@@ -326,13 +337,14 @@ async function handleMessage(waPhone, rawText) {
       }
 
       await clearSession(waPhone)
-      return `📨 *Query Received!*\nYour message has been sent directly to the Admin Portal. The administration team will review and reply soon.`
+      return `📨 *Query Submitted!*\n━━━━━━━━━━━━━━━━━━━━━━\nYour message has been sent directly to the Admin Portal. The administration team will review and reply soon.\n\nType *MENU* to view options or *6* to Close.`
     }
   }
 
-  // 4. Command Router
+  // 4. Interactive Button & Command Router
 
-  if (upper === 'MENU' || upper === "TODAY" || upper === "TODAY'S MENU") {
+  // Option 1: Today's Menu
+  if (upper === '1' || upper === 'MENU' || upper === "TODAY" || upper === "TODAY'S MENU") {
     const now = tzNow()
     const appSettings = await loadAppSettings()
     const servingWeek = resolveServingWeekId(appSettings, now)
@@ -340,10 +352,12 @@ async function handleMessage(waPhone, rawText) {
     const dayKey = DAY_KEYS[now.getUTCDay() === 0 ? 0 : now.getUTCDay() - 1] || 'mon'
     const dayMenu = menuForDay(menuMap, dayKey)
     const dayName = weekdayName(now)
-    return renderMenuCard(dayKey, dayMenu, `Today's Menu (${dayName.toUpperCase()})`)
+    const card = renderMenuCard(dayKey, dayMenu, `Today's Menu (${dayName.toUpperCase()})`)
+    return `${card}\n\n━━━━━━━━━━━━━━━━━━━━━━\n👉 Reply *3* to Rate Meal | *4* for Dues | *6* to Close`
   }
 
-  if (upper === 'TOMORROW' || upper === "TOMORROW'S MENU") {
+  // Option 2: Tomorrow's Menu
+  if (upper === '2' || upper === 'TOMORROW' || upper === "TOMORROW'S MENU") {
     const now = tzNow()
     const tomorrow = new Date(now.getTime() + 86400_000)
     const appSettings = await loadAppSettings()
@@ -352,15 +366,18 @@ async function handleMessage(waPhone, rawText) {
     const dayKey = DAY_KEYS[tomorrow.getUTCDay() === 0 ? 0 : tomorrow.getUTCDay() - 1] || 'mon'
     const dayMenu = menuForDay(menuMap, dayKey)
     const dayName = weekdayName(tomorrow)
-    return renderMenuCard(dayKey, dayMenu, `Tomorrow's Menu (${dayName.toUpperCase()})`)
+    const card = renderMenuCard(dayKey, dayMenu, `Tomorrow's Menu (${dayName.toUpperCase()})`)
+    return `${card}\n\n━━━━━━━━━━━━━━━━━━━━━━\n👉 Reply *1* for Today's Menu | *4* for Dues | *6* to Close`
   }
 
-  if (upper === 'FEEDBACK' || upper === 'RATE') {
+  // Option 3: Meal Feedback
+  if (upper === '3' || upper === 'FEEDBACK' || upper === 'RATE') {
     await setSession(waPhone, { flow: 'feedback', step: 'meal_type' })
-    return `⭐ *Daily Meal Feedback*\nWhich meal would you like to rate for today?\n\n1️⃣ *Lunch*\n2️⃣ *Dinner*\n\n_(Reply with *1* for Lunch, *2* for Dinner, or type CANCEL to exit)_`
+    return `⭐ *Daily Meal Feedback*\n━━━━━━━━━━━━━━━━━━━━━━\nWhich meal would you like to rate for today?\n\n1️⃣ *Lunch* ☀️\n2️⃣ *Dinner* 🌙\n\n_(Reply with *1* for Lunch, *2* for Dinner, or *6* to Close)_`
   }
 
-  if (upper === 'DUES' || upper === 'PAYMENTS' || upper === 'PAYMENT') {
+  // Option 4: Contribution & Dues
+  if (upper === '4' || upper === 'DUES' || upper === 'PAYMENTS' || upper === 'PAYMENT') {
     const appSettings = await loadAppSettings()
     const { data: payments } = await supabase
       .from('user_payments')
@@ -402,27 +419,66 @@ async function handleMessage(waPhone, rawText) {
     }
 
     return `💳 *Thali Contribution & Dues*\n` +
-      `Thali: *#${member.thali_number || 'N/A'}*\n` +
-      `Name: *${member.name || 'Member'}*\n\n` +
-      `📋 *Contribution Summary:*\n` +
+      `Thali: *#${member.thali_number || 'N/A'}* | *${member.name || 'Member'}*\n\n` +
+      `📋 *Summary:*\n` +
       `• *Purpose:* ${paymentTitle}\n` +
       `• *Total Required Due:* ₹${totalDue.toLocaleString('en-IN')}\n` +
       `• *Total Amount Paid:* ₹${totalPaid.toLocaleString('en-IN')}\n` +
       `• *Remaining Balance:* ₹${pendingBalance.toLocaleString('en-IN')}\n\n` +
       `${statusLine}\n` +
       historyText +
-      `\n📲 *UPI Payment Details:*\n` +
+      `\n📲 *UPI Payee Details:*\n` +
       `• UPI ID: \`${upiId}\`\n` +
-      `• Payee: *${payeeName}*`
+      `• Payee: *${payeeName}*\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━\n👉 Reply *1* for Menu | *3* to Rate Meal | *6* to Close`
   }
 
-  if (upper === 'QUERY' || upper === 'HELP QUERY' || upper === 'SUPPORT') {
+  // Option 5: Ask a Question
+  if (upper === '5' || upper === 'QUERY' || upper === 'HELP QUERY' || upper === 'SUPPORT' || upper === 'ASK') {
     await setSession(waPhone, { flow: 'query', step: 'text' })
-    return `💬 *Support & Query*\nPlease type your message or question below, and it will be sent directly to the Jamaat admin team:`
+    return `💬 *Ask Admin a Question*\n━━━━━━━━━━━━━━━━━━━━━━\nPlease type your question or message below, and it will be sent directly to the Jamaat admin team:`
   }
 
-  // Fallback / Help
-  return helpText(member.name, member.thali_number)
+  // 5. Smart Query Fallback:
+  // If user sends any greeting or wants the menu
+  if (['HI', 'HELLO', 'START', 'HELP', 'ASSALAMUALAIKUM', 'SALAAM', 'HEY'].includes(upper)) {
+    return renderMainMenu(member.name, member.thali_number)
+  }
+
+  // If user types a custom question that doesn't match any button options:
+  // Automatically capture it as a support Query for the admin portal!
+  const comment = text.trim()
+  const subject = comment.length > 50 ? comment.substring(0, 47) + '...' : comment
+
+  await supabase.from('queries').insert({
+    user_id: member.user_id,
+    subject: subject,
+    comment: comment,
+    status: 'open',
+  })
+
+  // Push notification to admins
+  try {
+    const userName = `${member.name || 'A Member'} (Thali #${member.thali_number || '—'})`
+    await supabase.functions.invoke('send-push', {
+      body: {
+        title: '📩 New Query from ' + userName,
+        body: userName + ': "' + comment.substring(0, 80) + (comment.length > 80 ? '…"' : '"'),
+        target_type: 'admins',
+        notify_in_app: true,
+        type: 'new_query',
+        sender_name: 'WhatsApp Bot',
+        url: '/admin/queries'
+      }
+    })
+  } catch (e) {
+    // ignore notification error
+  }
+
+  return `📨 *Query Sent to Admin Portal!*\n━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `📝 *Your Message:* "${comment}"\n\n` +
+    `✅ Your question has been forwarded to the Jamaat administration. They will review and reply to you soon.\n\n` +
+    `👉 Type *MENU* to view options or *6* to Close.`
 }
 
 // ═══════════════════════════════════════════════════════════════
