@@ -1,5 +1,23 @@
 # Al-Mawaid Releases
 
+## v2.1.11 (versionCode 49) — 2026-10-20
+
+### Payments — standalone UPI redirect page (new `/pay`)
+- New route `/pay` (alias `/upi-pay`): opens the payer's UPI app with the **receiver VPA and amount prefilled**. The payer edits the amount and authorises inside their own bank app exactly as they normally would.
+- **Receiver is read-only** — it is read from `app_settings.upi_id` and can never be typed or edited by the payer. This is the fix for payments going out from the wrong account. The UPI PIN is never requested on the page; only the bank app can verify it.
+- **The payer no longer records anything.** The page writes nothing to `user_payments`; management marks a contribution **Paid** or leaves it **Pending** from Payments Hub after seeing the money land in the bank. A `upi://pay` deep-link is fire-and-forget and there is no gateway webhook here, so any client-side receipt would have been a self-reported claim rather than a verified transfer — this removes that exposure entirely.
+- Failure handling: "Bank limit exceeded" and blocked intents now surface the actual causes (daily UPI quota, receiver collection cap, blocked scheme, per-transaction cap) with working recovery — retry in an alternate format with a transaction reference, switch to the alternate receiver (`upi_id_2`), or scan a QR.
+- Desktop fallback sheet: scannable QR plus GPay / PhonePe / Paytm shortcuts.
+
+### Build & repo
+- Pushed to GitHub (`HatimM09/Mawaid`) with existing history intact and connected to Vercel — `main` now deploys to production.
+- Dead code removed: `useApiToast.js`, `member/sound.js`, `App.css`, `assets/hero.png`, `public/logo.png`, `public/service-worker.js`, `tailwind.config.js`; 6 unused dependencies pruned.
+- `html2canvas` stubbed via a Vite alias (jsPDF only reaches it through `.html()`, which is never called) — `vendor-pdf` 601.9 → 401.9 kB, PWA precache 2901 → 2716 KiB.
+- Lint went from 178 problems to **0 errors**; fixed the `signOut` prop in `KhidmatPortal` that broke admin logout.
+
+### Build
+- Version bumped to 2.1.11 (live-link: Android loads https://al-mawaid.vercel.app?v=2.1.11, no new AAB needed).
+
 ## v2.1.10 — 2026-10-06
 
 ### Payments — Android UPI Intent integration (no Google Pay API)
