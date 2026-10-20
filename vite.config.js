@@ -12,7 +12,7 @@ export default defineConfig({
       // `html()` renderer uses. No PDF in this app calls `html()` — they all use
       // the text/table API — so alias it to a stub that throws if ever reached.
       // Keeps ~200 kB out of the bundle and the PWA precache manifest.
-      html2canvas: fileURLToPath(new URL('./scripts/html2canvas-stub.mjs', import.meta.url)),
+      html2canvas: fileURLToPath(new URL('./html2canvas-stub.mjs', import.meta.url)),
     },
   },
   plugins: [

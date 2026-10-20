@@ -1,4 +1,4 @@
-// scripts/html2canvas-stub.mjs
+// html2canvas-stub.mjs  (project root on purpose: .vercelignore excludes scripts/)
 // ─────────────────────────────────────────────────────────────────────────────
 // Build-time stub for `html2canvas`.
 //

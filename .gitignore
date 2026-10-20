@@ -63,3 +63,6 @@ android/app/*.jks
 android/app/keystore.properties
 android/fastlane/play-service-account.json
 android/fastlane/*.json
+
+.vercel
+.env*
