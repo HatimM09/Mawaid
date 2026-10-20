@@ -1,15 +1,14 @@
 // src/admin/KhidmatPortal.jsx (updated)
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import {
-  Home, Users, Package, Settings, LogOut, Bell,
-  ChevronRight, Calendar, Star, Utensils, MessageSquare,
-  TrendingUp, Check, Info, ArrowUpRight, Search, Clock,
-  ChevronLeft, Phone, MapPin, LifeBuoy, Lock, MessageCircle,
-  AlertCircle, Wallet, ClipboardList, Menu, ToggleLeft, ToggleRight, ChevronDown, ChevronUp, Sun, Moon
+  Home, Users, LogOut, Bell,
+  Star, Check,
+  MessageCircle,
+  AlertCircle, ClipboardList, Menu, Sun, Moon
 } from 'lucide-react'
 import { supabase } from '../lib/firebaseClient'
-import { AuthCtx, ThemeCtx, useAuth, useTheme } from './context'
-import { T as SharedT, updateSystemTheme, Modal, SurveyResponseDisplay, Btn as SharedBtn, PackingTVView } from './ui'
+import { useAuth } from './context'
+import { T as SharedT, updateSystemTheme, PackingTVView } from './ui'
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { Scan, X, RefreshCw } from 'lucide-react'
 import { 
@@ -60,7 +59,7 @@ const T = {
   goldBar: SharedT.accentGrad || 'var(--accent-grad)'
 }
 
-function Card({ children, style = {}, active, organic, title, count, icon }) {
+function Card({ children, style = {}, active, title, count, icon }) {
   const cardStyle = {
     borderRadius: 24,
     background: 'var(--bg-card)',
@@ -334,18 +333,14 @@ function ScanHeaderCard({ staffInfo, onScan, onNotices, currentMeal, mealOverrid
   )
 }
 
-export default function KhidmatPortal() {
+// `signOut` is passed in by App.jsx (alongside `user`), matching how
+// InventoryManagerPortal consumes it. Without it in scope the sidebar Logout
+// button threw "ReferenceError: signOut is not defined" on click.
+export default function KhidmatPortal({ signOut }) {
   const { user } = useAuth()
-  const { theme } = useTheme()
   const [activeTab, setActiveTab] = useState('tracking')
   const [loading, setLoading] = useState(true)
   const [staffInfo, setStaffInfo] = useState(null)
-  const [stats, setStats] = useState({
-    todayDispatches: 0,
-    activeRequests: 0,
-    totalRegistered: 0,
-    recentFeedback: 0,
-  })
   const [isScanning, setIsScanning] = useState(false)
   const [scannedUser, setScannedUser] = useState(null)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -354,9 +349,9 @@ export default function KhidmatPortal() {
   const [currentMeal, setCurrentMeal] = useState(() => getCurrentMealByTime())
   const [mealOverride, setMealOverride] = useState(false)
   const [scannedMeal, setScannedMeal] = useState('lunch')
-  
+
   // Track if user has manually toggled meal view
-  const [lastManualMeal, setLastManualMeal] = useState(null)
+  const [, setLastManualMeal] = useState(null)
 
   // Time-based meal state uses the shared getCurrentMealByTime() util
   // (matches tracker + TV: lunch <15:00, dinner 15:00–20:00).
@@ -439,7 +434,7 @@ export default function KhidmatPortal() {
         const settingsMap = {}
         ;(allSettings || []).forEach(r => { if (r && r.key) settingsMap[r.key] = r.value })
         targetWeek = getSurveyTargetWeek(settingsMap)
-      } catch {}
+      } catch { /* fall back to calendar week when settings can't be read */ }
 
       const candidateWeekIds = [...new Set([calWeek, targetWeek])].filter(Boolean)
       
@@ -452,7 +447,7 @@ export default function KhidmatPortal() {
             break
           }
           if (r && !row) row = r
-        } catch {}
+        } catch { /* skip week when its survey row can't be fetched */ }
       }
 
       const activeWeekId = row?.week_id || calWeek
@@ -595,7 +590,7 @@ export default function KhidmatPortal() {
         }
       };
 
-      scanner.render(handleScan, (error) => {});
+      scanner.render(handleScan, () => {});
       return () => {
         scanner.clear().catch(e => console.error("Scanner cleanup failed", e));
       };
@@ -611,10 +606,10 @@ export default function KhidmatPortal() {
       .finally(() => setLoading(false))
   }, [user])
 
-  const [requestsList, setRequestsList] = useState([])
-  const [queriesList, setQueriesList] = useState([])
-  const [weeklyMenu, setWeeklyMenu] = useState([])
-  const [loadingItems, setLoadingItems] = useState(false)
+  const [, setRequestsList] = useState([])
+  const [, setQueriesList] = useState([])
+  const [, setWeeklyMenu] = useState([])
+  const [, setLoadingItems] = useState(false)
 
   useEffect(() => { loadHomeData() }, [])
   const loadHomeData = async () => {
@@ -781,7 +776,7 @@ export default function KhidmatPortal() {
             { id: 'requests', icon: Star, label: 'Requests' },
             { id: 'queries', icon: MessageCircle, label: 'Tickets' },
             { id: 'survey', icon: ClipboardList, label: 'Surveys' },
-          ].map(({ id, icon: Icon, label }) => (
+          ].map(({ id, icon: Icon, label }) => ( // eslint-disable-line no-unused-vars -- Icon is rendered as <Icon /> in the sidebar item below
             <div 
               key={id} 
               onClick={() => { setActiveTab(id); setIsSidebarOpen(false); }} 
@@ -842,7 +837,7 @@ function FeedbackPortalView() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {feedbacks.map((fb, i) => {
+        {feedbacks.map((fb) => {
           const dayMenu = menu[fb.day] || {}
           const lunchDishes = [dayMenu.lunch_1, dayMenu.lunch_2, dayMenu.lunch_3].filter(Boolean).join(', ')
           const dinnerDishes = [dayMenu.dinner_1, dayMenu.dinner_2, dayMenu.dinner_3].filter(Boolean).join(', ')
@@ -906,7 +901,7 @@ function NoticesPortalView() {
             <Bell size={40} style={{ marginBottom: 12, opacity: 0.3 }} />
             <div style={{ fontSize: 14 }}>No recent notices</div>
           </div>
-        ) : notices.map((n, i) => (
+        ) : notices.map((n) => (
           <Card key={n.id} style={{ padding: 20, borderLeft: `4px solid ${n.tone || 'var(--accent-primary)'}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: n.tone || 'var(--accent-primary)', textTransform: 'uppercase' }}>{n.sender_name || 'Admin'}</div>
@@ -926,7 +921,6 @@ function NoticesPortalView() {
 
 
 function NoThaliTracker() {
-  const t = useTheme()
   const [meal, setMeal] = useState(() => {
     const now = new Date()
     const h = now.getHours(), m = now.getMinutes()

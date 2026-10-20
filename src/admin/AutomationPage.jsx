@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/firebaseClient'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -9,9 +9,9 @@ import {
   Radio, Shield, Power, Eye, Info
 } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Btn, StatCard, Grid, Alert, SectionHeader, Modal } from './ui'
-import { getSurveyTargetWeek, getSurveyTargetWeeks, getSurveyCadence, getSurveyTotalSlots, formatWeekRange } from '../common/utils'
-import { fetchWeekRows, fetchWeekRowsMulti } from '../lib/surveyRows'
-import { isSurveyOpen, getSurveyWindowConfig, getSurveyWindowLabel, getSurveyWindowStatus } from '../hooks/useSurvey'
+import { getSurveyTargetWeek, getSurveyTargetWeeks, getSurveyCadence, formatWeekRange } from '../common/utils'
+import { fetchWeekRows } from '../lib/surveyRows'
+import { isSurveyOpen, getSurveyWindowLabel, getSurveyWindowStatus } from '../hooks/useSurvey'
 
 const DAYS_OPTIONS = [
   { value: 'monday', label: 'Monday' },
@@ -134,8 +134,8 @@ export default function AutomationPage() {
 
   // Analytics
   const [scheduledCount, setScheduledCount] = useState(0)
-  const [pendingSurveyCount, setPendingSurveyCount] = useState(0)
-  const [todayApplied, setTodayApplied] = useState(0)
+  const [, setPendingSurveyCount] = useState(0)
+  const [, setTodayApplied] = useState(0)
   const [totalMembers, setTotalMembers] = useState(0)
   const [delivered24h, setDelivered24h] = useState(0)
   const [failed24h, setFailed24h] = useState(0)
@@ -300,7 +300,7 @@ export default function AutomationPage() {
     setLiveLunchStatus(lunchEditStatus === 'open' ? 'open' : lunchEditStatus === 'closed' ? 'closed' : (isTimingOpen('lunch', nextSettings) ? 'open' : 'closed'))
     setLiveDinnerStatus(dinnerEditStatus === 'open' ? 'open' : dinnerEditStatus === 'closed' ? 'closed' : (isTimingOpen('dinner', nextSettings) ? 'open' : 'closed'))
 
-    try { await supabase.from('app_settings').delete().in('key', ['survey_open_hour', 'survey_close_hour']).then(() => {}) } catch {}
+    try { await supabase.from('app_settings').delete().in('key', ['survey_open_hour', 'survey_close_hour']).then(() => {}) } catch { /* legacy survey-hour keys may not exist; ignore */ }
     let err = null
     for (const row of toSave) {
       const { error } = await supabase.from('app_settings').upsert(row, { onConflict: 'key' })

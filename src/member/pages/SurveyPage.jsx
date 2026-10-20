@@ -60,7 +60,7 @@ export default function SurveyPage({ appSettings = {} }) {
     try {
       const { data: map } = await fetchUserSurveyRows(activeUserId, [primaryWeekId])
       if (map) setSurveyMap(map)
-    } catch {}
+    } catch { /* silent refresh — keep last known data */ }
     setIsSyncing(false)
   }, [activeUserId, primaryWeekId])
 
@@ -495,7 +495,6 @@ export default function SurveyPage({ appSettings = {} }) {
                 ].map(({ mealKey, label, status, dishes, icon }) => {
                   const isApplied = status === 'Applied'
                   const isSkipped = status === 'Skipped'
-                  const isPending = status === 'pending'
 
                   return (
                     <div

@@ -3,10 +3,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/firebaseClient'
 import { Save, RefreshCw, Calendar, Send, Clock, Trash2, Upload, Download, FileSpreadsheet } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Btn, Alert, Input, SectionHeader } from './ui'
-import { getSurveyTargetWeek, getSurveyTargetWeeks, getSurveyCadence, getCalendarWeekDate, addWeeks, DAYS } from '../common/utils'
-import { fetchWeekRows, fetchWeekRowsMulti } from '../lib/surveyRows'
+import { getSurveyTargetWeek, getCalendarWeekDate, addWeeks, DAYS } from '../common/utils'
+import { fetchWeekRows } from '../lib/surveyRows'
 import { DEFAULT_MENU } from '../common/constants'
-import { isSurveyOpen } from '../hooks/useSurvey'
 import { queryClient } from '../lib/queryClient'
 
 const formatWeekLabel = (weekStart) => {
@@ -213,7 +212,7 @@ const BLANK_MENU = {
 const capDay = (d) => d ? d.charAt(0).toUpperCase() + d.slice(1) : d
 
 // Build a clean, ready-to-edit 1-week (12-meal) template
-const buildMenuCSVTemplate = (seed = BLANK_MENU, forWeek = '') => {
+const buildMenuCSVTemplate = (seed = BLANK_MENU) => {
   const dayKeys = DAYS
   const mk = m => m.charAt(0).toUpperCase() + m.slice(1)
   const quote = s => `"${String(s || '').replace(/"/g, '""')}"`
@@ -238,9 +237,8 @@ export default function SettingsPage() {
   // during the Saturday window flows naturally.
   const calendarWeek = getCalendarWeekDate()
   const nextWeek = addWeeks(calendarWeek, 1)
-  const week2 = addWeeks(calendarWeek, 2)
   const [targetWeek, setTargetWeek] = useState(() => getSurveyTargetWeek())
-  const [surveyCadence, setSurveyCadence] = useState('1_week')
+  const [, setSurveyCadence] = useState('1_week')
   const [publishAt, setPublishAt] = useState('')
   const [publishing, setPublishing] = useState(false)
   const [dishInputConfig, setDishInputConfig] = useState({})
@@ -393,7 +391,7 @@ export default function SettingsPage() {
         if (settings) {
           settings.forEach(row => {
             if (row.key === 'helpline_number') commit(() => setHelpline(row.value))
-            if (row.key === 'dish_input_config') { try { commit(() => setDishInputConfig(JSON.parse(row.value))) } catch(e) { commit(() => setDishInputConfig({})) } }
+            if (row.key === 'dish_input_config') { try { commit(() => setDishInputConfig(JSON.parse(row.value))) } catch { commit(() => setDishInputConfig({})) } }
           })
         }
         const { data: menuData } = await supabase
@@ -1091,8 +1089,6 @@ export default function SettingsPage() {
               setPublishing(true)
               setMsg({ text: '', type: 'success' })
               try {
-                const publishTimestamp = new Date().toISOString()
-
                 // 1. Save helpline + dish config
                 await supabase.from('app_settings').upsert([
                   { key: 'helpline_number', value: helpline || '+91 98765 43210' },

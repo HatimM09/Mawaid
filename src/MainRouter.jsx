@@ -27,6 +27,7 @@ const AutomationPage = lazy(() => import('./admin/AutomationPage'))
 // User-facing pages
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'))
+const UpiPayPage = lazy(() => import('./member/pages/UpiPayPage'))
 
 const LoadingFallback = () => (
   <div style={{
@@ -74,6 +75,8 @@ export default function MainRouter() {
           {/* Public user app or direct tab routes */}
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="privacy" element={<PrivacyPolicy />} />
+          <Route path="pay" element={<UpiPayPage />} />
+          <Route path="upi-pay" element={<UpiPayPage />} />
           <Route path="survey" element={<App />} />
           <Route path="menu" element={<App />} />
           <Route path="profile" element={<App />} />

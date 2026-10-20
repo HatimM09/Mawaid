@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/firebaseClient'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import {
   T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner, Modal,
-  SectionHeader, SurveyResponseDisplay, PackingTVView, fmtDate, ErrorBanner
+  SectionHeader, SurveyResponseDisplay, PackingTVView, ErrorBanner
 } from './ui'
 import { getSurveyTargetWeek, DAYS, MEALS, getDayKey, getMealKey } from '../common/utils'
 import { getSlotDishes } from '../hooks/useSurvey'
@@ -20,12 +20,12 @@ export default function SurveyDashboard() {
   const navigate = useNavigate()
   const weeklyMenu = useWeeklyMenu() || {}
   const [activeTab, setActiveTab] = useState('overview')
-  const [loading, setLoading] = useState(true)
+  const [, setLoading] = useState(true)
   const [statsLoading, setStatsLoading] = useState(false)
 
   // Overview state
   const [overviewStats, setOverviewStats] = useState({})
-  const [users, setUsers] = useState({})
+  const [, setUsers] = useState({})
 
   // Tracking state
   const [trackDay, setTrackDay] = useState(() => {
@@ -235,11 +235,6 @@ export default function SurveyDashboard() {
 
   const sendReminderNow = async () => {
     try {
-      const currentWeekId = getSurveyTargetWeek(autoSettings)
-      const dk = getDayKey(trackDay)
-      const mk = getMealKey(trackMeal)
-      const statusCol = `${dk}_${mk}_status`
-
       const pendingUsers = trackUsers.filter(u => u.status === 'Not Submitted')
       let sent = 0
       for (const u of pendingUsers) {

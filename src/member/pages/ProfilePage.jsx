@@ -1093,7 +1093,7 @@ function MyRequestsPage({ onBack }) {
         display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 20,
         background: t.card, borderRadius: 18, padding: 6, border: `1px solid ${t.border}`
       }}>
-        {tabs.map(({ id, label, icon: TabIcon, count }) => {
+        {tabs.map(({ id, label, icon: _TabIcon, count }) => {
           const isActive = filterTab === id
           return (
             <button
@@ -1109,7 +1109,7 @@ function MyRequestsPage({ onBack }) {
                 transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
               }}
             >
-              <TabIcon size={16} color={isActive ? '#000' : t.textSub} />
+              <_TabIcon size={16} color={isActive ? '#000' : t.textSub} />
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span>{label}</span>
                 {count > 0 && (
@@ -1286,7 +1286,6 @@ function NotificationsPage({ onBack, markRead, appSettings }) {
             isEating = status === 'Applied'
           }
           
-          const now = new Date()
           const filtered = data.filter(notice => {
             const toneStr = notice.tone || ''
             if (toneStr.includes(':opt_in')) return isEating

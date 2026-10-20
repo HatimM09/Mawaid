@@ -72,7 +72,7 @@ export const getSurveyWindowStatus = (appSettings = {}) => {
   return v === 'open' || v === 'closed' ? v : 'auto'
 }
 
-export const isSurveyOpen = (appSettings = {}, userId = null) => {
+export const isSurveyOpen = (appSettings = {}, _userId = null) => {
   const mode = getSurveyWindowStatus(appSettings)
   if (mode === 'open') return true
   if (mode === 'closed') return false
@@ -148,7 +148,7 @@ export const isCountInput = (appSettings, dayName, meal, idx) => {
       const types = parsed[key]
       if (types && types[idx]) return types[idx] === 'count'
     }
-  } catch { }
+  } catch { /* invalid dish_input_config JSON — treat as non-count */ }
   return false
 }
 

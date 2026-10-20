@@ -155,7 +155,7 @@ export function buildMealDishMap(flatRow, day, mealName, menuList, isRotiFn) {
 
 // Load the member's MOST RECENT week (latest week_id with any saved day).
 export async function fetchLatestUserSurveyRow(userId) {
-  const { data: weeks, error: weeksErr } = await supabase
+  const { data: weeks } = await supabase
     .from('survey_day_responses')
     .select('week_id')
     .eq('user_id', userId)

@@ -31,7 +31,6 @@ export default function SurveysPage() {
   
   // URL Param handling
   const urlUserId = searchParams.get('userId')
-  const [focusedUserId, setFocusedUserId] = useState(urlUserId)
   
   const [dayFilter, setDayFilter] = useState(() => {
     const d = new Date().getDay()
@@ -164,7 +163,7 @@ export default function SurveysPage() {
             dinner: parseDishArray(r.dinner),
           }
         })
-      } catch {}
+      } catch { /* menu fetch failed — fall back to the cached weeklyMenu below */ }
       const dayMenu = freshMenu[dayFilter.toLowerCase()] || weeklyMenu[dayFilter.toLowerCase()] || weeklyMenu[dayFilter] || {}
       const buildCur = buildAllDishes(row, dayFilter, mealFilter, dayMenu[mealFilter] || [])
       const buildLunch = buildAllDishes(row, dayFilter, 'lunch', dayMenu.lunch || [])
@@ -227,7 +226,7 @@ export default function SurveysPage() {
         }
       };
 
-      scanner.render(handleScan, (error) => {});
+      scanner.render(handleScan, () => { /* onDecodeError intentionally ignored */ });
       return () => {
         scanner.clear().catch(e => console.error("Scanner cleanup failed", e));
       };
@@ -250,7 +249,7 @@ export default function SurveysPage() {
           const oldWeeks = [...new Set(oldRows.map(r => r.week_id))].filter(Boolean)
           for (const ow of oldWeeks) {
             await supabase.from('survey_day_responses').delete().eq('week_id', ow)
-            try { await supabase.from('survey_submissions_flat').delete().eq('week_id', ow) } catch {}
+            try { await supabase.from('survey_submissions_flat').delete().eq('week_id', ow) } catch { /* legacy table may not exist — ignore */ }
           }
         }
       } catch (e) { console.warn('Cleanup error:', e) }
@@ -260,7 +259,7 @@ export default function SurveysPage() {
       const settingsMap = {}
       ;(allSettings || []).forEach(r => { if (r && r.key) settingsMap[r.key] = r.value })
       if (settingsMap.dish_input_config) {
-        try { setDishInputConfig(JSON.parse(settingsMap.dish_input_config)) } catch {}
+        try { setDishInputConfig(JSON.parse(settingsMap.dish_input_config)) } catch { /* malformed stored config — keep the previous value */ }
       }
       setAppSettings(prev => JSON.stringify(prev) === JSON.stringify(settingsMap) ? prev : settingsMap)
 
@@ -425,7 +424,6 @@ export default function SurveysPage() {
   // Rebuild chart whenever the filtered data or weekFilter changes
   useEffect(() => {
     buildChart(responses, weekFilter === 'all' ? null : weekFilter)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekFilter, responses])
 
   const summary = useMemo(() => {
@@ -447,7 +445,7 @@ export default function SurveysPage() {
           if (Array.isArray(arr) && arr[idx] !== undefined) {
             return arr[idx] === 'count' ? 'count' : 'pct'
           }
-        } catch {}
+        } catch { /* malformed dishInputConfig — use the value-shape fallback below */ }
       }
       // Value-shape fallback: '%'-suffixed → pct, yes/no → roti, plain number → count
       return 'unknown'

@@ -21,13 +21,13 @@ const CHART_COLORS = ['var(--accent-gold)', 'var(--accent-cyan)', 'var(--accent-
 
 export default function Dashboard() {
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
+  const [, setRefreshing] = useState(false)
   const [stats, setStats] = useState({
     users: 0, surveys: 0, feedback: 0, requests: 0, queries: 0, todayThalis: 0, lowStock: 0
   })
   const [helpline, setHelpline] = useState('')
   const [missingSurveys, setMissingSurveys] = useState([])
-  const [feedbackByDay, setFeedbackByDay] = useState([])
+  const [, setFeedbackByDay] = useState([])
   const [inventoryTrend, setInventoryTrend] = useState([
     { name: '1', count: 40 }, { name: '2', count: 30 }, { name: '3', count: 55 }, { name: '4', count: 35 }, { name: '5', count: 70 }, { name: '6', count: 45 }, { name: '7', count: 50 },
   ])

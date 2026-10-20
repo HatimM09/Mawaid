@@ -69,7 +69,7 @@ export default function SurveyAccuracyPage() {
   const [loadError, setLoadError] = useState(null)
 
   const [surveyOpenHour, setSurveyOpenHour] = useState(20)
-  const [surveyForceOpen, setSurveyForceOpen] = useState(false)
+  const [, setSurveyForceOpen] = useState(false)
   const [selectedWeek, setSelectedWeek] = useState('') // '' = follow current survey week
   const [availableWeeks, setAvailableWeeks] = useState([])
   const [includeStaff, setIncludeStaff] = useState(false)

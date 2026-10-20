@@ -58,7 +58,6 @@ export default function RequestsAdminPage() {
   const updateStatus = async (id, status) => {
     const reqObj = requests.find(r => r.id === id)
     const userId = reqObj?.user_id
-    const userName = users[userId]?.name || 'User'
     const userThali = users[userId]?.thali_number
 
     // 1-time-only guard: if this request already has the target status, do nothing
@@ -66,7 +65,7 @@ export default function RequestsAdminPage() {
     try {
       const { data: latest } = await supabase.from('thali_requests').select('status').eq('id', id).maybeSingle()
       if (latest && (latest.status || 'pending') === status) return
-    } catch {}
+    } catch { /* duplicate guard is best-effort; ignore lookup failures */ }
 
     if (status === 'approved' && reqObj) {
       try {
@@ -96,7 +95,7 @@ export default function RequestsAdminPage() {
             .maybeSingle()
 
           if (lastStopReq && lastStopReq.details) {
-            const thaliMatch = lastStopReq.details.match(/Thali:\s*#?([A-Za-z0-9\/_-]+)/)
+            const thaliMatch = lastStopReq.details.match(/Thali:\s*#?([A-Za-z0-9/_-]+)/)
             if (thaliMatch) {
               const oldThali = thaliMatch[1].trim()
               await supabase.from('user_stats').update({ thali_number: oldThali }).eq('user_id', reqObj.user_id)

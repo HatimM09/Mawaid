@@ -1,9 +1,9 @@
 // src/admin/InventoryManagerPortal.jsx
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { 
-  Home, Package, LogOut, TrendingUp, AlertTriangle, 
-  ArrowUpRight, ArrowDownRight, History, Search, RefreshCw, 
-  Plus, X, Clock, ShieldCheck, ChevronRight, Menu
+  Home, Package, LogOut, 
+  ArrowUpRight, ArrowDownRight, History, 
+  Plus, X, Menu
 } from 'lucide-react'
 import { supabase } from '../lib/firebaseClient'
 import { T as SharedT, updateSystemTheme } from './ui'
@@ -46,7 +46,7 @@ const Spinner = ({ fullPage = true }) => (
   )
 )
 
-const PortalCard = ({ title, value, icon, color = 'var(--accent-primary)', sub, organic }) => (
+const PortalCard = ({ title, value, icon, color = 'var(--accent-primary)', sub }) => (
   <div style={{ 
     background: 'var(--bg-card)',
     border: `1px solid ${color}30`,
@@ -261,7 +261,7 @@ export default function InventoryManagerPortal({ signOut, user }) {
             { id: 'dashboard', icon: Home, label: 'Dashboard' },
             { id: 'inventory', icon: Package, label: 'Inventory' },
             { id: 'logs', icon: History, label: 'Activity Logs' },
-          ].map(({ id, icon: Icon, label }) => (
+          ].map(({ id, icon: Icon, label }) => ( // eslint-disable-line no-unused-vars -- Icon is rendered as <Icon /> in the sidebar item below
             <div 
               key={id} 
               onClick={() => { setActiveTab(id); setIsSidebarOpen(false); }} 
@@ -297,7 +297,7 @@ export default function InventoryManagerPortal({ signOut, user }) {
             { id: 'dashboard', icon: Home, label: 'Home' },
             { id: 'inventory', icon: Package, label: 'Stock' },
             { id: 'logs', icon: History, label: 'Logs' },
-          ].map(({ id, icon: Icon, label }) => {
+          ].map(({ id, icon: Icon }) => { // eslint-disable-line no-unused-vars -- Icon is rendered as <Icon /> in the nav button below
             const active = activeTab === id
             return (
               <button key={id} onClick={() => setActiveTab(id)} style={{ 

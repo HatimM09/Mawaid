@@ -2,8 +2,19 @@ node_modules
 dist
 .env
 .env.local
+.env.production
+.env.development
+.env.*.local
 .DS_Store
 *.log
+
+# Secrets & credentials — never commit
+*.p8
+*.p12
+*.jks
+*.keystore
+service-account*.json
+*-service-account.json
 
 .vercel
 .netlify

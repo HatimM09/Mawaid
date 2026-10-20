@@ -6,7 +6,7 @@ import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { DAYS, getSurveyTargetWeek, formatWeekRange, parseDishArray } from '../common/utils'
 import { DEFAULT_MENU } from '../common/constants'
 import {
-  isRotiItem, isCountInput, canEditMeal, isSurveyOpen,
+  isRotiItem, isCountInput, isSurveyOpen,
   normalizeDishValue, denormalizeDishValue, getPctColor,
   mergeDishSnapshot, getSlotDishes,
 } from '../hooks/useSurvey'
@@ -69,14 +69,6 @@ const SURVEY_STYLES = `
 `
 
 const createEmptyDay = () => ({ lunchWantsFood: null, lunchResponses: {}, dinnerWantsFood: null, dinnerResponses: {} })
-const createInitialWeekDataForWeeks = (weekIds) => {
-  const out = {}
-  weekIds.forEach(wid => {
-    out[wid] = {}
-    DAYS.forEach(d => { out[wid][d.substring(0,3).toLowerCase()] = createEmptyDay() })
-  })
-  return out
-}
 
 // ────────────────────────────────────────────────────────────────────
 // DishRow — defined OUTSIDE the main component so it is stable across renders
@@ -254,7 +246,7 @@ function DishRow({ dish, idx, mealType, value, onChange, T, appSettings, current
 // Main SurveyModal — streamlined for 1-week (12 meals: Mon-Sat Lunch & Dinner)
 // ────────────────────────────────────────────────────────────────────
 
-export default function SurveyModal({ onClose, appSettings = {}, initialDay, initialMeal, initialWeekId }) {
+export default function SurveyModal({ onClose, appSettings = {}, initialDay, initialWeekId }) {
   const { user } = useAuth()
   // Bright survey sheet — intentionally independent of the app theme.
   const T = useMemo(() => buildTheme(), [])
@@ -328,9 +320,6 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
   }, [activeMenu, existingRow, currentDay, dayKey])
 
   const surveyOpen = isSurveyOpen(liveAppSettings, user?.id)
-  const lunchEditable = canEditMeal(currentDay, targetWeekId, 'lunch', liveAppSettings)
-  const dinnerEditable = canEditMeal(currentDay, targetWeekId, 'dinner', liveAppSettings)
-  const dayEditable = surveyOpen || lunchEditable || dinnerEditable
 
   // Validation — a dish counts as answered ONLY when the user tapped it.
   // Nothing is ever pre-filled: missing values stay unanswered (null).
@@ -484,7 +473,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
   }, [dataLoaded, surveySubmitted, existingRow, initialDay])
 
   const handleStartSurvey = () => {
-    try { localStorage.setItem('almawaid_survey_intro_seen', '1') } catch {}
+    try { localStorage.setItem('almawaid_survey_intro_seen', '1') } catch { /* intro flag is best-effort */ }
     setShowIntro(false)
     if (activeUserId && targetWeekId) beginSurvey(activeUserId, [targetWeekId])
     setCurrentDayIndex(0)
@@ -596,7 +585,7 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
 
   const handleClose = useCallback(async () => {
     if (dirtyRef.current.size > 0 && !surveySubmitted) {
-      try { await saveAllSlots(false) } catch {}
+      try { await saveAllSlots(false) } catch { /* best-effort save on close */ }
     }
     onClose()
   }, [onClose, surveySubmitted, saveAllSlots])

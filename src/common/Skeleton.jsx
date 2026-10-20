@@ -1,12 +1,5 @@
 import React from 'react'
 
-const useThemeSkeleton = () => {
-  const t = typeof useTheme !== 'undefined'
-    ? { textSub: 'var(--text-tertiary)', border: 'var(--border-light)', accent: 'var(--accent-primary)', bg: 'var(--bg-deep)', card: 'var(--bg-surface)' }
-    : { textSub: 'rgba(255,255,255,0.72)', border: 'rgba(255,255,255,0.1)', accent: '#D4AF37', bg: '#0a0d14', card: 'rgba(255,255,255,0.04)' }
-  return t
-}
-
 const bar = {
   background: 'var(--border-light)',
   animation: 'skeletonPulse 1.5s ease-in-out infinite',
@@ -150,7 +143,7 @@ export const ListPageSkeleton = ({ title = '', count = 5 }) => (
   </main>
 )
 
-export const RequestsSkeleton = ({ title = 'My Requests' }) => (
+export const RequestsSkeleton = ({ title: _title = 'My Requests' }) => (
   <main style={{ flex: 1, padding: '16px 16px 160px', maxWidth: 600, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
       <Skl w={36} h={36} r={10} />

@@ -76,13 +76,13 @@ export async function submitSurveyRow(payload) {
     try {
       const { data: authData } = await supabase.auth.getUser()
       userId = authData?.user?.id
-    } catch {}
+    } catch { /* fall through to session lookup */ }
   }
   if (!userId) {
     try {
       const { data: sessData } = await supabase.auth.getSession()
       userId = sessData?.session?.user?.id
-    } catch {}
+    } catch { /* fall through to email/thali lookup below */ }
   }
 
   let thaliNo = payload.thali_number || payload.thaliNumber
@@ -100,7 +100,7 @@ export async function submitSurveyRow(payload) {
         if (!thaliNo && u.thali_number) thaliNo = u.thali_number
         if (!userEmail && u.email) userEmail = u.email
       }
-    } catch {}
+    } catch { /* identity lookup failed — handled below */ }
   }
 
   if (!userId) {
@@ -109,7 +109,7 @@ export async function submitSurveyRow(payload) {
 
   let weekId = payload.week_id || payload.weekId
   if (!weekId) {
-    try { weekId = getSurveyTargetWeek() } catch {}
+    try { weekId = getSurveyTargetWeek() } catch { /* week left null — caller resolves */ }
   }
   if (weekId) {
     weekId = String(weekId).trim().split('T')[0]
@@ -122,7 +122,7 @@ export async function submitSurveyRow(payload) {
         if (!thaliNo && u.thali_number) thaliNo = u.thali_number
         if (!userEmail && u.email) userEmail = u.email
       }
-    } catch {}
+    } catch { /* profile enrichment failed — continue with what we have */ }
   }
 
   const cleanThali = thaliNo ? String(thaliNo).replace(/^#/, '').trim() : null
@@ -270,4 +270,3 @@ export async function submitSurveyRows(payloads) {
 
 export const submitSurvey = submitSurveyRow
 export default submitSurveyRow
-

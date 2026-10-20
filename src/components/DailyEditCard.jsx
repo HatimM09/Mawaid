@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Sun, Moon, Check, X, Clock, Sparkles, Plus, Minus, RefreshCw } from 'lucide-react'
 import { useTheme, useAuth } from '../admin/context'
-import { getCalendarWeekDate, getOwningWeekId, getSurveyTargetWeek, dayBelongsToCalendarWeek, parseDishArray, addWeeks } from '../common/utils'
+import { getCalendarWeekDate, getOwningWeekId, getSurveyTargetWeek, parseDishArray, addWeeks } from '../common/utils'
 import { submitSurveyRow } from '../lib/submitSurvey'
 import {
   isRotiItem,

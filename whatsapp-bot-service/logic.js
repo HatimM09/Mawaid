@@ -236,7 +236,7 @@ export function parseDateInput(raw, now) {
     if (dt.getUTCMonth() + 1 !== Number(mo)) return null
     return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`
   }
-  const m2 = v.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/)
+  const m2 = v.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/)
   if (m2) {
     const [, d, mo, y] = m2
     const dt = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)))

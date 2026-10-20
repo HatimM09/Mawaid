@@ -7,7 +7,6 @@ import { getDishSnapshot } from '../../hooks/useSurvey'
 import { WeeklyMenuSkeleton } from '../../common/Skeleton'
 import { DAYS, getTodayKey } from '../constants'
 import { fetchUserSurveyRow } from '../../lib/surveyRows'
-import { supabase } from '../../lib/firebaseClient'
 
 const formatWeekSpan = (weekStart) => {
   try {
@@ -20,7 +19,7 @@ const formatWeekSpan = (weekStart) => {
   }
 }
 
-export default function WeeklyMenuPage({ appSettings = {} }) {
+export default function WeeklyMenuPage() {
   const t = useTheme()
   const calendarWeekId = getCalendarWeekDate()
   const nextWeekId = addWeeks(calendarWeekId, 1)

@@ -94,7 +94,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   // Manager State
   const [managerSearch, setManagerSearch] = useState('')
   const [managerFilter, setManagerFilter] = useState('all') // 'all' | 'unpaid' | 'paid' | 'forfeit' | 'submitted'
-  const [hideForfeited, setHideForfeited] = useState(false)
+  const [hideForfeited] = useState(false)
   const [selectedUserToPay, setSelectedUserToPay] = useState(null)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [bulkNotifying, setBulkNotifying] = useState(false)
@@ -812,7 +812,6 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       setNotifyTitle(`Payment Reminder - ${paymentTitle}`)
       setNotifyBody(`Dear ${targetUser.name || 'Member'}, your thali contribution of ₹${defaultDue} is pending. Please open your Al-Mawaid app and pay via your UPI app.`)
     } else {
-      const activeUnpaidCount = allUsers.filter(u => !u.payment_exempt && allPayments.filter(p => p.user_id === u.user_id).length === 0).length
       setNotifyTitle(`Thali Contribution Reminder`)
       setNotifyBody(`Dear Member, your monthly thali contribution of ₹${defaultDue} is due. Please pay via your UPI app on your portal. Thank you for your support.`)
     }

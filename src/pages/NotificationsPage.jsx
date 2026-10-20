@@ -52,7 +52,7 @@ export default function NotificationsPage() {
 
   // Selection
   const [selectedIds, setSelectedIds] = useState(new Set())
-  const [selectAll, setSelectAll] = useState(false)
+  const [, setSelectAll] = useState(false)
 
   // Detail modal
   const [detailItem, setDetailItem] = useState(null)
@@ -203,16 +203,6 @@ export default function NotificationsPage() {
       else next.add(id)
       return next
     })
-  }
-
-  const toggleSelectAll = () => {
-    if (selectAll) {
-      setSelectedIds(new Set())
-      setSelectAll(false)
-    } else {
-      setSelectedIds(new Set(filteredNotifications.map(n => n.id)))
-      setSelectAll(true)
-    }
   }
 
   // Filter notifications

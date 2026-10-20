@@ -86,9 +86,7 @@ export const sendPush = onRequest({
       title,
       body: notificationBody, // Renamed to avoid conflict with body param
       url,
-      type,
       target_type,
-      scheduled_for,
       sender_name,
       image_url,
       channels,
@@ -160,7 +158,7 @@ export const sendPush = onRequest({
                 .delete()
                 .eq('user_id', webPushSubs[i].user_id)
                 .eq('token_type', 'webpush')
-            } catch (_) { /* ignore cleanup errors */ }
+            } catch { /* ignore cleanup errors */ }
           }
         }
       }
@@ -229,7 +227,7 @@ export const sendPush = onRequest({
                     .delete()
                     .eq('fcm_token', batch[j])
                     .eq('token_type', 'fcm')
-                } catch (_) { /* ignore cleanup errors */ }
+                } catch { /* ignore cleanup errors */ }
               }
             }
           }

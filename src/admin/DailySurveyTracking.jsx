@@ -153,7 +153,7 @@ export default function DailySurveyTracking() {
         try {
           const { data: single } = await fetchUserSurveyRow(targetUserId, activeWeekId)
           if (single) row = single
-        } catch {}
+        } catch { /* fallback row lookup is best-effort */ }
       }
 
       const resolvedWeekId = activeWeekId
@@ -206,7 +206,7 @@ export default function DailySurveyTracking() {
             dinner: parseDishArray(r.dinner),
           }
         })
-      } catch {}
+      } catch { /* menu fetch is best-effort; scan falls back to cached menus */ }
       const dayNameLower = day.toLowerCase()
       const dayMenu = freshMenu[dayNameLower] || (weeklyMenu.__byWeek?.[resolvedWeekId]?.[dayNameLower]) || displayMenu[dayNameLower] || weeklyMenu[dayNameLower] || weeklyMenu[day] || {}
 
@@ -342,7 +342,7 @@ export default function DailySurveyTracking() {
       ;(allSettings || []).forEach(r => { if (r && r.key) settingsMap[r.key] = r.value })
 
       if (settingsMap.dish_input_config) {
-        try { setDishInputConfig(JSON.parse(settingsMap.dish_input_config)) } catch {}
+        try { setDishInputConfig(JSON.parse(settingsMap.dish_input_config)) } catch { /* ignore malformed dish input config */ }
       }
 
       setAppSettings(prev => JSON.stringify(prev) === JSON.stringify(settingsMap) ? prev : settingsMap)
@@ -446,7 +446,7 @@ export default function DailySurveyTracking() {
             }
           })
         }
-      } catch {}
+      } catch { /* menu load is best-effort; fall back to cached menus */ }
 
       const activeDisplayMenu = weekMenusMap[effectiveWeek] || (weeklyMenu.__byWeek?.[effectiveWeek]) || weeklyMenu || {}
       setDisplayMenu(activeDisplayMenu)
@@ -577,7 +577,7 @@ export default function DailySurveyTracking() {
         }
       };
 
-      scanner.render((text) => handleScan(text).catch(e => console.error('Scan handler error:', e)), (error) => {});
+      scanner.render((text) => handleScan(text).catch(e => console.error('Scan handler error:', e)), () => {});
       return () => {
         scanner.clear().catch(e => console.error("Scanner cleanup failed", e));
       };

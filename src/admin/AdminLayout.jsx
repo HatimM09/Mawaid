@@ -1,9 +1,9 @@
 // src/admin/AdminLayout.jsx
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, ClipboardList, Star, FileText,
-  MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight, Search, Bell, History, Package, Send, Zap, FileWarning, Target
+  MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight, Search, History, Package, Send, Zap, Target
 } from 'lucide-react'
 import { updateSystemTheme } from './ui'
 import OfflineBanner from '../components/OfflineBanner'
@@ -27,10 +27,10 @@ const NAV = [
 ]
 
 export default function AdminLayout() {
-  const [adminName, setAdminName] = useState('Admin')
+  const [, setAdminName] = useState('Admin')
   const [role, setRole] = useState(localStorage.getItem('al_mawaid_portal') || 'khidmat')
   const seenNoticeIds = useRef(new Set(JSON.parse(localStorage.getItem('almawaid_seen_notices') || '[]')))
-  const [connStatus, setConnStatus] = useState('connecting')
+  const [, setConnStatus] = useState('connecting')
   const [navCounts, setNavCounts] = useState({})
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem('almawaid_sidebar_collapsed') !== 'expanded' } catch { return true }
@@ -80,7 +80,7 @@ export default function AdminLayout() {
     if (isMobile()) { setMobileDrawer(v => !v); return }
     setCollapsed(v => {
       const next = !v
-      try { localStorage.setItem('almawaid_sidebar_collapsed', next ? 'collapsed' : 'expanded') } catch {}
+      try { localStorage.setItem('almawaid_sidebar_collapsed', next ? 'collapsed' : 'expanded') } catch { /* storage may be unavailable */ }
       return next
     })
   }
@@ -160,7 +160,7 @@ export default function AdminLayout() {
         if (!notice || !notice.id) return
         if (seenNoticeIds.current.has(notice.id)) return
         seenNoticeIds.current.add(notice.id)
-        try { localStorage.setItem('almawaid_seen_notices', JSON.stringify([...seenNoticeIds.current].slice(-200))) } catch {}
+        try { localStorage.setItem('almawaid_seen_notices', JSON.stringify([...seenNoticeIds.current].slice(-200))) } catch { /* storage may be unavailable */ }
 
         // Suppress routine menu publications from notifying repeatedly in admin dashboard
         if (notice.type === 'menu') return
@@ -178,7 +178,7 @@ export default function AdminLayout() {
         if ('Notification' in window && Notification.permission === 'granted') {
           try {
             new Notification(notice.title || 'Broadcast Sent', { body: notice.body || notice.message || '', icon: '/al-mawaid.png' })
-          } catch {}
+          } catch { /* Notification constructor can throw — ignore */ }
         }
       })
       .subscribe((status) => {
@@ -401,7 +401,7 @@ export default function AdminLayout() {
               </div>
             </div>
             <div className="sidebar-nav-list">
-              {visibleNav.map(({ to, label, Icon, end }) => (
+              {visibleNav.map(({ to, label, Icon, end }) => ( // eslint-disable-line no-unused-vars -- Icon is rendered as <Icon /> in the NavLink below
                 <NavLink key={to} to={to} end={end} title={label} className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`} onClick={() => isMobile() && closeDrawer()} onKeyDown={e => { if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'Space') { e.preventDefault(); navigate(to) } }}>
                   <Icon size={20} />
                   <span className="sidebar-nav-label">{label}</span>

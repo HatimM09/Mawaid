@@ -1,7 +1,7 @@
 import { precacheAndRoute } from 'workbox-precaching'
 import { clientsClaim } from 'workbox-core'
 import { registerRoute } from 'workbox-routing'
-import { NetworkFirst, CacheFirst } from 'workbox-strategies'
+import { CacheFirst } from 'workbox-strategies'
 import { ExpirationPlugin } from 'workbox-expiration'
 
 self.skipWaiting()
@@ -15,7 +15,7 @@ self.addEventListener('message', (event) => {
     return
   }
   if (event.ports?.length) {
-    try { event.ports[0].postMessage({ type: 'ACK' }) } catch {}
+    try { event.ports[0].postMessage({ type: 'ACK' }) } catch { /* port may already be closed */ }
   }
 })
 

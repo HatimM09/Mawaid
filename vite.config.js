@@ -1,10 +1,20 @@
 /// <reference types="vitest/config" />
+import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   base: '/',
+  resolve: {
+    alias: {
+      // jsPDF pulls html2canvas (~200 kB) in via a dynamic import that only its
+      // `html()` renderer uses. No PDF in this app calls `html()` — they all use
+      // the text/table API — so alias it to a stub that throws if ever reached.
+      // Keeps ~200 kB out of the bundle and the PWA precache manifest.
+      html2canvas: fileURLToPath(new URL('./scripts/html2canvas-stub.mjs', import.meta.url)),
+    },
+  },
   plugins: [
     react(),
     VitePWA({

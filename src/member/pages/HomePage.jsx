@@ -14,7 +14,7 @@ import { isSurveyOpen, canEditMeal, getEditWindow } from '../survey'
 import { Card, Btn, Avatar } from '../ui'
 import { fetchUserSurveyRow } from '../../lib/surveyRows'
 
-export default function HomePage({ appSettings = {}, onGoToSurvey, onGoToPayments }) {
+export default function HomePage({ appSettings = {}, onGoToPayments }) {
   const t = useTheme()
   const { user } = useAuth()
 

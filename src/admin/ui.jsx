@@ -505,20 +505,7 @@ export const fmtDateTime = (d) => {
     dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
-const pctColor = (val, isRoti, rotiVal) => {
-  if (isRoti) {
-    return rotiVal === 'yes'
-      ? { fill: '#10b981', border: '#10b981', bg: 'rgba(16,185,129,0.15)', badge: '#10b981', shadow: 'rgba(16,185,129,0.25)', text: '#fff', tagBg: 'rgba(16,185,129,0.2)', tagBorder: 'rgba(16,185,129,0.3)', tagColor: '#10b981' }
-      : { fill: '#f43f5e', border: '#f43f5e', bg: 'rgba(244,63,94,0.15)', badge: '#f43f5e', shadow: 'rgba(244,63,94,0.25)', text: '#fff', tagBg: 'rgba(244,63,94,0.2)', tagBorder: 'rgba(244,63,94,0.3)', tagColor: '#f43f5e' }
-  }
-  const n = parseInt(val) || 0
-  if (n === 0) return { fill: '#6b7280', border: '#6b7280', bg: 'rgba(107,114,128,0.08)', badge: '#6b7280', shadow: 'rgba(107,114,128,0.08)', text: 'rgba(255,255,255,0.4)', tagBg: 'rgba(107,114,128,0.12)', tagBorder: 'rgba(107,114,128,0.2)', tagColor: '#9ca3af' }
-  if (n <= 25) return { fill: '#f59e0b', border: '#f59e0b', bg: 'rgba(245,158,11,0.12)', badge: '#f59e0b', shadow: 'rgba(245,158,11,0.2)', text: '#fff', tagBg: 'rgba(245,158,11,0.2)', tagBorder: 'rgba(245,158,11,0.3)', tagColor: '#fbbf24' }
-  if (n <= 50) return { fill: '#d4af37', border: '#d4af37', bg: 'rgba(212,175,55,0.12)', badge: '#d4af37', shadow: 'rgba(212,175,55,0.25)', text: '#fff', tagBg: 'var(--border-light)', tagBorder: 'var(--accent-border)', tagColor: '#fcd34d' }
-  return { fill: '#10b981', border: '#10b981', bg: 'rgba(16,185,129,0.12)', badge: '#10b981', shadow: 'rgba(16,185,129,0.25)', text: '#fff', tagBg: 'rgba(16,185,129,0.2)', tagBorder: 'rgba(16,185,129,0.3)', tagColor: '#34d399' }
-}
-
-export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverride, dishInputConfig, onMealToggle, onResetAuto }) => {
+export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverride, dishInputConfig, onMealToggle }) => {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isErasing, setIsErasing] = useState(false)
 
@@ -573,7 +560,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
       targetDate.setDate(mon.getDate() + dayIdx)
       const dateStr = targetDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
       dayFormatted = `${String(activeDay).toUpperCase()} · ${dateStr.toUpperCase()}`
-    } catch {}
+    } catch { /* invalid week_id date — keep the plain uppercase day label */ }
   }
 
   const mealData = displayMeal === 'lunch' ? user.lunch : user.dinner
@@ -624,7 +611,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
       // or config index has drifted since the response was saved.
       try {
         if (typeof value === 'string' && value.trim().endsWith('%')) return false
-      } catch {}
+      } catch { /* value not safely readable — continue with the checks below */ }
       if (typeof value === 'object' && value !== null && value?.status) return true
       const dt = (mealData && mealData.dishTypes) || user.dishTypes || null
       if (dt && dish && dt[dish] !== undefined) {
@@ -646,7 +633,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
           if (cfg[slotKey] === 'count' || cfg[dishKey] === 'count' || cfg[dish] === 'count') return true
           if (cfg[slotKey] === 'percentage' || cfg[dishKey] === 'percentage' || cfg[dish] === 'percentage') return false
         }
-      } catch {}
+      } catch { /* malformed dishInputConfig entry — fall through to the legacy defaults */ }
       if ((typeof value === 'object' && value !== null && value?.status) || (typeof value === 'string' && /person|ppl/i.test(value))) return true
       // Legacy default mirrors the tracker: lunch slots 0-3 are counts unless configured
       if (displayMeal === 'lunch' && typeof idx === 'number' && idx <= 3) return true
@@ -1076,8 +1063,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
           }}>
             {dishEntries.map(([dish, value], idx) => {
               const style = getResponseStyle(dish, value, idx)
-              const isActive = value !== null && value !== undefined
-              
+
               return (
                 <div key={dish} style={{
                   display: 'flex',
@@ -1213,7 +1199,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
   )
 }
 
-export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => {
+export const SurveyResponseDisplay = ({ user, onClose, onPrint }) => {
   const responses = user.dishResponses || {}
   const dishEntries = Object.entries(responses).filter(([k]) => k !== '_status')
   const total = dishEntries.length
@@ -1244,8 +1230,7 @@ export const SurveyResponseDisplay = ({ user, meal, day, onClose, onPrint }) => 
           const val = pct !== null ? (parseInt(pct) || 0) : null
           const isActive = pct !== null && (pct === 'yes' || (isCount && val > 0) || (!isRoti && !isCount && val > 0))
           const fillHeight = pct === null ? '0%' : isRoti ? (pct === 'yes' ? '100%' : '0%') : (isCount ? (val > 0 ? '100%' : '0%') : `${val}%`)
-          const color = isActive ? 'var(--accent-primary)' : 'rgba(239, 68, 68, 0.25)'
-          
+
           return (
             <div key={dish} style={{ 
               display: 'flex',

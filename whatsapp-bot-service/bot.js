@@ -16,8 +16,8 @@ import dotenv from 'dotenv'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import {
-  DAYS, DAY_KEYS, STAR_LABELS,
-  toLocalDateStr, weekdayName, calendarWeekMonday,
+  DAY_KEYS, STAR_LABELS,
+  weekdayName, calendarWeekMonday,
   parseDishArray, menuForDay, resolveServingWeekId,
   normalizePhone,
 } from './logic.js'
@@ -303,7 +303,7 @@ async function handleMessage(waPhone, rawText) {
             url: '/admin/feedback',
           }
         })
-      } catch (e) {
+      } catch {
         // notification error should not block chat
       }
 
@@ -343,7 +343,7 @@ async function handleMessage(waPhone, rawText) {
             url: '/admin/queries'
           }
         })
-      } catch (e) {
+      } catch {
         // notification failure should not block chat
       }
 
@@ -482,7 +482,7 @@ async function handleMessage(waPhone, rawText) {
         url: '/admin/queries'
       }
     })
-  } catch (e) {
+  } catch {
     // ignore notification error
   }
 

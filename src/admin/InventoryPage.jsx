@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../lib/firebaseClient'
 import { 
-  Outlet, useLocation, useOutletContext 
+  Outlet, useOutletContext 
 } from 'react-router-dom'
 import {
   Package, Plus, ArrowUpRight, ArrowDownRight,
@@ -99,7 +99,7 @@ export default function InventoryPage({ role: roleProp, initialTab = 'stock' }) 
   const role = roleProp || context?.role || 'khidmat'
   const canManageItems = role === 'admin' || role === 'inventory_manager' || role === 'Inventory'
   const canEditStock = role === 'admin' || role === 'inventory_manager' || role === 'Inventory'
-  const [loading, setLoading] = useState(true)
+  const [, setLoading] = useState(true)
   const [products, setProducts] = useState([])
   const [auditLog, setAuditLog] = useState([])
   const [activeTab, setActiveTab] = useState(initialTab || 'stock')

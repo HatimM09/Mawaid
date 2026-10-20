@@ -100,7 +100,7 @@ export async function rpcUpdateUser(payload) {
     })
     const result = await res.json()
     if (!result.error) return { data: result.data, error: null }
-  } catch (_) {}
+  } catch { /* edge-function update failed — fall back to self-update below */ }
 
   // Fallback: self-update only
   try {
@@ -115,7 +115,7 @@ export async function rpcUpdateUser(payload) {
       if (!passErr) updates.password = true
     }
     return { data: { ...updates, note: 'Auth changes applied to current user only' }, error: null }
-  } catch (e) {
+  } catch {
     return { data: { updated: true, note: 'Auth changes skipped. User stats updated.' }, error: null }
   }
 }

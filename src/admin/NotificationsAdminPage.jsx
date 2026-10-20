@@ -546,7 +546,7 @@ export default function NotificationsAdminPage() {
     const fileName = `broadcast_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`
 
     try {
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from('broadcast-media')
         .upload(fileName, file, {
           cacheControl: '3600',
@@ -639,57 +639,6 @@ export default function NotificationsAdminPage() {
   const deleteScheduleEntry = async (id) => {
     if (!window.confirm('Delete this schedule entry?')) return
     await supabase.from('broadcast_schedule').delete().eq('id', id)
-    fetchAll()
-  }
-
-  // ── Resend ───────────────────────────────────────────────────
-  const resendBroadcast = async (entry) => {
-    const { error } = await supabase.from('broadcast_schedule')
-      .update({ status: 'sending', failed_count: 0 })
-      .eq('id', entry.id)
-    if (error) return
-
-    let sentCount = 0
-    let failedCount = 0
-
-    await insertInAppNotifications(
-      entry.target_type,
-      entry.target_user_id,
-      entry.title,
-      entry.body,
-      '/profile/notifications',
-      entry.sender_name
-    )
-
-    if (entry.channel === 'push') {
-      try {
-        const { data: pushResult, error: pushError } = await supabase.functions.invoke('send-push', {
-          body: {
-            title: entry.title,
-            body: entry.body,
-            user_id: entry.target_type === 'specific' ? entry.target_user_id : null,
-            target_type: entry.target_type === 'all' ? null : entry.target_type,
-            url: '/profile/notifications',
-            image_url: entry.media_url || undefined,
-            sender_name: entry.sender_name || 'Admin',
-            big_picture_url: entry.media_url || undefined,
-            style: 'bigpicture',
-          }
-        })
-        if (pushError) throw pushError
-        sentCount = pushResult?.sent || 0
-        failedCount = pushResult?.failed || 0
-      } catch (err) {
-        console.error('Push trigger error:', err)
-        failedCount = entry.total_targets || 1
-      }
-    } else {
-      sentCount = entry.total_targets || 1
-    }
-
-    await supabase.from('broadcast_schedule')
-      .update({ status: failedCount > 0 && sentCount === 0 ? 'failed' : 'sent', sent_at: new Date().toISOString(), sent_count: sentCount, failed_count: failedCount })
-      .eq('id', entry.id)
     fetchAll()
   }
 
@@ -1768,7 +1717,6 @@ export default function NotificationsAdminPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {recentBroadcasts.map(notice => {
                     const status = getNoticeStatus(notice)
-                    const entry = schedule.find(s => s.notice_id === notice.id)
                     return (
                       <div
                         key={notice.id}

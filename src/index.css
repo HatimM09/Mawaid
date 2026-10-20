@@ -23,11 +23,6 @@
 
   /* Shadow & Glowing Effects */
   --blur-md: blur(12px);
-  --blur-lg: blur(24px);
-  --shadow-neon: 0 0 25px rgba(0, 229, 255, 0.4);
-  --shadow-card: 0 10px 40px rgba(0, 0, 0, 0.08);
-  --glow-cyan: 0 0 15px rgba(0, 229, 255, 0.5);
-  --glow-purple: 0 0 15px rgba(157, 80, 187, 0.5);
 }
 
 *,
@@ -51,10 +46,6 @@ body,
   overflow-x: hidden;
   overflow-y: auto;
   scroll-behavior: smooth;
-}
-
-body.sidebar-open {
-  overflow: hidden;
 }
 
 body {
@@ -85,24 +76,6 @@ body {
   -webkit-backdrop-filter: var(--blur-md);
   border: 1px solid var(--border-glass);
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-}
-
-.glass-dark {
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: var(--blur-lg);
-  -webkit-backdrop-filter: var(--blur-lg);
-  border: 1px solid var(--border-glass);
-}
-
-.neon-glow {
-  box-shadow: var(--shadow-neon);
-}
-
-.text-gradient {
-  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 
 /* Custom Scrollbar */
@@ -143,19 +116,6 @@ body {
   0% { opacity: 0.5; }
   50% { opacity: 1; }
   100% { opacity: 0.5; }
-}
-
-@keyframes skeletonPulse {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 0.6; }
-}
-
-.skeleton-animate {
-  animation: skeletonPulse 1.5s ease-in-out infinite;
-}
-
-.animate-pulse {
-  animation: pulse 2s infinite ease-in-out;
 }
 
 /* Smooth Entrance Animations */

@@ -13,13 +13,12 @@ export default function UsersPage() {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [selected, setSelected] = useState(null)
   const [isAdding, setIsAdding] = useState(false)
   const [editForm, setEditForm] = useState(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [limit] = useState(30)
-  const [page, setPage] = useState(0)
+  const [, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
   const [fetchingMore, setFetchingMore] = useState(false)
   const [qrPrintMode, setQrPrintMode] = useState(false)
@@ -165,7 +164,7 @@ export default function UsersPage() {
       }
 
       // Create a clean object for the database without the password
-      const { password, ...dataToSave } = editForm
+      const { password: _password, ...dataToSave } = editForm
       if (isNew) {
         delete dataToSave.id
       }
