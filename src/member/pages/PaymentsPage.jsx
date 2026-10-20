@@ -1014,6 +1014,35 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     }}>
       <BackHeader title={isManager && portalMode === 'manager' ? "Payment Management Hub" : "Dues & Payments"} onBack={onBack} />
 
+      {/* Quick redirect to the standalone /pay page. The payer is handed to their own
+          UPI app with the receiver and amount prefilled, and nothing is written here —
+          management marks the contribution Paid or Pending from this screen after the
+          money is seen in the bank. */}
+      {!(isManager && portalMode === 'manager') && (
+        <button
+          onClick={() => window.location.assign('/pay')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 12, width: '100%',
+            boxSizing: 'border-box', padding: '14px 16px', marginBottom: 16,
+            borderRadius: 16, background: t.accentGrad, border: 'none',
+            cursor: 'pointer', textAlign: 'left', color: '#0a0d14',
+            fontFamily: "'DM Sans', sans-serif",
+            boxShadow: `0 4px 15px ${t.accentBg}`,
+          }}
+        >
+          <CreditCard size={20} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: 'block', fontSize: 15, fontWeight: 900 }}>
+              Pay via UPI
+            </span>
+            <span style={{ display: 'block', fontSize: 12, fontWeight: 600, opacity: 0.75, marginTop: 2 }}>
+              Opens your UPI app with the amount prefilled
+            </span>
+          </span>
+          <ChevronRight size={18} style={{ flexShrink: 0, opacity: 0.7 }} />
+        </button>
+      )}
+
       {/* Role Switcher Banner */}
       {isManager && (
         <div style={{
