@@ -40,34 +40,15 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
-  // Payment Form State (Payer)
+  // Payer form state. The hub does NOT fire UPI intents itself — payment
+  // happens on /pay (QR-first). Member rows come only from manager records
+  // after the money is seen in the bank, so no self-reported receipt exists.
   const [amount, setAmount] = useState(defaultDue.toString())
-  const [customNote, setCustomNote] = useState('')
   const [copiedUpi, setCopiedUpi] = useState(false)
-  const [paymentMethodTab, setPaymentMethodTab] = useState('instant') // 'instant' | 'qr'
-  const [showQRModal, setShowQRModal] = useState(false)
-  // Manager-only manual record (members never type UTR — slips auto-generate)
+  const [showRefundPolicy, setShowRefundPolicy] = useState(false)
+  // Manager-only manual record (cash / direct bank transfer)
   const [showRecordModal, setShowRecordModal] = useState(false)
   const [selectedReceipt, setSelectedReceipt] = useState(null)
-  // Auto pay-slip state (member): receipt generated the moment they return
-  // from their UPI app — no manual entry needed.
-  const [lastSlip, setLastSlip] = useState(null)
-  const [showSlipModal, setShowSlipModal] = useState(false)
-  const [finalizingPay, setFinalizingPay] = useState(false)
-  const finalizingRef = useRef(false)
-  // Unfinished-attempt recovery banner (debited-but-no-receipt safety net)
-  const [showPendingBanner, setShowPendingBanner] = useState(false)
-  const [showRefundPolicy, setShowRefundPolicy] = useState(false)
-  // Pre-pay confirmation sheet: member verifies the EXACT receiver + amount
-  // before anything fires. Never launches blind.
-  const [confirmPay, setConfirmPay] = useState(null) // {appType, partIdx, total, partAmount, partsCount, receiver, payee, note}
-  const [failHelp, setFailHelp] = useState(false)
-  // Return-verify sheet: NEVER assume success just because the member came
-  // back — they must explicitly confirm the money left their bank account.
-  const [returnConfirm, setReturnConfirm] = useState(null)
-  // The exact plan that was fired (drives the desktop QR so it can never
-  // disagree with the launched intent).
-  const [firedPlan, setFiredPlan] = useState(null)
 
 
   // Record Form state
@@ -176,15 +157,6 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     loadData()
   }, [loadData])
 
-  // Setup note when profile loads
-  useEffect(() => {
-    if (userProfile?.thali_number) {
-      setCustomNote(`Thali #${userProfile.thali_number} - ${paymentTitle}`)
-    } else {
-      setCustomNote(paymentTitle)
-    }
-  }, [userProfile, paymentTitle])
-
   // Copy UPI ID to clipboard
   const handleCopyUpi = (showExtendedToast = false) => {
     navigator.clipboard.writeText(configuredUpiId)
@@ -200,44 +172,14 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     setTimeout(() => setCopiedUpi(false), 2500)
   }
 
-  // Construct 100% fail-safe P2P UPI URL matching NPCI specifications
-  // CRITICAL FIX: 'tr' (Transaction Ref ID) must NOT be passed to P2P personal VPAs.
-  // When 'tr' is present without a registered merchant code, Indian banks (HDFC, SBI, ICICI, etc.)
-  // treat the payment as an unverified merchant intent and reject with "Payment limit exceeded" / "Bank limit exceeded".
-  //
-  // RELIABILITY RULES (why "bank limit exceeded" happens and how we prevent it):
-  //  1. Amount is always sent with 2 decimals (am=1500.00) — bare integers are
-  //     rejected by several PSPs as a malformed collect request.
-  //  2. One tap never exceeds the UPI per-transaction cap (₹1,00,000). Bigger
-  //     dues are auto-split into parts paid one after another.
-  //  3. The primary Pay button fires the generic upi://pay intent (system app
-  //     chooser with receiver + amount prefilled) instead of a hardcoded
-  //     single-app deep link that fails when that app is missing/mishandled.
-  //  4. The receiver VPA is format-validated before launch so a misconfigured
-  //     ID fails loudly here instead of inside the bank app.
+  // (All UPI deep-link/intent launch machinery was removed — payment happens on
+  // /pay, the secure QR-first page. This hub only keeps an editable amount for
+  // the manager's manual record default.)
   const UPI_TXN_LIMIT = 100000
   const numericAmount = Math.max(0, parseFloat(amount) || 0)
-  // NPCI-safe: always two decimals, e.g. 1500.00
-  const formattedAmount = numericAmount.toFixed(2)
-  const sanitizedNote = (customNote || `Al-Mawaid Thali Contribution`).replace(/[^a-zA-Z0-9 -]/g, '').slice(0, 45).trim()
 
   const isValidVpa = (v) => /^[\w.-]{2,256}@[a-zA-Z]{2,64}$/.test((v || '').trim())
   const isUpiIdValid = useMemo(() => isValidVpa(configuredUpiId), [configuredUpiId])
-  const isFallbackValid = useMemo(() => isValidVpa(fallbackUpiId), [fallbackUpiId])
-
-  // Split dues above the per-transaction cap into bank-safe parts.
-  const payParts = useMemo(() => {
-    if (!(numericAmount > 0)) return []
-    const parts = []
-    let remaining = Math.round(numericAmount * 100) / 100
-    while (remaining > 0) {
-      const take = Math.min(UPI_TXN_LIMIT, remaining)
-      parts.push(Number(take.toFixed(2)))
-      remaining = Number((remaining - take).toFixed(2))
-    }
-    return parts
-  }, [numericAmount])
-  const needsSplit = payParts.length > 1
 
   // ── Monthly dues engine ──
   // Every month carries an expected contribution (defaultDue). Paid = sum of
@@ -276,313 +218,16 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   }, [paidByMonth, defaultDue])
   const currentBalance = Math.max(0, Number((defaultDue - (paidByMonth[currentMonthKey] || 0)).toFixed(2)))
 
-  // Generate UPI deep-link intent (NPCI linking spec). Pure P2P by default
-  // (no 'tr'); pass { withTr: true } for the alternate bank-compatible format
-  // (unique reference attached). Merchant `mc` is attached only when the bank
-  // has issued one for this receiver (upi_mc setting).
-  const generateUpiUrl = useCallback((appType = 'upi', partAmount = null, opts = {}) => {
-    const cleanUpi = (opts.receiver || configuredUpiId || 'murtazacool558@okhdfcbank').trim()
-    const cleanPayee = (opts.payee || payeeName || 'Al-Mawaid').trim()
-    const amt = partAmount != null ? Number(partAmount).toFixed(2) : formattedAmount
-    const note = opts.note || sanitizedNote
-    const mc = (opts.mc || merchantCode || '').trim()
-
-    // Clean query parameters to ensure pure P2P transfer
-    const params = [
-      `pa=${encodeURIComponent(cleanUpi)}`,
-      `pn=${encodeURIComponent(cleanPayee)}`,
-      `am=${encodeURIComponent(amt)}`,
-      `cu=INR`,
-      `tn=${encodeURIComponent(note)}`
-    ]
-    if (mc) params.push(`mc=${encodeURIComponent(mc)}`)
-    if (opts.withTr) {
-      const ref = (opts.tr || `AM${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1296).toString(36).toUpperCase()}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 32)
-      params.push(`tr=${encodeURIComponent(ref)}`)
-    }
-    const query = params.join('&')
-
-    if (appType === 'gpay') return `tez://upi/pay?${query}`
-    if (appType === 'phonepe') return `phonepe://pay?${query}`
-    if (appType === 'paytm') return `paytmmp://pay?${query}`
-    return `upi://pay?${query}`
-  }, [configuredUpiId, payeeName, formattedAmount, sanitizedNote, merchantCode])
-
-  const upiUrl = useMemo(() => generateUpiUrl('upi'), [generateUpiUrl])
-
   // Detect Mobile device vs Desktop
   const isMobileDevice = useMemo(() => {
     if (typeof window === 'undefined') return true
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
   }, [])
 
-  // Universal Payment Trigger.
-  // Default is the generic upi://pay intent: Android shows the app chooser with
-  // the receiver UPI ID + exact amount prefilled, so the member pays inside
-  // their own trusted UPI app (safest + most compatible). App-specific deep
-  // links are offered as secondary shortcuts only.
-  //
-  // No manual UTR typing: the attempt is stashed as a pending payment, and the
-  // moment the member returns from their UPI app a receipt row is auto-created
-  // (status 'submitted' for manager verification) with a downloadable pay slip.
-  const [activePart, setActivePart] = useState(0)
-  const pendingKey = useMemo(() => `almawaid_pending_pay_${user?.id || 'anon'}`, [user?.id])
-
-  const stashPendingPay = useCallback((entry) => {
-    try { localStorage.setItem(pendingKey, JSON.stringify(entry)) } catch (e) { console.debug('[pay] pending stash unavailable', e && e.message) }
-  }, [pendingKey])
-  const clearPendingPay = useCallback(() => {
-    try { localStorage.removeItem(pendingKey) } catch (e) { console.debug('[pay] pending clear unavailable', e && e.message) }
-  }, [pendingKey])
-  const readPendingPay = useCallback(() => {
-    try {
-      const raw = localStorage.getItem(pendingKey)
-      return raw ? JSON.parse(raw) : null
-    } catch (e) { console.debug('[pay] pending read unavailable', e && e.message); return null }
-  }, [pendingKey])
-  // failPending must be declared AFTER readPendingPay to avoid temporal dead zone
-  const failPending = useMemo(() => (failHelp ? readPendingPay() : null), [failHelp, readPendingPay])
-
-  const handleLaunchPayment = (appType = 'upi', partIdx = 0, amountOverride = null) => {
-    // ── SECURITY WALL: every launch must pass all checks or it never fires ──
-    if (!user?.id) {
-      toast.error('Please sign in again to pay securely.')
-      return
-    }
-    const total = amountOverride != null ? Number(amountOverride) : numericAmount
-    if (!Number.isFinite(total) || !(total >= 1)) {
-      toast.error('Please enter a valid amount (minimum ₹1).')
-      return
-    }
-    if (total > 100 * UPI_TXN_LIMIT) {
-      toast.error('Amount is unusually large. Please contact support to pay this.')
-      return
-    }
-    if (!isUpiIdValid) {
-      toast.error('Receiver UPI ID is not configured correctly. Please contact support.')
-      return
-    }
-    if (!(payeeName || '').trim()) {
-      toast.error('Receiver name is missing. Please contact support.')
-      return
-    }
-    // One attempt at a time: finish or discard the previous one first.
-    const existing = readPendingPay()
-    if (existing && existing.launchedAt && (Date.now() - existing.launchedAt) < 30 * 60 * 1000) {
-      setShowPendingBanner(true)
-      toast.error('Please complete or discard your unfinished payment first.')
-      return
-    }
-    // Cooldown: no rapid double-taps / duplicate intents.
-    const lastLaunch = Number(localStorage.getItem(`almawaid_last_launch_${user.id}`) || 0)
-    if (Date.now() - lastLaunch < 10000) {
-      toast.error('Please wait a moment before paying again.')
-      return
-    }
-    const parts = (() => {
-      const out = []
-      let remaining = Math.round(total * 100) / 100
-      while (remaining > 0) {
-        const take = Math.min(UPI_TXN_LIMIT, remaining)
-        out.push(Number(take.toFixed(2)))
-        remaining = Number((remaining - take).toFixed(2))
-      }
-      return out
-    })()
-    const partAmount = parts[partIdx] != null ? parts[partIdx] : total
-    if (!(partAmount > 0) || partAmount > UPI_TXN_LIMIT) {
-      toast.error(`Each payment must be between ₹1 and ₹${UPI_TXN_LIMIT.toLocaleString('en-IN')}`)
-      return
-    }
-    setActivePart(partIdx)
-    // Show the confirm sheet with the EXACT intent payload — member verifies
-    // receiver + amount before anything leaves the app.
-    setConfirmPay({
-      appType, partIdx, total, partAmount, partsCount: parts.length,
-      receiver: (configuredUpiId || '').trim(),
-      payee: (payeeName || 'Al-Mawaid').trim(),
-      note: parts.length > 1 ? `${sanitizedNote} (Part ${partIdx + 1}/${parts.length})` : sanitizedNote,
-    })
-  }
-
-  // Actually fire a confirmed intent. `withTr` selects the alternate
-  // bank-compatible format; `receiverOverride` pays the fallback VPA.
-  //
-  // FIRING (why this helper exists): a synthetic anchor click works in mobile
-  // browsers, but inside the native Android WebView custom schemes (upi://,
-  // tez://…) need an ACTION_VIEW intent — fired here via Capacitor AppLauncher
-  // when running natively, with anchor-click as the web fallback.
-  const fireUpiIntent = useCallback(async (url) => {
-    const native = typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()
-    if (native) {
-      try {
-        const { AppLauncher } = await import('@capacitor/app-launcher')
-        const { completed } = await AppLauncher.openUrl({ url })
-        if (completed) return true
-      } catch (e) {
-        console.warn('[pay] AppLauncher failed, falling back to anchor:', e?.message || e)
-      }
-    }
-    try {
-      const link = document.createElement('a')
-      link.href = url
-      link.rel = 'noreferrer'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      return true
-    } catch (e) {
-      console.warn('[pay] anchor fire failed:', e?.message || e)
-      window.location.href = url
-      return true
-    }
-  }, [])
-  const firePayment = (plan, { withTr = false, receiverOverride = null } = {}) => {
-    if (!plan || finalizingRef.current) return
-    const receiver = (receiverOverride || plan.receiver || '').trim()
-    if (!isValidVpa(receiver)) {
-      toast.error('Receiver UPI ID is invalid. Payment blocked for your safety.')
-      return
-    }
-    const partAmount = Number(Number(plan.partAmount).toFixed(2))
-    if (!Number.isFinite(partAmount) || !(partAmount >= 1) || partAmount > UPI_TXN_LIMIT) {
-      toast.error('Payment amount failed re-validation. Please start again.')
-      return
-    }
-    // Stash BEFORE leaving to the bank app — the auto-receipt is built from this.
-    // client_ref makes every attempt idempotent: a double return can never
-    // create two dues records for one payment.
-    const clientRef = `${user.id}-${monthKeyOf(new Date())}-${partAmount.toFixed(2)}-${Date.now()}`
-    stashPendingPay({
-      clientRef,
-      amount: partAmount,
-      note: plan.note,
-      upi: receiver,
-      payee: plan.payee,
-      month: monthKeyOf(new Date()),
-      launchedAt: Date.now(),
-      format: withTr ? 'with-tr' : 'p2p',
-    })
-    try { localStorage.setItem(`almawaid_last_launch_${user.id}`, String(Date.now())) } catch (e) { console.debug('[pay] launch stamp unavailable', e && e.message) }
-    setConfirmPay(null)
-    setFailHelp(false)
-    setFiredPlan({ appType: plan.appType, partAmount, receiver, payee: plan.payee, note: plan.note, format: withTr ? 'with-tr' : 'p2p' })
-
-    if (!isMobileDevice) {
-      // Desktop / Laptop: Show high-res QR code for scanning
-      setShowQRModal(true)
-      return
-    }
-
-    // Mobile: fire the intent; receiver + amount arrive prefilled in the UPI app.
-    // fireUpiIntent picks the correct mechanism per platform (native ACTION_VIEW
-    // vs browser anchor). Nothing is recorded here — only on explicit confirm.
-    fireUpiIntent(generateUpiUrl(plan.appType, partAmount, {
-      receiver, payee: plan.payee, note: plan.note, withTr,
-    }))
-  }
-
-  // Auto-receipt: called when the member returns from their UPI app (or taps
-  // "I've Paid" on the QR modal). Creates the dues record + pay slip with zero
-  // typing. Status stays 'submitted' until a manager verifies it.
-  // SECURITY: amount comes ONLY from the stashed attempt (re-validated), and
-  // client_ref makes repeat returns idempotent — one payment, one record.
-  const finalizeAutoPayment = useCallback(async (pending) => {
-    if (!pending || finalizingRef.current || !user?.id) return false
-    const safeAmount = Number(pending.amount)
-    if (!Number.isFinite(safeAmount) || !(safeAmount >= 1) || safeAmount > UPI_TXN_LIMIT) {
-      toast.error('This saved attempt looks invalid and was discarded for your safety.')
-      clearPendingPay()
-      setShowPendingBanner(false)
-      return false
-    }
-    finalizingRef.current = true
-    setFinalizingPay(true)
-    try {
-      // Idempotency: a double return / double tap must not duplicate dues.
-      if (pending.clientRef) {
-        const { data: dup } = await supabase
-          .from('user_payments')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('metadata->>client_ref', pending.clientRef)
-          .limit(1)
-        if (dup && dup.length) {
-          setLastSlip(dup[0])
-          setShowSlipModal(true)
-          clearPendingPay()
-          setShowPendingBanner(false)
-          setFiredPlan(null)
-          toast.success('Receipt already saved — showing it again, no double charge recorded.')
-          return true
-        }
-      }
-      const payload = {
-        user_id: user.id,
-        user_name: userProfile?.name || user?.email?.split('@')[0] || 'User',
-        user_email: userProfile?.email || user?.email || '',
-        thali_number: userProfile?.thali_number ? String(userProfile.thali_number) : '',
-        amount: safeAmount,
-        currency: 'INR',
-        status: 'submitted',
-        transaction_ref: 'AUTO-UPI',
-        upi_id: pending.upi || configuredUpiId,
-        payee_name: pending.payee || payeeName,
-        payment_method: 'UPI Auto',
-        note: pending.note || paymentTitle,
-        metadata: { client_ref: pending.clientRef || null, source: 'auto-return', month: pending.month || null },
-        created_at: new Date().toISOString()
-      }
-      const { data, error } = await supabase.from('user_payments').insert([payload]).select().single()
-      if (error) throw error
-
-      setMyPayments(prev => [data, ...prev])
-      setAllPayments(prev => [data, ...prev])
-      setLastSlip(data)
-      setShowSlipModal(true)
-      clearPendingPay()
-      setShowPendingBanner(false)
-      setFiredPlan(null)
-      toast.success('Payment recorded — your receipt is ready!')
-
-      // Notify managers (same channel as manual records)
-      try {
-        const { data: managers } = await supabase
-          .from('user_stats')
-          .select('user_id')
-          .or('name.ilike.%Murtaza%,email.ilike.%murtaza%,role.eq.admin')
-        if (managers && managers.length > 0) {
-          await supabase.from('notices').insert(managers.map(mgr => ({
-            title: '💳 New Payment Received',
-            body: `${userProfile?.name || 'A Member'} (Thali #${userProfile?.thali_number || '—'}) paid ₹${Number(pending.amount)}. Auto-recorded — please verify in Payments Hub.`,
-            sender_name: 'Al-Mawaid Payments',
-            target_user_id: mgr.user_id,
-            tone: '#34d399',
-            created_at: new Date().toISOString()
-          })))
-        }
-      } catch (noticeErr) {
-        console.warn('Manager notify notice failed:', noticeErr)
-      }
-      return true
-    } catch (err) {
-      console.error('Auto payment record failed:', err)
-      toast.error('Could not save your receipt. Please check connection and try again.')
-      return false
-    } finally {
-      finalizingRef.current = false
-      setFinalizingPay(false)
-    }
-  }, [user?.id, user?.email, userProfile, configuredUpiId, payeeName, paymentTitle, clearPendingPay])
-
-  // On open: surface any unfinished attempt (debited-but-no-receipt safety net).
-  useEffect(() => {
-    if (isManager) return
-    const pending = readPendingPay()
-    if (pending && pending.launchedAt && (Date.now() - pending.launchedAt) < 30 * 60 * 1000) {
-      setShowPendingBanner(true)
-    }
-  }, [readPendingPay, isManager])
+  // ⚠️ All UPI intent-launch, pending-stash, and auto-receipt machinery was
+  // REMOVED deliberately: members pay on /pay (QR-first). A dues record exists
+  // only after management confirms the money in the bank — no client-side
+  // payment claims anywhere in the app.
 
   // Dispute / refund request on a recorded payment. Flags the row and opens a
   // support ticket managers already triage (with reply + resolve alerts).
@@ -610,29 +255,6 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       toast.error('Could not raise the request. Please try again or contact support.')
     }
   }, [user?.id])
-
-  // When the member comes back from their bank/UPI app, ASK them whether the
-  // money actually left their account. Nothing is recorded on return alone.
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState !== 'visible' || isManager) return
-      const pending = readPendingPay()
-      if (!pending || !pending.launchedAt) return
-      const awayMs = Date.now() - pending.launchedAt
-      if (awayMs < 4000 || awayMs > 30 * 60 * 1000) {
-        if (awayMs > 30 * 60 * 1000) clearPendingPay()
-        return
-      }
-      setReturnConfirm(pending)
-      setShowPendingBanner(true)
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    window.addEventListener('focus', onVisible)
-    return () => {
-      document.removeEventListener('visibilitychange', onVisible)
-      window.removeEventListener('focus', onVisible)
-    }
-  }, [readPendingPay, clearPendingPay, isManager])
 
   // Monthly dues self-reminder: once per month, an unpaid member gets one
   // Alerts-tab entry (badge + inbox) pointing at Dues & Payments.
@@ -1014,10 +636,9 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     }}>
       <BackHeader title={isManager && portalMode === 'manager' ? "Payment Management Hub" : "Dues & Payments"} onBack={onBack} />
 
-      {/* Quick redirect to the standalone /pay page. The payer is handed to their own
-          UPI app with the receiver and amount prefilled, and nothing is written here —
-          management marks the contribution Paid or Pending from this screen after the
-          money is seen in the bank. */}
+      {/* Quick redirect to the secure /pay page. The hub does not fire payment
+          intents at all — the QR-first page handles paying, and nothing is
+          written here until management confirms the money in the bank. */}
       {!(isManager && portalMode === 'manager') && (
         <button
           onClick={() => window.location.assign('/pay')}
@@ -1036,7 +657,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               Pay via UPI
             </span>
             <span style={{ display: 'block', fontSize: 12, fontWeight: 600, opacity: 0.75, marginTop: 2 }}>
-              Opens your UPI app with the amount prefilled
+              Scan QR or pay to UPI ID — no bank limit errors
             </span>
           </span>
           <ChevronRight size={18} style={{ flexShrink: 0, opacity: 0.7 }} />
@@ -1657,120 +1278,6 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               </button>
             </div>
 
-            {/* Unfinished-attempt recovery: money may have left the bank with no receipt yet */}
-            {showPendingBanner && (() => {
-              const pending = readPendingPay()
-              if (!pending) return null
-              return (
-                <div style={{
-                  marginBottom: 14, padding: '12px 14px', borderRadius: 14,
-                  background: 'linear-gradient(135deg, rgba(239,68,68,0.12), rgba(245,158,11,0.08))',
-                  border: '1.5px solid rgba(239,68,68,0.45)',
-                  boxShadow: '0 6px 20px rgba(239,68,68,0.15)',
-                  boxSizing: 'border-box'
-                }}>
-                  <div style={{ fontSize: 13, fontWeight: 900, color: '#f87171', marginBottom: 2 }}>
-                    ⚠️ Unfinished payment of ₹{Number(pending.amount).toFixed(2)}
-                  </div>
-                  <div style={{ fontSize: 11.5, color: t.textSub, lineHeight: 1.5, marginBottom: 10 }}>
-                    Were you charged in your bank app? Confirm only if the money was debited — otherwise mark it failed.
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      type="button"
-                      onClick={() => setReturnConfirm(pending)}
-                      disabled={finalizingPay}
-                      style={{ flex: 2, padding: '10px', borderRadius: 11, border: 'none', background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', fontSize: 12.5, fontWeight: 900, cursor: finalizingPay ? 'wait' : 'pointer', opacity: finalizingPay ? 0.7 : 1 }}
-                    >
-                      {finalizingPay ? 'Saving…' : '✅ Yes, I Paid'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { clearPendingPay(); setFiredPlan(null); setShowPendingBanner(false); setFailHelp(true) }}
-                      style={{ flex: 1, padding: '10px', borderRadius: 11, border: '1px solid rgba(239,68,68,0.5)', background: 'rgba(239,68,68,0.08)', color: '#f87171', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
-                    >
-                      ❌ Failed
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { clearPendingPay(); setFiredPlan(null); setShowPendingBanner(false) }}
-                      style={{ flex: 1, padding: '10px', borderRadius: 11, border: `1px solid ${t.border}`, background: 'transparent', color: t.textSub, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
-                    >
-                      Discard
-                    </button>
-                  </div>
-                </div>
-              )
-            })()}
-
-            {/* Amount Label & Dynamic Editable Amount Box */}
-            <div style={{
-              background: t.inputBg, borderRadius: 16, padding: '14px 14px 12px',
-              border: `1px solid ${t.inputBorder || t.border}`, marginBottom: 14, boxSizing: 'border-box'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  Payable Contribution
-                </span>
-                <span style={{ fontSize: 10, color: t.accent, fontWeight: 600 }}>
-                  Tap amount to edit
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 26, fontWeight: 800, color: t.accent, lineHeight: 1 }}>₹</span>
-                <input
-                  id="payerAmountInput"
-                  name="payerAmount"
-                  type="number"
-                  min="1"
-                  step="any"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    borderBottom: `1.5px dashed ${t.accent}`,
-                    color: t.text,
-                    fontSize: 28,
-                    fontWeight: 800,
-                    fontFamily: "'Playfair Display', serif",
-                    width: '140px',
-                    outline: 'none',
-                    padding: '2px 4px',
-                    boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-
-              {/* Quick Amount Selector Chips (Fit cleanly in grid) */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, marginTop: 10 }}>
-                {[500, 1000, 1500, 2000, 3000].map(val => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() => setAmount(val.toString())}
-                    style={{
-                      padding: '5px 2px',
-                      borderRadius: 10,
-                      fontSize: 11,
-                      fontWeight: 700,
-                      border: `1px solid ${Number(amount) === val ? t.accent : t.border}`,
-                      background: Number(amount) === val ? t.accentBg : t.inputBg,
-                      color: Number(amount) === val ? t.accent : t.textSub,
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      transition: 'all 0.15s ease',
-                      boxSizing: 'border-box',
-                      minWidth: 0
-                    }}
-                  >
-                    ₹{val}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {/* ── MONTHLY DUES TRACKER (6-month strip + current-month due banner) ── */}
             <div style={{ marginBottom: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -1826,11 +1333,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                   </div>
                   <button
                     type="button"
-                    onClick={() => {
-                      setAmount(currentBalance.toFixed(2))
-                      setPaymentMethodTab('instant')
-                      setTimeout(() => handleLaunchPayment('upi', 0, currentBalance), 50)
-                    }}
+                    onClick={() => window.location.assign('/pay')}
                     style={{
                       padding: '10px 16px', borderRadius: 11, border: 'none',
                       background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff',
@@ -1852,311 +1355,40 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               )}
             </div>
 
-            {/* ── PAYMENT METHOD SELECTOR (Instant Pay + Scan QR) ── */}
-            <div style={{
-              display: 'flex',
-              background: t.inputBg,
-              padding: 3,
-              borderRadius: 12,
-              border: `1px solid ${t.inputBorder || t.border}`,
-              marginBottom: 14,
-              boxSizing: 'border-box'
-            }}>
-              <button
-                type="button"
-                onClick={() => setPaymentMethodTab('instant')}
-                style={{
-                  flex: 1,
-                  padding: '7px 6px',
-                  borderRadius: 9,
-                  border: 'none',
-                  background: paymentMethodTab === 'instant' ? t.accentBg : 'transparent',
-                  color: paymentMethodTab === 'instant' ? t.accent : t.textSub,
-                  fontSize: 11,
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 4,
-                  boxSizing: 'border-box',
-                  minWidth: 0
-                }}
-              >
-                <Sparkles size={12} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Instant Pay</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setPaymentMethodTab('qr')}
-                style={{
-                  flex: 1,
-                  padding: '7px 6px',
-                  borderRadius: 9,
-                  border: 'none',
-                  background: paymentMethodTab === 'qr' ? t.accentBg : 'transparent',
-                  color: paymentMethodTab === 'qr' ? t.accent : t.textSub,
-                  fontSize: 11,
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 4,
-                  boxSizing: 'border-box',
-                  minWidth: 0
-                }}
-              >
-                <QrCode size={12} />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Scan QR</span>
-              </button>
+            {/* ── HOW TO PAY: the hub no longer fires intents. Secure QR-first
+                    flow lives on /pay — the formats there are ones banks don't
+                    intermittently reject with "limit exceeded". ── */}
+            <button
+              type="button"
+              onClick={() => window.location.assign('/pay')}
+              style={{
+                width: '100%',
+                padding: '13px 16px',
+                borderRadius: 14,
+                border: 'none',
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%)',
+                color: '#ffffff',
+                fontSize: 15,
+                fontWeight: 800,
+                fontFamily: "'DM Sans', sans-serif",
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                boxShadow: '0 6px 20px rgba(16, 185, 129, 0.35)',
+                boxSizing: 'border-box'
+              }}
+            >
+              <CreditCard size={18} />
+              <span>Pay Securely (QR / UPI ID)</span>
+            </button>
+            <div style={{ fontSize: 10.5, color: t.textSub, textAlign: 'center', lineHeight: 1.5, marginTop: 10 }}>
+              Scan the QR with your UPI app or pay to the copied UPI ID — methods banks don't reject with
+              &ldquo;limit exceeded&rdquo;. Money goes bank-to-bank; no fees anywhere.
+              {' '}<button type="button" onClick={() => setShowRefundPolicy(true)} style={{ background: 'none', border: 'none', padding: 0, color: t.accent, fontSize: 10.5, fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}>Refund Policy</button>
             </div>
 
-            {/* ── METHOD 1: INSTANT APP PAY ── */}
-            {paymentMethodTab === 'instant' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {/* Receiver confirmation — member sees exactly where money goes */}
-                <div style={{
-                  background: t.inputBg, borderRadius: 12, padding: '10px 12px',
-                  border: `1px solid ${t.inputBorder || t.border}`, boxSizing: 'border-box'
-                }}>
-                  <div style={{ fontSize: 9, color: t.textSub, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 800, marginBottom: 4 }}>
-                    Paying securely to
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 800, color: t.text }}>{payeeName}</div>
-                      <div style={{ fontSize: 11.5, color: t.textSub, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {isUpiIdValid ? configuredUpiId : '⚠️ Receiver UPI not configured'}
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 18, fontWeight: 900, color: t.accent, whiteSpace: 'nowrap' }}>
-                      ₹{formattedAmount}
-                    </div>
-                  </div>
-                </div>
-
-                {needsSplit ? (
-                  <div style={{
-                    background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)',
-                    borderRadius: 12, padding: '10px 12px', fontSize: 11.5, color: '#fcd34d', lineHeight: 1.5
-                  }}>
-                    ⚠️ Dues exceed the ₹1,00,000 per-payment bank cap, so pay in {payParts.length} safe parts below. Each part opens prefilled and auto-generates its receipt.
-                  </div>
-                ) : null}
-
-                {/* Primary Pay Button — generic UPI chooser, receiver + amount prefilled */}
-                {needsSplit ? payParts.map((part, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    disabled={finalizingPay}
-                    onClick={() => handleLaunchPayment('upi', i)}
-                    style={{
-                      width: '100%',
-                      padding: '13px 16px',
-                      borderRadius: 14,
-                      border: activePart === i ? '2px solid #10b981' : 'none',
-                      background: 'linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%)',
-                      color: '#ffffff',
-                      fontSize: 15,
-                      fontWeight: 800,
-                      fontFamily: "'DM Sans', sans-serif",
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8,
-                      boxShadow: '0 6px 20px rgba(16, 185, 129, 0.35)',
-                      boxSizing: 'border-box'
-                    }}
-                  >
-                    <CreditCard size={18} />
-                    <span>Pay Part {i + 1}/{payParts.length} · ₹{Number(part).toFixed(2)}</span>
-                    <ArrowUpRight size={16} />
-                  </button>
-                )) : (
-                  <button
-                    type="button"
-                    disabled={finalizingPay}
-                    onClick={() => handleLaunchPayment('upi')}
-                    style={{
-                      width: '100%',
-                      opacity: finalizingPay ? 0.7 : 1,
-                      padding: '13px 16px',
-                      borderRadius: 14,
-                      border: 'none',
-                      background: 'linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%)',
-                      color: '#ffffff',
-                      fontSize: 15,
-                      fontWeight: 800,
-                      fontFamily: "'DM Sans', sans-serif",
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8,
-                      boxShadow: '0 6px 20px rgba(16, 185, 129, 0.35)',
-                      boxSizing: 'border-box'
-                    }}
-                  >
-                    <CreditCard size={18} />
-                    <span>Pay ₹{formattedAmount}</span>
-                    <ArrowUpRight size={16} />
-                  </button>
-                )}
-                <div style={{ fontSize: 10.5, color: t.textSub, textAlign: 'center', lineHeight: 1.5 }}>
-                  Opens your UPI app with receiver &amp; amount already filled — just approve inside your bank app.
-                  {' '}<button type="button" onClick={() => setShowRefundPolicy(true)} style={{ background: 'none', border: 'none', padding: 0, color: t.accent, fontSize: 10.5, fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}>Refund Policy</button>
-                </div>
-
-                {/* Secondary Fast App Shortcuts */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-                  <button
-                    type="button"
-                    onClick={() => handleLaunchPayment('gpay')}
-                    style={{
-                      padding: '8px 4px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(16, 185, 129, 0.35)',
-                      background: 'rgba(16, 185, 129, 0.12)',
-                      color: '#6ee7b7',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      boxSizing: 'border-box'
-                    }}
-                  >
-                    GPay
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleLaunchPayment('phonepe')}
-                    style={{
-                      padding: '8px 4px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(103, 58, 183, 0.35)',
-                      background: 'rgba(103, 58, 183, 0.12)',
-                      color: '#c4b5fd',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      boxSizing: 'border-box'
-                    }}
-                  >
-                    PhonePe
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleLaunchPayment('paytm')}
-                    style={{
-                      padding: '8px 4px',
-                      borderRadius: 10,
-                      border: '1px solid rgba(0, 186, 242, 0.35)',
-                      background: 'rgba(0, 186, 242, 0.12)',
-                      color: '#7dd3fc',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      boxSizing: 'border-box'
-                    }}
-                  >
-                    Paytm
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethodTab('qr')}
-                    style={{
-                      padding: '8px 4px',
-                      borderRadius: 10,
-                      border: `1px solid ${t.inputBorder || t.border}`,
-                      background: t.inputBg,
-                      color: t.text,
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      boxSizing: 'border-box'
-                    }}
-                  >
-                    Scan QR
-                  </button>
-                </div>
-                <div style={{ fontSize: 10.5, color: t.textSub, textAlign: 'center', lineHeight: 1.5 }}>
-                  No UPI app opens on tap? Use the <b>Scan QR</b> tab above — scan it from inside your UPI app.
-                </div>
-              </div>
-            )}
-
-            {/* ── METHOD 2: INLINE QR CODE ── */}
-            {paymentMethodTab === 'qr' && (
-              <div style={{
-                background: t.inputBg, borderRadius: 16, padding: '14px',
-                textAlign: 'center', border: `1px solid ${t.inputBorder || t.border}`, boxSizing: 'border-box'
-              }}>
-                {needsSplit ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    <div style={{ fontSize: 11.5, color: '#fcd34d', lineHeight: 1.5 }}>
-                      ⚠️ Dues exceed the ₹1,00,000 bank cap — scan &amp; pay each part separately.
-                    </div>
-                    {payParts.map((part, i) => (
-                      <div key={i}>
-                        <div style={{
-                          background: '#ffffff', padding: 12, borderRadius: 14,
-                          display: 'inline-block', margin: '0 auto 8px', boxShadow: '0 4px 16px rgba(0,0,0,0.3)'
-                        }}>
-                          <QRCodeCanvas value={generateUpiUrl('upi', part)} size={160} level="H" />
-                        </div>
-                        <div style={{ fontSize: 15, fontWeight: 800, color: t.accent, marginBottom: 2 }}>
-                          Part {i + 1}/{payParts.length} · ₹{Number(part).toFixed(2)}
-                        </div>
-                        <div style={{ fontSize: 11, color: t.textSub, fontFamily: 'monospace', marginBottom: 6 }}>
-                          {configuredUpiId}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <>
-                    <div style={{
-                      background: '#ffffff', padding: 12, borderRadius: 14,
-                      display: 'inline-block', margin: '0 auto 8px', boxShadow: '0 4px 16px rgba(0,0,0,0.3)'
-                    }}>
-                      <QRCodeCanvas value={upiUrl} size={160} level="H" />
-                    </div>
-
-                    <div style={{ fontSize: 16, fontWeight: 800, color: t.accent, marginBottom: 2 }}>
-                      ₹{formattedAmount}
-                    </div>
-                    <div style={{ fontSize: 11, color: t.textSub, fontFamily: 'monospace', marginBottom: 10 }}>
-                      {configuredUpiId}
-                    </div>
-                  </>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => handleCopyUpi(true)}
-                  style={{
-                    width: '100%', padding: '8px', borderRadius: 10,
-                    border: `1px solid ${t.inputBorder || t.border}`, background: t.inputBg,
-                    color: t.text, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5
-                  }}
-                >
-                  {copiedUpi ? <Check size={13} color="#4ade80" /> : <Copy size={13} />}
-                  <span>{copiedUpi ? 'UPI ID Copied!' : 'Copy UPI ID'}</span>
-                </button>
-              </div>
-            )}
-
-            {/* Receipts auto-generate when you pay — nothing to type. */}
           </div>
 
           {/* Personal Transaction Tracking History */}
@@ -2177,8 +1409,8 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               <p style={{ margin: '0 0 16px', fontSize: 12, color: t.textSub }}>
                 Pay securely above — your receipt generates automatically and appears here.
               </p>
-              <Btn primary onClick={() => handleLaunchPayment('upi')} style={{ padding: '10px 20px', fontSize: 13, display: 'inline-flex' }}>
-                Pay Dues Now
+              <Btn primary onClick={() => window.location.assign('/pay')} style={{ padding: '10px 20px', fontSize: 13, display: 'inline-flex' }}>
+                Pay Dues Securely
               </Btn>
             </div>
           ) : (
@@ -2282,120 +1514,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
         </div>
       )}
 
-      {/* ── QR CODE MODAL (bottom sheet — PWA safe) ── */}
-      {showQRModal && (
-        <div
-          onClick={() => setShowQRModal(false)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 9999,
-            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
-            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              background: t.card, borderRadius: '24px 24px 0 0',
-              borderTop: `2px solid ${t.accent}`,
-              maxWidth: 420, width: '100%', padding: '14px 20px calc(20px + env(safe-area-inset-bottom, 0px))',
-              textAlign: 'center', boxSizing: 'border-box',
-              maxHeight: '92dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
-            }}
-          >
-            <div style={{ width: 44, height: 4, borderRadius: 999, background: t.border, margin: '0 auto 14px' }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <div style={{ fontSize: 17, fontWeight: 700, color: t.text, fontFamily: "'Playfair Display', serif" }}>
-                Scan to Pay via UPI
-              </div>
-              <button onClick={() => setShowQRModal(false)} style={{ background: 'none', border: 'none', color: t.textSub, cursor: 'pointer', padding: 4 }}>
-                <X size={20} />
-              </button>
-            </div>
-
-            <div style={{ background: '#ffffff', padding: 16, borderRadius: 18, display: 'inline-block', margin: '0 auto 12px', boxShadow: '0 8px 24px rgba(0,0,0,0.25)' }}>
-              <QRCodeCanvas value={firedPlan ? generateUpiUrl('upi', firedPlan.partAmount, { receiver: firedPlan.receiver, payee: firedPlan.payee, note: firedPlan.note, withTr: firedPlan.format === 'with-tr' }) : (needsSplit && payParts[activePart] != null ? generateUpiUrl('upi', payParts[activePart]) : upiUrl)} size={210} level="H" />
-            </div>
-
-            <div style={{ fontSize: 20, fontWeight: 800, color: t.accent, marginBottom: 2 }}>
-              {firedPlan
-                ? `₹${Number(firedPlan.partAmount).toFixed(2)}`
-                : needsSplit && payParts[activePart] != null
-                  ? `Part ${activePart + 1}/${payParts.length} · ₹${Number(payParts[activePart]).toFixed(2)}`
-                  : `₹${formattedAmount}`}
-            </div>
-            <div style={{ fontSize: 11, color: t.textSub, fontFamily: 'monospace', marginBottom: 10 }}>
-              → {firedPlan ? firedPlan.receiver : configuredUpiId}
-            </div>
-            {needsSplit && !firedPlan && (
-              <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
-                {payParts.map((part, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setActivePart(i)}
-                    style={{
-                      padding: '6px 12px', borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: 'pointer',
-                      border: `1.5px solid ${activePart === i ? t.accent : t.border}`,
-                      background: activePart === i ? t.accentBg : 'transparent',
-                      color: activePart === i ? t.accent : t.textSub,
-                    }}
-                  >
-                    Part {i + 1}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              background: t.inputBg, padding: '5px 12px', borderRadius: 10,
-              fontSize: 12, color: t.textSub, fontFamily: 'monospace', marginBottom: 12,
-              border: `1px solid ${t.inputBorder || t.border}`
-            }}>
-              <span>{configuredUpiId}</span>
-              <button
-                onClick={() => handleCopyUpi(true)}
-                style={{ background: 'transparent', border: 'none', color: t.accent, cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
-                title="Copy UPI ID"
-              >
-                {copiedUpi ? <Check size={13} color="#4ade80" /> : <Copy size={13} />}
-              </button>
-            </div>
-
-            <div style={{
-              background: 'rgba(52, 211, 153, 0.1)', border: '1px solid rgba(52, 211, 153, 0.25)',
-              borderRadius: 12, padding: '8px 12px', fontSize: 11, color: '#a7f3d0',
-              lineHeight: 1.4, marginBottom: 16, textAlign: 'left'
-            }}>
-              ✨ <b>Tip:</b> Scanning QR or copying UPI directly in your app bypasses browser web-intent bank limit errors.
-            </div>
-
-            <Btn primary onClick={() => {
-              // Paid via QR scan: finalize from the stashed attempt (or current amount).
-              const pending = readPendingPay()
-              if (pending && pending.amount > 0) {
-                setShowQRModal(false)
-                finalizeAutoPayment(pending)
-              } else if (numericAmount > 0) {
-                setShowQRModal(false)
-                stashPendingPay({
-                  amount: Number(numericAmount.toFixed(2)),
-                  note: sanitizedNote,
-                  upi: (configuredUpiId || '').trim(),
-                  payee: (payeeName || 'Al-Mawaid').trim(),
-                  month: monthKeyOf(new Date()),
-                  launchedAt: Date.now(),
-                })
-                finalizeAutoPayment(readPendingPay())
-              }
-            }} disabled={finalizingPay} style={{ width: '100%', padding: '12px' }}>
-              {finalizingPay ? 'Saving Receipt…' : '✅ I’ve Paid — Get My Receipt'}
-            </Btn>
-          </div>
-        </div>
-      )}
-
-      {/* ── MANAGER MANUAL RECORD MODAL (bottom sheet; members never type UTR — receipts auto-generate) ── */}
+      {/* ── MANAGER MANUAL RECORD MODAL (bottom sheet; cash / direct transfer) ── */}
       {showRecordModal && isManager && (
         <div
           onClick={() => setShowRecordModal(false)}
@@ -2491,365 +1610,6 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                 </Btn>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* ── AUTO PAY-SLIP MODAL (bottom sheet — PWA safe, never cut off) ── */}
-      {showSlipModal && lastSlip && (
-        <div
-          onClick={() => setShowSlipModal(false)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 9999,
-            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
-            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              background: t.card, borderRadius: '24px 24px 0 0',
-              borderTop: `2px solid ${t.accent}`,
-              maxWidth: 460, width: '100%',
-              maxHeight: '92dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
-              padding: '14px 20px calc(20px + env(safe-area-inset-bottom, 0px))',
-              boxSizing: 'border-box',
-              animation: 'slipUp 0.32s cubic-bezier(0.32,0.72,0,1)',
-            }}
-          >
-            <style>{`@keyframes slipUp { from { transform: translateY(48px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }`}</style>
-            <div style={{ width: 44, height: 4, borderRadius: 999, background: t.border, margin: '0 auto 14px' }} />
-            <div style={{ textAlign: 'center', marginBottom: 4 }}>
-              <div style={{
-                width: 60, height: 60, borderRadius: '50%', margin: '0 auto 10px',
-                background: 'linear-gradient(135deg,#10b981,#059669)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: '0 8px 24px rgba(16,185,129,0.4)'
-              }}>
-                <Check size={30} color="#fff" strokeWidth={3} />
-              </div>
-              <div style={{ fontSize: 18, fontWeight: 900, color: t.text, fontFamily: "'Playfair Display', serif" }}>
-                Payment Recorded
-              </div>
-              <div style={{ fontSize: 12, color: t.textSub, marginTop: 2 }}>
-                Receipt auto-generated · pending manager verification
-              </div>
-            </div>
-
-            <div style={{
-              marginTop: 14, borderRadius: 16, overflow: 'hidden',
-              border: `1.5px solid ${t.accentBorder || t.border}`, boxSizing: 'border-box'
-            }}>
-              <div style={{ background: 'linear-gradient(135deg,#131b2e,#0a0e1a)', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                <div>
-                  <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', color: t.accent }}>AL-MAWAID RECEIPT</div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
-                    {new Date(lastSlip.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    {' · '}
-                    {new Date(lastSlip.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 22, fontWeight: 900, color: '#fff' }}>₹{Number(lastSlip.amount).toFixed(2)}</div>
-                  <div style={{
-                    display: 'inline-block', fontSize: 9.5, fontWeight: 900, padding: '2px 8px', borderRadius: 999,
-                    background: 'rgba(251,191,36,0.15)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.4)',
-                    textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 2
-                  }}>
-                    {String(lastSlip.status || 'submitted').toUpperCase()}
-                  </div>
-                </div>
-              </div>
-              <div style={{ background: t.bg, padding: '12px 16px' }}>
-                {[
-                  ['Member', userProfile?.name || lastSlip.user_name || '—'],
-                  ...(userProfile?.thali_number || lastSlip.thali_number ? [['Thali', `#${userProfile?.thali_number || lastSlip.thali_number}`]] : []),
-                  ['Paid To', `${lastSlip.payee_name || payeeName} · ${lastSlip.upi_id || configuredUpiId}`],
-                  ['Reference', lastSlip.transaction_ref || '—'],
-                  ...(lastSlip.note ? [['Remark', lastSlip.note]] : []),
-                ].map(([k, v]) => (
-                  <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '7px 0', borderBottom: `1px dashed ${t.border}`, fontSize: 12.5 }}>
-                    <span style={{ color: t.textSub, fontWeight: 600, flexShrink: 0 }}>{k}</span>
-                    <span style={{ color: t.text, fontWeight: 700, textAlign: 'right', overflowWrap: 'anywhere' }}>{v}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-              <button
-                type="button"
-                onClick={() => setShowSlipModal(false)}
-                style={{ flex: 1, padding: '13px', borderRadius: 13, border: `1.5px solid ${t.border}`, background: 'transparent', color: t.textSub, fontSize: 14, fontWeight: 800, cursor: 'pointer' }}
-              >
-                Done
-              </button>
-              <button
-                type="button"
-                onClick={() => downloadPayslipPdf({
-                  payment: lastSlip,
-                  memberName: userProfile?.name || lastSlip.user_name,
-                  thaliNumber: userProfile?.thali_number || lastSlip.thali_number,
-                  payeeUpi: lastSlip.upi_id || configuredUpiId,
-                  payeeName: lastSlip.payee_name || payeeName,
-                  monthLabel: monthLabelOf(monthKeyOf(new Date(lastSlip.created_at))),
-                })}
-                style={{
-                  flex: 2, padding: '13px', borderRadius: 13, border: 'none',
-                  background: 'linear-gradient(135deg,#B8860B,#D4AF37)', color: '#0a0a0a',
-                  fontSize: 14, fontWeight: 900, cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  boxShadow: '0 6px 18px rgba(212,175,55,0.35)'
-                }}
-              >
-                <Download size={16} /> Download PDF Slip
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── PRE-PAY CONFIRM SHEET: exact receiver + amount before anything fires ── */}
-      {confirmPay && (
-        <div
-          onClick={() => setConfirmPay(null)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 9999,
-            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
-            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              background: t.card, borderRadius: '24px 24px 0 0',
-              borderTop: `2px solid ${t.accent}`,
-              maxWidth: 460, width: '100%',
-              maxHeight: '92dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
-              padding: '14px 20px calc(20px + env(safe-area-inset-bottom, 0px))',
-              boxSizing: 'border-box',
-            }}
-          >
-            <div style={{ width: 44, height: 4, borderRadius: 999, background: t.border, margin: '0 auto 14px' }} />
-            <div style={{ fontSize: 16, fontWeight: 900, color: t.text, textAlign: 'center' }}>
-              Confirm Your Payment
-            </div>
-            <div style={{ fontSize: 11.5, color: t.textSub, textAlign: 'center', marginTop: 2, marginBottom: 12 }}>
-              Check receiver &amp; amount — this exact request opens in your UPI app.
-            </div>
-
-            <div style={{ borderRadius: 14, overflow: 'hidden', border: `1.5px solid ${t.accentBorder || t.border}`, marginBottom: 12 }}>
-              <div style={{ background: 'linear-gradient(135deg,#131b2e,#0a0e1a)', padding: '14px 16px', textAlign: 'center' }}>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
-                  {confirmPay.partsCount > 1 ? `Part ${confirmPay.partIdx + 1} of ${confirmPay.partsCount}` : payeeName} · {confirmPay.payee}
-                </div>
-                <div style={{ fontSize: 30, fontWeight: 900, color: '#fff', margin: '2px 0' }}>
-                  ₹{Number(confirmPay.partAmount).toFixed(2)}
-                </div>
-                <div style={{ fontSize: 12, color: t.accent, fontFamily: 'monospace', overflowWrap: 'anywhere' }}>
-                  → {confirmPay.receiver}
-                </div>
-              </div>
-              <div style={{ background: t.inputBg, padding: '10px 14px', fontSize: 10.5, color: t.textSub, fontFamily: 'monospace', lineHeight: 1.7, overflowWrap: 'anywhere' }}>
-                pa={confirmPay.receiver}<br />
-                pn={confirmPay.payee}<br />
-                am={Number(confirmPay.partAmount).toFixed(2)} · cu=INR<br />
-                tn={confirmPay.note}
-                {merchantCode.trim() ? (<><br />mc={merchantCode.trim()} (merchant)</>) : null}
-              </div>
-            </div>
-
-            <div style={{ fontSize: 11, color: t.textSub, lineHeight: 1.55, marginBottom: 12 }}>
-              ⚠️ If your bank says <b>“limit exceeded” even for ₹1</b>, your bank&apos;s <b>daily UPI quota</b> (counted across all UPI apps) is likely exhausted — try another account in your UPI app, or pay after midnight.
-            </div>
-
-            <button
-              type="button"
-              onClick={() => firePayment(confirmPay)}
-              style={{ width: '100%', padding: '14px', borderRadius: 13, border: 'none', background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', fontSize: 15, fontWeight: 900, cursor: 'pointer', boxShadow: '0 6px 18px rgba(16,185,129,0.35)', marginBottom: 8 }}
-            >
-              Pay ₹{Number(confirmPay.partAmount).toFixed(2)} in My UPI App
-            </button>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                type="button"
-                onClick={() => firePayment(confirmPay, { withTr: true })}
-                style={{ flex: 1, padding: '11px', borderRadius: 12, border: `1.5px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
-              >
-                Try Alternate Format
-              </button>
-              {isFallbackValid && confirmPay.receiver !== fallbackUpiId.trim() && (
-                <button
-                  type="button"
-                  onClick={() => firePayment(confirmPay, { receiverOverride: fallbackUpiId.trim() })}
-                  style={{ flex: 1, padding: '11px', borderRadius: 12, border: `1.5px solid ${t.border}`, background: 'transparent', color: t.text, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
-                >
-                  Use Alternate Receiver
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setConfirmPay(null)}
-                style={{ flex: 1, padding: '11px', borderRadius: 12, border: `1px solid ${t.border}`, background: 'transparent', color: t.textSub, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── PAYMENT-FAILED DIAGNOSTICS SHEET ── */}
-      {failHelp && (
-        <div
-          onClick={() => setFailHelp(false)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 9999,
-            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
-            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              background: t.card, borderRadius: '24px 24px 0 0',
-              borderTop: '2px solid #ef4444',
-              maxWidth: 460, width: '100%',
-              maxHeight: '92dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
-              padding: '14px 20px calc(20px + env(safe-area-inset-bottom, 0px))',
-              boxSizing: 'border-box',
-            }}
-          >
-            <div style={{ width: 44, height: 4, borderRadius: 999, background: t.border, margin: '0 auto 14px' }} />
-            <div style={{ fontSize: 16, fontWeight: 900, color: t.text, textAlign: 'center' }}>
-              Bank Rejected the Payment?
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#ef4444', textAlign: 'center', marginTop: 6, marginBottom: 4 }}>
-              Payment failed. Please try another UPI app or bank account.
-            </div>
-            <div style={{ fontSize: 11.5, color: t.textSub, textAlign: 'center', marginTop: 2, marginBottom: 12 }}>
-              {failPending ? `Attempted ₹${Number(failPending.amount).toFixed(2)} → ${failPending.upi || ''}` : 'This error comes from your bank, not this app — even ₹1 fails when the bank-side limit is hit.'}
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
-              {[
-                ['🏦', 'Daily UPI quota exhausted (most common)', 'Your bank counts every UPI payment across ALL your apps (GPay, PhonePe, Paytm…). Once the daily quota is over, even ₹1 fails with “limit exceeded”. Fix: pay from a different bank account inside your UPI app, or retry after midnight.'],
-                ['📥', 'Receiver daily collection cap', 'One UPI ID can only receive a fixed amount per day. When many members pay together, switch to the alternate receiver below.'],
-                ['📲', 'Intent blocked by the app', 'Some bank apps reject direct deep-links. Use “Try alternate format”, or Scan QR from inside your UPI app instead.'],
-              ].map(([icon, title, body]) => (
-                <div key={title} style={{ display: 'flex', gap: 10, padding: '10px 12px', borderRadius: 13, background: t.inputBg, border: `1px solid ${t.inputBorder || t.border}` }}>
-                  <div style={{ fontSize: 18, flexShrink: 0 }}>{icon}</div>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: t.text, marginBottom: 2 }}>{title}</div>
-                    <div style={{ fontSize: 12, color: t.textSub, lineHeight: 1.55 }}>{body}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {failPending && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const plan = {
-                      appType: 'upi', partIdx: 0, total: failPending.amount, partAmount: failPending.amount,
-                      partsCount: 1, receiver: failPending.upi, payee: failPending.payee, note: failPending.note,
-                    }
-                    firePayment(plan, { withTr: true })
-                  }}
-                  style={{ width: '100%', padding: '13px', borderRadius: 13, border: 'none', background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', fontSize: 14, fontWeight: 900, cursor: 'pointer' }}
-                >
-                  🔁 Retry in Alternate Format
-                </button>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {isFallbackValid && (failPending.upi || '') !== fallbackUpiId.trim() && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const plan = {
-                          appType: 'upi', partIdx: 0, total: failPending.amount, partAmount: failPending.amount,
-                          partsCount: 1, receiver: failPending.upi, payee: failPending.payee, note: failPending.note,
-                        }
-                        firePayment(plan, { receiverOverride: fallbackUpiId.trim() })
-                      }}
-                      style={{ flex: 1, padding: '11px', borderRadius: 12, border: `1.5px solid ${t.accent}`, background: t.accentBg, color: t.accent, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
-                    >
-                      Alternate Receiver
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => { setFailHelp(false); setShowQRModal(true) }}
-                    style={{ flex: 1, padding: '11px', borderRadius: 12, border: `1.5px solid ${t.border}`, background: 'transparent', color: t.text, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
-                  >
-                    📷 Pay via QR
-                  </button>
-                </div>
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={() => setFailHelp(false)}
-              style={{ width: '100%', padding: '12px', borderRadius: 12, border: `1px solid ${t.border}`, background: 'transparent', color: t.textSub, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── RETURN VERIFY SHEET: confirm money left the bank — never assume ── */}
-      {returnConfirm && (
-        <div
-          onClick={() => setReturnConfirm(null)}
-          style={{
-            position: 'fixed', inset: 0, zIndex: 9999,
-            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)',
-            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              background: t.card, borderRadius: '24px 24px 0 0',
-              borderTop: `2px solid ${t.accent}`,
-              maxWidth: 460, width: '100%',
-              maxHeight: '92dvh', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
-              padding: '14px 20px calc(20px + env(safe-area-inset-bottom, 0px))',
-              boxSizing: 'border-box', textAlign: 'center',
-            }}
-          >
-            <div style={{ width: 44, height: 4, borderRadius: 999, background: t.border, margin: '0 auto 14px' }} />
-            <div style={{ fontSize: 16, fontWeight: 900, color: t.text }}>
-              Did the payment go through?
-            </div>
-            <div style={{ fontSize: 12.5, color: t.textSub, marginTop: 4, marginBottom: 12, lineHeight: 1.55 }}>
-              You attempted <b style={{ color: t.text }}>₹{Number(returnConfirm.amount).toFixed(2)}</b> to{' '}
-              <span style={{ fontFamily: 'monospace' }}>{returnConfirm.upi}</span>.
-              <br />Please confirm from your bank app — money debited?
-            </div>
-            <button
-              type="button"
-              onClick={() => { setReturnConfirm(null); finalizeAutoPayment(returnConfirm) }}
-              disabled={finalizingPay}
-              style={{ width: '100%', padding: '14px', borderRadius: 13, border: 'none', background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', fontSize: 15, fontWeight: 900, cursor: finalizingPay ? 'wait' : 'pointer', opacity: finalizingPay ? 0.7 : 1, marginBottom: 8 }}
-            >
-              {finalizingPay ? 'Saving…' : '✅ Yes — Money Debited, Give Receipt'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setReturnConfirm(null)
-                clearPendingPay()
-                setFiredPlan(null)
-                setShowPendingBanner(false)
-                setFailHelp(true)
-              }}
-              style={{ width: '100%', padding: '13px', borderRadius: 13, border: `1.5px solid ${t.noColor || '#ef4444'}`, background: 'transparent', color: '#ef4444', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}
-            >
-              ❌ No — Payment Failed
-            </button>
           </div>
         </div>
       )}
