@@ -65,6 +65,11 @@ const monthKeyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStar
 const makeTrRef = () =>
   `AM${Date.now().toString(36).toUpperCase()}${Math.floor(Math.random() * 1296).toString(36).toUpperCase()}`
     .replace(/[^a-zA-Z0-9]/g, '').slice(0, 32)
+const ord = (n) => {
+  const v = n % 100
+  const suffix = ['th', 'st', 'nd', 'rd'][(v - 20) % 10] || ['th', 'st', 'nd', 'rd'][v] || 'th'
+  return `${n}${suffix}`
+}
 
 export default function UpiPayPage() {
   // ── Receiver (locked) & settings ──
@@ -74,6 +79,8 @@ export default function UpiPayPage() {
   const [merchantCode, setMerchantCode] = useState('')
   const [paymentTitle, setPaymentTitle] = useState('Monthly Thali Contribution')
   const [paymentsEnabled, setPaymentsEnabled] = useState(true)
+  const [autopayEnabled, setAutopayEnabled] = useState(false)   // admin toggle (upi_autopay_enabled)
+  const [autopayDay, setAutopayDay] = useState('1')             // debit day of month (1–28)
 
   // ── Member context (used ONLY to pre-fill the amount they owe) ──
   const [profile, setProfile] = useState(null)
@@ -113,7 +120,7 @@ export default function UpiPayPage() {
         const { data: rows, error: cfgErr } = await supabase
           .from('app_settings')
           .select('key,value')
-          .in('key', ['upi_id', 'upi_id_2', 'upi_payee_name', 'upi_mc', 'default_payment_due', 'payment_title', 'payment_enabled'])
+          .in('key', ['upi_id', 'upi_id_2', 'upi_payee_name', 'upi_mc', 'default_payment_due', 'payment_title', 'payment_enabled', 'upi_autopay_enabled'])
         if (!alive) return
         if (cfgErr) setLoadError('Could not verify the receiver UPI ID. Showing the default.')
         const map = {}
@@ -126,6 +133,7 @@ export default function UpiPayPage() {
         if (map.upi_mc) setMerchantCode(String(map.upi_mc).trim())
         if (map.payment_title) setPaymentTitle(String(map.payment_title).trim())
         if (map.payment_enabled != null) setPaymentsEnabled(String(map.payment_enabled) !== 'false')
+        if (map.upi_autopay_enabled != null) setAutopayEnabled(String(map.upi_autopay_enabled).trim() === 'true')
         const due = Number(map.default_payment_due)
         const safeDue = Number.isFinite(due) && due > 0 ? due : DEFAULT_DUE
 
@@ -305,6 +313,65 @@ export default function UpiPayPage() {
     { id: 'paytm', label: 'Paytm', scheme: 'paytmmp://pay' },
   ]
   const buildShortcutUrl = (scheme) => (upiUrl ? `${scheme}?${upiUrl.split('?')[1]}` : null)
+
+  // ── UPI AutoPay: recurring mandate (monthly auto-debit, zero-fee, direct) ──
+  // Follows NPCI's mandate deep-linking spec (`upi://mandate/pay`, purpose=14).
+  // The member approves the mandate ONCE in their UPI app; afterwards their bank
+  // debits the amount straight into the receiver's account on the chosen day of
+  // every month. This app never holds, touches, or sees the money — so no
+  // payment-aggregator license is involved and no fee can be charged.
+  // NOTE: mandates only execute against a receiver VPA that its bank has
+  // enrolled for AutoPay (free merchant/UPI-2.0 onboarding at the bank).
+  const AUTOPAY_MAX = 15000 // NPCI per-mandate cap without additional auth factor
+
+  const buildMandateUrl = useCallback((debitDay) => {
+    const fmt = (d) => `${String(d.getDate()).padStart(2, '0')}${String(d.getMonth() + 1).padStart(2, '0')}${d.getFullYear()}`
+    const start = new Date()
+    const end = new Date(start.getFullYear() + 5, start.getMonth(), start.getDate())
+    const ref = makeTrRef()
+    const params = [
+      `pa=${encodeURIComponent(receiver)}`,
+      `pn=${encodeURIComponent(payeeName || DEFAULT_PAYEE)}`,
+      `am=${encodeURIComponent(Number(numericAmount).toFixed(2))}`,
+      `mn=${encodeURIComponent((paymentTitle || DEFAULT_PAYEE).slice(0, 45))}`,
+      `tn=${encodeURIComponent(cleanNote)}`,
+      `cu=INR`,
+      `amrule=MAX`,
+      `recur=MONTHLY`,
+      `recurRule=ON`,
+      `recurValue=${debitDay}`,
+      `validitystart=${fmt(start)}`,
+      `validityend=${fmt(end)}`,
+      `tr=${ref}`,
+      `tid=${ref}`,
+      `mode=04`,
+      `orgid=000000`,
+      `purpose=14`,
+      `txnType=CREATE`,
+      `rev=Y`,
+      `block=N`,
+    ]
+    if (merchantCode) params.splice(2, 0, `mc=${encodeURIComponent(merchantCode)}`)
+    return `upi://mandate/pay?${params.join('&')}`
+  }, [receiver, payeeName, numericAmount, cleanNote, merchantCode, paymentTitle])
+
+  const handleAutoPay = () => {
+    if (!paymentsEnabled) { toast.error('Payments are currently paused. Please contact support.'); return }
+    if (!receiverIsConfigured) { toast.error('Receiver UPI ID is not configured correctly. Please contact support.'); return }
+    if (!amountValid) { toast.error('Enter the monthly amount first (minimum ₹1).'); return }
+    if (numericAmount > AUTOPAY_MAX) {
+      toast.error(`AutoPay mandates are capped at ₹${AUTOPAY_MAX.toLocaleString('en-IN')} per month. Pay larger dues manually.`)
+      return
+    }
+    const day = Number(autopayDay)
+    if (!(day >= 1 && day <= 28)) { toast.error('Choose a debit date between the 1st and the 28th.'); return }
+    if (Date.now() - lastLaunchRef.current < LAUNCH_COOLDOWN) { toast.error('Please wait a moment before trying again.'); return }
+    lastLaunchRef.current = Date.now()
+    setFired(true)
+    setFailHelp(false)
+    fireIntent(buildMandateUrl(day))
+    toast.success('Opening your UPI app — approve the monthly mandate there.')
+  }
 
   const t = THEMES[localThemeId] || THEMES.dark
   const inputStyle = {
@@ -523,6 +590,57 @@ export default function UpiPayPage() {
           </p>
 
           {/* ── Desktop fallback: upi:// schemes don't fire on laptops ── */}
+          {/* ── UPI AUTOPAY — set once, pay every month. Zero fee, money goes
+                  bank-to-bank; this page only proposes the mandate. ── */}
+          {autopayEnabled && isMobile && (
+            <Card style={{ marginTop: 16, padding: '16px 16px calc(16px - 2px)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <ShieldCheck size={17} color={t.successText || t.accent} />
+                <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: t.textSub }}>
+                  AutoPay — pay automatically every month
+                </span>
+              </div>
+              <p style={{ ...mutedStyle, marginBottom: 12 }}>
+                Approve once in your UPI app and your bank pays the amount below to{' '}
+                <strong style={{ color: t.text }}>{payeeName}</strong> on the same date every month —
+                straight bank-to-bank, no charges, and you can pause or delete the plan anytime from your UPI app.
+              </p>
+
+              <label htmlFor="autopay-day" style={{ ...labelStyle, marginBottom: 8 }}>Debit date of the month</label>
+              <select
+                id="autopay-day"
+                value={autopayDay}
+                onChange={(e) => setAutopayDay(e.target.value)}
+                style={{ ...inputStyle, marginBottom: 12 }}
+              >
+                {Array.from({ length: 28 }, (_, i) => (
+                  <option key={i + 1} value={i + 1}>{ord(i + 1)} of every month</option>
+                ))}
+              </select>
+
+              <Btn
+                onClick={handleAutoPay}
+                disabled={!paymentsEnabled || !receiverIsConfigured || !amountValid || loading}
+                style={{ width: '100%', padding: '15px 20px', fontSize: 15 }}
+              >
+                <ArrowLeftRight size={17} />
+                {amountValid && numericAmount <= AUTOPAY_MAX
+                  ? `Set AutoPay ₹${numericAmount.toFixed(0)} on the ${ord(Number(autopayDay))}`
+                  : 'Set Up AutoPay'}
+              </Btn>
+
+              {amountValid && numericAmount > AUTOPAY_MAX && (
+                <p style={{ margin: '10px 0 0', fontSize: 12, color: '#e05555' }}>
+                  AutoPay supports up to ₹{AUTOPAY_MAX.toLocaleString('en-IN')} per month. For bigger amounts, pay manually above.
+                </p>
+              )}
+              <p style={{ margin: '10px 0 0', fontSize: 11.5, color: t.textSub, opacity: 0.65, lineHeight: 1.55 }}>
+                Mandate is created inside your UPI app (GPay/PhonePe/Paytm/BHIM) after you enter your UPI PIN there once.
+                If the app says the receiver doesn't support mandates, just pay manually above.
+              </p>
+            </Card>
+          )}
+
           {!isMobile && (
             <Card style={{ marginTop: 20 }}>
               <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: t.textSub, marginBottom: 14, textAlign: 'center' }}>
