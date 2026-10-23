@@ -2,10 +2,12 @@
 
 ## Unreleased — 2026-10-23
 
-### Payments — payer flow reduced to Copy & Open (only)
-- `/pay` (`/upi-pay`) now has **one flow**: tap **Copy UPI ID & Open UPI App** → the locked receiver VPA is copied to the clipboard → the generic `upi://pay` scheme opens the OS UPI-app chooser (GPay / PhonePe / Paytm / BHIM / bank apps) **with no parameters**. The member pastes the ID inside their own app, types the amount, and pays with their UPI PIN.
-- Why: PSPs reject app-opened intents that carry prefilled parameters as unverified merchant/collect requests ("Payment limit exceeded"). A member-typed P2P paste is treated as a trusted, user-initiated transfer and uses the member's own daily limit (up to ₹1,00,000).
-- Removed from the payer page: prefilled `upi://pay?...` intents and per-app shortcut links, QR generation, share/WhatsApp links, AutoPay mandate builder, alternate-receiver switch, and all failure-diagnostic sheets. The page writes nothing to the database.
+### Payments — Copy & Open only (prefilled link removed)
+- `/pay` (`/upi-pay`) now has **one action**: **Copy UPI ID & Open UPI App** writes the locked receiver VPA to the clipboard and fires bare `upi://pay` with **no parameters at all** — no `pa`, `pn`, `am`, `mc`, `tr` or `tn`. The member pastes the ID inside their own app and types the amount there.
+- The receiver card is tap-to-copy, the amount field keeps its tap-to-fill due chip, and how-it-works/refused notes are folded into a disclosure.
+- Why: Google Pay (and other PSPs) still applied their "Payment limit exceeded" / "bank limit exceeded" check to the receiver-prefilled link `upi://pay?pa=…`, even with the amount omitted. A parameter-free chooser plus a member-typed paste is the only flow where the transfer is entirely user-initiated inside the bank app, so no app-intent fraud/merchant check runs.
+- If a limit error still appears after pasting and typing the amount inside the app, it is a bank-side limit (payer daily quota across all apps, or the receiver's inbound P2P cap) and cannot be fixed from this page.
+- Removed from the payer page: per-app shortcut links, QR generation, share/WhatsApp links, AutoPay mandate builder, alternate-receiver switch, and all failure-diagnostic sheets. The page writes nothing to the database.
 - The receiver is still read-only from `app_settings.upi_id`; clipboard has an `execCommand` fallback for older Android WebViews. Legacy `copiedUpi` / deep-link helpers removed from the dues hub; payer button labels updated to "Copy UPI ID & Open UPI App".
 - **Management flow is untouched**: verifying/recording payments, dues tracker, receipts, reminders, forfeits, notification tools and UPI settings all remain in Payments Hub.
 
