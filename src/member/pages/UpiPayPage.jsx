@@ -66,6 +66,8 @@ const ord = (n) => {
 export default function UpiPayPage() {
   // ── Receiver (locked) & admin settings ──
   const [receiverVpa, setReceiverVpa] = useState('')
+  const [fallbackVpa, setFallbackVpa] = useState('')
+  const [useFallback, setUseFallback] = useState(false)
   const [payeeName, setPayeeName] = useState(DEFAULT_PAYEE)
   const [title, setTitle] = useState('Monthly Thali Contribution')
   const [paymentsEnabled, setPaymentsEnabled] = useState(true)
@@ -106,12 +108,16 @@ export default function UpiPayPage() {
         const { data: rows, error: cfgErr } = await supabase
           .from('app_settings')
           .select('key,value')
-          .in('key', ['upi_id', 'upi_payee_name', 'upi_mc', 'default_payment_due', 'payment_title', 'payment_enabled', 'upi_autopay_enabled'])
+          .in('key', ['upi_id', 'upi_id_2', 'upi_payee_name', 'upi_mc', 'default_payment_due', 'payment_title', 'payment_enabled', 'upi_autopay_enabled'])
         if (!alive) return
         if (cfgErr) setLoadError('Could not verify the receiver UPI ID. Showing the default.')
         const map = {}
         ;(rows || []).forEach(r => { map[r.key] = r.value })
         setReceiverVpa(String(map.upi_id || '').trim())
+        // Alternate receiver: the fix when the primary VPA hits its daily
+        // collection cap ("receiver can't receive more today"). Invisible to
+        // members until management configures it (Payments Hub → Settings).
+        setFallbackVpa(String(map.upi_id_2 || '').trim())
         if (map.upi_payee_name) setPayeeName(String(map.upi_payee_name).trim())
         if (map.payment_title) setTitle(String(map.payment_title).trim())
         if (map.payment_enabled != null) setPaymentsEnabled(String(map.payment_enabled) !== 'false')
@@ -154,8 +160,12 @@ export default function UpiPayPage() {
     return () => { alive = false }
   }, [])
 
-  const receiver = isValidVpa(receiverVpa) ? receiverVpa : DEFAULT_RECEIVER
-  const receiverIsConfigured = isValidVpa(receiverVpa)
+  const fallbackValid = isValidVpa((fallbackVpa || '').trim())
+  const receiver = (useFallback && fallbackValid)
+    ? String(fallbackVpa).trim()
+    : (isValidVpa(receiverVpa) ? receiverVpa : DEFAULT_RECEIVER)
+  const receiverIsConfigured = isValidVpa(receiverVpa) || (useFallback && fallbackValid)
+  const usingFallback = fallbackValid && receiver === String(fallbackVpa).trim()
 
   const numericAmount = Math.max(0, parseFloat(amount) || 0)
   const amountValid =
@@ -431,6 +441,28 @@ export default function UpiPayPage() {
             <p style={{ ...mutedStyle, marginTop: 10 }}>
               Set by the organisation and locked here — your money always reaches the verified account.
             </p>
+
+            {/* Bank-side caps can't be lifted by any app — but the MONEY PATH
+                can be re-routed: if the primary receiver hit today's daily
+                collection cap, management's alternate VPA accepts the money. */}
+            {fallbackValid && (
+              <button
+                type="button"
+                onClick={() => setUseFallback(!useFallback)}
+                style={{
+                  width: '100%', marginTop: 12, padding: '11px 13px', borderRadius: 12,
+                  background: usingFallback ? 'rgba(220,180,60,0.14)' : 'transparent',
+                  border: usingFallback ? '1.5px solid rgba(220,180,60,0.5)' : `1px solid ${t.border}`,
+                  color: usingFallback ? '#e8c268' : t.textSub, fontSize: 12.5, fontWeight: 800,
+                  cursor: 'pointer', textAlign: 'left', lineHeight: 1.5,
+                  fontFamily: "'DM Sans', sans-serif", minHeight: 44,
+                }}
+              >
+                {usingFallback
+                  ? '⚡ PRIMARY RECEIVER BUSY — paying the ALTERNATE receiver now. Tap to switch back.'
+                  : '⚡ Receiver hit today\'s daily limit? Tap to pay the alternate receiver instead'}
+              </button>
+            )}
           </Card>
 
           {/* ── STEP 1: SCAN THE QR (the never-fails path, works inside any UPI app) ── */}
@@ -580,7 +612,7 @@ export default function UpiPayPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
                 {[
                   ['🏦', 'Daily UPI quota exhausted (most common)', 'Your bank counts every UPI payment across ALL your apps (GPay, PhonePe, Paytm…). After the daily quota, even ₹1 fails. Fix: pay from a different bank account in your UPI app, or retry after midnight.'],
-                  ['📥', 'Receiver reached today\'s collection cap', 'One UPI ID can only receive a fixed amount per day. If you hit this while others are also paying, tell management (Payments Hub → help) and pay tomorrow.'],
+                  ['📥', 'Receiver reached today\'s collection cap', 'One UPI ID can only receive a fixed amount per day. If today\'s payments filled it, use the ⚡ alternate receiver switch on this page (when provided), or pay tomorrow morning.'],
                   ['🧾', 'Per-transaction cap', 'UPI allows up to ₹1,00,000 per payment; your bank may cap it lower. Split the amount into two payments.'],
                   ['⛽', 'No balance / wrong account selected', 'Check the selected bank account inside your UPI app before retrying.'],
                 ].map(([icon, title, body]) => (
