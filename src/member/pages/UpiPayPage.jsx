@@ -599,6 +599,7 @@ export default function UpiPayPage() {
                   ['🏦', 'Daily UPI quota exhausted (most common)', 'Your bank counts every UPI payment across ALL your apps (GPay, PhonePe, Paytm…). Once the daily quota is over, even ₹1 fails with "limit exceeded". Fix: pay from a different bank account inside your UPI app, or retry after midnight.'],
                   ['📥', 'Receiver daily collection cap', 'One UPI ID can only receive a fixed amount per day. When many members pay together, switch to the alternate receiver below.'],
                   ['📲', 'Intent blocked by the app', 'Some bank apps reject direct deep-links. Use "Retry in alternate format", or scan the QR from inside your UPI app instead.'],
+                  ['🔍', 'Only the app link fails, manual pay works', 'Your UPI app can pay to this ID manually but refuses app-opened payments (known GPay behaviour in risk-review / locked onboarded states). Fix 1: scan the QR below with that app — scanning inside the app is a different flow and usually succeeds. Fix 2: update or reinstall the UPI app (Play Store → Google Pay → Update). Fix 3: set PhonePe/Paytm as the app and pay from there.'],
                   ['🧾', 'Per-transaction cap', 'This page blocks anything above ₹1,00,000 (the NPCI cap). Your own bank may cap lower — split the amount into two payments.'],
                 ].map(([icon, title, body]) => (
                   <div key={title} style={{ display: 'flex', gap: 10, padding: '10px 12px', borderRadius: 13, background: t.inputBg, border: `1px solid ${t.inputBorder || t.border}` }}>
@@ -609,6 +610,32 @@ export default function UpiPayPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+
+              {/* Exact link actually fired — lets a failing test be verified
+                  against another phone/app WITHOUT guessing. Read-only scope:
+                  payer + amount + note, nothing else is ever attached. */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: t.textSub, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  Exact payment link that was opened
+                </div>
+                <div style={{ padding: '8px 10px', borderRadius: 12, background: t.inputBg, border: `1px solid ${t.inputBorder || t.border}`, overflowWrap: 'anywhere', fontSize: 11.5, color: t.textSub, lineHeight: 1.5, maxHeight: 92, overflowY: 'auto' }}>
+                  {upiUrl || '— no link yet (enter amount first)'}
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(upiUrl || '')
+                      toast.success('Payment link copied — paste it into a browser, mail, or WhatsApp to test elsewhere.')
+                    } catch {
+                      toast.error('Could not copy. Please copy it manually from the box above.')
+                    }
+                  }}
+                  style={{ width: '100%', padding: '10px', borderRadius: 12, border: `1.5px solid ${t.border}`, background: 'transparent', color: t.textSub, fontSize: 12, fontWeight: 800, cursor: 'pointer' }}
+                >
+                  📋 Copy This Exact Link (for testing on another phone)
+                </button>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
