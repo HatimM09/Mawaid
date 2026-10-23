@@ -657,7 +657,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               Pay via UPI
             </span>
             <span style={{ display: 'block', fontSize: 12, fontWeight: 600, opacity: 0.75, marginTop: 2 }}>
-              Scan QR or pay to UPI ID — no bank limit errors
+              One tap opens your UPI app · QR fallback built in
             </span>
           </span>
           <ChevronRight size={18} style={{ flexShrink: 0, opacity: 0.7 }} />
@@ -1381,7 +1381,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               }}
             >
               <CreditCard size={18} />
-              <span>Pay Securely (QR / UPI ID)</span>
+              <span>Pay Securely (One Tap / QR)</span>
             </button>
             <div style={{ fontSize: 10.5, color: t.textSub, textAlign: 'center', lineHeight: 1.5, marginTop: 10 }}>
               Scan the QR with your UPI app or pay to the copied UPI ID — methods banks don't reject with
