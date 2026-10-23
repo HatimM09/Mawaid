@@ -1,12 +1,11 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import {
-  CreditCard, ArrowUpRight, CheckCircle2, Copy, Check, QrCode,
+  CreditCard, CheckCircle2, Check, QrCode,
   Receipt, ShieldCheck, Clock, RefreshCw, AlertCircle, Sparkles,
   ChevronRight, X, Download, FileText, ArrowLeft, Info, Send,
   Users, Search, Filter, MessageSquare, Phone, CheckSquare, Edit3,
   SlidersHorizontal, BellRing, Eye, EyeOff, UserX, UserCheck, ToggleLeft, ToggleRight
 } from 'lucide-react'
-import { QRCodeCanvas } from 'qrcode.react'
 import toast from 'react-hot-toast'
 import { supabase } from '../../lib/firebaseClient'
 import { useAuth, useTheme } from '../../admin/context'
@@ -41,10 +40,9 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   const [refreshing, setRefreshing] = useState(false)
 
   // Payer form state. The hub does NOT fire UPI intents itself — payment
-  // happens on /pay (QR-first). Member rows come only from manager records
+  // happens on /pay (Copy & Open). Member rows come only from manager records
   // after the money is seen in the bank, so no self-reported receipt exists.
   const [amount, setAmount] = useState(defaultDue.toString())
-  const [copiedUpi, setCopiedUpi] = useState(false)
   const [showRefundPolicy, setShowRefundPolicy] = useState(false)
   // Manager-only manual record (cash / direct bank transfer)
   const [showRecordModal, setShowRecordModal] = useState(false)
@@ -157,29 +155,10 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     loadData()
   }, [loadData])
 
-  // Copy UPI ID to clipboard
-  const handleCopyUpi = (showExtendedToast = false) => {
-    navigator.clipboard.writeText(configuredUpiId)
-    setCopiedUpi(true)
-    if (showExtendedToast) {
-      toast.success(`Copied "${configuredUpiId}"! Open your UPI app & select "Pay to UPI ID" to bypass bank web limits.`, {
-        duration: 5000,
-        icon: '📋'
-      })
-    } else {
-      toast.success('UPI ID copied to clipboard!')
-    }
-    setTimeout(() => setCopiedUpi(false), 2500)
-  }
-
   // (All UPI deep-link/intent launch machinery was removed — payment happens on
-  // /pay, the secure QR-first page. This hub only keeps an editable amount for
+  // /pay, the Copy & Open page. This hub only keeps an editable amount for
   // the manager's manual record default.)
-  const UPI_TXN_LIMIT = 100000
   const numericAmount = Math.max(0, parseFloat(amount) || 0)
-
-  const isValidVpa = (v) => /^[\w.-]{2,256}@[a-zA-Z]{2,64}$/.test((v || '').trim())
-  const isUpiIdValid = useMemo(() => isValidVpa(configuredUpiId), [configuredUpiId])
 
   // ── Monthly dues engine ──
   // Every month carries an expected contribution (defaultDue). Paid = sum of
@@ -218,14 +197,8 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   }, [paidByMonth, defaultDue])
   const currentBalance = Math.max(0, Number((defaultDue - (paidByMonth[currentMonthKey] || 0)).toFixed(2)))
 
-  // Detect Mobile device vs Desktop
-  const isMobileDevice = useMemo(() => {
-    if (typeof window === 'undefined') return true
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-  }, [])
-
   // ⚠️ All UPI intent-launch, pending-stash, and auto-receipt machinery was
-  // REMOVED deliberately: members pay on /pay (QR-first). A dues record exists
+  // REMOVED deliberately: members pay on /pay (Copy & Open). A dues record exists
   // only after management confirms the money in the bank — no client-side
   // payment claims anywhere in the app.
 
@@ -636,8 +609,8 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     }}>
       <BackHeader title={isManager && portalMode === 'manager' ? "Payment Management Hub" : "Dues & Payments"} onBack={onBack} />
 
-      {/* Quick redirect to the secure /pay page. The hub does not fire payment
-          intents at all — the QR-first page handles paying, and nothing is
+      {/* Quick redirect to the /pay page. The hub does not fire payment
+          intents at all — the Copy & Open page handles paying, and nothing is
           written here until management confirms the money in the bank. */}
       {!(isManager && portalMode === 'manager') && (
         <button
@@ -657,7 +630,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               Pay via UPI
             </span>
             <span style={{ display: 'block', fontSize: 12, fontWeight: 600, opacity: 0.75, marginTop: 2 }}>
-              One tap opens your UPI app · QR fallback built in
+              Copy UPI ID &amp; open your UPI app · no fees
             </span>
           </span>
           <ChevronRight size={18} style={{ flexShrink: 0, opacity: 0.7 }} />
@@ -1355,9 +1328,10 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               )}
             </div>
 
-            {/* ── HOW TO PAY: the hub no longer fires intents. Secure QR-first
-                    flow lives on /pay — the formats there are ones banks don't
-                    intermittently reject with "limit exceeded". ── */}
+            {/* ── HOW TO PAY: the hub no longer fires intents. The Copy & Open
+                    flow lives on /pay — the ID is pasted by the member inside
+                    their own UPI app, so bank "limit exceeded" blocks don't
+                    apply. ── */}
             <button
               type="button"
               onClick={() => window.location.assign('/pay')}
@@ -1381,11 +1355,11 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               }}
             >
               <CreditCard size={18} />
-              <span>Pay Securely (One Tap / QR)</span>
+              <span>Copy UPI ID &amp; Open UPI App</span>
             </button>
             <div style={{ fontSize: 10.5, color: t.textSub, textAlign: 'center', lineHeight: 1.5, marginTop: 10 }}>
-              Scan the QR with your UPI app or pay to the copied UPI ID — methods banks don't reject with
-              &ldquo;limit exceeded&rdquo;. Money goes bank-to-bank; no fees anywhere.
+              Tap to copy the receiver&apos;s UPI ID and open your UPI app — paste it there and enter the
+              amount. Money goes bank-to-bank; no fees anywhere.
               {' '}<button type="button" onClick={() => setShowRefundPolicy(true)} style={{ background: 'none', border: 'none', padding: 0, color: t.accent, fontSize: 10.5, fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}>Refund Policy</button>
             </div>
 
