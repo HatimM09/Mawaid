@@ -1,3 +1,4 @@
+/// <reference path="../deno.d.ts" />
 // Supabase Edge Function: Admin Auth Operations
 // Replaces the Firebase Cloud Function `supabaseAdminAuth`
 // Requires `SUPABASE_SERVICE_ROLE_KEY` secret set in Supabase dashboard
@@ -49,7 +50,7 @@ serve(async (req) => {
 
     if (action === 'update_user') {
       if (!p_user_id) throw new Error('User ID is required')
-      const updates = {}
+      const updates: Record<string, any> = {}
       if (p_email) updates.email = p_email
       if (p_password) updates.password = p_password
       if (p_metadata) updates.user_metadata = p_metadata

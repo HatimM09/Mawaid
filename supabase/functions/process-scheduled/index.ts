@@ -1,4 +1,5 @@
 // @ts-nocheck
+/// <reference path="../deno.d.ts" />
 // Supabase Edge Function: Process Scheduled Broadcasts & Menu Publish
 // Called by external cron service every minute
 // Handles: broadcast delivery + menu publish notifications

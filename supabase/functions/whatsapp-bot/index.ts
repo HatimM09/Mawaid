@@ -1,3 +1,4 @@
+/// <reference path="../deno.d.ts" />
 // ═══════════════════════════════════════════════════════════════
 // AL-MAWAID — WhatsApp Chatbot (Supabase Edge Function)
 // ═══════════════════════════════════════════════════════════════
@@ -31,7 +32,7 @@ import {
   isSurveyOpen, getSurveyTargetWeek, getSurveyWindowLabel, formatWeekRange,
   parseDishArray, isRotiItem, isCountInput, menuForDay, resolveServingWeekId,
   parseDishInput, parseDateInput, MEAL_ORDER, mealLabel, statusPill, normalizePhone,
-  verifySignature,
+  verifySignature, getPoliteName,
 } from './logic.ts'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
@@ -87,6 +88,8 @@ interface MemberRow {
   thali_number: string | number | null
   phone: string
   role: string
+  custom_due_amount?: number | null
+  payment_exempt?: boolean | null
 }
 
 async function getWhatsappUser(waPhone: string) {
@@ -97,16 +100,16 @@ async function getWhatsappUser(waPhone: string) {
 async function getMemberByWaPhone(waPhone: string): Promise<{ member: MemberRow | null; linked: boolean }> {
   const link = await getWhatsappUser(waPhone)
   if (link?.user_id) {
-    const { data } = await supabase.from('user_stats').select('user_id, name, email, thali_number, phone, role').eq('user_id', link.user_id).maybeSingle()
+    const { data } = await supabase.from('user_stats').select('user_id, name, email, thali_number, phone, role, custom_due_amount, payment_exempt').eq('user_id', link.user_id).maybeSingle()
     if (data) return { member: data as MemberRow, linked: true }
     // stale link (member removed) — drop it
     await supabase.from('whatsapp_users').delete().eq('wa_phone', waPhone)
   }
   // Fall back to matching user_stats.phone directly
-  const { data: members } = await supabase.from('user_stats').select('user_id, name, email, thali_number, phone, role')
+  const { data: members } = await supabase.from('user_stats').select('user_id, name, email, thali_number, phone, role, custom_due_amount, payment_exempt')
   const want = normalizePhone(waPhone)
   if (want) {
-    const hit = (members || []).find(m => m.phone && normalizePhone(m.phone) === want)
+    const hit = ((members || []) as MemberRow[]).find((m: MemberRow) => m.phone && normalizePhone(m.phone) === want)
     if (hit) {
       await linkMember(waPhone, hit as MemberRow)
       return { member: hit as MemberRow, linked: true }
@@ -126,14 +129,48 @@ async function linkMember(waPhone: string, member: MemberRow) {
 }
 
 async function findMemberByThali(thaliNo: string): Promise<MemberRow | null> {
-  const clean = String(thaliNo).replace(/^#/, '').trim()
+  const clean = String(thaliNo || '').replace(/^[#\s]+|[#\s]+$/g, '').trim()
   if (!clean) return null
-  const { data } = await supabase
+  const cleanLower = clean.toLowerCase()
+  const norm = cleanLower.replace(/[\s\-_/\\#.]/g, '')
+
+  // 1. Direct case-insensitive match
+  const { data: direct } = await supabase
     .from('user_stats')
-    .select('user_id, name, email, thali_number, phone, role')
-    .eq('thali_number', clean)
+    .select('user_id, name, email, thali_number, phone, role, custom_due_amount, payment_exempt')
+    .ilike('thali_number', clean)
     .maybeSingle()
-  return (data as MemberRow) || null
+  if (direct) return direct as MemberRow
+
+  // 2. Fetch all members for flexible normalized matching (handles 101/A, 101-A, 101 A, G2, etc.)
+  const { data: all } = await supabase
+    .from('user_stats')
+    .select('user_id, name, email, thali_number, phone, role, custom_due_amount, payment_exempt')
+
+  if (all && all.length) {
+    const list = all as MemberRow[]
+    let hit = list.find((u: MemberRow) => String(u.thali_number || '').trim().toLowerCase() === cleanLower)
+    if (hit) return hit as MemberRow
+
+    hit = list.find((u: MemberRow) => {
+      const uNorm = String(u.thali_number || '').replace(/[\s\-_/\\#.]/g, '').toLowerCase()
+      return uNorm === norm
+    })
+    if (hit) return hit as MemberRow
+
+    const cleanDigits = clean.replace(/[^\d]/g, '')
+    if (cleanDigits.length > 0 && cleanDigits.length < 10) {
+      hit = list.find((u: MemberRow) => String(u.thali_number || '').trim() === cleanDigits)
+      if (hit) return hit as MemberRow
+    }
+
+    if (cleanDigits.length >= 10) {
+      const last10 = cleanDigits.slice(-10)
+      hit = list.find((u: MemberRow) => u.phone && normalizePhone(u.phone).endsWith(last10))
+      if (hit) return hit as MemberRow
+    }
+  }
+  return null
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -237,6 +274,101 @@ async function notifyAdmins(message: string) {
   }
 }
 
+function toWaPhone(phone: string): string {
+  let digits = String(phone || '').replace(/[^\d]/g, '')
+  if (digits.length === 10) digits = '91' + digits
+  return digits
+}
+
+async function getPaymentManagerInfo() {
+  const appSettings = await loadAppSettings()
+  let mgrPhone = appSettings.payment_manager_phone ? normalizePhone(appSettings.payment_manager_phone) : null
+  let mgrUserId: string | null = null
+  let mgrName = String(appSettings.payment_manager_name || 'Mulla Murtaza Mohammadhussain Hamid')
+
+  const { data: managers } = await supabase
+    .from('user_stats')
+    .select('user_id, name, phone, email')
+    .or('name.ilike.%Murtaza%Hamid%,name.ilike.%Mulla Murtaza%,email.ilike.%murtaza.mohammed.hamid%')
+    .limit(1)
+
+  if (managers && managers.length > 0) {
+    if (!mgrPhone && managers[0].phone) {
+      mgrPhone = normalizePhone(managers[0].phone)
+    }
+    mgrUserId = managers[0].user_id
+    if (managers[0].name) mgrName = managers[0].name
+  }
+
+  if (!mgrPhone) mgrPhone = '6375250267'
+  return { mgrPhone, mgrUserId, mgrName }
+}
+
+async function notifyPaymentManagerWa({ member, amount, utr, monthLabel, waPhone }: { member: MemberRow; amount: number; utr: string; monthLabel: string; waPhone: string }) {
+  const { mgrPhone } = await getPaymentManagerInfo()
+  const nowStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })
+
+  // 1. In-App Notice for Mulla Murtaza Hamid & Admins
+  try {
+    const { data: managers } = await supabase
+      .from('user_stats')
+      .select('user_id')
+      .or('name.ilike.%Murtaza%,email.ilike.%murtaza%,role.eq.admin,role.eq.payment_manager')
+
+    if (managers && managers.length > 0) {
+      const notices = managers.map((mgr: { user_id: string }) => ({
+        title: '💳 New Thali Payment Received',
+        body: `${member.name || 'Member'} (Thali #${member.thali_number || '—'}) paid ₹${Number(amount).toLocaleString('en-IN')} for ${monthLabel}. UTR: ${utr}. Recorded via WhatsApp Bot.`,
+        sender_name: 'Al-Mawaid WhatsApp Bot',
+        target_user_id: mgr.user_id,
+        tone: '#34d399',
+        created_at: new Date().toISOString()
+      }))
+      await supabase.from('notices').insert(notices)
+    }
+  } catch (err) {
+    console.warn('[notifyPaymentManagerWa] in-app notice failed:', err)
+  }
+
+  // 2. Push Notification
+  try {
+    await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SERVICE_ROLE_KEY}` },
+      body: JSON.stringify({
+        title: `💳 Thali #${member.thali_number || '—'} Payment: ₹${Number(amount).toLocaleString('en-IN')}`,
+        body: `${member.name || 'Member'} paid ₹${Number(amount).toLocaleString('en-IN')} for ${monthLabel}. UTR: ${utr}.`,
+        target_type: 'admins',
+        notify_in_app: true,
+        type: 'new_payment',
+        sender_name: 'WhatsApp Bot',
+        url: '/admin/payments'
+      })
+    })
+  } catch (e) {
+    console.warn('[notifyPaymentManagerWa] push failed:', e)
+  }
+
+  // 3. Direct WhatsApp Message to Mulla Murtaza Hamid
+  if (mgrPhone) {
+    try {
+      const fullPhone = toWaPhone(mgrPhone)
+      const tNum = String(member.thali_number || '—').trim()
+      const politeName = getPoliteName(member.name)
+      const alertMsg = `🔔 *New Thali Payment*\n\n` +
+        `• Thali: *#${tNum}* • *${politeName}*\n` +
+        `• Amount: *₹${Number(amount).toLocaleString('en-IN')}* (${monthLabel})\n` +
+        `• UTR: \`${utr}\`\n` +
+        `• Phone: +${waPhone}\n\n` +
+        `👉 Reply: *VERIFY ${utr}*`
+
+      await waSendText(fullPhone, alertMsg)
+    } catch (e) {
+      console.warn('[notifyPaymentManagerWa] WhatsApp alert failed:', e)
+    }
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Output formatting
 // ═══════════════════════════════════════════════════════════════
@@ -251,7 +383,7 @@ function helpText(): string {
     '4️⃣ *STATUS* – my survey responses',
     '5️⃣ *FEEDBACK* – rate today\'s meals',
     '6️⃣ *STOP* / *RESUME* – thali request',
-    '7️⃣ *DUES* – contribution status',
+    '7️⃣ *DUES* / *PAY* – pay monthly thali contribution',
     '8️⃣ *QUERY* – raise a support query',
     '9️⃣ *WHOAMI* – my linked profile',
     '',
@@ -541,36 +673,70 @@ async function sendDues(waPhone: string, member: MemberRow) {
   const nextMonth = toLocalDateStr(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)))
   const monthLabel = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
     .toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+  const shortMonth = now.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }).replace(/\s+/g, '')
 
   if (member.role === 'member' || member.role === 'admin') {
     const { data: profile } = await supabase.from('user_stats').select('payment_exempt, custom_due_amount').eq('user_id', member.user_id).maybeSingle()
     if (profile?.payment_exempt) {
-      await waSendText(waPhone, '💚 Your thali contribution is exempt — no dues pending. Type *MENU* for today\'s thali.')
+      await waSendText(waPhone, '💚 *Monthly Thali Contribution*\n\nYour thali is exempt from monthly contributions — no dues pending. Type *MENU* for today\'s thali.')
       return
     }
-    const due = Number(profile?.custom_due_amount ?? appSettings.default_payment_due ?? 1500)
+
+    const due = Number(profile?.custom_due_amount && Number(profile.custom_due_amount) > 0 ? profile.custom_due_amount : (appSettings.default_payment_due ?? 1500))
     const { data: payments } = await supabase
       .from('user_payments')
-      .select('amount, status, created_at')
+      .select('amount, status, created_at, metadata')
       .eq('user_id', member.user_id)
       .gte('created_at', `${monthStart}T00:00:00Z`)
       .lt('created_at', `${nextMonth}T00:00:00Z`)
-    const verified = (payments || []).filter(p => p.status === 'verified').reduce((s, p) => s + Number(p.amount), 0)
-    const submitted = (payments || []).filter(p => p.status === 'submitted').reduce((s, p) => s + Number(p.amount), 0)
+
+    interface PaymentSummaryRow { amount?: number | string | null; status?: string | null }
+    const valid = ((payments || []) as PaymentSummaryRow[]).filter((p: PaymentSummaryRow) => p.status !== 'rejected')
+    const verified = valid.filter((p: PaymentSummaryRow) => p.status === 'verified').reduce((s: number, p: PaymentSummaryRow) => s + Number(p.amount || 0), 0)
+    const submitted = valid.filter((p: PaymentSummaryRow) => p.status === 'submitted').reduce((s: number, p: PaymentSummaryRow) => s + Number(p.amount || 0), 0)
     const balance = Math.max(0, due - verified - submitted)
-    const upi = appSettings.upi_id || '—'
-    const payee = appSettings.upi_payee_name || 'Al-Mawaid'
+    const upi = String(appSettings.upi_id || '6375250267@okbizaxis')
+    const payee = String(appSettings.upi_payee_name || 'Fleeksocks')
+
+    const tNum = String(member.thali_number || 'N/A').trim()
+    const politeName = getPoliteName(member.name)
+
+    if (balance <= 0 && due > 0) {
+      await waSendText(waPhone,
+        `🎉 *All Cleared for ${monthLabel}!* 🎉\n\n` +
+        `• Thali: *#${tNum}* (${politeName})\n` +
+        `• Paid: ₹${(verified + submitted).toLocaleString('en-IN')} ✅\n` +
+        `• *Balance:* *₹0*\n\n` +
+        `Thank you! 🙏\n_Reply MENU anytime_`)
+      return
+    }
+
+    const cleanUpiUri = `upi://pay?pa=${encodeURIComponent(upi)}&pn=${encodeURIComponent(payee)}&cu=INR`
+
+    // Set multi-step session for awaiting UTR
+    await setSession(waPhone, {
+      flow: 'payment',
+      step: 'awaiting_utr',
+      monthKey: monthStart.substring(0, 7),
+      monthLabel,
+      amount: balance,
+      totalDue: due,
+    })
+
     const lines = [
-      `💰 *${appSettings.payment_title || 'Monthly Thali Contribution'}* — ${monthLabel}`,
+      `💳 *Thali #${tNum} Dues • ${monthLabel}*`,
+      `Salam *${politeName}*,`,
       '',
-      `Monthly due: ₹${due.toFixed(2)}`,
-      verified > 0 ? `✅ Verified payments: ₹${verified.toFixed(2)}` : '',
-      submitted > 0 ? `⏳ Submitted (awaiting verification): ₹${submitted.toFixed(2)}` : '',
-      `Balance: *₹${balance.toFixed(2)}*`,
+      `• Due: ₹${due.toLocaleString('en-IN')}`,
+      (verified + submitted) > 0 ? `• Paid so far: ₹${(verified + submitted).toLocaleString('en-IN')} ✅` : '',
+      `• *Balance to Pay:* *₹${balance.toLocaleString('en-IN')}*`,
       '',
-      balance > 0
-        ? `Pay via UPI: *${upi}* (${payee}) or open the Al-Mawaid app → Dues & Payments to submit the receipt.`
-        : '🎉 All settled for this month. Thank you!',
+      `📲 *Pay via UPI (0% fee):*`,
+      `• UPI ID: \`${upi}\` _(tap to copy)_`,
+      `• Payee: *${payee}*`,
+      `• 1-Tap Pay: ${cleanUpiUri}`,
+      '',
+      `👉 *After paying, reply with your 12-digit UTR:*`
     ]
     await waSendText(waPhone, lines.filter(Boolean).join('\n'))
     return
@@ -691,7 +857,7 @@ function parseCommand(text: string): string {
   if (t === '5' || t === 'feedback' || t === 'rate') return 'feedback'
   if (t === '6' || t === 'stop' || t === 'stop thali') return 'stop'
   if (t === 'resume' || t === 'resume thali' || t === 'start thali') return 'resume'
-  if (t === '7' || t === 'dues' || t === 'payment' || t === 'payments') return 'dues'
+  if (t === '7' || t === 'dues' || t === 'payment' || t === 'payments' || t === 'pay' || t === 'thali payment') return 'dues'
   if (t === '8' || t === 'query' || t === 'support' || t === 'issue') return 'query'
   if (t === '9' || t === 'whoami' || t === 'profile' || t === 'my profile') return 'whoami'
   if (t === 'unlink') return 'unlink'
@@ -713,6 +879,122 @@ async function routeMessage(waPhone: string, member: MemberRow | null, session: 
   const text = (incoming.text || '').trim()
   const lower = text.toLowerCase()
 
+  // Manager quick action: VERIFY <UTR>
+  const verifyMatch = text.match(/^(?:VERIFY|APPROVE)\s+([A-Za-z0-9_-]{4,35})$/i)
+  if (verifyMatch) {
+    const utrToVerify = verifyMatch[1].trim()
+    const { mgrPhone } = await getPaymentManagerInfo()
+    const isMgr = normalizePhone(waPhone) === mgrPhone || ['admin', 'supervisor', 'payment_manager'].includes(member?.role || '')
+
+    if (isMgr) {
+      const { data: hitPayments } = await supabase
+        .from('user_payments')
+        .select('*')
+        .ilike('transaction_ref', utrToVerify)
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (hitPayments && hitPayments.length > 0) {
+        const p = hitPayments[0]
+        await supabase
+          .from('user_payments')
+          .update({ status: 'verified', updated_at: new Date().toISOString() })
+          .eq('id', p.id)
+
+        const payerWaPhone = p.metadata?.wa_phone
+        if (payerWaPhone) {
+          try {
+            await waSendText(toWaPhone(payerWaPhone),
+              `🎉 *Payment Verified!*\n\n` +
+              `Salam *${getPoliteName(p.user_name)}*,\n` +
+              `Your payment of *₹${Number(p.amount).toLocaleString('en-IN')}* for *${p.metadata?.month_label || 'this month'}* (UTR: \`${p.transaction_ref}\`) has been verified by *Mulla Murtaza Hamid*.\n\n` +
+              `Status: ✅ *VERIFIED*\nThank you! 🙏`)
+          } catch (e) {
+            console.warn('Failed to notify member of verification:', e)
+          }
+        }
+
+        await waSendText(waPhone,
+          `✅ *Verified!*\n\n` +
+          `• Thali: *#${p.thali_number}* (${getPoliteName(p.user_name)})\n` +
+          `• Amount: *₹${Number(p.amount).toLocaleString('en-IN')}*\n` +
+          `• UTR: \`${p.transaction_ref}\`\n\n` +
+          `Member notified & dues cleared.`)
+        return
+      } else {
+        await waSendText(waPhone, `⚠️ No payment record found matching UTR \`${utrToVerify}\`.`)
+        return
+      }
+    }
+  }
+
+  // Direct shortcut: PAID <UTR> or PAID <AMOUNT> <UTR>
+  const directPaidMatch = text.match(/^PAID\s+(?:(?:RS\.?|INR|₹)?\s*(\d+(?:\.\d+)?)\s+)?([A-Za-z0-9_-]{5,35})$/i)
+  if (directPaidMatch && member) {
+    const customAmt = directPaidMatch[1] ? parseFloat(directPaidMatch[1]) : null
+    const cleanUtr = directPaidMatch[2].trim()
+
+    const appSettings = await loadAppSettings()
+    const now = tzNow()
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const monthLabel = now.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+    const payAmt = customAmt || Number(member.custom_due_amount || appSettings.default_payment_due || 1500)
+    const upiId = String(appSettings.upi_id || '6375250267@okbizaxis')
+    const payeeName = String(appSettings.upi_payee_name || 'Fleeksocks')
+    const managerName = String(appSettings.payment_manager_name || 'Mulla Murtaza Mohammadhussain Hamid')
+
+    const { error: insErr } = await supabase.from('user_payments').insert({
+      user_id: member.user_id,
+      user_name: member.name || '',
+      user_email: member.email || '',
+      thali_number: String(member.thali_number || ''),
+      amount: payAmt,
+      currency: 'INR',
+      status: 'submitted',
+      transaction_ref: cleanUtr,
+      upi_id: upiId,
+      payee_name: payeeName,
+      payment_method: 'UPI',
+      note: `WhatsApp Bot payment for ${monthLabel}`,
+      metadata: {
+        month: monthKey,
+        month_label: monthLabel,
+        wa_phone: waPhone,
+        channel: 'whatsapp_bot',
+        submitted_at: new Date().toISOString(),
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+
+    if (insErr) {
+      console.error('[payment] insert error:', insErr)
+      await waSendText(waPhone, '❌ An error occurred while logging your payment. Please try again.')
+      return
+    }
+
+    await clearSession(waPhone)
+
+    await notifyPaymentManagerWa({
+      member,
+      amount: payAmt,
+      utr: cleanUtr,
+      monthLabel,
+      waPhone,
+    })
+
+    const tNum = String(member.thali_number || 'N/A').trim()
+    const politeName = getPoliteName(member.name)
+    await waSendText(waPhone,
+      `✅ *Payment Recorded!*\n\n` +
+      `• Thali: *#${tNum}* (${politeName})\n` +
+      `• Amount: *₹${payAmt.toLocaleString('en-IN')}* (${monthLabel})\n` +
+      `• UTR: \`${cleanUtr}\`\n\n` +
+      `📢 Sent to Mulla Murtaza Hamid for verification.\n\n` +
+      `_Reply MENU anytime_`)
+    return
+  }
+
   // Global commands always available
   let cmd = parseCommand(text)
   if (cmd === 'cancel') {
@@ -725,7 +1007,7 @@ async function routeMessage(waPhone: string, member: MemberRow | null, session: 
   // While a flow is running, only read-only commands pass through —
   // bare numbers/words belong to the flow (e.g. "1" = Apply mid-survey).
   const FLOW_SAFE_CMDS = new Set(['help', 'status', 'whoami', 'dues', 'unlink'])
-  const activeFlow = ['link', 'survey', 'feedback', 'thali', 'query'].includes(String(state.flow || ''))
+  const activeFlow = ['link', 'survey', 'feedback', 'thali', 'query', 'payment'].includes(String(state.flow || ''))
   if (activeFlow && cmd && !FLOW_SAFE_CMDS.has(cmd)) cmd = ''
 
   if (state.flow === 'link') {
@@ -761,6 +1043,81 @@ async function routeMessage(waPhone: string, member: MemberRow | null, session: 
       await saveQuery(waPhone, state, text)
       return
     }
+  }
+
+  if (state.flow === 'payment' && state.step === 'awaiting_utr') {
+    if (cmd === 'cancel') {
+      await clearSession(waPhone)
+      await waSendText(waPhone, '❌ Payment submission cancelled. Type *DUES* or *MENU* anytime.')
+      return
+    }
+
+    const cleanUtr = text.replace(/^(?:PAID|UTR|REF|TXN)[:\s-]*/i, '').trim()
+    if (!cleanUtr || cleanUtr.length < 5 || cleanUtr.length > 35) {
+      await waSendText(waPhone, '⚠️ Please enter a valid Transaction UTR / Reference number (usually 12 digits, e.g. `428912345678`). Reply with your UTR or type *CANCEL*:')
+      return
+    }
+
+    const appSettings = await loadAppSettings()
+    const payAmt = Number(state.amount || member?.custom_due_amount || appSettings.default_payment_due || 1500)
+    const monthLabel = String(state.monthLabel || 'This Month')
+    const monthKey = String(state.monthKey || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`)
+    const upiId = String(appSettings.upi_id || '6375250267@okbizaxis')
+    const payeeName = String(appSettings.upi_payee_name || 'Fleeksocks')
+    const managerName = String(appSettings.payment_manager_name || 'Mulla Murtaza Mohammadhussain Hamid')
+
+    const { error: insErr } = await supabase.from('user_payments').insert({
+      user_id: member!.user_id,
+      user_name: member!.name || '',
+      user_email: member!.email || '',
+      thali_number: String(member!.thali_number || ''),
+      amount: payAmt,
+      currency: 'INR',
+      status: 'submitted',
+      transaction_ref: cleanUtr,
+      upi_id: upiId,
+      payee_name: payeeName,
+      payment_method: 'UPI',
+      note: `WhatsApp Bot payment for ${monthLabel}`,
+      metadata: {
+        month: monthKey,
+        month_label: monthLabel,
+        wa_phone: waPhone,
+        channel: 'whatsapp_bot',
+        submitted_at: new Date().toISOString(),
+      },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+
+    if (insErr) {
+      console.error('[payment] insert error:', insErr)
+      await waSendText(waPhone, '❌ An error occurred while logging your payment. Please try again or contact management.')
+      return
+    }
+
+    await clearSession(waPhone)
+
+    if (member) {
+      await notifyPaymentManagerWa({
+        member,
+        amount: payAmt,
+        utr: cleanUtr,
+        monthLabel,
+        waPhone,
+      })
+    }
+
+    const tNum = String(member!.thali_number || 'N/A').trim()
+    const politeName = getPoliteName(member!.name)
+    await waSendText(waPhone,
+      `✅ *Payment Recorded!*\n\n` +
+      `• Thali: *#${tNum}* (${politeName})\n` +
+      `• Amount: *₹${payAmt.toLocaleString('en-IN')}* (${monthLabel})\n` +
+      `• UTR: \`${cleanUtr}\`\n\n` +
+      `📢 Sent to Mulla Murtaza Hamid for verification.\n\n` +
+      `_Reply MENU anytime_`)
+    return
   }
 
   // ── Commands ──
@@ -1039,7 +1396,7 @@ async function handleThaliFlowInput(waPhone: string, member: MemberRow, state: R
 // Webhook
 // ═══════════════════════════════════════════════════════════════
 
-serve(async (req) => {
+serve(async (req: Request) => {
   const url = new URL(req.url)
 
   // ── Meta webhook verification (GET) ──

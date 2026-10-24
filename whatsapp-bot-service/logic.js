@@ -25,6 +25,28 @@ export function mealLabel(day, meal) {
   return `${dayName.charAt(0).toUpperCase() + dayName.slice(1)} ${meal === 'l' ? 'Lunch' : 'Dinner'} 🍽️`
 }
 
+export function getPoliteName(fullName) {
+  if (!fullName) return 'Member'
+  const clean = String(fullName).trim()
+  const words = clean.split(/\s+/)
+  const titles = ['mulla', 'shaikh', 'janab', 'bhai', 'behen', 'al-mulla', 'al-shaikh']
+  let nameWord = ''
+  let honorific = ''
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i]
+    const wLower = w.toLowerCase()
+    if (titles.includes(wLower)) continue
+    nameWord = w
+    if (i + 1 < words.length && ['bhai', 'behen'].includes(words[i + 1].toLowerCase())) {
+      honorific = words[i + 1].charAt(0).toUpperCase() + words[i + 1].slice(1).toLowerCase()
+    }
+    break
+  }
+  if (!nameWord) nameWord = words[0] || 'Member'
+  const capName = nameWord.charAt(0).toUpperCase() + nameWord.slice(1)
+  return honorific ? `${capName} ${honorific}` : capName
+}
+
 export function statusPill(v) {
   if (v === 'Applied' || v === 'opted_in') return '✅ Applied'
   if (v === 'Skipped' || v === 'opted_out') return '❌ Skipped'

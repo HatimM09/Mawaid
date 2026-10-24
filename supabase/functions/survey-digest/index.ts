@@ -1,3 +1,4 @@
+/// <reference path="../deno.d.ts" />
 // Supabase Edge Function: Daily Survey Digest & Reminders
 // Called by external cron service
 // Replaces Firebase Cloud Functions: surveyReminder, surveyDigest, surveyAutoClose, surveyAutoOpen

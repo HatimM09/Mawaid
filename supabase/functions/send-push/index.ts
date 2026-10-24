@@ -1,3 +1,4 @@
+/// <reference path="../deno.d.ts" />
 // Supabase Edge Function: Send Push Notifications
 // Supports: Web Push (VAPID), Expo Push, FCM (native Android)
 

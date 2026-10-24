@@ -2,13 +2,16 @@
 
 ## Unreleased — 2026-10-23
 
-### Payments — Copy & Open only (prefilled link removed)
-- `/pay` (`/upi-pay`) now has **one action**: **Copy UPI ID & Open UPI App** writes the locked receiver VPA to the clipboard and fires bare `upi://pay` with **no parameters at all** — no `pa`, `pn`, `am`, `mc`, `tr` or `tn`. The member pastes the ID inside their own app and types the amount there.
-- The receiver card is tap-to-copy, the amount field keeps its tap-to-fill due chip, and how-it-works/refused notes are folded into a disclosure.
-- Why: Google Pay (and other PSPs) still applied their "Payment limit exceeded" / "bank limit exceeded" check to the receiver-prefilled link `upi://pay?pa=…`, even with the amount omitted. A parameter-free chooser plus a member-typed paste is the only flow where the transfer is entirely user-initiated inside the bank app, so no app-intent fraud/merchant check runs.
-- If a limit error still appears after pasting and typing the amount inside the app, it is a bank-side limit (payer daily quota across all apps, or the receiver's inbound P2P cap) and cannot be fixed from this page.
-- Removed from the payer page: per-app shortcut links, QR generation, share/WhatsApp links, AutoPay mandate builder, alternate-receiver switch, and all failure-diagnostic sheets. The page writes nothing to the database.
-- The receiver is still read-only from `app_settings.upi_id`; clipboard has an `execCommand` fallback for older Android WebViews. Legacy `copiedUpi` / deep-link helpers removed from the dues hub; payer button labels updated to "Copy UPI ID & Open UPI App".
+### Payments — tap-to-open UPI app, no gateway, no auto-debit
+- `/pay` (`/upi-pay`): the **QR is tappable** and a primary **Open UPI app to pay** button hands off to the installed UPI app (GPay / PhonePe / Paytm / bank app). On Android the intent fires through Capacitor **AppLauncher** (`ACTION_VIEW`); the web/PWA uses a plain `upi://pay` anchor. **Copy UPI ID** (receiver row is also tap-to-copy) stays as the secondary action and the automatic fallback when no app accepts the request.
+- The intent payload is exactly what the **QR already encodes** — receiver VPA + payee + INR, **no amount, no transaction reference**. The amount is typed inside the UPI app, so the path that already works from a scan is reused instead of pushing payment parameters at the bank.
+- Google Pay can still answer an app-originated intent with "Payment limit exceeded"; Copy UPI ID and the QR remain on the page for that case, and no error is claimed to be fixed client-side.
+- The **QR is open by default** and tapping it fires the same intent; scanning it from a second phone still works as before.
+- Zero-fee and no auto-debit: no gateway, no commission, no mandate, full amount reaches the receiver, and the page still writes nothing to the database.
+- A refusal still seen inside the UPI app is bank-side — payer daily UPI quota across all apps, or the receiver's inbound P2P cap — and cannot be changed from the app.
+- Still absent from the payer page: prefilled-amount intents, per-app shortcut buttons, share/WhatsApp links, AutoPay mandate builder, alternate-receiver switch, and failure-diagnostic sheets.
+- The receiver is still read-only from `app_settings.upi_id`; clipboard has an `execCommand` fallback for older Android WebViews. Legacy `copiedUpi` / deep-link helpers removed from the dues hub; the dues hub links straight to `/pay`, where the actions are now "Open UPI app to pay" / "Copy UPI ID".
+- Android manifest `<queries>` already declares GPay / PhonePe / Paytm / BHIM / WhatsApp packages plus the `upi`, `tez`, `phonepe` and `paytmmp` schemes, and `capacitor-app-launcher` is already linked in `android/app/capacitor.build.gradle` — the live-link build needs no new AAB.
 - **Management flow is untouched**: verifying/recording payments, dues tracker, receipts, reminders, forfeits, notification tools and UPI settings all remain in Payments Hub.
 
 ## v2.1.11 (versionCode 49) — 2026-10-20

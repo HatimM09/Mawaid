@@ -1,16 +1,26 @@
 // ═════════════════════════════════════════════════════════════════════════════
 // AL-MAWAID — Pay page (`/pay`, `/upi-pay`)
 //
-// ONE ACTION: "Copy UPI ID & Open UPI App" — the zero-fee, zero-merchant path.
-// The locked receiver VPA goes to the clipboard, then the bare `upi://pay`
-// scheme opens the UPI app chooser with NO parameters at all. The member
-// pastes the ID inside their own app and types the amount there, so the bank
-// sees a fully user-initiated P2P transfer. This is the only flow that avoids
-// the "Payment limit exceeded" / "bank limit exceeded" rejection that PSPs
-// apply to app-opened intents carrying payment parameters.
+// NO GATEWAY, NO FEES, NO AUTO-DEBIT, NO PIN.
+//
+// Two ways to reach the locked receiver, both read-only:
+//   1. Tap the QR or "Open UPI app" → the shell fires ACTION_VIEW with the exact
+//      payload the QR encodes (receiver ID only, no amount). The member types
+//      the amount inside GPay / PhonePe / Paytm / their bank app and approves it
+//      there. Native goes through Capacitor AppLauncher; the web/PWA uses a
+//      plain `upi://pay` anchor.
+//   2. Copy the receiver UPI ID and paste it inside their own app.
+//
+// WHY THE INTENT CARRIES NO AMOUNT:
+//   The QR already works for real transfers, so the hand-off sends the same
+//   payload a scan sends — the amount is typed inside the UPI app. Google Pay
+//   can still answer an app-originated `upi://pay` intent with "Payment limit
+//   exceeded" (its own app-intent check), so Copy UPI ID and the QR stay on the
+//   page as the fallback when that happens.
 //
 // WHAT THIS PAGE NEVER DOES:
 //   • It never asks for a UPI PIN, never enters one, never sees it.
+//   • It never initiates a debit, mandate, collect request or auto-debit.
 //   • It writes NOTHING to the database — no self-reported receipts exist.
 //     Management confirms the money in the bank and marks dues Paid/Pending
 //     from Payments Hub (that flow is untouched).
@@ -19,20 +29,55 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import toast from 'react-hot-toast'
 import {
-  ShieldCheck, Copy, Check, AlertTriangle, ChevronLeft,
+  ShieldCheck, Copy, Check, AlertTriangle, ChevronLeft, QrCode, Smartphone,
 } from 'lucide-react'
+import { QRCodeCanvas } from 'qrcode.react'
 import { supabase } from '../../lib/firebaseClient'
 import { ThemeCtx } from '../../admin/context'
 import { THEMES } from '../theme'
 import { GeoBg, GlobalStyles, Card, Btn } from '../ui'
 
-const DEFAULT_RECEIVER = 'murtazacool558@okhdfcbank'
-const DEFAULT_PAYEE = 'Al-Mawaid'
+const DEFAULT_RECEIVER = '6375250267@okbizaxis'
+const DEFAULT_PAYEE = 'Fleeksocks'
 const DEFAULT_DUE = 1500
 const UPI_TXN_LIMIT = 100000
-const OPEN_DELAY_MS = 350 // let the clipboard write settle before leaving the page
 
 const isValidVpa = (v) => /^[\w.-]{2,256}@[a-zA-Z]{2,64}$/.test((v || '').trim())
+// ONE payload for both the QR and the app hand-off: receiver only. No amount,
+// no transaction reference — the payer types the amount inside their UPI app,
+// exactly as they would after scanning, so nothing is pushed at the bank.
+const buildUpiUri = (vpa, name) =>
+  `upi://pay?pa=${vpa}&pn=${encodeURIComponent(name || DEFAULT_PAYEE)}&cu=INR`
+
+const isNativePlatform = () =>
+  typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.()
+
+// Native shell: AppLauncher fires ACTION_VIEW, which surfaces the UPI app
+// chooser (GPay / PhonePe / Paytm / bank app). Web/PWA: an anchor with the same
+// URI, which the OS still resolves. Returns false when nothing accepted it.
+async function launchUpiApp(uri) {
+  if (isNativePlatform()) {
+    try {
+      const { AppLauncher } = await import('@capacitor/app-launcher')
+      const { completed } = await AppLauncher.openUrl({ url: uri })
+      if (completed) return true
+    } catch (err) {
+      console.warn('[UpiPay] Native UPI launch failed, trying the web handler', err)
+    }
+  }
+  try {
+    const a = document.createElement('a')
+    a.href = uri
+    a.rel = 'noopener noreferrer'
+    a.style.display = 'none'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    return true
+  } catch {
+    return false
+  }
+}
 const monthKeyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 const formatInr = (n) =>
   Number(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
@@ -48,7 +93,8 @@ export default function UpiPayPage() {
 
   const [amount, setAmount] = useState('')
   const [copied, setCopied] = useState(false)
-  const [opened, setOpened] = useState(false)
+  const [opening, setOpening] = useState(false)
+  const [notice, setNotice] = useState('') // '' | 'copy' | 'open'
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
 
@@ -127,7 +173,7 @@ export default function UpiPayPage() {
   const numericAmount = Math.max(0, parseFloat(amount) || 0)
   const amountValid =
     Number.isFinite(numericAmount) && numericAmount >= 1 && numericAmount <= UPI_TXN_LIMIT
-  const canPay = paymentsEnabled && receiverIsConfigured && !loading && amountValid
+  const canCopy = paymentsEnabled && receiverIsConfigured && !loading
 
   const flashCopied = useCallback(() => {
     setCopied(true)
@@ -157,69 +203,58 @@ export default function UpiPayPage() {
     }
   }, [receiver])
 
-  // Opens the UPI app chooser. A bare `upi://pay` carries no parameters, so no
-  // prefilled-intent fraud check runs.
-  const openUpi = useCallback(async (target = 'upi://pay') => {
-    const native = typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()
-    if (native) {
-      try {
-        const { AppLauncher } = await import('@capacitor/app-launcher')
-        const { completed } = await AppLauncher.openUrl({ url: target })
-        if (completed) return
-      } catch { /* fall back to anchor */ }
-    }
-    try {
-      const link = document.createElement('a')
-      link.href = target
-      link.rel = 'noreferrer'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-    } catch {
-      window.location.href = target
-    }
-  }, [])
-
-  const guard = () => {
+  // Copies the locked VPA and shows the manual steps — the fallback when a PSP
+  // refuses an app-originated intent (see the header note).
+  const handleCopy = async () => {
     if (!paymentsEnabled) {
       toast.error('Payments are currently paused. Please contact management.')
-      return false
+      return
     }
     if (!receiverIsConfigured) {
       toast.error('Receiver UPI ID is not configured correctly. Please contact management.')
-      return false
+      return
     }
-    if (!amountValid) {
-      toast.error(`Enter an amount between ₹1 and ₹${UPI_TXN_LIMIT.toLocaleString('en-IN')} first.`)
-      return false
-    }
-    if (Date.now() - tapGapRef.current < 1200) return false
+    if (Date.now() - tapGapRef.current < 1200) return
     tapGapRef.current = Date.now()
-    return true
-  }
 
-  // THE flow: copy the locked receiver VPA, then open the bare app chooser.
-  const handleCopyAndOpen = async () => {
-    if (!guard()) return
-    const copiedOk = await copyReceiver()
-    if (copiedOk) flashCopied()
-    setOpened(true)
-    if (copiedOk) {
-      toast.success(`UPI ID copied — paste it in your app and enter ₹${formatInr(numericAmount)}.`, { duration: 5000 })
-    } else {
-      toast('Could not auto-copy. Long-press the UPI ID above to copy it, then open your UPI app.', { duration: 5000, icon: '📋' })
-    }
-    setTimeout(() => { openUpi() }, OPEN_DELAY_MS)
-  }
-
-  const handleCopyOnly = async () => {
     const ok = await copyReceiver()
+    setNotice('copy')
     if (ok) {
       flashCopied()
-      toast.success('UPI ID copied.')
+      toast.success('UPI ID copied. Open your UPI app and paste it.', { duration: 4500 })
     } else {
-      toast.error('Could not copy. Select the UPI ID manually.')
+      toast('Could not auto-copy. Long-press the UPI ID above, then paste it in your UPI app.', {
+        duration: 5000, icon: '📋',
+      })
     }
+  }
+
+  // Hand-off to the installed UPI app (QR payload: receiver only). If no app
+  // accepts the intent, fall back to the copy flow instead of a dead tap.
+  const handleOpenUpi = async () => {
+    if (!paymentsEnabled) {
+      toast.error('Payments are currently paused. Please contact management.')
+      return
+    }
+    if (!receiverIsConfigured) {
+      toast.error('Receiver UPI ID is not configured correctly. Please contact management.')
+      return
+    }
+    if (loading || opening) return
+
+    setOpening(true)
+    const opened = await launchUpiApp(buildUpiUri(receiver, payeeName))
+    setOpening(false)
+
+    if (!opened) {
+      setNotice('copy')
+      toast.error('No UPI app accepted the request. Copy the UPI ID and paste it in your app.', {
+        duration: 5500,
+      })
+      return
+    }
+    setNotice('open')
+    toast.success(`Opening your UPI app — enter ${amountLabel} there.`, { duration: 5000 })
   }
 
   const t = THEMES[themeId] || THEMES.dark
@@ -229,9 +264,7 @@ export default function UpiPayPage() {
     fontFamily: "'DM Sans', sans-serif",
   }
   const mutedStyle = { margin: 0, fontSize: 12.5, color: t.textSub, opacity: 0.72, lineHeight: 1.6 }
-  const statusText = (
-    <>App opening — long-press the UPI ID field → <strong>Paste</strong> → enter ₹{formatInr(numericAmount)} → approve with your PIN.</>
-  )
+  const amountLabel = amountValid ? `₹${formatInr(numericAmount)}` : 'the amount'
 
   return (
     <ThemeCtx.Provider value={t}>
@@ -264,7 +297,7 @@ export default function UpiPayPage() {
                 Pay via UPI
               </h1>
               <p style={{ margin: '3px 0 0', fontSize: 12.5, color: t.textSub, opacity: 0.72 }}>
-                {title || 'Thali Contribution'} · zero fees
+                {title || 'Thali Contribution'} · no fees, no auto-debit
               </p>
             </div>
             <img
@@ -357,15 +390,16 @@ export default function UpiPayPage() {
             {/* Receiver — tap to copy */}
             <button
               type="button"
-              onClick={handleCopyOnly}
-              disabled={loading}
+              onClick={handleCopy}
+              disabled={!canCopy}
               aria-label={`Copy receiver UPI ID ${receiver}`}
               style={{
                 display: 'flex', alignItems: 'center', gap: 10, width: '100%',
                 marginTop: 16, padding: '11px 12px', borderRadius: 12,
                 background: t.accentBg, border: `1px solid ${t.accentBorder}`,
-                color: t.text, cursor: 'pointer', textAlign: 'left',
-                fontFamily: "'DM Sans', sans-serif",
+                color: t.text, cursor: canCopy ? 'pointer' : 'not-allowed',
+                textAlign: 'left', fontFamily: "'DM Sans', sans-serif",
+                opacity: canCopy ? 1 : 0.6,
               }}
             >
               <ShieldCheck size={17} color={t.accent} style={{ flexShrink: 0 }} />
@@ -384,31 +418,88 @@ export default function UpiPayPage() {
             </button>
 
             <Btn
-              onClick={handleCopyAndOpen}
-              disabled={!canPay}
+              onClick={handleOpenUpi}
+              disabled={!canCopy || opening}
               style={{ width: '100%', marginTop: 16, padding: '15px 20px', fontSize: 15 }}
             >
-              <Copy size={17} />
-              {loading ? 'Loading…' : amountValid ? 'Copy UPI ID & Open UPI App' : 'Enter an amount'}
+              <Smartphone size={17} />
+              {loading ? 'Loading…' : opening ? 'Opening UPI app…' : 'Open UPI app to pay'}
+            </Btn>
+            <Btn
+              variant="outline"
+              onClick={handleCopy}
+              disabled={!canCopy}
+              style={{ width: '100%', marginTop: 10, padding: '13px 20px', fontSize: 14 }}
+            >
+              <Copy size={16} />
+              {loading ? 'Loading…' : copied ? 'UPI ID copied' : 'Copy UPI ID'}
             </Btn>
           </Card>
 
-          {opened && (
+          {notice === 'copy' && (
             <div style={{
               marginTop: 12, padding: '11px 13px', borderRadius: 12,
               background: t.successBg, border: `1px solid ${t.successBorder}`,
-              color: t.successText, fontSize: 12.5, lineHeight: 1.6,
+              color: t.successText, fontSize: 12.5, lineHeight: 1.65,
             }}>
-              {statusText}
+              {copied ? 'Copied.' : 'If it did not copy, long-press the UPI ID above.'} Now open
+              GPay / PhonePe / Paytm yourself → <strong>Pay</strong> → <strong>To UPI ID</strong> →
+              paste → enter {amountLabel} → approve with your PIN.
+            </div>
+          )}
+
+          {notice === 'open' && (
+            <div style={{
+              marginTop: 12, padding: '11px 13px', borderRadius: 12,
+              background: t.successBg, border: `1px solid ${t.successBorder}`,
+              color: t.successText, fontSize: 12.5, lineHeight: 1.65,
+            }}>
+              Choose your UPI app and enter {amountLabel} there — the receiver ID is already filled
+              in. Nothing opened? Tap the QR below, or use <strong>Copy UPI ID</strong>.
             </div>
           )}
 
           <p style={{ margin: '14px 2px 0', ...mutedStyle }}>
-            Your bank moves the money — this page never sees your PIN and never holds funds.
+            This page never charges or debits anything. No gateway, no commission, no auto-debit —
+            the full amount reaches the receiver.
           </p>
 
+          {/* ── QR: tap to open the UPI app, or scan it from a second phone ── */}
+          <details open style={{ marginTop: 12 }}>
+            <summary style={{
+              cursor: 'pointer', fontSize: 12.5, fontWeight: 800,
+              color: t.textSub, opacity: 0.8, padding: '8px 2px',
+              fontFamily: "'DM Sans', sans-serif",
+              listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <QrCode size={15} /> Tap the QR to open your UPI app
+            </summary>
+            <div style={{ marginTop: 8, display: 'flex', justifyContent: 'center' }}>
+              <button
+                type="button"
+                onClick={handleOpenUpi}
+                disabled={!canCopy || opening}
+                aria-label="Open your UPI app to pay"
+                style={{
+                  padding: 0, border: 'none', background: 'transparent', lineHeight: 0,
+                  borderRadius: 14, cursor: canCopy ? 'pointer' : 'not-allowed',
+                  opacity: canCopy ? 1 : 0.6,
+                  boxShadow: `0 0 0 1px ${t.accentBorder}, 0 12px 30px rgba(0,0,0,0.35)`,
+                }}
+              >
+                <div style={{ background: '#ffffff', padding: 12, borderRadius: 14, lineHeight: 0 }}>
+                  <QRCodeCanvas value={buildUpiUri(receiver, payeeName)} size={168} level="M" />
+                </div>
+              </button>
+            </div>
+            <p style={{ ...mutedStyle, marginTop: 8 }}>
+              Tap it on this phone, or scan it with another phone. The QR carries only the receiver
+              ID — type the amount inside your UPI app.
+            </p>
+          </details>
+
           {/* ── Details, folded away ── */}
-          <details style={{ marginTop: 14 }}>
+          <details style={{ marginTop: 10 }}>
             <summary style={{
               cursor: 'pointer', fontSize: 12.5, fontWeight: 800,
               color: t.textSub, opacity: 0.8, padding: '8px 2px',
@@ -420,19 +511,22 @@ export default function UpiPayPage() {
               margin: '6px 0 0', paddingLeft: 18, fontSize: 12.5,
               color: t.textSub, lineHeight: 1.7,
             }}>
-              <li>Tap Copy UPI ID &amp; Open UPI App — the ID is copied and the app chooser opens.</li>
-              <li>Pick any app, long-press the UPI ID field → Paste.</li>
+              <li>Tap Open UPI app (or tap / scan the QR) and choose GPay / PhonePe / Paytm.</li>
+              <li>Or tap Copy UPI ID, then Pay → To UPI ID → Paste inside your app.</li>
               <li>Type the amount, approve with your UPI PIN.</li>
             </ol>
             <p style={{ margin: '10px 0 0', ...mutedStyle }}>
-              The app is opened with no payment parameters and you type everything inside it, so the
-              bank treats this as a normal bank-to-bank transfer — your own daily limit (usually up to
-              ₹1,00,000) applies, not an app-imposed cap.
+              The intent carries the receiver ID only, exactly like a QR scan — the amount is typed
+              in your app. Google Pay sometimes refuses app-opened intents with &ldquo;Payment limit
+              exceeded&rdquo;; use Copy UPI ID or the QR in that case, and your own daily UPI limit
+              (usually up to ₹1,00,000) is what applies.
             </p>
             <p style={{ margin: '10px 0 0', ...mutedStyle }}>
-              <strong style={{ color: '#ef4444' }}>Refused?</strong> Your bank&apos;s daily UPI quota is
-              likely used up across all apps — switch the bank account inside your UPI app, or retry after
-              midnight. A mistyped ID is the only other cause: paste it, don&apos;t type it.
+              <strong style={{ color: '#ef4444' }}>Refused?</strong> If a bank error still appears
+              inside your UPI app, it is a bank-side limit: your daily UPI quota is used up across all
+              apps, or the receiver&apos;s bank has reached its inbound cap. Switch the bank account
+              inside the UPI app, lower the amount, or retry after midnight. A mistyped ID is the only
+              other cause: paste it, don&apos;t type it.
             </p>
             <p style={{ margin: '10px 0 0', ...mutedStyle }}>
               Management confirms the money in the bank and marks your dues in Payments Hub. Nothing is
