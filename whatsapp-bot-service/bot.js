@@ -1059,7 +1059,7 @@ async function handleMessage(waPhone, rawText) {
       const monthLabel = state.monthLabel || 'This Month'
       const monthKey = state.monthKey || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
       const upiId = appSettings.upi_id || '6375250267@okbizaxis'
-      const payeeName = appSettings.upi_payee_name || 'Al-Mawaid'
+      const payeeName = appSettings.upi_payee_name || 'Al Mawaid'
 
       const { error: insErr } = await supabase.from('user_payments').insert({
         user_id: member.user_id,
@@ -1172,7 +1172,7 @@ async function handleMessage(waPhone, rawText) {
     const monthLabel = now.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
     const payAmt = customAmt || Number(member.custom_due_amount || appSettings.default_payment_due || 1500)
     const upiId = appSettings.upi_id || '6375250267@okbizaxis'
-    const payeeName = appSettings.upi_payee_name || 'Al-Mawaid'
+    const payeeName = appSettings.upi_payee_name || 'Al Mawaid'
 
     const { error: insErr } = await supabase.from('user_payments').insert({
       user_id: member.user_id,
@@ -1303,7 +1303,7 @@ async function handleMessage(waPhone, rawText) {
 
     const pendingBalance = Math.max(0, totalDue - paidThisMonth)
     const upiId = appSettings.upi_id || '6375250267@okbizaxis'
-    const payeeName = appSettings.upi_payee_name || 'Al-Mawaid'
+    const payeeName = appSettings.upi_payee_name || 'Al Mawaid'
     const tNum = String(member.thali_number || 'N/A').trim()
     const shortName = formatShortName(member.name)
 
@@ -1328,6 +1328,9 @@ async function handleMessage(waPhone, rawText) {
       totalDue: totalDue
     })
 
+    const mc = appSettings.upi_mc || '5812'
+    const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&mc=${mc}&aid=uGICAgKCipYeAPg&ver=01&mode=01&am=${pendingBalance.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Thali #${tNum} - ${monthLabel}`)}`
+
     return `💳 *Thali #${tNum} Dues • ${monthLabel}*\n` +
       `Salam *${shortName}*,\n\n` +
       `• Due: ₹${totalDue.toLocaleString('en-IN')}\n` +
@@ -1335,7 +1338,8 @@ async function handleMessage(waPhone, rawText) {
       `• *Balance to Pay:* *₹${pendingBalance.toLocaleString('en-IN')}*\n\n` +
       `📲 *Pay via UPI:*\n` +
       `• UPI ID: \`${upiId}\` _(tap to copy)_\n` +
-      `• Payee: *${payeeName}*\n\n` +
+      `• Payee: *${payeeName}*\n` +
+      `• 1-Tap Pay: ${upiUri}\n\n` +
       `👉 *After paying in GPay / PhonePe / Paytm, reply with your 12-digit UTR receipt:*`
   }
 

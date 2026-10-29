@@ -15,9 +15,10 @@ import { supabase } from '../../lib/firebaseClient'
 import { ThemeCtx } from '../../admin/context'
 import { THEMES } from '../theme'
 import { GeoBg, GlobalStyles, Card, Btn } from '../ui'
+import GooglePayStandeeCard, { generateUpiString } from '../GooglePayStandeeCard'
 
 const DEFAULT_RECEIVER = '6375250267@okbizaxis'
-const DEFAULT_PAYEE = 'Al-Mawaid'
+const DEFAULT_PAYEE = 'Al Mawaid'
 const DEFAULT_DUE = 1500
 const UPI_TXN_LIMIT = 100000
 
@@ -25,25 +26,6 @@ const isValidVpa = (v) => /^[\w.-]{2,256}@[a-zA-Z]{2,64}$/.test((v || '').trim()
 const monthKeyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 const formatInr = (n) =>
   Number(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
-
-// NPCI UPI URI Specification Generator
-const generateUpiString = ({ upiId, payeeName, amount, note, mc }) => {
-  const params = new URLSearchParams({
-    pa: (upiId || '').trim(),
-    pn: (payeeName || DEFAULT_PAYEE).trim(),
-    cu: 'INR'
-  })
-  if (amount && Number(amount) > 0) {
-    params.set('am', Number(amount).toFixed(2))
-  }
-  if (note) {
-    params.set('tn', note.trim())
-  }
-  if (mc && String(mc).trim().length === 4) {
-    params.set('mc', String(mc).trim())
-  }
-  return `upi://pay?${params.toString()}`
-}
 
 const isNativePlatform = () =>
   typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.()
@@ -446,20 +428,17 @@ export default function UpiPayPage() {
               />
             </div>
 
-            {/* Dynamic QR Code Canvas */}
-            <div style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              background: '#ffffff', padding: 14, borderRadius: 14, marginTop: 16
-            }}>
-              <QRCodeCanvas
-                id="upi-pay-qr-canvas"
-                value={upiUri}
-                size={180}
-                level="M"
+            {/* Official Google Pay Standee Card */}
+            <div style={{ marginTop: 16 }}>
+              <GooglePayStandeeCard
+                qrId="upi-pay-qr-canvas"
+                upiUri={upiUri}
+                payeeName={payeeName}
+                phoneNumber="+91 63752 50267"
+                upiId={receiver}
+                amount={amountValid ? numericAmount : undefined}
+                size={195}
               />
-              <span style={{ fontSize: 11, color: '#475569', fontWeight: 700, marginTop: 6 }}>
-                Scan with GPay, PhonePe, Paytm, BHIM
-              </span>
             </div>
 
             {/* Save QR Image Button */}

@@ -23,6 +23,7 @@ import { supabase } from '../../lib/firebaseClient'
 import { useAuth, useTheme } from '../../admin/context'
 import { BackHeader, Card, Btn, EmptyState } from '../ui'
 import { downloadPayslipPdf } from '../../lib/payslipPdf'
+import GooglePayStandeeCard, { generateUpiString } from '../GooglePayStandeeCard'
 
 // ── Reusable Utilities ──
 const monthKeyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -34,21 +35,6 @@ const monthLabelOf = (key) => {
 }
 const formatInr = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 const isValidVpa = (v) => /^[\w.-]{2,256}@[a-zA-Z]{2,64}$/.test((v || '').trim())
-
-// NPCI UPI URI Specification Generator
-const generateUpiString = ({ upiId, payeeName, amount, note, mc }) => {
-  const params = new URLSearchParams({
-    pa: (upiId || '').trim(),
-    pn: (payeeName || 'Al-Mawaid').trim(),
-    am: Number(amount || 0).toFixed(2),
-    cu: 'INR',
-    tn: (note || 'Monthly Thali Contribution').trim()
-  })
-  if (mc && String(mc).trim().length === 4) {
-    params.set('mc', String(mc).trim())
-  }
-  return `upi://pay?${params.toString()}`
-}
 
 // Native Capacitor / Web UPI App Launcher
 const launchUpiApp = async (uri) => {
@@ -83,8 +69,8 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   // ── Configuration State ──
   const [configuredUpiId, setConfiguredUpiId] = useState(appSettings.upi_id || '6375250267@okbizaxis')
   const [fallbackUpiId, setFallbackUpiId] = useState(appSettings.upi_id_2 || '')
-  const [merchantCode, setMerchantCode] = useState(appSettings.upi_mc || '')
-  const [payeeName, setPayeeName] = useState(appSettings.upi_payee_name || 'Al-Mawaid')
+  const [merchantCode, setMerchantCode] = useState(appSettings.upi_mc || '5812')
+  const [payeeName, setPayeeName] = useState(appSettings.upi_payee_name || 'Al Mawaid')
   const [defaultDue, setDefaultDue] = useState(Number(appSettings.default_payment_due || 1500))
   const [paymentTitle, setPaymentTitle] = useState(appSettings.payment_title || 'Monthly Thali Contribution')
   const [isPaymentActive, setIsPaymentActive] = useState(appSettings.payment_enabled !== 'false')
@@ -1688,21 +1674,17 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               </div>
             </div>
 
-            {/* ── Dynamic QR Code Canvas ── */}
-            <div style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              background: '#ffffff', padding: '16px', borderRadius: 16, marginBottom: 12,
-              boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
-            }}>
-              <QRCodeCanvas
-                id="al-mawaid-payer-qr"
-                value={upiUri}
-                size={180}
-                level="M"
+            {/* ── Official Google Pay Standee Card (NPCI Spec) ── */}
+            <div style={{ marginBottom: 14 }}>
+              <GooglePayStandeeCard
+                qrId="al-mawaid-payer-qr"
+                upiUri={upiUri}
+                payeeName={payeeName}
+                phoneNumber="+91 63752 50267"
+                upiId={configuredUpiId}
+                amount={activePayAmount}
+                size={195}
               />
-              <span style={{ fontSize: 11, color: '#334155', fontWeight: 700, marginTop: 8 }}>
-                Scan with any UPI App (GPay, PhonePe, Paytm, BHIM)
-              </span>
             </div>
 
             {/* Save QR to Gallery Button */}
