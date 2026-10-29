@@ -696,7 +696,7 @@ async function sendDues(waPhone: string, member: MemberRow) {
     const submitted = valid.filter((p: PaymentSummaryRow) => p.status === 'submitted').reduce((s: number, p: PaymentSummaryRow) => s + Number(p.amount || 0), 0)
     const balance = Math.max(0, due - verified - submitted)
     const upi = String(appSettings.upi_id || '6375250267@okbizaxis')
-    const payee = String(appSettings.upi_payee_name || 'Fleeksocks')
+    const payee = String(appSettings.upi_payee_name || 'Al-Mawaid')
 
     const tNum = String(member.thali_number || 'N/A').trim()
     const politeName = getPoliteName(member.name)
@@ -940,7 +940,7 @@ async function routeMessage(waPhone: string, member: MemberRow | null, session: 
     const monthLabel = now.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
     const payAmt = customAmt || Number(member.custom_due_amount || appSettings.default_payment_due || 1500)
     const upiId = String(appSettings.upi_id || '6375250267@okbizaxis')
-    const payeeName = String(appSettings.upi_payee_name || 'Fleeksocks')
+    const payeeName = String(appSettings.upi_payee_name || 'Al-Mawaid')
     const managerName = String(appSettings.payment_manager_name || 'Mulla Murtaza Mohammadhussain Hamid')
 
     const { error: insErr } = await supabase.from('user_payments').insert({
@@ -1063,7 +1063,7 @@ async function routeMessage(waPhone: string, member: MemberRow | null, session: 
     const monthLabel = String(state.monthLabel || 'This Month')
     const monthKey = String(state.monthKey || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`)
     const upiId = String(appSettings.upi_id || '6375250267@okbizaxis')
-    const payeeName = String(appSettings.upi_payee_name || 'Fleeksocks')
+    const payeeName = String(appSettings.upi_payee_name || 'Al-Mawaid')
     const managerName = String(appSettings.payment_manager_name || 'Mulla Murtaza Mohammadhussain Hamid')
 
     const { error: insErr } = await supabase.from('user_payments').insert({

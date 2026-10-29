@@ -1059,7 +1059,7 @@ async function handleMessage(waPhone, rawText) {
       const monthLabel = state.monthLabel || 'This Month'
       const monthKey = state.monthKey || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
       const upiId = appSettings.upi_id || '6375250267@okbizaxis'
-      const payeeName = appSettings.upi_payee_name || 'Fleeksocks'
+      const payeeName = appSettings.upi_payee_name || 'Al-Mawaid'
 
       const { error: insErr } = await supabase.from('user_payments').insert({
         user_id: member.user_id,
@@ -1172,7 +1172,7 @@ async function handleMessage(waPhone, rawText) {
     const monthLabel = now.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
     const payAmt = customAmt || Number(member.custom_due_amount || appSettings.default_payment_due || 1500)
     const upiId = appSettings.upi_id || '6375250267@okbizaxis'
-    const payeeName = appSettings.upi_payee_name || 'Fleeksocks'
+    const payeeName = appSettings.upi_payee_name || 'Al-Mawaid'
 
     const { error: insErr } = await supabase.from('user_payments').insert({
       user_id: member.user_id,
@@ -1303,7 +1303,7 @@ async function handleMessage(waPhone, rawText) {
 
     const pendingBalance = Math.max(0, totalDue - paidThisMonth)
     const upiId = appSettings.upi_id || '6375250267@okbizaxis'
-    const payeeName = appSettings.upi_payee_name || 'Fleeksocks'
+    const payeeName = appSettings.upi_payee_name || 'Al-Mawaid'
     const tNum = String(member.thali_number || 'N/A').trim()
     const shortName = formatShortName(member.name)
 
