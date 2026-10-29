@@ -333,12 +333,13 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   const upiUri = useMemo(() => {
     return generateUpiString({
       upiId: configuredUpiId,
-      payeeName,
+      payeeName: 'MURTUJA', // Bank KYC registered name matching Axis Bank records (prevents NPCI name-mismatch phishing blocks)
       amount: activePayAmount,
       note: `${paymentTitle} - ${userProfile?.name || 'Member'} ${userProfile?.thali_number ? `(#${userProfile.thali_number})` : ''}`,
-      mc: merchantCode
+      mc: merchantCode,
+      tr: 'BCR2DN7TTKH2LLQF'
     })
-  }, [configuredUpiId, payeeName, activePayAmount, paymentTitle, userProfile, merchantCode])
+  }, [configuredUpiId, activePayAmount, paymentTitle, userProfile, merchantCode])
 
   // ── Copy UPI ID ──
   const handleCopyUpiId = async () => {
@@ -1733,6 +1734,20 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               {copiedUpi ? <Check size={14} color="#34d399" /> : <Copy size={14} />}
               <span>{copiedUpi ? 'Copied to Clipboard!' : `Copy UPI ID: ${configuredUpiId}`}</span>
             </button>
+
+            {/* Notice for First-Time Payers Seeing Bank Risk Warnings */}
+            <div style={{
+              marginTop: 10, padding: '10px 12px', borderRadius: 10,
+              background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)',
+              color: t.textSub, fontSize: 11.5, lineHeight: 1.45
+            }}>
+              <strong style={{ color: t.text, display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+                <span>💡</span> Seeing "Transaction is Risky" or blocked on your phone?
+              </strong>
+              <span>
+                UPI apps flag 1-tap browser links for some first-time payees. <strong>Fix:</strong> Tap <strong>Save QR to Gallery</strong> above ➔ Open GPay/PhonePe ➔ Scan QR ➔ <strong>Upload from Gallery</strong> to pay without any warning.
+              </span>
+            </div>
 
             {/* ── Member UTR Verification Section ── */}
             <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 14, marginTop: 14 }}>

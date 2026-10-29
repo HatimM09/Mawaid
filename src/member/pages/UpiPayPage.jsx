@@ -159,12 +159,13 @@ export default function UpiPayPage() {
   const upiUri = useMemo(() => {
     return generateUpiString({
       upiId: receiver,
-      payeeName,
+      payeeName: 'MURTUJA', // Axis Bank KYC registered name to prevent NPCI name-mismatch phishing blocks
       amount: amountValid ? numericAmount : undefined,
       note: `${title} - ${profile?.name || 'Member'} ${profile?.thali_number ? `(#${profile.thali_number})` : ''}`,
-      mc: merchantCode
+      mc: merchantCode,
+      tr: 'BCR2DN7TTKH2LLQF'
     })
-  }, [receiver, payeeName, amountValid, numericAmount, title, profile, merchantCode])
+  }, [receiver, amountValid, numericAmount, title, profile, merchantCode])
 
   const flashCopied = useCallback(() => {
     setCopied(true)
@@ -486,6 +487,20 @@ export default function UpiPayPage() {
               </span>
               {copied ? <Check size={15} color={t.accent} /> : <Copy size={15} color={t.accent} />}
             </button>
+
+            {/* Notice for First-Time Payers Seeing Bank Risk Warnings */}
+            <div style={{
+              marginTop: 12, padding: '10px 12px', borderRadius: 10,
+              background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)',
+              color: t.textSub, fontSize: 11.5, lineHeight: 1.45
+            }}>
+              <strong style={{ color: t.text, display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
+                <span>💡</span> Seeing "Transaction is Risky" or blocked on your phone?
+              </strong>
+              <span>
+                UPI apps flag 1-tap browser links for some first-time payees. <strong>Fix:</strong> Tap <strong>Save QR to Gallery</strong> above ➔ Open GPay/PhonePe ➔ Scan QR ➔ <strong>Upload from Gallery</strong> to pay without any warning.
+              </span>
+            </div>
           </Card>
 
           {/* Verification Section */}

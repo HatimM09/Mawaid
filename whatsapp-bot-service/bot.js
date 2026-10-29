@@ -1329,7 +1329,7 @@ async function handleMessage(waPhone, rawText) {
     })
 
     const mc = appSettings.upi_mc || '5812'
-    const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&mc=${mc}&aid=uGICAgKCipYeAPg&ver=01&mode=01&am=${pendingBalance.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Thali #${tNum} - ${monthLabel}`)}`
+    const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=MURTUJA&mc=${mc}&tr=BCR2DN7TTKH2LLQF&aid=uGICAgKCipYeAPg&ver=01&mode=01&am=${pendingBalance.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Thali #${tNum} - ${monthLabel}`)}`
 
     return `💳 *Thali #${tNum} Dues • ${monthLabel}*\n` +
       `Salam *${shortName}*,\n\n` +

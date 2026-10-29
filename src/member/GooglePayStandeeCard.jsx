@@ -4,21 +4,24 @@ import { QRCodeCanvas } from 'qrcode.react'
 // Official NPCI UPI URI Specification Generator for Google Pay for Business Merchant
 export const generateUpiString = ({
   upiId = '6375250267@okbizaxis',
-  payeeName = 'Al Mawaid',
+  payeeName = 'MURTUJA', // Bank registered name on Axis Bank account to prevent NPCI name-mismatch phishing blocks
   amount,
   note = 'Monthly Thali Contribution',
   mc = '5812',
-  aid = 'uGICAgKCipYeAPg'
+  aid = 'uGICAgKCipYeAPg',
+  tr = 'BCR2DN7TTKH2LLQF'
 }) => {
   const cleanUpi = (upiId || '6375250267@okbizaxis').trim()
-  const cleanName = (payeeName || 'Al Mawaid').trim()
+  const cleanName = (payeeName || 'MURTUJA').trim()
   const cleanMc = (mc && String(mc).trim().length === 4 ? String(mc).trim() : '5812')
   const cleanAid = (aid || 'uGICAgKCipYeAPg').trim()
+  const cleanTr = (tr || 'BCR2DN7TTKH2LLQF').trim()
 
   const params = new URLSearchParams({
     pa: cleanUpi,
     pn: cleanName,
     mc: cleanMc,
+    tr: cleanTr,
     aid: cleanAid,
     ver: '01',
     mode: '01',
@@ -252,3 +255,4 @@ export default function GooglePayStandeeCard({
     </div>
   )
 }
+

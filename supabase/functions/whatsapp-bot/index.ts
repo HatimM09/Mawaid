@@ -712,7 +712,7 @@ async function sendDues(waPhone: string, member: MemberRow) {
       return
     }
 
-    const cleanUpiUri = `upi://pay?pa=${encodeURIComponent(upi)}&pn=${encodeURIComponent(payee)}&mc=${mc}&aid=uGICAgKCipYeAPg&ver=01&mode=01&am=${balance.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Thali #${tNum} - ${monthLabel}`)}`
+    const cleanUpiUri = `upi://pay?pa=${encodeURIComponent(upi)}&pn=MURTUJA&mc=${mc}&tr=BCR2DN7TTKH2LLQF&aid=uGICAgKCipYeAPg&ver=01&mode=01&am=${balance.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Thali #${tNum} - ${monthLabel}`)}`
 
     // Set multi-step session for awaiting UTR
     await setSession(waPhone, {
