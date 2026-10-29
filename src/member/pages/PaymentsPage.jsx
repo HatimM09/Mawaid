@@ -441,54 +441,80 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     const forfeitUsers = allUsers.filter(u => u.payment_exempt)
     const activeMembers = allUsers.filter(u => !u.payment_exempt)
 
-    // Current month payments
-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime()
-    const currentMonthPayments = allPayments.filter(p => new Date(p.created_at).getTime() >= monthStart)
-    const verifiedUsers = new Set(currentMonthPayments.filter(p => p.status === 'verified').map(p => p.user_id))
-    const submittedUsers = new Set(currentMonthPayments.filter(p => p.status === 'submitted').map(p => p.user_id))
+    // Current month payments using reliable monthKeyOf
+    const currentMonthPayments = allPayments.filter(p => p.created_at && monthKeyOf(new Date(p.created_at)) === currentMonthKey)
+    const verifiedPayments = currentMonthPayments.filter(p => p.status === 'verified')
+    const verifiedUserIds = new Set(verifiedPayments.map(p => p.user_id))
+    const submittedUserIds = new Set(currentMonthPayments.filter(p => p.status === 'submitted').map(p => p.user_id))
 
-    const paidCount = activeMembers.filter(u => verifiedUsers.has(u.user_id)).length
-    const submittedCount = activeMembers.filter(u => submittedUsers.has(u.user_id) && !verifiedUsers.has(u.user_id)).length
+    const cashUserIds = new Set(verifiedPayments.filter(p => p.payment_method === 'Cash' || p.transaction_ref === 'CASH').map(p => p.user_id))
+    const upiPaidUserIds = new Set(verifiedPayments.filter(p => !(p.payment_method === 'Cash' || p.transaction_ref === 'CASH')).map(p => p.user_id))
+
+    const cashCount = activeMembers.filter(u => cashUserIds.has(u.user_id)).length
+    const upiCount = activeMembers.filter(u => upiPaidUserIds.has(u.user_id) && !cashUserIds.has(u.user_id)).length
+    const paidCount = cashCount + upiCount
+    const submittedCount = activeMembers.filter(u => submittedUserIds.has(u.user_id) && !verifiedUserIds.has(u.user_id)).length
     const unpaidCount = Math.max(0, activeMembers.length - paidCount - submittedCount)
-    const totalAmountCollected = currentMonthPayments.filter(p => p.status === 'verified').reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+
+    const totalAmountCollected = verifiedPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+    const cashAmountCollected = verifiedPayments.filter(p => p.payment_method === 'Cash' || p.transaction_ref === 'CASH').reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0)
+    const upiAmountCollected = totalAmountCollected - cashAmountCollected
 
     return {
       totalUsers,
       activeCount: activeMembers.length,
       paidCount,
+      cashCount,
+      upiCount,
       submittedCount,
       unpaidCount,
       forfeitCount: forfeitUsers.length,
       totalAmountCollected,
+      cashAmountCollected,
+      upiAmountCollected,
       totalAmountPending: unpaidCount * defaultDue
     }
-  }, [allUsers, allPayments, defaultDue])
+  }, [allUsers, allPayments, defaultDue, currentMonthKey])
 
   // ── Filtered Users List with Computed Status ──
   const filteredUsersList = useMemo(() => {
-    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime()
-
     return allUsers.map(u => {
       const userPayments = allPayments.filter(p => p.user_id === u.user_id)
-      const currentMonthPayment = userPayments.find(p => new Date(p.created_at).getTime() >= monthStart)
-      const latestPayment = userPayments[0]
+      // Strictly match current calendar month
+      const monthPayments = userPayments.filter(p => p.created_at && monthKeyOf(new Date(p.created_at)) === currentMonthKey)
+      // Sort newest first
+      monthPayments.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+      // Prioritize verified payment if any exists, then submitted payment, then latest
+      const verifiedPayment = monthPayments.find(p => p.status === 'verified')
+      const submittedPayment = monthPayments.find(p => p.status === 'submitted')
+      const currentMonthPayment = verifiedPayment || submittedPayment || monthPayments[0] || null
+
+      const isCash = !!currentMonthPayment && (currentMonthPayment.payment_method === 'Cash' || currentMonthPayment.transaction_ref === 'CASH')
 
       let status = 'unpaid'
       if (u.payment_exempt) {
         status = 'forfeit'
       } else if (currentMonthPayment) {
-        status = currentMonthPayment.status === 'verified' ? 'paid' : currentMonthPayment.status === 'submitted' ? 'submitted' : 'unpaid'
+        if (currentMonthPayment.status === 'verified') {
+          status = isCash ? 'cash' : 'paid'
+        } else if (currentMonthPayment.status === 'submitted') {
+          status = 'submitted'
+        }
       }
 
       return {
         ...u,
         payments: userPayments,
         currentMonthPayment,
-        latestPayment,
-        status
+        latestPayment: userPayments[0],
+        status,
+        isCash
       }
     }).filter(u => {
-      if (managerFilter === 'paid' && u.status !== 'paid') return false
+      if (managerFilter === 'cash' && u.status !== 'cash') return false
+      if (managerFilter === 'paid' && u.status !== 'paid' && u.status !== 'cash') return false
+      if (managerFilter === 'upipaid' && u.status !== 'paid') return false
       if (managerFilter === 'unpaid' && u.status !== 'unpaid') return false
       if (managerFilter === 'submitted' && u.status !== 'submitted') return false
       if (managerFilter === 'forfeit' && u.status !== 'forfeit') return false
@@ -502,7 +528,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       }
       return true
     })
-  }, [allUsers, allPayments, managerFilter, managerSearch])
+  }, [allUsers, allPayments, managerFilter, managerSearch, currentMonthKey])
 
   // ── Multi-Select Actions ──
   const allFilteredIds = useMemo(() => filteredUsersList.map(u => u.user_id), [filteredUsersList])
@@ -535,6 +561,16 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     try {
       const selectedMembers = allUsers.filter(u => selectedUserIds.has(u.user_id))
       const nowIso = new Date().toISOString()
+      const targetIds = Array.from(selectedUserIds)
+
+      // Clean up previous records for this month for these users to prevent duplicate rows
+      const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+      await supabase
+        .from('user_payments')
+        .delete()
+        .in('user_id', targetIds)
+        .gte('created_at', monthStart)
+
       const records = selectedMembers.map(u => ({
         user_id: u.user_id,
         user_name: u.name || 'Member',
@@ -556,7 +592,11 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
 
       toast.success(`Successfully marked ${count} members as PAID by Cash!`)
       setSelectedUserIds(new Set())
-      if (data) setAllPayments(prev => [...data, ...prev])
+      // Immediately reflect in state: replace any month payments for these targets
+      setAllPayments(prev => [
+        ...(data || []),
+        ...prev.filter(p => !(targetIds.includes(p.user_id) && monthKeyOf(new Date(p.created_at)) === currentMonthKey))
+      ])
     } catch (err) {
       console.error('[BulkMarkCash] error:', err)
       toast.error('Bulk update failed. Please retry.')
@@ -575,6 +615,15 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     try {
       const selectedMembers = allUsers.filter(u => selectedUserIds.has(u.user_id))
       const nowIso = new Date().toISOString()
+      const targetIds = Array.from(selectedUserIds)
+
+      const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+      await supabase
+        .from('user_payments')
+        .delete()
+        .in('user_id', targetIds)
+        .gte('created_at', monthStart)
+
       const records = selectedMembers.map(u => ({
         user_id: u.user_id,
         user_name: u.name || 'Member',
@@ -596,7 +645,10 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
 
       toast.success(`Successfully marked ${count} members as VERIFIED PAID!`)
       setSelectedUserIds(new Set())
-      if (data) setAllPayments(prev => [...data, ...prev])
+      setAllPayments(prev => [
+        ...(data || []),
+        ...prev.filter(p => !(targetIds.includes(p.user_id) && monthKeyOf(new Date(p.created_at)) === currentMonthKey))
+      ])
     } catch (err) {
       console.error('[BulkMarkPaid] error:', err)
       toast.error('Bulk update failed. Please retry.')
@@ -626,7 +678,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
 
       toast.success(`Reverted ${count} members to UNPAID for ${currentMonthLabel}.`)
       setSelectedUserIds(new Set())
-      setAllPayments(prev => prev.filter(p => !(targetIds.includes(p.user_id) && p.created_at >= monthStart)))
+      setAllPayments(prev => prev.filter(p => !(targetIds.includes(p.user_id) && monthKeyOf(new Date(p.created_at)) === currentMonthKey)))
     } catch (err) {
       console.error('[BulkMarkUnpaid] error:', err)
       toast.error('Could not revert payments.')
@@ -638,27 +690,51 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   // ── Single Row Action: Mark as Cash ──
   const handleSingleMarkCash = async (member) => {
     try {
-      const payload = {
-        user_id: member.user_id,
-        user_name: member.name || 'Member',
-        user_email: member.email || '',
-        thali_number: member.thali_number ? String(member.thali_number) : '',
-        amount: defaultDue,
-        currency: 'INR',
-        status: 'verified',
-        transaction_ref: 'CASH',
-        upi_id: configuredUpiId,
-        payee_name: payeeName,
-        payment_method: 'Cash',
-        note: `${paymentTitle} - Cash Payment`,
-        created_at: new Date().toISOString()
+      const nowIso = new Date().toISOString()
+      let updatedData = null
+
+      if (member.currentMonthPayment?.id) {
+        // Update existing month payment to Cash & verified
+        const res = await supabase
+          .from('user_payments')
+          .update({
+            status: 'verified',
+            payment_method: 'Cash',
+            transaction_ref: 'CASH',
+            note: `${paymentTitle} - Cash Payment`,
+            updated_at: nowIso
+          })
+          .eq('id', member.currentMonthPayment.id)
+          .select()
+          .single()
+        if (res.error) throw res.error
+        updatedData = res.data
+        setAllPayments(prev => prev.map(p => p.id === member.currentMonthPayment.id ? updatedData : p))
+      } else {
+        // Insert new Cash payment
+        const payload = {
+          user_id: member.user_id,
+          user_name: member.name || 'Member',
+          user_email: member.email || '',
+          thali_number: member.thali_number ? String(member.thali_number) : '',
+          amount: defaultDue,
+          currency: 'INR',
+          status: 'verified',
+          transaction_ref: 'CASH',
+          upi_id: configuredUpiId,
+          payee_name: payeeName,
+          payment_method: 'Cash',
+          note: `${paymentTitle} - Cash Payment`,
+          created_at: nowIso
+        }
+
+        const res = await supabase.from('user_payments').insert([payload]).select().single()
+        if (res.error) throw res.error
+        updatedData = res.data
+        setAllPayments(prev => [updatedData, ...prev])
       }
 
-      const { data, error } = await supabase.from('user_payments').insert([payload]).select().single()
-      if (error) throw error
-
       toast.success(`Marked ${member.name} as Paid by Cash!`)
-      if (data) setAllPayments(prev => [data, ...prev])
     } catch (err) {
       console.error('[handleSingleMarkCash] error:', err)
       toast.error('Failed to record Cash payment')
@@ -668,41 +744,50 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   // ── Single Row Action: Mark as Paid (Verify UPI) ──
   const handleSingleMarkPaid = async (member) => {
     try {
-      // If member already has submitted payment this month, verify it
+      const nowIso = new Date().toISOString()
+      let updatedData = null
+
       if (member.currentMonthPayment?.id) {
-        const { error } = await supabase
+        // Update existing month payment to verified UPI
+        const res = await supabase
           .from('user_payments')
-          .update({ status: 'verified', updated_at: new Date().toISOString() })
+          .update({
+            status: 'verified',
+            payment_method: member.currentMonthPayment.payment_method === 'Cash' ? 'UPI Pay' : (member.currentMonthPayment.payment_method || 'UPI Pay'),
+            transaction_ref: member.currentMonthPayment.transaction_ref === 'CASH' ? 'VERIFIED_BY_ADMIN' : (member.currentMonthPayment.transaction_ref || 'VERIFIED_BY_ADMIN'),
+            updated_at: nowIso
+          })
           .eq('id', member.currentMonthPayment.id)
-        if (error) throw error
+          .select()
+          .single()
+        if (res.error) throw res.error
+        updatedData = res.data
+        setAllPayments(prev => prev.map(p => p.id === member.currentMonthPayment.id ? updatedData : p))
+      } else {
+        // Insert new verified UPI record
+        const payload = {
+          user_id: member.user_id,
+          user_name: member.name || 'Member',
+          user_email: member.email || '',
+          thali_number: member.thali_number ? String(member.thali_number) : '',
+          amount: defaultDue,
+          currency: 'INR',
+          status: 'verified',
+          transaction_ref: 'VERIFIED_BY_ADMIN',
+          upi_id: configuredUpiId,
+          payee_name: payeeName,
+          payment_method: 'UPI Pay',
+          note: `${paymentTitle} - Verified Online`,
+          created_at: nowIso
+        }
 
-        toast.success(`Verified payment for ${member.name}!`)
-        setAllPayments(prev => prev.map(p => p.id === member.currentMonthPayment.id ? { ...p, status: 'verified' } : p))
-        return
+        const res = await supabase.from('user_payments').insert([payload]).select().single()
+        if (res.error) throw res.error
+        updatedData = res.data
+        setAllPayments(prev => [updatedData, ...prev])
       }
-
-      // Otherwise insert new verified record
-      const payload = {
-        user_id: member.user_id,
-        user_name: member.name || 'Member',
-        user_email: member.email || '',
-        thali_number: member.thali_number ? String(member.thali_number) : '',
-        amount: defaultDue,
-        currency: 'INR',
-        status: 'verified',
-        transaction_ref: 'VERIFIED_BY_ADMIN',
-        upi_id: configuredUpiId,
-        payee_name: payeeName,
-        payment_method: 'UPI Pay',
-        note: `${paymentTitle} - Verified Online`,
-        created_at: new Date().toISOString()
-      }
-
-      const { data, error } = await supabase.from('user_payments').insert([payload]).select().single()
-      if (error) throw error
 
       toast.success(`Marked ${member.name} as Verified Paid!`)
-      if (data) setAllPayments(prev => [data, ...prev])
     } catch (err) {
       console.error('[handleSingleMarkPaid] error:', err)
       toast.error('Failed to mark as Paid')
@@ -723,7 +808,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       if (error) throw error
 
       toast.success(`${member.name} reverted to Unpaid for this month.`)
-      setAllPayments(prev => prev.filter(p => !(p.user_id === member.user_id && p.created_at >= monthStart)))
+      setAllPayments(prev => prev.filter(p => !(p.user_id === member.user_id && monthKeyOf(new Date(p.created_at)) === currentMonthKey)))
     } catch (err) {
       console.error('[handleSingleMarkUnpaid] error:', err)
       toast.error('Failed to revert payment')
@@ -1058,22 +1143,26 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
             </div>
 
             {/* Metrics Counter Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 14 }}>
-              <div style={{ background: 'rgba(0,0,0,0.3)', padding: '9px 6px', borderRadius: 12, textAlign: 'center' }}>
-                <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Active</div>
-                <div style={{ fontSize: 17, fontWeight: 800, color: '#fff', marginTop: 2 }}>{managerMetrics.activeCount}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, marginBottom: 14 }}>
+              <div style={{ background: 'rgba(0,0,0,0.3)', padding: '9px 4px', borderRadius: 12, textAlign: 'center' }}>
+                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Active</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', marginTop: 2 }}>{managerMetrics.activeCount}</div>
               </div>
-              <div style={{ background: 'rgba(52, 211, 153, 0.12)', border: '1px solid rgba(52,211,153,0.25)', padding: '9px 6px', borderRadius: 12, textAlign: 'center' }}>
-                <div style={{ fontSize: 9.5, color: '#34d399', textTransform: 'uppercase', fontWeight: 700 }}>Paid</div>
-                <div style={{ fontSize: 17, fontWeight: 800, color: '#34d399', marginTop: 2 }}>{managerMetrics.paidCount}</div>
+              <div style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16,185,129,0.3)', padding: '9px 4px', borderRadius: 12, textAlign: 'center' }}>
+                <div style={{ fontSize: 9, color: '#10b981', textTransform: 'uppercase', fontWeight: 800 }}>Cash</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#10b981', marginTop: 2 }}>{managerMetrics.cashCount}</div>
               </div>
-              <div style={{ background: 'rgba(251, 191, 36, 0.12)', border: '1px solid rgba(251,191,36,0.25)', padding: '9px 6px', borderRadius: 12, textAlign: 'center' }}>
-                <div style={{ fontSize: 9.5, color: '#fbbf24', textTransform: 'uppercase', fontWeight: 700 }}>Review</div>
-                <div style={{ fontSize: 17, fontWeight: 800, color: '#fbbf24', marginTop: 2 }}>{managerMetrics.submittedCount}</div>
+              <div style={{ background: 'rgba(52, 211, 153, 0.12)', border: '1px solid rgba(52,211,153,0.25)', padding: '9px 4px', borderRadius: 12, textAlign: 'center' }}>
+                <div style={{ fontSize: 9, color: '#34d399', textTransform: 'uppercase', fontWeight: 700 }}>UPI Paid</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#34d399', marginTop: 2 }}>{managerMetrics.upiCount}</div>
               </div>
-              <div style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239,68,68,0.25)', padding: '9px 6px', borderRadius: 12, textAlign: 'center' }}>
-                <div style={{ fontSize: 9.5, color: '#f87171', textTransform: 'uppercase', fontWeight: 700 }}>Unpaid</div>
-                <div style={{ fontSize: 17, fontWeight: 800, color: '#f87171', marginTop: 2 }}>{managerMetrics.unpaidCount}</div>
+              <div style={{ background: 'rgba(251, 191, 36, 0.12)', border: '1px solid rgba(251,191,36,0.25)', padding: '9px 4px', borderRadius: 12, textAlign: 'center' }}>
+                <div style={{ fontSize: 9, color: '#fbbf24', textTransform: 'uppercase', fontWeight: 700 }}>Review</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#fbbf24', marginTop: 2 }}>{managerMetrics.submittedCount}</div>
+              </div>
+              <div style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239,68,68,0.25)', padding: '9px 4px', borderRadius: 12, textAlign: 'center' }}>
+                <div style={{ fontSize: 9, color: '#f87171', textTransform: 'uppercase', fontWeight: 700 }}>Unpaid</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#f87171', marginTop: 2 }}>{managerMetrics.unpaidCount}</div>
               </div>
             </div>
 
@@ -1173,9 +1262,10 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               {[
                 { id: 'all', label: `All (${allUsers.length})` },
                 { id: 'unpaid', label: `Unpaid (${managerMetrics.unpaidCount})` },
-                { id: 'submitted', label: `Review (${managerMetrics.submittedCount})` },
+                { id: 'cash', label: `💵 Cash (${managerMetrics.cashCount})` },
                 { id: 'paid', label: `Paid (${managerMetrics.paidCount})` },
-                { id: 'forfeit', label: `Forfeit (${managerMetrics.forfeitCount})` }
+                { id: 'submitted', label: `Review (${managerMetrics.submittedCount})` },
+                { id: 'forfeit', label: `Exempt (${managerMetrics.forfeitCount})` }
               ].map(f => (
                 <button
                   key={f.id}
@@ -1300,7 +1390,9 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               </div>
             ) : (
               filteredUsersList.map(member => {
-                const isPaid = member.status === 'paid'
+                const isCash = member.status === 'cash'
+                const isUpiPaid = member.status === 'paid'
+                const isPaid = isCash || isUpiPaid
                 const isSubmitted = member.status === 'submitted'
                 const isUnpaid = member.status === 'unpaid'
                 const isForfeit = member.status === 'forfeit'
@@ -1311,9 +1403,9 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                     key={member.user_id}
                     style={{
                       background: t.card, borderRadius: 16,
-                      border: `1.5px solid ${isSelected ? t.accent : isPaid ? 'rgba(52,211,153,0.35)' : isSubmitted ? 'rgba(251,191,36,0.35)' : isForfeit ? 'rgba(148,163,184,0.3)' : t.border}`,
+                      border: `1.5px solid ${isSelected ? t.accent : isCash ? 'rgba(16,185,129,0.5)' : isUpiPaid ? 'rgba(52,211,153,0.35)' : isSubmitted ? 'rgba(251,191,36,0.35)' : isForfeit ? 'rgba(148,163,184,0.3)' : t.border}`,
                       padding: '13px 15px', display: 'flex', flexDirection: 'column', gap: 10,
-                      boxShadow: isSelected ? `0 0 0 1px ${t.accent}` : '0 2px 8px rgba(0,0,0,0.1)'
+                      boxShadow: isSelected ? `0 0 0 1px ${t.accent}` : isCash ? '0 2px 10px rgba(16,185,129,0.1)' : '0 2px 8px rgba(0,0,0,0.1)'
                     }}
                   >
                     {/* Top Row: Checkbox, Name, Thali # and Status Badge */}
@@ -1349,7 +1441,18 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
 
                       {/* Status Badges */}
                       <div style={{ flexShrink: 0 }}>
-                        {isPaid && (
+                        {isCash && (
+                          <span style={{
+                            fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase',
+                            padding: '4px 8px', borderRadius: 10, background: 'rgba(16, 185, 129, 0.2)',
+                            color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.5)',
+                            display: 'flex', alignItems: 'center', gap: 4
+                          }}>
+                            <Banknote size={11} /> Cash ₹{formatInr(member.currentMonthPayment?.amount || defaultDue)}
+                          </span>
+                        )}
+
+                        {isUpiPaid && (
                           <span style={{
                             fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase',
                             padding: '4px 8px', borderRadius: 10, background: 'rgba(52, 211, 153, 0.15)',
@@ -1404,8 +1507,12 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                       <div style={{ fontSize: 11, color: t.textSub }}>
                         {member.currentMonthPayment ? (
                           <span>
-                            {member.currentMonthPayment.payment_method || 'UPI'} • {new Date(member.currentMonthPayment.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                            {member.currentMonthPayment.transaction_ref && ` (Ref: ${member.currentMonthPayment.transaction_ref})`}
+                            <strong style={{ color: isCash ? '#10b981' : '#34d399' }}>
+                              {isCash ? '💵 Cash Received' : '📲 UPI Received'}
+                            </strong>
+                            {' • '}
+                            {new Date(member.currentMonthPayment.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                            {member.currentMonthPayment.transaction_ref && member.currentMonthPayment.transaction_ref !== 'CASH' && ` (Ref: ${member.currentMonthPayment.transaction_ref})`}
                           </span>
                         ) : isForfeit ? (
                           <span style={{ color: '#94a3b8' }}>Exempt from payment</span>
@@ -1420,31 +1527,33 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                         <button
                           onClick={() => handleSingleMarkCash(member)}
                           style={{
-                            background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)',
-                            borderRadius: 8, padding: '5px 8px', color: '#10b981', fontSize: 11,
+                            background: isCash ? 'linear-gradient(135deg, #10b981, #059669)' : 'rgba(16,185,129,0.12)',
+                            border: `1px solid ${isCash ? '#10b981' : 'rgba(16,185,129,0.35)'}`,
+                            borderRadius: 8, padding: '5px 8px', color: isCash ? '#ffffff' : '#10b981', fontSize: 11,
                             fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3
                           }}
-                          title="Mark paid in Cash"
+                          title={isCash ? "Paid by Cash" : "Mark paid in Cash"}
                         >
                           <Banknote size={12} />
-                          <span>CASH</span>
+                          <span>{isCash ? '✓ CASH' : 'CASH'}</span>
                         </button>
 
                         {/* 2. Quick PAID Button */}
                         <button
                           onClick={() => handleSingleMarkPaid(member)}
                           style={{
-                            background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.3)',
-                            borderRadius: 8, padding: '5px 8px', color: '#60a5fa', fontSize: 11,
+                            background: isUpiPaid ? 'linear-gradient(135deg, #3b82f6, #1d4ed8)' : 'rgba(59,130,246,0.12)',
+                            border: `1px solid ${isUpiPaid ? '#3b82f6' : 'rgba(59,130,246,0.35)'}`,
+                            borderRadius: 8, padding: '5px 8px', color: isUpiPaid ? '#ffffff' : '#60a5fa', fontSize: 11,
                             fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3
                           }}
-                          title="Mark verified paid (UPI/Online)"
+                          title={isUpiPaid ? "Paid via UPI" : "Mark verified paid (UPI/Online)"}
                         >
                           <CheckCircle2 size={12} />
-                          <span>PAID</span>
+                          <span>{isUpiPaid ? '✓ PAID' : 'PAID'}</span>
                         </button>
 
-                        {/* 3. Revert to UNPAID (if currently paid or submitted) */}
+                        {/* 3. Revert to UNPAID (if currently paid, cash, or submitted) */}
                         {(isPaid || isSubmitted) && (
                           <button
                             onClick={() => handleSingleMarkUnpaid(member)}
