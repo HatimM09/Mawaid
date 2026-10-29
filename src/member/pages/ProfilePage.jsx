@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
 import {
   ScanLine, ClipboardCheck, Users2, BellRing, Headphones, Sparkles,
   MessageCircle, Phone, MapPin, Check, KeyRound, Eye, EyeOff, LogOut,
@@ -19,13 +19,19 @@ import { THEMES } from '../theme'
 import { DAYS } from '../constants'
 import { isSurveyOpen, getSurveyWindowMessage } from '../survey'
 import { Card, Avatar, SectionLabel, BackHeader, Btn, EmptyState, ErrorBanner } from '../ui'
-import PaymentsPage from './PaymentsPage'
+const PaymentsPage = lazy(() => import('./PaymentsPage'))
 
 export default function ProfilePage({ theme, setTheme, markRead, appSettings, activeSubPage: externalSubPage, setActiveSubPage: externalSetSubPage, onGoToSurvey }) {
   const [internalSubPage, setInternalSubPage] = useState('main')
   const activeSubPage = externalSubPage !== undefined ? externalSubPage : internalSubPage
   const setActiveSubPage = externalSetSubPage || setInternalSubPage
-  if (activeSubPage === 'payments') return <PaymentsPage onBack={() => setActiveSubPage('main')} appSettings={appSettings} />
+  if (activeSubPage === 'payments') {
+    return (
+      <Suspense fallback={<div style={{ padding: '40px 20px', textAlign: 'center', color: '#888' }}>Loading Payments Hub…</div>}>
+        <PaymentsPage onBack={() => setActiveSubPage('main')} appSettings={appSettings} />
+      </Suspense>
+    )
+  }
   if (activeSubPage === 'surveys') return <MySurveysPage onBack={() => setActiveSubPage('main')} appSettings={appSettings} onGoToSurvey={onGoToSurvey} />
   if (activeSubPage === 'requests') return <MyRequestsPage onBack={() => setActiveSubPage('main')} />
   if (activeSubPage === 'khidmat') return <KhidmatTeamPage onBack={() => setActiveSubPage('main')} />

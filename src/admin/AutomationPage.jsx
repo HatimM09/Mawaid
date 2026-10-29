@@ -6,7 +6,7 @@ import {
   Sun, Moon, Activity, Zap, Timer, Settings,
   Lock, CheckCircle2, AlertTriangle, Sparkles,
   Sliders, MessageSquare, ChevronRight, Check,
-  Radio, Shield, Power, Eye, Info
+  Radio, Shield, Power, Eye, Info, CreditCard
 } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Btn, StatCard, Grid, Alert, SectionHeader, Modal } from './ui'
 import { getSurveyTargetWeek, getSurveyTargetWeeks, getSurveyCadence, formatWeekRange } from '../common/utils'
@@ -1007,6 +1007,50 @@ export default function AutomationPage() {
                 <div style={{ fontSize: 11.5, color: T.textSub, lineHeight: 1.4 }}>{broadcastBody || 'Notification message will appear here on member mobile screens.'}</div>
               </div>
             </div>
+          </div>
+        </AdminCard>
+      )}
+
+      {/* ── TAB 4: MONTHLY DUES COLLECTION AUTO-CYCLE (25th of Every Month) ── */}
+      {activeTab === 'hub' && (
+        <AdminCard style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: T.text, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Zap size={20} color="#f59e0b" />
+                Monthly Dues Collection Cycle (Auto on 25th)
+              </div>
+              <div style={{ fontSize: 12, color: T.textSub, marginTop: 4 }}>
+                Automatically generates monthly contribution reminders and flags dues on the 25th of every month.
+              </div>
+            </div>
+            <Btn onClick={() => navigate('/admin/payments')}>
+              <CreditCard size={14} /> Open Payments Hub
+            </Btn>
+          </div>
+          <div style={{
+            padding: 14, borderRadius: 12, background: 'rgba(245,158,11,0.08)',
+            border: '1px solid rgba(245,158,11,0.25)', display: 'flex',
+            alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap'
+          }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#fcd34d' }}>
+                Automated Schedule: Every 25th of the Month
+              </div>
+              <div style={{ fontSize: 12, color: T.textSub, marginTop: 2 }}>
+                Runs via pg_cron &amp; in-app check. Dispatches alerts to active unpaid members for the monthly cycle.
+              </div>
+            </div>
+            <button
+              onClick={() => navigate('/admin/payments')}
+              style={{
+                padding: '8px 16px', borderRadius: 10, border: 'none',
+                background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#000',
+                fontSize: 12, fontWeight: 900, cursor: 'pointer'
+              }}
+            >
+              Manage &amp; Run Cycle
+            </button>
           </div>
         </AdminCard>
       )}

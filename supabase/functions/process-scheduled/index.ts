@@ -278,6 +278,61 @@ serve(async (_req: Request) => {
       }
     }
 
+    // ── 3. Handle Auto Dues Cycle on every 25th of the month ──
+    const todayDate = new Date().getDate()
+    if (todayDate >= 25) {
+      const currentMonthKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+      const { data: cycleSetting } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'last_auto_dues_cycle_month')
+        .maybeSingle()
+
+      if (cycleSetting?.value !== currentMonthKey) {
+        const { data: activeMembers } = await supabase
+          .from('user_stats')
+          .select('user_id, name, thali_number')
+          .eq('payment_exempt', false)
+          .limit(5000)
+
+        if (activeMembers?.length) {
+          const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString()
+          const { data: monthPayments } = await supabase
+            .from('user_payments')
+            .select('user_id')
+            .gte('created_at', monthStart)
+
+          const paidSet = new Set((monthPayments || []).map((p: any) => p.user_id))
+          const unpaidMembers = activeMembers.filter((m: any) => !paidSet.has(m.user_id))
+          const monthName = new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+
+          if (unpaidMembers.length > 0) {
+            const duesNotices = unpaidMembers.map((m: any) => ({
+              target_user_id: m.user_id,
+              title: `Thali Contribution Due — ${monthName}`,
+              body: `Dear ${m.name || 'Member'}, your monthly contribution for ${monthName} is due. Please clear your dues securely via UPI on the app.`,
+              message: `Your monthly contribution for ${monthName} is due.`,
+              sender_name: 'Al-Mawaid Dues',
+              type: 'reminder',
+              tone: '#f59e0b',
+              url: '/pay',
+              created_at: now
+            }))
+
+            for (let i = 0; i < duesNotices.length; i += 100) {
+              await supabase.from('notices').insert(duesNotices.slice(i, i + 100))
+            }
+          }
+
+          await supabase.from('app_settings').upsert([
+            { key: 'last_auto_dues_cycle_month', value: currentMonthKey },
+            { key: 'last_auto_dues_cycle_run', value: now }
+          ])
+          totalProcessed++
+        }
+      }
+    }
+
     return new Response(JSON.stringify({ ok: true, processed: totalProcessed }), { status: 200, headers })
   } catch (err: any) {
     return new Response(JSON.stringify({ ok: false, error: err.message }), { status: 500, headers })

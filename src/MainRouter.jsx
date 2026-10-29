@@ -23,6 +23,7 @@ const SurveyAccuracyPage = lazy(() => import('./admin/SurveyAccuracyPage'))
 const KhidmatPortal = lazy(() => import('./admin/KhidmatPortal'))
 const InventoryManagerPortal = lazy(() => import('./admin/InventoryManagerPortal'))
 const AutomationPage = lazy(() => import('./admin/AutomationPage'))
+const PaymentsPage = lazy(() => import('./member/pages/PaymentsPage'))
 
 // User-facing pages
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
@@ -67,6 +68,7 @@ export default function MainRouter() {
               <Route path="queries" element={<RequireRole roles={['admin', 'khidmat_guzar', 'supervisor']}><QueriesAdminPage /></RequireRole>} />
               <Route path="staff" element={<RequireRole roles={['admin']}><StaffPage /></RequireRole>} />
               <Route path="notifications" element={<RequireRole roles={['admin']}><NotificationsAdminPage /></RequireRole>} />
+              <Route path="payments" element={<RequireRole roles={['admin', 'supervisor', 'payment_manager']}><PaymentsPage onBack={() => window.history.back()} /></RequireRole>} />
               <Route path="settings" element={<RequireRole roles={['admin']}><SettingsPage /></RequireRole>} />
               <Route path="automation" element={<RequireRole roles={['admin']}><AutomationPage /></RequireRole>} />
             </Route>

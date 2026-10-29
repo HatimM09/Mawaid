@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Users, ClipboardList, Star, FileText,
-  MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight, Search, History, Package, Send, Zap, Target
+  MessageSquare, Shield, Settings, LogOut, Menu, X, ChevronRight, Search, History, Package, Send, Zap, Target, CreditCard
 } from 'lucide-react'
 import { updateSystemTheme } from './ui'
 import OfflineBanner from '../components/OfflineBanner'
@@ -12,6 +12,7 @@ import { supabase } from '../lib/firebaseClient'
 const NAV = [
   { to: '/admin', label: 'Dashboard', Icon: LayoutDashboard, color: 'var(--accent-primary)', end: true, roles: ['admin', 'inventory_manager', 'khidmat_guzar', 'supervisor'] },
   { to: '/admin/users', label: 'Thali Users', Icon: Users, color: 'var(--accent-primary)', roles: ['admin'] },
+  { to: '/admin/payments', label: 'Payments Hub', Icon: CreditCard, color: 'var(--accent-primary)', roles: ['admin', 'supervisor', 'payment_manager'] },
   { to: '/admin/survey-dashboard', label: 'Survey Summary', Icon: ClipboardList, color: 'var(--accent-primary)', roles: ['admin'] },
   { to: '/admin/surveys', label: 'Survey Form', Icon: Star, color: 'var(--accent-primary)', roles: ['admin'] },
   { to: '/admin/survey-tracking', label: 'Survey Tracking', Icon: History, color: 'var(--accent-primary)', roles: ['admin'] },

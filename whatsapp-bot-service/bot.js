@@ -73,6 +73,73 @@ async function requestPairing(phoneInput) {
   }
 }
 
+async function relinkSession() {
+  console.log('🔄 Relink requested: resetting session and cleaning auth directory...')
+  botStatus = 'waiting_qr'
+  latestQr = null
+  latestQrDataUrl = null
+  connectedUser = null
+  lastPairingCode = null
+
+  if (activeSock) {
+    try {
+      activeSock.ev.removeAllListeners('connection.update')
+      activeSock.ev.removeAllListeners('messages.upsert')
+      activeSock.ev.removeAllListeners('creds.update')
+      await activeSock.logout().catch(() => {})
+      activeSock.end(new Error('Relink session requested'))
+    } catch (e) {
+      console.warn('Socket termination warning:', e)
+    }
+    activeSock = null
+  }
+
+  // Delete all auth files to prevent "Bad MAC" and session desync errors
+  const authDir = path.join(__dirname, 'auth_info_baileys')
+  try {
+    if (fs.existsSync(authDir)) {
+      const files = fs.readdirSync(authDir)
+      for (const f of files) {
+        try { fs.unlinkSync(path.join(authDir, f)) } catch {}
+      }
+    }
+  } catch (err) {
+    console.warn('Failed clearing auth dir:', err)
+  }
+
+  setTimeout(() => {
+    startBot().catch(e => console.error('Failed to restart bot after relink:', e))
+  }, 1200)
+}
+
+function extractMessageText(message) {
+  if (!message) return ''
+  let m = message
+  if (m.ephemeralMessage?.message) m = m.ephemeralMessage.message
+  if (m.viewOnceMessage?.message) m = m.viewOnceMessage.message
+  if (m.viewOnceMessageV2?.message) m = m.viewOnceMessageV2.message
+  if (m.documentWithCaptionMessage?.message) m = m.documentWithCaptionMessage.message
+  if (m.editedMessage?.message?.protocolMessage?.editedMessage) {
+    m = m.editedMessage.message.protocolMessage.editedMessage
+  }
+
+  const text = (
+    m.conversation ||
+    m.extendedTextMessage?.text ||
+    m.imageMessage?.caption ||
+    m.videoMessage?.caption ||
+    m.buttonsResponseMessage?.selectedDisplayText ||
+    m.buttonsResponseMessage?.selectedButtonId ||
+    m.templateButtonReplyMessage?.selectedDisplayText ||
+    m.templateButtonReplyMessage?.selectedId ||
+    m.listResponseMessage?.title ||
+    m.listResponseMessage?.singleSelectReply?.selectedRowId ||
+    m.interactiveResponseMessage?.body?.text ||
+    ''
+  )
+  return String(text || '').trim()
+}
+
 function renderDashboardHtml() {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -236,9 +303,12 @@ function renderDashboardHtml() {
           <p>Interactive Member Portal & Monthly Payments Hub</p>
         </div>
       </div>
-      <div id="statusBadge" class="badge badge-connecting">
-        <span class="dot"></span>
-        <span id="statusText">Connecting...</span>
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <button id="relinkBtn" class="btn" style="background:#334155; font-size:13px; padding:8px 14px; border:1px solid rgba(255,255,255,0.12);" onclick="triggerRelink()">🔄 Relink WhatsApp</button>
+        <div id="statusBadge" class="badge badge-connecting">
+          <span class="dot"></span>
+          <span id="statusText">Connecting...</span>
+        </div>
       </div>
     </div>
 
@@ -248,6 +318,9 @@ function renderDashboardHtml() {
       <p style="margin-top:8px; font-size:13px; color:#94a3b8;">
         Members can now message your WhatsApp number to view menus, check dues, pay via UPI, and submit feedback.
       </p>
+      <button id="relinkBtn2" class="btn" style="background:rgba(239,68,68,0.15); color:#fca5a5; border:1px solid rgba(239,68,68,0.35); font-size:13px; padding:8px 16px; margin-top:16px;" onclick="triggerRelink()">
+        Disconnect & Relink Device
+      </button>
     </div>
 
     <div id="linkGrid" class="grid">
@@ -410,6 +483,33 @@ function renderDashboardHtml() {
       }
     }
 
+    async function triggerRelink() {
+      if (!confirm('Are you sure you want to reset & relink WhatsApp? This will clear any stale credentials and generate a fresh QR code.')) return;
+      const relinkBtn = document.getElementById('relinkBtn');
+      const relinkBtn2 = document.getElementById('relinkBtn2');
+      if (relinkBtn) relinkBtn.disabled = true;
+      if (relinkBtn2) relinkBtn2.disabled = true;
+      try {
+        const res = await fetch('/api/relink', { method: 'POST' });
+        const data = await res.json();
+        const badge = document.getElementById('statusBadge');
+        const statusText = document.getElementById('statusText');
+        badge.className = 'badge badge-connecting';
+        statusText.textContent = 'Resetting...';
+        document.getElementById('onlineBox').style.display = 'none';
+        document.getElementById('linkGrid').style.display = 'grid';
+        document.getElementById('qrImage').style.display = 'none';
+        document.getElementById('qrLoading').style.display = 'block';
+        document.getElementById('qrLoading').textContent = 'Generating fresh QR code...';
+        setTimeout(pollStatus, 1500);
+      } catch (e) {
+        alert('Reset failed: ' + e.message);
+      } finally {
+        if (relinkBtn) relinkBtn.disabled = false;
+        if (relinkBtn2) relinkBtn2.disabled = false;
+      }
+    }
+
     setInterval(pollStatus, 2000);
     pollStatus();
   </script>
@@ -450,6 +550,12 @@ const server = http.createServer(async (req, res) => {
       }
     })
     return
+  }
+
+  if ((url.pathname === '/api/relink' || url.pathname === '/api/reset' || url.pathname === '/api/logout') && req.method === 'POST') {
+    await relinkSession()
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+    return res.end(JSON.stringify({ success: true, message: 'Bot session reset cleanly. Generating fresh QR code.' }))
   }
 
   if (url.pathname === '/health') {
@@ -720,14 +826,52 @@ function renderMainMenu(memberName, thaliNumber) {
 
 async function handleMessage(waPhone, rawText) {
   const text = (rawText || '').trim()
+  if (!text) return null
   const upper = text.toUpperCase()
 
   const { member, linked } = await getMemberByWaPhone(waPhone)
   const session = await getSession(waPhone)
-  const state = session.state || {}
+  let state = session.state || {}
 
-  // Explicit LINK command (works anytime)
-  const linkPrefixMatch = text.match(/^(?:link|thali)\s*[:#]?\s*([a-zA-Z0-9\-_\s/]+)$/i)
+  // 1. Session timeout check (10 minutes of inactivity -> clear stale sub-flow)
+  if (session?.updated_at) {
+    const ageMs = Date.now() - new Date(session.updated_at).getTime()
+    if (ageMs > 10 * 60 * 1000) {
+      await clearSession(waPhone)
+      state = {}
+    }
+  }
+
+  // 2. Global cancel / Close Chat (Always active anytime)
+  if (['6', 'CLOSE', 'END', 'EXIT', 'BYE', 'STOP', 'CANCEL'].includes(upper)) {
+    await clearSession(waPhone)
+    return `👋 *Chat Closed.*\nReply *MENU* anytime to reopen the portal.`
+  }
+
+  // 3. Global Menu & Start Commands (Always resets stuck flows)
+  if (['MENU', 'HOME', 'START', 'MAIN MENU', 'RESET'].includes(upper)) {
+    await clearSession(waPhone)
+    if (member && linked) {
+      return renderMainMenu(member.name, member.thali_number)
+    }
+  }
+
+  // 4. Greetings (Always welcome member and show main menu)
+  if (['HI', 'HELLO', 'HELP', 'ASSALAMUALAIKUM', 'SALAAM', 'HEY'].includes(upper)) {
+    await clearSession(waPhone)
+    if (member && linked) {
+      return renderMainMenu(member.name, member.thali_number)
+    }
+  }
+
+  // 5. Pleasantries & Thanks (Acknowledge warmly without creating false query tickets)
+  if (['THANKS', 'THANK YOU', 'SHUKRAN', 'JAZAKALLAH', 'JAZAKALLAH KHAIR', 'OK', 'OKAY', 'DONE', 'FINE', 'ALHAMDULILLAH', 'MUBARAK'].includes(upper)) {
+    await clearSession(waPhone)
+    return `🙏 *Afwan / JazakAllah!* Happy to serve you.\n\n_Reply MENU anytime to view portal options._`
+  }
+
+  // 6. Explicit LINK command (works anytime): "link 101", "thali 101", "my thali is 101", "#101"
+  const linkPrefixMatch = text.match(/^(?:(?:my\s+)?thali(?:\s*(?:no|number|#))?|link|t\.?no\.?)\s*[:#]?\s*([a-zA-Z0-9\-_\s/]+)$/i)
   if (linkPrefixMatch) {
     const candidateThali = linkPrefixMatch[1].trim()
     const found = await findMemberByThali(candidateThali)
@@ -735,16 +879,16 @@ async function handleMessage(waPhone, rawText) {
       await linkMember(waPhone, found)
       const tNum = String(found.thali_number || '').trim()
       const sName = formatShortName(found.name)
-      return `✅ Thali *#${tNum}* linked!\nSalam, *${sName}* 👋\n\n` + renderMainMenu(found.name, found.thali_number)
+      return `✅ Thali *#${tNum}* linked successfully!\nSalam, *${sName}* 👋\n\n` + renderMainMenu(found.name, found.thali_number)
     } else {
-      return `❌ Thali *#${candidateThali}* not found. Please check and try again.`
+      return `❌ Thali *#${candidateThali}* could not be found.\n\nPlease check your Thali Number and reply again.`
     }
   }
 
-  // 1. Unlinked flow
+  // 7. Unlinked flow: Member not yet found in user_stats
   if (!member || !linked) {
     const cleanThali = text.replace(/^[#\s]+|[#\s]+$/g, '').trim()
-    const isGreeting = ['HI', 'HELLO', 'START', 'HELP', 'ASSALAMUALAIKUM', 'SALAAM', 'HEY'].includes(upper)
+    const isGreeting = ['HI', 'HELLO', 'START', 'HELP', 'ASSALAMUALAIKUM', 'SALAAM', 'HEY', 'MENU'].includes(upper)
 
     if (!isGreeting && cleanThali.length >= 1 && cleanThali.length <= 15) {
       const found = await findMemberByThali(cleanThali)
@@ -754,20 +898,14 @@ async function handleMessage(waPhone, rawText) {
         const sName = formatShortName(found.name)
         return `✅ Thali *#${tNum}* linked!\nSalam, *${sName}* 👋\n\n` + renderMainMenu(found.name, found.thali_number)
       } else if (/^[a-zA-Z0-9\-_\s/]+$/.test(cleanThali)) {
-        return `❌ Thali *#${cleanThali}* not found.\n\nPlease reply with your Thali Number (e.g. \`101\`, \`104/B\`, \`G2\`):`
+        return `❌ Thali *#${cleanThali}* not found in records.\n\nPlease reply with your correct Thali Number (e.g. \`101\`, \`104/B\`, \`G2\`):`
       }
     }
-    return `👋 *Al-Mawaid*\n\nPlease reply with your *Thali Number* (e.g. \`101\`, \`104/B\`, \`G2\`):`
+    return `👋 *Al-Mawaid Portal*\nSalam! Please reply with your *Thali Number* to access menus and dues (e.g. \`101\`, \`104/B\`, \`G2\`):`
   }
 
-  // 2. Global cancel / Close Chat
-  if (['6', 'CLOSE', 'END', 'EXIT', 'BYE', 'STOP', 'CANCEL'].includes(upper)) {
-    await clearSession(waPhone)
-    return `👋 *Chat Closed.* Type *MENU* anytime.`
-  }
-
-  // 2b. Direct Thali Number Input (switch thali or reload)
-  if (!['1', '2', '3', '4', '5', '6'].includes(upper) && state.flow !== 'feedback' && state.flow !== 'query' && state.flow !== 'payment') {
+  // 8. Direct Thali Number Input (switch thali or reload)
+  if (!['1', '2', '3', '4', '5', '6'].includes(upper) && !state.flow) {
     const candidateThali = await findMemberByThali(text)
     if (candidateThali) {
       if (candidateThali.user_id !== member.user_id) {
@@ -781,10 +919,13 @@ async function handleMessage(waPhone, rawText) {
     }
   }
 
-  // 3. Active Multi-step Flows: FEEDBACK
+  // 9. Active Multi-step Flow: FEEDBACK
   if (state.flow === 'feedback') {
-    // Step 1: Select Meal Type (Lunch or Dinner)
-    if (state.step === 'meal_type') {
+    // If user changes their mind and inputs another menu number
+    if (['1', '2', '4', '5', '6'].includes(upper) && state.step !== 'rating' && state.step !== 'comment') {
+      await clearSession(waPhone)
+      // routes to menu option below
+    } else if (state.step === 'meal_type') {
       const low = text.toLowerCase()
       let meal = null
       if (['1', 'lunch', 'l', 'dupahr', 'dopahar'].includes(low)) {
@@ -794,7 +935,7 @@ async function handleMessage(waPhone, rawText) {
       }
 
       if (!meal) {
-        return `⭐ *Rate Meal Today*\n\n1. Lunch ☀️\n2. Dinner 🌙\n\n_Reply 1 for Lunch or 2 for Dinner:_`
+        return `⭐ *Rate Meal Today*\n\n1. Lunch ☀️\n2. Dinner 🌙\n\n_Reply 1 for Lunch, 2 for Dinner, or MENU to cancel:_`
       }
 
       state.meal = meal
@@ -807,25 +948,19 @@ async function handleMessage(waPhone, rawText) {
         `3. 🙂 Good (3★)\n` +
         `4. 😄 Great (4★)\n` +
         `5. 🤩 Excellent (5★)\n\n` +
-        `_Reply 1 to 5:_`
-    }
-
-    // Step 2: Rate (1 to 5 stars)
-    if (state.step === 'rating') {
+        `_Reply 1 to 5 (or MENU to cancel):_`
+    } else if (state.step === 'rating') {
       const num = parseInt(text.charAt(0), 10)
       if (isNaN(num) || num < 1 || num > 5) {
         const mealTitle = state.meal === 'lunch' ? 'Lunch' : 'Dinner'
-        return `Please reply with a number from *1* to *5* stars for ${mealTitle}:`
+        return `Please reply with a number from *1* to *5* stars for ${mealTitle} (or MENU to cancel):`
       }
       state.stars = num
       state.step = 'comment'
       await setSession(waPhone, state)
       const mealTitle = state.meal === 'lunch' ? 'Lunch' : 'Dinner'
-      return `⭐ *${STAR_LABELS[num]}*\n\nAny comments for *${mealTitle}*?\n_Reply with comment, or - to skip:_`
-    }
-
-    // Step 3: Submit Comments
-    if (state.step === 'comment') {
+      return `⭐ *${STAR_LABELS[num]}*\n\nAny comments for *${mealTitle}*?\n_Reply with your comment, or - to skip:_`
+    } else if (state.step === 'comment') {
       const comment = (text === '-' || upper === 'SKIP') ? '' : text
       const now = tzNow()
       const weekId = calendarWeekMonday(now)
@@ -850,7 +985,6 @@ async function handleMessage(waPhone, rawText) {
 
       await supabase.from('daily_feedback').upsert(payload, { onConflict: 'user_id,day,week_id' })
 
-      // Push notification to admins
       try {
         const userName = `${member.name || 'Member'} (Thali #${member.thali_number || '—'})`
         const mealName = state.meal === 'lunch' ? 'Lunch' : 'Dinner'
@@ -865,19 +999,20 @@ async function handleMessage(waPhone, rawText) {
             url: '/admin/feedback',
           }
         })
-      } catch {
-        // notification error should not block chat
-      }
+      } catch {}
 
       await clearSession(waPhone)
       const mealDisplayName = state.meal === 'lunch' ? 'Lunch' : 'Dinner'
-      return `🙏 *Thank You!*\nYour review for *${mealDisplayName}* (${state.stars}★) is recorded.\n\n_Reply MENU or 6 to close_`
+      return `🙏 *Thank You!*\nYour review for *${mealDisplayName}* (${state.stars}★) is recorded.\n\n_Reply MENU to continue_`
     }
   }
 
-  // Active Multi-step Flows: QUERY Prompt
+  // 10. Active Multi-step Flow: QUERY Prompt
   if (state.flow === 'query') {
-    if (text) {
+    if (['1', '2', '3', '4', '6'].includes(upper)) {
+      await clearSession(waPhone)
+      // route to selected option below
+    } else if (text) {
       const comment = text.trim()
       const subject = comment.length > 50 ? comment.substring(0, 47) + '...' : comment
 
@@ -888,7 +1023,6 @@ async function handleMessage(waPhone, rawText) {
         status: 'open',
       })
 
-      // Push notification to admins for Query
       try {
         const userName = `${member.name || 'A Member'} (Thali #${member.thali_number || '—'})`
         await supabase.functions.invoke('send-push', {
@@ -902,82 +1036,79 @@ async function handleMessage(waPhone, rawText) {
             url: '/admin/queries'
           }
         })
-      } catch {
-        // notification failure should not block chat
-      }
+      } catch {}
 
       await clearSession(waPhone)
-      return `📨 *Message Sent!*\n\n"${comment}"\n\nForwarded to Jamaat management. They will reply soon.\n\n_Reply MENU or 6 to close_`
+      return `📨 *Message Sent to Admin!*\n\n"${comment}"\n\nForwarded to Jamaat management. They will review and reply soon.\n\n_Reply MENU to view options._`
     }
   }
 
-  // Active Multi-step Flows: PAYMENT Confirmation (Awaiting UTR)
+  // 11. Active Multi-step Flow: PAYMENT Confirmation (Awaiting UTR)
   if (state.flow === 'payment' && state.step === 'awaiting_utr') {
-    if (['6', 'CLOSE', 'CANCEL', 'BACK', 'EXIT'].includes(upper)) {
+    if (['1', '2', '3', '5', '6'].includes(upper)) {
       await clearSession(waPhone)
-      return `❌ *Cancelled.*\nReply *MENU* or *4* anytime to check thali dues.`
+      // route to selected option below
+    } else {
+      const cleanUtr = text.replace(/^(?:PAID|UTR|REF|TXN)[:\s-]*/i, '').trim()
+      if (!cleanUtr || cleanUtr.length < 5 || cleanUtr.length > 35) {
+        return `⚠️ Please enter your *12-digit UTR* from GPay, PhonePe, or Paytm receipt (e.g. \`428912345678\`):\n\n_(Or reply MENU to cancel)_`
+      }
+
+      const appSettings = await loadAppSettings()
+      const payAmt = Number(state.amount || member.custom_due_amount || appSettings.default_payment_due || 1500)
+      const monthLabel = state.monthLabel || 'This Month'
+      const monthKey = state.monthKey || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+      const upiId = appSettings.upi_id || '6375250267@okbizaxis'
+      const payeeName = appSettings.upi_payee_name || 'Fleeksocks'
+
+      const { error: insErr } = await supabase.from('user_payments').insert({
+        user_id: member.user_id,
+        user_name: member.name || '',
+        user_email: member.email || '',
+        thali_number: String(member.thali_number || ''),
+        amount: payAmt,
+        currency: 'INR',
+        status: 'submitted',
+        transaction_ref: cleanUtr,
+        upi_id: upiId,
+        payee_name: payeeName,
+        payment_method: 'UPI',
+        note: `WhatsApp Bot payment for ${monthLabel}`,
+        metadata: {
+          month: monthKey,
+          month_label: monthLabel,
+          wa_phone: waPhone,
+          channel: 'whatsapp_bot',
+          submitted_at: new Date().toISOString(),
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+
+      if (insErr) {
+        console.error('[payment] insert error:', insErr)
+        return `❌ Could not record payment. Please try again or contact management.`
+      }
+
+      await clearSession(waPhone)
+
+      await notifyPaymentManager({
+        member,
+        amount: payAmt,
+        utr: cleanUtr,
+        monthLabel,
+        waPhone,
+      })
+
+      const tNum = String(member.thali_number || 'N/A').trim()
+      const shortName = formatShortName(member.name)
+      return `✅ *Payment Recorded!*\n\n` +
+        `• Thali: *#${tNum}* (${shortName})\n` +
+        `• Amount: *₹${payAmt.toLocaleString('en-IN')}* (${monthLabel})\n` +
+        `• UTR: \`${cleanUtr}\`\n\n` +
+        `📢 Sent to management for verification. Thank you! 🙏\n\n` +
+        `_Reply MENU anytime._`
     }
-
-    const cleanUtr = text.replace(/^(?:PAID|UTR|REF|TXN)[:\s-]*/i, '').trim()
-    if (!cleanUtr || cleanUtr.length < 5 || cleanUtr.length > 35) {
-      return `⚠️ Please enter your *12-digit UTR* from GPay, PhonePe, or Paytm receipt (e.g. \`428912345678\`):\n\n_(Or type 6 to cancel)_`
-    }
-
-    const appSettings = await loadAppSettings()
-    const payAmt = Number(state.amount || member.custom_due_amount || appSettings.default_payment_due || 1500)
-    const monthLabel = state.monthLabel || 'This Month'
-    const monthKey = state.monthKey || `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
-    const upiId = appSettings.upi_id || '6375250267@okbizaxis'
-    const payeeName = appSettings.upi_payee_name || 'Fleeksocks'
-
-    const { error: insErr } = await supabase.from('user_payments').insert({
-      user_id: member.user_id,
-      user_name: member.name || '',
-      user_email: member.email || '',
-      thali_number: String(member.thali_number || ''),
-      amount: payAmt,
-      currency: 'INR',
-      status: 'submitted',
-      transaction_ref: cleanUtr,
-      upi_id: upiId,
-      payee_name: payeeName,
-      payment_method: 'UPI',
-      note: `WhatsApp Bot payment for ${monthLabel}`,
-      metadata: {
-        month: monthKey,
-        month_label: monthLabel,
-        wa_phone: waPhone,
-        channel: 'whatsapp_bot',
-        submitted_at: new Date().toISOString(),
-      },
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-
-    if (insErr) {
-      console.error('[payment] insert error:', insErr)
-      return `❌ Could not record payment. Please try again or contact management.`
-    }
-
-    await clearSession(waPhone)
-
-    // Notify Mulla Murtaza Hamid & Admins
-    await notifyPaymentManager({
-      member,
-      amount: payAmt,
-      utr: cleanUtr,
-      monthLabel,
-      waPhone,
-    })
-
-    const tNum = String(member.thali_number || 'N/A').trim()
-    const shortName = formatShortName(member.name)
-    return `✅ *Payment Recorded!*\n\n` +
-      `• Thali: *#${tNum}* (${shortName})\n` +
-      `• Amount: *₹${payAmt.toLocaleString('en-IN')}* (${monthLabel})\n` +
-      `• UTR: \`${cleanUtr}\`\n\n` +
-      `📢 Sent to management for verification. Thank you! 🙏\n\n` +
-      `_Reply MENU or 6 to close_`
   }
 
   // Manager Quick Action: VERIFY <UTR>
@@ -1089,18 +1220,23 @@ async function handleMessage(waPhone, rawText) {
       `• Amount: *₹${payAmt.toLocaleString('en-IN')}* (${monthLabel})\n` +
       `• UTR: \`${cleanUtr}\`\n\n` +
       `📢 Sent to management for verification. Thank you! 🙏\n\n` +
-      `_Reply MENU or 6 to close_`
+      `_Reply MENU anytime._`
   }
 
-  // 4. Interactive Button & Command Router
+  // 12. Main Interactive Options: 1 to 6
 
   // Option 1: Today's Menu
   if (upper === '1' || upper === 'MENU' || upper === "TODAY" || upper === "TODAY'S MENU") {
+    await clearSession(waPhone)
     const now = tzNow()
+    const dayOfWeek = now.getUTCDay()
+    if (dayOfWeek === 0) {
+      return `🍽️ *Today's Menu (SUNDAY)*\n\nNo thali distribution today (Sunday).\n\n_Reply 2 to view Tomorrow's (Monday's) menu, or MENU for options._`
+    }
     const appSettings = await loadAppSettings()
     const servingWeek = resolveServingWeekId(appSettings, now)
     const menuMap = await loadMenuMap(servingWeek)
-    const dayKey = DAY_KEYS[now.getUTCDay() === 0 ? 0 : now.getUTCDay() - 1] || 'mon'
+    const dayKey = DAY_KEYS[dayOfWeek - 1] || 'mon'
     const dayMenu = menuForDay(menuMap, dayKey)
     const dayName = weekdayName(now)
     return renderMenuCard(dayKey, dayMenu, `Today's Menu (${dayName.toUpperCase()})`)
@@ -1108,12 +1244,17 @@ async function handleMessage(waPhone, rawText) {
 
   // Option 2: Tomorrow's Menu
   if (upper === '2' || upper === 'TOMORROW' || upper === "TOMORROW'S MENU") {
+    await clearSession(waPhone)
     const now = tzNow()
     const tomorrow = new Date(now.getTime() + 86400_000)
+    const tomDayOfWeek = tomorrow.getUTCDay()
+    if (tomDayOfWeek === 0) {
+      return `🍽️ *Tomorrow's Menu (SUNDAY)*\n\nNo thali distribution tomorrow (Sunday).\n\n_Reply 1 to view Today's menu, or MENU for options._`
+    }
     const appSettings = await loadAppSettings()
     const servingWeek = resolveServingWeekId(appSettings, tomorrow)
     const menuMap = await loadMenuMap(servingWeek)
-    const dayKey = DAY_KEYS[tomorrow.getUTCDay() === 0 ? 0 : tomorrow.getUTCDay() - 1] || 'mon'
+    const dayKey = DAY_KEYS[tomDayOfWeek === 0 ? 0 : tomDayOfWeek - 1] || 'mon'
     const dayMenu = menuForDay(menuMap, dayKey)
     const dayName = weekdayName(tomorrow)
     return renderMenuCard(dayKey, dayMenu, `Tomorrow's Menu (${dayName.toUpperCase()})`)
@@ -1122,11 +1263,12 @@ async function handleMessage(waPhone, rawText) {
   // Option 3: Meal Feedback
   if (upper === '3' || upper === 'FEEDBACK' || upper === 'RATE') {
     await setSession(waPhone, { flow: 'feedback', step: 'meal_type' })
-    return `⭐ *Rate Meal Today*\n\n1. Lunch ☀️\n2. Dinner 🌙\n\n_Reply 1 for Lunch or 2 for Dinner:_`
+    return `⭐ *Rate Meal Today*\n\n1. Lunch ☀️\n2. Dinner 🌙\n\n_Reply 1 for Lunch or 2 for Dinner (or MENU to cancel):_`
   }
 
   // Option 4: Pay Monthly Thali Contribution & Dues
   if (['4', 'DUES', 'PAYMENTS', 'PAYMENT', 'PAY', 'THALI PAYMENT', 'CONTRIBUTION'].includes(upper)) {
+    await clearSession(waPhone)
     const appSettings = await loadAppSettings()
     const now = tzNow()
     const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -1166,7 +1308,7 @@ async function handleMessage(waPhone, rawText) {
     const shortName = formatShortName(member.name)
 
     if (member.payment_exempt) {
-      return `💚 *Thali #${tNum}* (${shortName})\n\n🛡️ Status: *Payment Exempt*\nNo monthly payment required.\n\n_Reply MENU or 6 to close_`
+      return `💚 *Thali #${tNum}* (${shortName})\n\n🛡️ Status: *Payment Exempt*\nNo monthly payment required.\n\n_Reply MENU anytime._`
     }
 
     if (pendingBalance === 0 && totalDue > 0) {
@@ -1174,10 +1316,8 @@ async function handleMessage(waPhone, rawText) {
         `• Thali: *#${tNum}* (${shortName})\n` +
         `• Paid: ₹${paidThisMonth.toLocaleString('en-IN')} ✅\n` +
         `• *Balance:* *₹0*\n\n` +
-        `Thank you! 🙏\n_Reply MENU or 6 to close_`
+        `Thank you! 🙏\n_Reply MENU anytime._`
     }
-
-    const cleanUpiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&cu=INR`
 
     await setSession(waPhone, {
       flow: 'payment',
@@ -1193,58 +1333,54 @@ async function handleMessage(waPhone, rawText) {
       `• Due: ₹${totalDue.toLocaleString('en-IN')}\n` +
       (paidThisMonth > 0 ? `• Paid: ₹${paidThisMonth.toLocaleString('en-IN')} ✅\n` : '') +
       `• *Balance to Pay:* *₹${pendingBalance.toLocaleString('en-IN')}*\n\n` +
-      `📲 *Pay via UPI (0% fee):*\n` +
+      `📲 *Pay via UPI:*\n` +
       `• UPI ID: \`${upiId}\` _(tap to copy)_\n` +
-      `• Payee: *${payeeName}*\n` +
-      `• 1-Tap Pay: ${cleanUpiUri}\n\n` +
-      `👉 *After paying, reply with your 12-digit UTR:*`
+      `• Payee: *${payeeName}*\n\n` +
+      `👉 *After paying in GPay / PhonePe / Paytm, reply with your 12-digit UTR receipt:*`
   }
 
   // Option 5: Ask a Question
   if (upper === '5' || upper === 'QUERY' || upper === 'HELP QUERY' || upper === 'SUPPORT' || upper === 'ASK') {
     await setSession(waPhone, { flow: 'query', step: 'text' })
-    return `💬 *Ask Admin*\n\nType your message below to send directly to Jamaat management:`
+    return `💬 *Ask Admin*\n\nType your message or question below to send directly to Jamaat management (or reply MENU to cancel):`
   }
 
-  // 5. Smart Query Fallback:
-  if (['HI', 'HELLO', 'START', 'HELP', 'ASSALAMUALAIKUM', 'SALAAM', 'HEY'].includes(upper)) {
-    return renderMainMenu(member.name, member.thali_number)
-  }
-
-  // If user types a custom question that doesn't match any button options:
-  // Automatically capture it as a support Query for the admin portal!
+  // 13. Smart Query Detection & Fallback
+  // If user typed a meaningful message (> 4 characters) that isn't a command, send as query
   const comment = text.trim()
-  const subject = comment.length > 50 ? comment.substring(0, 47) + '...' : comment
+  if (comment.length >= 4) {
+    const subject = comment.length > 50 ? comment.substring(0, 47) + '...' : comment
 
-  await supabase.from('queries').insert({
-    user_id: member.user_id,
-    subject: subject,
-    comment: comment,
-    status: 'open',
-  })
-
-  // Push notification to admins
-  try {
-    const userName = `${member.name || 'A Member'} (Thali #${member.thali_number || '—'})`
-    await supabase.functions.invoke('send-push', {
-      body: {
-        title: '📩 New Query from ' + userName,
-        body: userName + ': "' + comment.substring(0, 80) + (comment.length > 80 ? '…"' : '"'),
-        target_type: 'admins',
-        notify_in_app: true,
-        type: 'new_query',
-        sender_name: 'WhatsApp Bot',
-        url: '/admin/queries'
-      }
+    await supabase.from('queries').insert({
+      user_id: member.user_id,
+      subject: subject,
+      comment: comment,
+      status: 'open',
     })
-  } catch {
-    // ignore notification error
+
+    try {
+      const userName = `${member.name || 'A Member'} (Thali #${member.thali_number || '—'})`
+      await supabase.functions.invoke('send-push', {
+        body: {
+          title: '📩 New Query from ' + userName,
+          body: userName + ': "' + comment.substring(0, 80) + (comment.length > 80 ? '…"' : '"'),
+          target_type: 'admins',
+          notify_in_app: true,
+          type: 'new_query',
+          sender_name: 'WhatsApp Bot',
+          url: '/admin/queries'
+        }
+      })
+    } catch {}
+
+    return `📨 *Message Sent to Admin!*\n\n` +
+      `"${comment}"\n\n` +
+      `Forwarded to Jamaat management. They will review and reply soon.\n\n` +
+      `_Reply MENU to view options._`
   }
 
-  return `📨 *Message Sent to Admin!*\n\n` +
-    `"${comment}"\n\n` +
-    `Forwarded to Jamaat management. They will review and reply soon.\n\n` +
-    `_Reply MENU or 6 to close_`
+  // Fallback default: show main menu
+  return renderMainMenu(member.name, member.thali_number)
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1270,6 +1406,8 @@ async function startBot() {
     auth: state,
     logger: pino({ level: 'silent' }),
     printQRInTerminal: false,
+    syncFullHistory: false,
+    generateHighQualityLinkPreview: false,
   })
 
   activeSock = sock
@@ -1294,7 +1432,7 @@ async function startBot() {
       botStatus = 'reconnecting'
       latestQr = null
       const statusCode = lastDisconnect?.error?.output?.statusCode
-      const isLoggedOut = statusCode === DisconnectReason.loggedOut
+      const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401 || statusCode === 403
       if (statusCode !== 408) {
         console.log(`⚠️ Connection closed (code: ${statusCode || 'unknown'}). Reconnecting in 3s...`)
       }
@@ -1304,7 +1442,9 @@ async function startBot() {
         try {
           const authDir = path.join(__dirname, 'auth_info_baileys')
           const files = fs.readdirSync(authDir)
-          for (const f of files) fs.unlinkSync(path.join(authDir, f))
+          for (const f of files) {
+            try { fs.unlinkSync(path.join(authDir, f)) } catch {}
+          }
         } catch (e) {
           console.warn('Failed to clear auth dir:', e)
         }
@@ -1331,16 +1471,20 @@ async function startBot() {
       for (const msg of m.messages) {
         if (!msg.message || msg.key.fromMe) continue
         const remoteJid = msg.key.remoteJid || ''
-        if (remoteJid.endsWith('@g.us')) continue // Ignore group messages
+        if (remoteJid.endsWith('@g.us') || remoteJid.includes('broadcast') || remoteJid.includes('newsletter')) continue
 
         const waPhone = remoteJid.replace('@s.whatsapp.net', '')
-        const rawText = msg.message.conversation ||
-          msg.message.extendedTextMessage?.text ||
-          msg.message.imageMessage?.caption || ''
+        const rawText = extractMessageText(msg.message)
 
-        if (!rawText.trim()) continue
+        if (!rawText) continue
 
         console.log(`📩 Incoming message from ${waPhone}: "${rawText}"`)
+
+        // Mark read & simulate typing presence
+        try {
+          await sock.readMessages([msg.key])
+          await sock.sendPresenceUpdate('composing', remoteJid)
+        } catch {}
 
         // Generate response
         const reply = await handleMessage(waPhone, rawText)
