@@ -98,10 +98,11 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   const [rowAmounts, setRowAmounts] = useState({})
   const [dueInput, setDueInput] = useState(String(defaultDue || 1500))
   const [savingDue, setSavingDue] = useState(false)
+  const [editingDueMember, setEditingDueMember] = useState(null)
+  const [customDueInput, setCustomDueInput] = useState('')
+  const [savingMemberDue, setSavingMemberDue] = useState(false)
 
   // ── Payer Split & UPI Form State ──
-  const [payerAmount, setPayerAmount] = useState(String(defaultDue || 1500))
-  const [payerAmountCustom, setPayerAmountCustom] = useState(false)
   const [payerUtr, setPayerUtr] = useState('')
   const [submittingPayerUtr, setSubmittingPayerUtr] = useState(false)
   const [copiedUpi, setCopiedUpi] = useState(false)
@@ -229,7 +230,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       // 4. If manager, load all users & payments
       if (mgrFlag) {
         const [usersRes, paymentsRes] = await Promise.all([
-          supabase.from('user_stats').select('user_id, name, thali_number, email, phone, role, payment_exempt').order('thali_number', { ascending: true, nullsFirst: false }),
+          supabase.from('user_stats').select('user_id, name, thali_number, email, phone, role, payment_exempt, custom_due_amount').order('thali_number', { ascending: true, nullsFirst: false }),
           supabase.from('user_payments').select('*').order('created_at', { ascending: false })
         ])
 
@@ -267,6 +268,14 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     return list
   }, [])
 
+  // ── Member's Effective Monthly Due (Set by Management: custom_due_amount or defaultDue) ──
+  const effectiveMonthlyDue = useMemo(() => {
+    if (userProfile?.custom_due_amount && Number(userProfile.custom_due_amount) > 0) {
+      return Number(userProfile.custom_due_amount)
+    }
+    return defaultDue
+  }, [userProfile, defaultDue])
+
   const paidByMonth = useMemo(() => {
     const map = {}
     ;(myPayments || []).forEach(p => {
@@ -279,24 +288,16 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
 
   const monthStatusOf = useCallback((key) => {
     const paid = paidByMonth[key] || 0
-    if (paid >= defaultDue) return 'paid'
+    if (paid >= effectiveMonthlyDue) return 'paid'
     if (paid > 0) return 'partial'
     return 'unpaid'
-  }, [paidByMonth, defaultDue])
+  }, [paidByMonth, effectiveMonthlyDue])
 
   const currentMonthPaid = paidByMonth[currentMonthKey] || 0
-  const currentBalance = Math.max(0, Number((defaultDue - currentMonthPaid).toFixed(2)))
+  const currentBalance = Math.max(0, Number((effectiveMonthlyDue - currentMonthPaid).toFixed(2)))
 
-  // Auto-sync payerAmount with remaining balance unless user entered a custom amount
-  useEffect(() => {
-    if (!payerAmountCustom) {
-      if (currentBalance > 0) {
-        setPayerAmount(String(currentBalance))
-      } else {
-        setPayerAmount(String(defaultDue))
-      }
-    }
-  }, [currentBalance, defaultDue, payerAmountCustom])
+  // Tamper-proof locked due amount for user: either remaining balance or full monthly due
+  const lockedDueAmount = currentBalance > 0 ? currentBalance : effectiveMonthlyDue
 
   // Helpers: per-member row custom amount in Manager portal
   const getMemberRowAmount = useCallback((member) => {
@@ -306,14 +307,17 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     if (member.currentMonthPayment?.amount && Number(member.currentMonthPayment.amount) > 0) {
       return String(member.currentMonthPayment.amount)
     }
-    return String(defaultDue || 1500)
+    const due = (member.custom_due_amount && Number(member.custom_due_amount) > 0)
+      ? Number(member.custom_due_amount)
+      : defaultDue
+    return String(due || 1500)
   }, [rowAmounts, defaultDue])
 
   const setMemberRowAmount = useCallback((userId, val) => {
     setRowAmounts(prev => ({ ...prev, [userId]: val }))
   }, [])
 
-  // ── Save Global Monthly Thali Due Rate ──
+  // ── Save Global Monthly Thali Due Rate (Manager) ──
   const handleSaveDueRate = async () => {
     const val = parseFloat(dueInput)
     if (!val || val <= 0) {
@@ -328,15 +332,73 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       if (error) throw error
 
       setDefaultDue(val)
-      if (!payerAmountCustom) {
-        setPayerAmount(String(val))
-      }
       toast.success(`Standard monthly due rate saved: ₹${formatInr(val)} per member!`)
     } catch (err) {
       console.error('[handleSaveDueRate] error:', err)
       toast.error('Failed to update due rate')
     } finally {
       setSavingDue(false)
+    }
+  }
+
+  // ── Set / Edit Member Custom Due Amount (Manager) ──
+  const handleOpenEditDue = (member) => {
+    setEditingDueMember(member)
+    setCustomDueInput(String(member.custom_due_amount || defaultDue))
+  }
+
+  const handleSaveMemberCustomDue = async (e) => {
+    e.preventDefault()
+    if (!editingDueMember) return
+    const val = parseFloat(customDueInput)
+    if (!val || val <= 0) {
+      toast.error('Please enter a valid monthly due amount')
+      return
+    }
+    setSavingMemberDue(true)
+    try {
+      const { error } = await supabase
+        .from('user_stats')
+        .update({ custom_due_amount: val, updated_at: new Date().toISOString() })
+        .eq('user_id', editingDueMember.user_id)
+
+      if (error) throw error
+
+      toast.success(`Updated monthly due for ${editingDueMember.name} to ₹${formatInr(val)}!`)
+      setAllUsers(prev => prev.map(u => u.user_id === editingDueMember.user_id ? { ...u, custom_due_amount: val } : u))
+      if (editingDueMember.user_id === user?.id) {
+        setUserProfile(prev => ({ ...prev, custom_due_amount: val }))
+      }
+      setEditingDueMember(null)
+    } catch (err) {
+      console.error('[handleSaveMemberCustomDue] error:', err)
+      toast.error('Failed to update member due')
+    } finally {
+      setSavingMemberDue(false)
+    }
+  }
+
+  const handleResetMemberCustomDue = async (member) => {
+    setSavingMemberDue(true)
+    try {
+      const { error } = await supabase
+        .from('user_stats')
+        .update({ custom_due_amount: null, updated_at: new Date().toISOString() })
+        .eq('user_id', member.user_id)
+
+      if (error) throw error
+
+      toast.success(`Reset ${member.name}'s due to standard rate (₹${formatInr(defaultDue)})`)
+      setAllUsers(prev => prev.map(u => u.user_id === member.user_id ? { ...u, custom_due_amount: null } : u))
+      if (member.user_id === user?.id) {
+        setUserProfile(prev => ({ ...prev, custom_due_amount: null }))
+      }
+      setEditingDueMember(null)
+    } catch (err) {
+      console.error('Reset error:', err)
+      toast.error('Could not reset due')
+    } finally {
+      setSavingMemberDue(false)
     }
   }
 
@@ -419,8 +481,8 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     }
   }, [loading, isManager, lastAutoCycleMonth, currentMonthKey, execute25thAutoCycle])
 
-  // ── Dynamic UPI String for Payer ──
-  const activePayAmount = Math.max(1, parseFloat(payerAmount) || currentBalance || defaultDue)
+  // ── Dynamic UPI String for Payer (Locked to exact management-approved due) ──
+  const activePayAmount = Math.max(1, lockedDueAmount)
   const upiUri = useMemo(() => {
     return generateUpiString({
       upiId: configuredUpiId,
@@ -563,7 +625,11 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       totalAmountCollected,
       cashAmountCollected,
       upiAmountCollected,
-      totalAmountPending: unpaidCount * defaultDue
+      totalAmountPending: activeMembers.reduce((sum, u) => {
+        const uDue = (u.custom_due_amount && Number(u.custom_due_amount) > 0) ? Number(u.custom_due_amount) : defaultDue
+        const hasPaid = verifiedUserIds.has(u.user_id)
+        return hasPaid ? sum : sum + uDue
+      }, 0)
     }
   }, [allUsers, allPayments, defaultDue, currentMonthKey])
 
@@ -582,6 +648,9 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       const currentMonthPayment = verifiedPayment || submittedPayment || monthPayments[0] || null
 
       const isCash = !!currentMonthPayment && (currentMonthPayment.payment_method === 'Cash' || currentMonthPayment.transaction_ref === 'CASH')
+      const memberDue = (u.custom_due_amount && Number(u.custom_due_amount) > 0)
+        ? Number(u.custom_due_amount)
+        : defaultDue
 
       let status = 'unpaid'
       if (u.payment_exempt) {
@@ -600,7 +669,8 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
         currentMonthPayment,
         latestPayment: userPayments[0],
         status,
-        isCash
+        isCash,
+        memberDue
       }
     }).filter(u => {
       if (managerFilter === 'cash' && u.status !== 'cash') return false
@@ -1625,6 +1695,26 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                           <div style={{ fontSize: 11.5, color: t.textSub, marginTop: 2 }}>
                             {member.phone || member.email || 'No contact details'}
                           </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditDue(member)}
+                              style={{
+                                background: member.custom_due_amount ? 'rgba(197,160,89,0.18)' : 'rgba(255,255,255,0.06)',
+                                border: `1px solid ${member.custom_due_amount ? t.accentBorder : t.border}`,
+                                borderRadius: 6, padding: '2px 7px', fontSize: 10.5, fontWeight: 700,
+                                color: member.custom_due_amount ? t.accent : t.textSub,
+                                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4
+                              }}
+                              title="Click to set monthly due for this member"
+                            >
+                              <span>Rate: ₹{formatInr(member.memberDue || defaultDue)}/mo</span>
+                              <Edit3 size={10} />
+                            </button>
+                            {member.custom_due_amount && (
+                              <span style={{ fontSize: 9.5, color: t.accent, fontWeight: 800 }}>Custom</span>
+                            )}
+                          </div>
                         </div>
                       </div>
 
@@ -1637,8 +1727,8 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                             color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.5)',
                             display: 'flex', alignItems: 'center', gap: 4
                           }}>
-                            <Banknote size={11} /> Cash ₹{formatInr(member.currentMonthPayment?.amount || defaultDue)}
-                            {Number(member.currentMonthPayment?.amount || defaultDue) < defaultDue && (
+                            <Banknote size={11} /> Cash ₹{formatInr(member.currentMonthPayment?.amount || (member.memberDue || defaultDue))}
+                            {Number(member.currentMonthPayment?.amount || (member.memberDue || defaultDue)) < (member.memberDue || defaultDue) && (
                               <span style={{ color: '#fbbf24', fontSize: 9.5 }}> (Partial)</span>
                             )}
                           </span>
@@ -1651,8 +1741,8 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                             color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.4)',
                             display: 'flex', alignItems: 'center', gap: 4
                           }}>
-                            <Check size={11} /> Paid ₹{formatInr(member.currentMonthPayment?.amount || defaultDue)}
-                            {Number(member.currentMonthPayment?.amount || defaultDue) < defaultDue && (
+                            <Check size={11} /> Paid ₹{formatInr(member.currentMonthPayment?.amount || (member.memberDue || defaultDue))}
+                            {Number(member.currentMonthPayment?.amount || (member.memberDue || defaultDue)) < (member.memberDue || defaultDue) && (
                               <span style={{ color: '#fbbf24', fontSize: 9.5 }}> (Partial)</span>
                             )}
                           </span>
@@ -1676,7 +1766,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                             color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.35)',
                             display: 'flex', alignItems: 'center', gap: 4
                           }}>
-                            Due ₹{formatInr(defaultDue)}
+                            Due ₹{formatInr(member.memberDue || defaultDue)}
                           </span>
                         )}
 
@@ -1703,11 +1793,11 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                         {member.currentMonthPayment ? (
                           <span>
                             <strong style={{ color: isCash ? '#10b981' : '#34d399' }}>
-                              {isCash ? '💵 Cash Received' : '📲 UPI Received'} (₹{formatInr(member.currentMonthPayment.amount || defaultDue)})
+                              {isCash ? '💵 Cash Received' : '📲 UPI Received'} (₹{formatInr(member.currentMonthPayment.amount || (member.memberDue || defaultDue))})
                             </strong>
-                            {Number(member.currentMonthPayment.amount || defaultDue) < defaultDue && (
+                            {Number(member.currentMonthPayment.amount || (member.memberDue || defaultDue)) < (member.memberDue || defaultDue) && (
                               <span style={{ color: '#fbbf24', fontWeight: 700 }}>
-                                {' • '}₹{formatInr(Math.max(0, defaultDue - Number(member.currentMonthPayment.amount)))} remaining
+                                {' • '}₹{formatInr(Math.max(0, (member.memberDue || defaultDue) - Number(member.currentMonthPayment.amount)))} remaining
                               </span>
                             )}
                             {' • '}
@@ -1717,7 +1807,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                         ) : isForfeit ? (
                           <span style={{ color: '#94a3b8' }}>Exempt from payment</span>
                         ) : (
-                          <span style={{ color: '#f87171' }}>Pending ₹{formatInr(defaultDue)} for {currentMonthLabel}</span>
+                          <span style={{ color: '#f87171' }}>Pending ₹{formatInr(member.memberDue || defaultDue)} for {currentMonthLabel}</span>
                         )}
                       </div>
 
@@ -2000,7 +2090,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                     {currentMonthLabel} Due Pending
                   </div>
                   <div style={{ fontSize: 11.5, color: t.textSub }}>
-                    Monthly Contribution: <strong style={{ color: '#fff' }}>₹{formatInr(defaultDue)}</strong>
+                    Monthly Contribution: <strong style={{ color: '#fff' }}>₹{formatInr(effectiveMonthlyDue)}</strong>
                   </div>
                 </div>
                 <span style={{ fontSize: 11, fontWeight: 800, color: '#f87171', background: 'rgba(239,68,68,0.15)', padding: '4px 8px', borderRadius: 8 }}>
@@ -2009,38 +2099,45 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               </div>
             )}
 
-            {/* Amount Input (Editable Split / Remaining Balance) */}
+            {/* ── Tamper-Proof Locked Amount Display (Set & Controlled by Management Only) ── */}
             <div style={{
-              background: t.inputBg, border: `1px solid ${t.inputBorder || t.border}`,
-              borderRadius: 14, padding: '10px 14px', marginBottom: 14
+              background: 'linear-gradient(135deg, rgba(197,160,89,0.14) 0%, rgba(16,185,129,0.06) 100%)',
+              border: `1.5px solid ${t.accentBorder || 'rgba(197,160,89,0.35)'}`,
+              borderRadius: 16, padding: '16px', marginBottom: 14,
+              boxShadow: '0 4px 18px rgba(0,0,0,0.18)'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <label style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: t.textSub }}>
-                  {currentBalance > 0 && currentMonthPaid > 0 ? 'Amount to Pay (Remaining Balance)' : 'Amount to Pay (Locked Split)'}
-                </label>
-                {currentMonthPaid > 0 && currentBalance > 0 && (
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#fcd34d' }}>
-                    ₹{formatInr(currentMonthPaid)} paid • ₹{formatInr(currentBalance)} due
-                  </span>
-                )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: t.accent }}>
+                  {currentBalance > 0 && currentMonthPaid > 0 ? 'Remaining Balance to Pay' : 'Monthly Contribution Amount'}
+                </span>
+                <span style={{
+                  fontSize: 10, fontWeight: 900, background: 'rgba(0,0,0,0.35)',
+                  color: t.accent, border: `1px solid ${t.accentBorder}`, borderRadius: 8, padding: '3px 8px',
+                  display: 'flex', alignItems: 'center', gap: 4
+                }}>
+                  🔒 Fixed by Management
+                </span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 24, fontWeight: 800, color: t.accent }}>₹</span>
-                <input
-                  type="number"
-                  min="1"
-                  step="any"
-                  value={payerAmount}
-                  onChange={(e) => {
-                    setPayerAmount(e.target.value)
-                    setPayerAmountCustom(true)
-                  }}
-                  style={{
-                    flex: 1, background: 'transparent', border: 'none', color: t.text,
-                    fontSize: 28, fontWeight: 800, outline: 'none'
-                  }}
-                />
+
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
+                <span style={{ fontSize: 26, fontWeight: 900, color: t.accent }}>₹</span>
+                <span style={{ fontSize: 34, fontWeight: 900, color: t.text, letterSpacing: '-0.02em', fontFamily: 'monospace' }}>
+                  {formatInr(lockedDueAmount)}
+                </span>
+                <span style={{ fontSize: 12, color: t.textSub, marginLeft: 2 }}>
+                  / {currentMonthLabel}
+                </span>
               </div>
+
+              {currentMonthPaid > 0 && currentBalance > 0 ? (
+                <div style={{ fontSize: 11.5, color: '#fcd34d', fontWeight: 600 }}>
+                  Partial payment of ₹{formatInr(currentMonthPaid)} recorded • Remaining balance locked to ₹{formatInr(lockedDueAmount)}
+                </div>
+              ) : (
+                <div style={{ fontSize: 11.5, color: t.textSub }}>
+                  Exact rate set by Al-Mawaid Management. Amount is automatically locked into your UPI QR &amp; Pay button.
+                </div>
+              )}
             </div>
 
             {/* ── Official Google Pay Standee Card (NPCI Spec) ── */}
@@ -2056,20 +2153,37 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               />
             </div>
 
+            {/* ── 3-Step 100% Payment Success Guide ── */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(16,185,129,0.12) 0%, rgba(5,150,105,0.06) 100%)',
+              border: '1.5px solid rgba(16,185,129,0.35)', borderRadius: 14,
+              padding: '12px 14px', marginBottom: 12
+            }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: '#34d399', display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
+                <CheckCircle2 size={15} />
+                <span>How to Pay with 100% Success (Zero Bank Blocks)</span>
+              </div>
+              <div style={{ fontSize: 11.5, color: t.textSub, lineHeight: 1.55 }}>
+                1. Tap <strong>Save QR to Gallery</strong> below.<br />
+                2. Open <strong>Google Pay, PhonePe, or Paytm</strong> ➔ Tap <strong>Scan QR</strong> ➔ <strong>Upload from Gallery</strong>.<br />
+                3. Pay ₹{formatInr(lockedDueAmount)} with your UPI PIN &amp; enter the 12-digit UTR below.
+              </div>
+            </div>
+
             {/* Save QR to Gallery Button */}
             <button
               type="button"
               onClick={handleSaveQrToGallery}
               style={{
-                width: '100%', padding: '10px 14px', borderRadius: 12,
-                border: `1px solid ${t.border}`, background: 'rgba(255,255,255,0.06)',
-                color: t.text, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                width: '100%', padding: '12px 14px', borderRadius: 12,
+                border: '1.5px solid rgba(16,185,129,0.4)', background: 'rgba(16,185,129,0.15)',
+                color: '#34d399', fontSize: 13.5, fontWeight: 800, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                marginBottom: 10
+                marginBottom: 10, boxShadow: '0 2px 8px rgba(16,185,129,0.15)'
               }}
             >
-              <Download size={15} color={t.accent} />
-              <span>Save QR to Gallery (For Single Phone Users)</span>
+              <Download size={16} />
+              <span>Save QR to Gallery (Recommended • 100% Success)</span>
             </button>
 
             {/* 1-Tap Pay Button */}
@@ -2078,15 +2192,15 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               onClick={handle1TapPay}
               disabled={openingUpi || !isPaymentActive}
               style={{
-                width: '100%', padding: '14px 18px', borderRadius: 14, border: 'none',
+                width: '100%', padding: '13px 18px', borderRadius: 12, border: 'none',
                 background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', color: '#ffffff',
-                fontSize: 15, fontWeight: 800, cursor: 'pointer', display: 'flex',
+                fontSize: 14.5, fontWeight: 800, cursor: 'pointer', display: 'flex',
                 alignItems: 'center', justifyContent: 'center', gap: 8,
                 boxShadow: '0 6px 20px rgba(16, 185, 129, 0.35)', marginBottom: 10
               }}
             >
-              <Smartphone size={18} />
-              <span>{openingUpi ? 'Opening UPI App…' : `Pay ₹${formatInr(activePayAmount)} via UPI App`}</span>
+              <Smartphone size={17} />
+              <span>{openingUpi ? 'Opening UPI App…' : `Pay ₹${formatInr(lockedDueAmount)} via UPI App`}</span>
             </button>
 
             {/* Copy UPI ID Button */}
@@ -2661,6 +2775,88 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                   }}
                 >
                   Save Settings
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 5: EDIT MEMBER MONTHLY DUE (Manager Only) ── */}
+      {editingDueMember && isManager && (
+        <div
+          onClick={() => setEditingDueMember(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.7)',
+            backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: t.card, borderRadius: 20, border: `1.5px solid ${t.accentBorder}`,
+              maxWidth: 400, width: '100%', padding: '20px', boxShadow: '0 20px 50px rgba(0,0,0,0.6)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: t.text }}>
+                  Set Monthly Due
+                </h3>
+                <div style={{ fontSize: 12, color: t.textSub, marginTop: 2 }}>
+                  For {editingDueMember.name} (Thali #{editingDueMember.thali_number || '—'})
+                </div>
+              </div>
+              <button onClick={() => setEditingDueMember(null)} style={{ background: 'none', border: 'none', color: t.textSub, cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveMemberCustomDue} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: t.textSub, marginBottom: 4 }}>
+                  Monthly Due Amount (₹)
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', background: t.inputBg, border: `1.5px solid ${t.accentBorder}`, borderRadius: 10, padding: '6px 12px' }}>
+                  <span style={{ fontSize: 18, fontWeight: 800, color: t.accent, marginRight: 6 }}>₹</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="any"
+                    required
+                    value={customDueInput}
+                    onChange={(e) => setCustomDueInput(e.target.value)}
+                    style={{ flex: 1, background: 'transparent', border: 'none', color: t.text, fontSize: 18, fontWeight: 800, outline: 'none' }}
+                  />
+                </div>
+                <div style={{ fontSize: 11, color: t.textSub, marginTop: 4 }}>
+                  Standard rate is ₹{formatInr(defaultDue)}. Setting a custom due will apply specifically to this member's app.
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                {editingDueMember.custom_due_amount && (
+                  <button
+                    type="button"
+                    onClick={() => handleResetMemberCustomDue(editingDueMember)}
+                    disabled={savingMemberDue}
+                    style={{
+                      flex: 1, padding: '10px', borderRadius: 10, border: `1px solid ${t.border}`,
+                      background: 'rgba(255,255,255,0.06)', color: t.textSub, fontSize: 12, fontWeight: 700, cursor: 'pointer'
+                    }}
+                  >
+                    Reset (₹{defaultDue})
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  disabled={savingMemberDue}
+                  style={{
+                    flex: 1.5, padding: '10px', borderRadius: 10, border: 'none',
+                    background: t.accentGrad, color: '#000', fontSize: 13, fontWeight: 800, cursor: 'pointer'
+                  }}
+                >
+                  {savingMemberDue ? 'Saving…' : 'Save Monthly Due'}
                 </button>
               </div>
             </form>
