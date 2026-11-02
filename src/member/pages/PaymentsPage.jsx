@@ -103,6 +103,8 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   const [savingMemberDue, setSavingMemberDue] = useState(false)
 
   // ── Payer Split & UPI Form State ──
+  const [payerAmount, setPayerAmount] = useState(String(defaultDue || 1500))
+  const [payerAmountCustom, setPayerAmountCustom] = useState(false)
   const [payerUtr, setPayerUtr] = useState('')
   const [submittingPayerUtr, setSubmittingPayerUtr] = useState(false)
   const [copiedUpi, setCopiedUpi] = useState(false)
@@ -296,6 +298,17 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   const currentMonthPaid = paidByMonth[currentMonthKey] || 0
   const currentBalance = Math.max(0, Number((effectiveMonthlyDue - currentMonthPaid).toFixed(2)))
 
+  // Auto-sync payerAmount with remaining balance unless user entered a custom amount
+  useEffect(() => {
+    if (!payerAmountCustom) {
+      if (currentBalance > 0) {
+        setPayerAmount(String(currentBalance))
+      } else {
+        setPayerAmount(String(defaultDue))
+      }
+    }
+  }, [currentBalance, defaultDue, payerAmountCustom])
+
   // Tamper-proof locked due amount for user: either remaining balance or full monthly due
   const lockedDueAmount = currentBalance > 0 ? currentBalance : effectiveMonthlyDue
 
@@ -309,7 +322,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     }
     const due = (member.custom_due_amount && Number(member.custom_due_amount) > 0)
       ? Number(member.custom_due_amount)
-      : defaultDue
+      : (member.memberDue || defaultDue)
     return String(due || 1500)
   }, [rowAmounts, defaultDue])
 
@@ -332,6 +345,9 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       if (error) throw error
 
       setDefaultDue(val)
+      if (!payerAmountCustom) {
+        setPayerAmount(String(val))
+      }
       toast.success(`Standard monthly due rate saved: ₹${formatInr(val)} per member!`)
     } catch (err) {
       console.error('[handleSaveDueRate] error:', err)
@@ -1030,8 +1046,9 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     }
     const clean = member.phone.replace(/[^\d]/g, '')
     const phone = clean.length === 10 ? `91${clean}` : clean
+    const dueAmt = member.memberDue || defaultDue
     const msg = encodeURIComponent(
-      `Salam ${member.name || 'Bhai'},\n\nThis is a friendly reminder regarding your Al-Mawaid Thali contribution of *₹${defaultDue}* for *${paymentTitle}* (${currentMonthLabel}).\n\nPlease pay directly via UPI to: *${configuredUpiId}*.\n\nThank you,\n*Al-Mawaid Management*`
+      `Salam ${member.name || 'Bhai'},\n\nThis is a friendly reminder regarding your Al-Mawaid Thali contribution of *₹${formatInr(dueAmt)}* for *${paymentTitle}* (${currentMonthLabel}).\n\nPlease pay directly via UPI to: *${configuredUpiId}*.\n\nThank you,\n*Al-Mawaid Management*`
     )
     window.open(`https://wa.me/${phone}?text=${msg}`, '_blank')
   }
@@ -1039,12 +1056,13 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   // ── Custom Notification Dispatch ──
   const handleOpenNotifyModal = (targetUser = null) => {
     setNotifyTargetUser(targetUser)
+    const targetDue = targetUser?.memberDue || targetUser?.custom_due_amount || defaultDue
     if (targetUser) {
       setNotifyTitle(`Payment Reminder - ${paymentTitle}`)
-      setNotifyBody(`Dear ${targetUser.name || 'Member'}, your thali contribution of ₹${defaultDue} for ${currentMonthLabel} is pending. Please pay via your UPI app on the portal.`)
+      setNotifyBody(`Dear ${targetUser.name || 'Member'}, your thali contribution of ₹${formatInr(targetDue)} for ${currentMonthLabel} is pending. Please pay via your UPI app on the portal.`)
     } else {
       setNotifyTitle(`Thali Contribution Reminder — ${currentMonthLabel}`)
-      setNotifyBody(`Dear Member, your monthly thali contribution of ₹${defaultDue} is due. Please pay via your UPI app on the Al-Mawaid portal. Shukran!`)
+      setNotifyBody(`Dear Member, your monthly thali contribution is due for ${currentMonthLabel}. Please pay via your UPI app on the Al-Mawaid portal. Shukran!`)
     }
     setNotifyTemplate('standard')
     setShowNotifyModal(true)
@@ -1379,7 +1397,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
             </div>
 
             {/* Metrics Counter Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, marginBottom: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, marginBottom: 12 }}>
               <div style={{ background: 'rgba(0,0,0,0.3)', padding: '9px 4px', borderRadius: 12, textAlign: 'center' }}>
                 <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Active</div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', marginTop: 2 }}>{managerMetrics.activeCount}</div>
@@ -1399,6 +1417,42 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               <div style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239,68,68,0.25)', padding: '9px 4px', borderRadius: 12, textAlign: 'center' }}>
                 <div style={{ fontSize: 9, color: '#f87171', textTransform: 'uppercase', fontWeight: 700 }}>Unpaid</div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: '#f87171', marginTop: 2 }}>{managerMetrics.unpaidCount}</div>
+              </div>
+            </div>
+
+            {/* Monthly Financial Collection Snapshot Card */}
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.02) 100%)',
+              border: '1px solid rgba(255,255,255,0.12)', borderRadius: 14,
+              padding: '12px 14px', marginBottom: 12, display: 'flex',
+              justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10
+            }}>
+              <div>
+                <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.6)', fontWeight: 800 }}>
+                  {currentMonthLabel} Collection Snapshot
+                </div>
+                <div style={{ fontSize: 19, fontWeight: 900, color: '#34d399', marginTop: 2, display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                  <span>₹{formatInr(managerMetrics.totalAmountCollected)}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.6)' }}>collected</span>
+                </div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
+                  💵 Cash: <strong style={{ color: '#10b981' }}>₹{formatInr(managerMetrics.cashAmountCollected)}</strong> ({managerMetrics.cashCount})
+                  {' • '}
+                  📲 UPI: <strong style={{ color: '#60a5fa' }}>₹{formatInr(managerMetrics.upiAmountCollected)}</strong> ({managerMetrics.upiCount})
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.6)', fontWeight: 800 }}>
+                  Outstanding Pending
+                </div>
+                <div style={{ fontSize: 19, fontWeight: 900, color: '#f87171', marginTop: 2, display: 'flex', alignItems: 'baseline', justifyContent: 'flex-end', gap: 6 }}>
+                  <span>₹{formatInr(managerMetrics.totalAmountPending)}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.6)' }}>pending</span>
+                </div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
+                  {managerMetrics.unpaidCount} members due {managerMetrics.submittedCount > 0 && ` • ⏳ ${managerMetrics.submittedCount} review`}
+                </div>
               </div>
             </div>
 
@@ -1656,6 +1710,9 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                 const isUnpaid = member.status === 'unpaid'
                 const isForfeit = member.status === 'forfeit'
                 const isSelected = selectedUserIds.has(member.user_id)
+                const memberDueAmt = member.memberDue || defaultDue
+                const paymentAmt = Number(member.currentMonthPayment?.amount || 0)
+                const isPartial = member.currentMonthPayment && paymentAmt > 0 && paymentAmt < memberDueAmt
 
                 return (
                   <div
@@ -1708,7 +1765,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                               }}
                               title="Click to set monthly due for this member"
                             >
-                              <span>Rate: ₹{formatInr(member.memberDue || defaultDue)}/mo</span>
+                              <span>Rate: ₹{formatInr(memberDueAmt)}/mo</span>
                               <Edit3 size={10} />
                             </button>
                             {member.custom_due_amount && (
@@ -1727,10 +1784,8 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                             color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.5)',
                             display: 'flex', alignItems: 'center', gap: 4
                           }}>
-                            <Banknote size={11} /> Cash ₹{formatInr(member.currentMonthPayment?.amount || (member.memberDue || defaultDue))}
-                            {Number(member.currentMonthPayment?.amount || (member.memberDue || defaultDue)) < (member.memberDue || defaultDue) && (
-                              <span style={{ color: '#fbbf24', fontSize: 9.5 }}> (Partial)</span>
-                            )}
+                            <Banknote size={11} /> Cash ₹{formatInr(member.currentMonthPayment?.amount || memberDueAmt)}
+                            {isPartial && <span style={{ color: '#fbbf24', fontSize: 9.5 }}> (Partial)</span>}
                           </span>
                         )}
 
@@ -1741,18 +1796,16 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                             color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.4)',
                             display: 'flex', alignItems: 'center', gap: 4
                           }}>
-                            <Check size={11} /> Paid ₹{formatInr(member.currentMonthPayment?.amount || (member.memberDue || defaultDue))}
-                            {Number(member.currentMonthPayment?.amount || (member.memberDue || defaultDue)) < (member.memberDue || defaultDue) && (
-                              <span style={{ color: '#fbbf24', fontSize: 9.5 }}> (Partial)</span>
-                            )}
+                            <Check size={11} /> Paid ₹{formatInr(member.currentMonthPayment?.amount || memberDueAmt)}
+                            {isPartial && <span style={{ color: '#fbbf24', fontSize: 9.5 }}> (Partial)</span>}
                           </span>
                         )}
 
                         {isSubmitted && (
                           <span style={{
                             fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase',
-                            padding: '4px 8px', borderRadius: 10, background: 'rgba(251, 191, 36, 0.15)',
-                            color: '#fbbf24', border: '1px solid rgba(251, 191, 36, 0.4)',
+                            padding: '4px 8px', borderRadius: 10, background: 'rgba(251, 191, 36, 0.18)',
+                            color: '#fbbf24', border: '1px solid rgba(251, 191, 36, 0.5)',
                             display: 'flex', alignItems: 'center', gap: 4
                           }}>
                             <Clock size={11} /> Review UTR
@@ -1766,7 +1819,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                             color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.35)',
                             display: 'flex', alignItems: 'center', gap: 4
                           }}>
-                            Due ₹{formatInr(member.memberDue || defaultDue)}
+                            Due ₹{formatInr(memberDueAmt)}
                           </span>
                         )}
 
@@ -1783,21 +1836,73 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                       </div>
                     </div>
 
-                    {/* Bottom Row: Actions (CASH, PAID, UNPAID, FORFEIT, WHATSAPP, NOTIFY) */}
+                    {/* ── HIGHLIGHTED REVIEW BOX (When member submitted UTR) ── */}
+                    {isSubmitted && member.currentMonthPayment && (
+                      <div style={{
+                        background: 'linear-gradient(135deg, rgba(245,158,11,0.14) 0%, rgba(217,119,6,0.06) 100%)',
+                        border: '1.5px solid rgba(245,158,11,0.4)', borderRadius: 12,
+                        padding: '10px 12px', display: 'flex', alignItems: 'center',
+                        justifyContent: 'space-between', gap: 10, flexWrap: 'wrap'
+                      }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 800, color: '#fcd34d', display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <Clock size={14} />
+                            <span>Submitted via UPI • ₹{formatInr(member.currentMonthPayment.amount || memberDueAmt)}</span>
+                          </div>
+                          <div style={{ fontSize: 11, color: t.textSub, marginTop: 2 }}>
+                            Ref / UTR: <strong style={{ color: '#fff', fontFamily: 'monospace', letterSpacing: '0.04em' }}>{member.currentMonthPayment.transaction_ref || 'None'}</strong>
+                            {member.currentMonthPayment.created_at && (
+                              <span> • {new Date(member.currentMonthPayment.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleSingleMarkPaid(member, member.currentMonthPayment.amount)}
+                            style={{
+                              background: 'linear-gradient(135deg, #10b981, #059669)',
+                              border: 'none', borderRadius: 8, padding: '6px 12px',
+                              color: '#fff', fontSize: 11.5, fontWeight: 800, cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', gap: 4, boxShadow: '0 2px 6px rgba(16,185,129,0.3)'
+                            }}
+                            title="Verify payment and approve"
+                          >
+                            <Check size={13} />
+                            <span>Approve & Verify</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSingleMarkUnpaid(member)}
+                            style={{
+                              background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.35)',
+                              borderRadius: 8, padding: '6px 9px', color: '#f87171',
+                              fontSize: 11, fontWeight: 700, cursor: 'pointer'
+                            }}
+                            title="Reject UTR submission"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Bottom Row: Details on left, Quick Actions on right */}
                     <div style={{
                       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                       borderTop: `1px solid ${t.border}`, paddingTop: 8, marginTop: 2,
                       flexWrap: 'wrap', gap: 6
                     }}>
-                      <div style={{ fontSize: 11, color: t.textSub }}>
+                      <div style={{ fontSize: 11, color: t.textSub, minWidth: 0 }}>
                         {member.currentMonthPayment ? (
                           <span>
-                            <strong style={{ color: isCash ? '#10b981' : '#34d399' }}>
-                              {isCash ? '💵 Cash Received' : '📲 UPI Received'} (₹{formatInr(member.currentMonthPayment.amount || (member.memberDue || defaultDue))})
+                            <strong style={{ color: isCash ? '#10b981' : isUpiPaid ? '#34d399' : '#fbbf24' }}>
+                              {isCash ? '💵 Cash Received' : isUpiPaid ? '📲 UPI Received' : '⏳ UTR Submitted'} (₹{formatInr(member.currentMonthPayment.amount || memberDueAmt)})
                             </strong>
-                            {Number(member.currentMonthPayment.amount || (member.memberDue || defaultDue)) < (member.memberDue || defaultDue) && (
+                            {isPartial && (
                               <span style={{ color: '#fbbf24', fontWeight: 700 }}>
-                                {' • '}₹{formatInr(Math.max(0, (member.memberDue || defaultDue) - Number(member.currentMonthPayment.amount)))} remaining
+                                {' • '}₹{formatInr(Math.max(0, memberDueAmt - Number(member.currentMonthPayment.amount)))} remaining
                               </span>
                             )}
                             {' • '}
@@ -1807,7 +1912,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                         ) : isForfeit ? (
                           <span style={{ color: '#94a3b8' }}>Exempt from payment</span>
                         ) : (
-                          <span style={{ color: '#f87171' }}>Pending ₹{formatInr(member.memberDue || defaultDue)} for {currentMonthLabel}</span>
+                          <span style={{ color: '#f87171' }}>Pending ₹{formatInr(memberDueAmt)} for {currentMonthLabel}</span>
                         )}
                       </div>
 
@@ -1833,7 +1938,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                               width: 55, background: 'transparent', border: 'none',
                               color: t.text, fontSize: 12, fontWeight: 800, outline: 'none'
                             }}
-                            placeholder={String(defaultDue)}
+                            placeholder={String(memberDueAmt)}
                           />
                         </div>
 
@@ -1883,17 +1988,17 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                           </button>
                         )}
 
-                        {/* 4. Forfeit Toggle */}
+                        {/* 4. Forfeit / Exempt Toggle */}
                         <button
                           onClick={() => handleToggleForfeit(member)}
                           style={{
                             background: 'rgba(148,163,184,0.1)', border: '1px solid rgba(148,163,184,0.25)',
                             borderRadius: 8, padding: '5px 7px', color: isForfeit ? '#34d399' : '#94a3b8',
-                            fontSize: 11, fontWeight: 700, cursor: 'pointer'
+                            fontSize: 11, fontWeight: 700, cursor: 'pointer', height: 28
                           }}
-                          title={isForfeit ? "Restore active dues" : "Mark exempt"}
+                          title={isForfeit ? "Restore active dues" : "Mark exempt from payments"}
                         >
-                          {isForfeit ? 'Un-Forfeit' : 'Forfeit'}
+                          {isForfeit ? 'Un-Forfeit' : 'Exempt'}
                         </button>
 
                         {/* 5. WhatsApp Reminder */}
@@ -1903,9 +2008,9 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                             style={{
                               background: 'rgba(37,211,102,0.12)', border: '1px solid rgba(37,211,102,0.3)',
                               borderRadius: 8, padding: '5px 7px', color: '#25D366', fontSize: 11,
-                              fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3
+                              fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, height: 28
                             }}
-                            title="WhatsApp reminder"
+                            title="Send WhatsApp reminder"
                           >
                             <MessageSquare size={12} />
                           </button>
@@ -1918,7 +2023,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                             style={{
                               background: 'transparent', border: `1px solid ${t.border}`,
                               borderRadius: 8, padding: '5px 7px', color: t.textSub, fontSize: 11,
-                              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3
+                              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, height: 28
                             }}
                             title="View receipt"
                           >
