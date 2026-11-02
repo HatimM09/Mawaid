@@ -13,6 +13,8 @@ dist
 *.p12
 *.jks
 *.keystore
+*.aab
+build-artifacts/
 service-account*.json
 *-service-account.json
 

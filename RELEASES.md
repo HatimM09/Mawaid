@@ -1,5 +1,14 @@
 # Al-Mawaid Releases
 
+## v2.1.12 (versionCode 50) — 2026-11-02
+
+### Signed Release AAB
+- **Version Code**: `50` (`v2.1.12`)
+- **AAB File**: Generated and signed with production upload keystore (`app-release.aab`).
+- Overhauled Payment Management Hub with executive financial collection snapshot, deduplicated clean rows, 1-click UTR verification/approval, and per-member due customizer.
+- Tamper-proof locked amount view for members with 3-step high-success UPI flow (Save QR to Gallery) avoiding browser bank phishing warnings.
+- Android Capacitor live-link updated to `https://al-mawaid.vercel.app?v=2.1.12`.
+
 ## Unreleased — 2026-10-23
 
 ### Payments — tap-to-open UPI app, no gateway, no auto-debit
