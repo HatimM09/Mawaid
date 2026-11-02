@@ -6,7 +6,7 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   bundledWebRuntime: false,
   server: {
-    url: 'https://al-mawaid.vercel.app?v=2.1.11',
+    url: 'https://al-mawaid.vercel.app?v=2.1.12',
     cleartext: false,
     androidScheme: 'https'
   },
