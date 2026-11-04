@@ -1338,12 +1338,15 @@ async function handleMessage(waPhone, rawText) {
       `• Due: ₹${totalDue.toLocaleString('en-IN')}\n` +
       (paidThisMonth > 0 ? `• Paid: ₹${paidThisMonth.toLocaleString('en-IN')} ✅\n` : '') +
       `• *Balance to Pay:* *₹${pendingBalance.toLocaleString('en-IN')}*\n\n` +
-      `⚡ *Direct 1-Click Pay (Open in App):*\n` +
+      `🟢 *1-Click Direct WhatsApp Pay (0% Fee):*\n` +
+      `👉 Tap the *₹ (Rupee) icon* below (or tap *📎 ➔ Payment*)\n` +
+      `👉 Enter *₹${pendingBalance.toLocaleString('en-IN')}* and pay instantly right inside this chat!\n\n` +
+      `⚡ *1-Click Open in GPay / PhonePe / Paytm / WhatsApp:*\n` +
       `👉 ${directPayUrl}\n\n` +
-      `📲 *Or Pay via UPI ID (0% Fee):*\n` +
+      `📲 *Or Pay via UPI ID:*\n` +
       `• UPI ID: \`${upiId}\` _(tap to copy)_\n` +
       `• Payee: *${payeeName}*\n\n` +
-      `👉 *After paying, reply here with your 12-digit UTR receipt number to confirm automatically:*`
+      `👉 *After paying, reply here with your 12-digit UTR receipt number to confirm automatically!*`
   }
 
   // Option 5: Ask a Question

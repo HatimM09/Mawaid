@@ -38,6 +38,9 @@ async function launchUpiApp(uri, app = 'upi') {
     targetUri = uri.replace(/^upi:\/\/pay\?/, 'phonepe://pay?')
   } else if (app === 'paytm') {
     targetUri = uri.replace(/^upi:\/\/pay\?/, 'paytmmp://pay?')
+  } else if (app === 'whatsapp') {
+    const rawQuery = uri.replace(/^upi:\/\/pay\?/, '')
+    targetUri = `intent://pay?${rawQuery}#Intent;scheme=upi;package=com.whatsapp;end`
   }
 
   if (isNativePlatform()) {
@@ -59,6 +62,10 @@ async function launchUpiApp(uri, app = 'upi') {
     document.body.removeChild(a)
     return true
   } catch {
+    if (app === 'whatsapp') {
+      window.location.href = `https://wa.me/916375250267?text=${encodeURIComponent('Salam! I want to pay my monthly Thali dues via WhatsApp.')}`
+      return true
+    }
     window.location.href = targetUri
     return true
   }
@@ -469,26 +476,43 @@ export default function UpiPayPage() {
               <span>Save QR to Gallery</span>
             </button>
 
+            {/* 1-Click WhatsApp Direct Pay Banner */}
+            <button
+              type="button"
+              onClick={() => handleOpenUpi('whatsapp')}
+              disabled={!canCopy || opening}
+              style={{
+                width: '100%', marginTop: 12, padding: '13px 18px', borderRadius: 12, border: 'none',
+                background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)', color: '#ffffff',
+                fontSize: 14.5, fontWeight: 800, cursor: canCopy ? 'pointer' : 'not-allowed', display: 'flex',
+                alignItems: 'center', justifyContent: 'center', gap: 8,
+                boxShadow: '0 6px 20px rgba(37, 211, 102, 0.35)'
+              }}
+            >
+              <Smartphone size={17} />
+              <span>{opening ? 'Opening WhatsApp…' : `Pay ₹${formatInr(numericAmount || DEFAULT_DUE)} via WhatsApp Pay (1-Click)`}</span>
+            </button>
+
             {/* Direct 1-Tap Pay Button */}
             <Btn
               onClick={() => handleOpenUpi('upi')}
               disabled={!canCopy || opening}
-              style={{ width: '100%', marginTop: 12, padding: '14px 20px', fontSize: 15 }}
+              style={{ width: '100%', marginTop: 10, padding: '13px 20px', fontSize: 14.5 }}
             >
               <Smartphone size={17} />
-              {opening ? 'Opening UPI app…' : `Pay ₹${formatInr(numericAmount || DEFAULT_DUE)} via UPI App`}
+              {opening ? 'Opening UPI app…' : `Pay ₹${formatInr(numericAmount || DEFAULT_DUE)} via Any UPI App`}
             </Btn>
 
             {/* Direct App Launchers (1-Click for WhatsApp / Mobile users) */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 10, width: '100%' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginTop: 10, width: '100%' }}>
               <button
                 type="button"
                 onClick={() => handleOpenUpi('gpay')}
                 disabled={!canCopy || opening}
                 style={{
-                  padding: '9px 6px', borderRadius: 10, border: `1px solid ${t.border}`,
-                  background: 'rgba(255, 255, 255, 0.05)', color: t.text, fontSize: 12, fontWeight: 700,
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5
+                  padding: '9px 4px', borderRadius: 10, border: `1px solid ${t.border}`,
+                  background: 'rgba(255, 255, 255, 0.05)', color: t.text, fontSize: 11.5, fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4
                 }}
               >
                 <span style={{ color: '#4285F4', fontWeight: 900 }}>G</span>
@@ -499,9 +523,9 @@ export default function UpiPayPage() {
                 onClick={() => handleOpenUpi('phonepe')}
                 disabled={!canCopy || opening}
                 style={{
-                  padding: '9px 6px', borderRadius: 10, border: `1px solid ${t.border}`,
-                  background: 'rgba(255, 255, 255, 0.05)', color: '#a855f7', fontSize: 12, fontWeight: 700,
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5
+                  padding: '9px 4px', borderRadius: 10, border: `1px solid ${t.border}`,
+                  background: 'rgba(255, 255, 255, 0.05)', color: '#a855f7', fontSize: 11.5, fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4
                 }}
               >
                 <span>PhonePe</span>
@@ -511,12 +535,24 @@ export default function UpiPayPage() {
                 onClick={() => handleOpenUpi('paytm')}
                 disabled={!canCopy || opening}
                 style={{
-                  padding: '9px 6px', borderRadius: 10, border: `1px solid ${t.border}`,
-                  background: 'rgba(255, 255, 255, 0.05)', color: '#00baf2', fontSize: 12, fontWeight: 700,
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5
+                  padding: '9px 4px', borderRadius: 10, border: `1px solid ${t.border}`,
+                  background: 'rgba(255, 255, 255, 0.05)', color: '#00baf2', fontSize: 11.5, fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4
                 }}
               >
                 <span>Paytm</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenUpi('whatsapp')}
+                disabled={!canCopy || opening}
+                style={{
+                  padding: '9px 4px', borderRadius: 10, border: `1px solid ${t.border}`,
+                  background: 'rgba(255, 255, 255, 0.05)', color: '#25D366', fontSize: 11.5, fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4
+                }}
+              >
+                <span>WhatsApp</span>
               </button>
             </div>
 
