@@ -1328,19 +1328,22 @@ async function handleMessage(waPhone, rawText) {
       totalDue: totalDue
     })
 
-    const mc = appSettings.upi_mc || '5812'
-    const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=MURTUJA&mc=${mc}&tr=BCR2DN7TTKH2LLQF&aid=uGICAgKCipYeAPg&ver=01&mode=01&am=${pendingBalance.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Thali #${tNum} - ${monthLabel}`)}`
+    const cleanNote = `Thali ${tNum} ${monthLabel}`.replace(/[#&?%/\\]/g, ' ').substring(0, 40).trim()
+    const uniqueTr = `ALM${Date.now()}${Math.floor(1000 + Math.random() * 9000)}`
+    const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName || 'MURTUJA')}&am=${pendingBalance.toFixed(2)}&cu=INR&tn=${encodeURIComponent(cleanNote)}&tr=${uniqueTr}`
+    const portalUrl = 'https://al-mawaid.vercel.app'
 
     return `💳 *Thali #${tNum} Dues • ${monthLabel}*\n` +
       `Salam *${shortName}*,\n\n` +
       `• Due: ₹${totalDue.toLocaleString('en-IN')}\n` +
       (paidThisMonth > 0 ? `• Paid: ₹${paidThisMonth.toLocaleString('en-IN')} ✅\n` : '') +
       `• *Balance to Pay:* *₹${pendingBalance.toLocaleString('en-IN')}*\n\n` +
-      `📲 *Pay via UPI:*\n` +
-      `• UPI ID: \`${upiId}\` _(tap to copy)_\n` +
+      `📲 *How to Pay (0% Fee):*\n` +
+      `1. Copy UPI ID: \`${upiId}\` _(tap to copy)_\n` +
+      `2. Open Google Pay / PhonePe / Paytm ➔ "Pay UPI ID"\n` +
       `• Payee: *${payeeName}*\n` +
-      `• 1-Tap Pay: ${upiUri}\n\n` +
-      `👉 *After paying in GPay / PhonePe / Paytm, reply with your 12-digit UTR receipt:*`
+      `• Online Portal: ${portalUrl}\n\n` +
+      `👉 *After paying, reply here with your 12-digit UTR receipt number to confirm automatically:*`
   }
 
   // Option 5: Ask a Question
