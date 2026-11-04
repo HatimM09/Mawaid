@@ -30,7 +30,14 @@ const formatInr = (n) =>
 const isNativePlatform = () =>
   typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.()
 
-async function launchUpiApp(uri, app = 'upi') {
+async function launchUpiApp(uri, app = 'upi', amount = null) {
+  if (app === 'whatsapp') {
+    const amtStr = amount ? ` ₹${amount}` : ''
+    const waUrl = `https://wa.me/916375250267?text=${encodeURIComponent(`Salam! I want to pay my monthly Thali dues${amtStr}. Please assist with payment verification.`)}`
+    window.location.href = waUrl
+    return true
+  }
+
   let targetUri = uri
   if (app === 'gpay') {
     targetUri = uri.replace(/^upi:\/\/pay\?/, 'tez://upi/pay?')
@@ -38,9 +45,6 @@ async function launchUpiApp(uri, app = 'upi') {
     targetUri = uri.replace(/^upi:\/\/pay\?/, 'phonepe://pay?')
   } else if (app === 'paytm') {
     targetUri = uri.replace(/^upi:\/\/pay\?/, 'paytmmp://pay?')
-  } else if (app === 'whatsapp') {
-    const rawQuery = uri.replace(/^upi:\/\/pay\?/, '')
-    targetUri = `intent://pay?${rawQuery}#Intent;scheme=upi;package=com.whatsapp;end`
   }
 
   if (isNativePlatform()) {
@@ -244,7 +248,7 @@ export default function UpiPayPage() {
     if (loading || opening) return
 
     setOpening(true)
-    const opened = await launchUpiApp(upiUri, app)
+    const opened = await launchUpiApp(upiUri, app, numericAmount || DEFAULT_DUE)
     setOpening(false)
 
     if (!opened) {
@@ -490,7 +494,7 @@ export default function UpiPayPage() {
               }}
             >
               <Smartphone size={17} />
-              <span>{opening ? 'Opening WhatsApp…' : `Pay ₹${formatInr(numericAmount || DEFAULT_DUE)} via WhatsApp Pay (1-Click)`}</span>
+              <span>{opening ? 'Opening WhatsApp…' : `Pay ₹${formatInr(numericAmount || DEFAULT_DUE)} via WhatsApp Chat (0% Fee)`}</span>
             </button>
 
             {/* Direct 1-Tap Pay Button */}

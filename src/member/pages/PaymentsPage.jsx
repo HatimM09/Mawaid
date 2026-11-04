@@ -37,7 +37,14 @@ const formatInr = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractio
 const isValidVpa = (v) => /^[\w.-]{2,256}@[a-zA-Z]{2,64}$/.test((v || '').trim())
 
 // Native Capacitor / Web UPI App Launcher with targeted app intent support
-const launchUpiApp = async (uri, app = 'upi') => {
+const launchUpiApp = async (uri, app = 'upi', amount = null) => {
+  if (app === 'whatsapp') {
+    const amtStr = amount ? ` ₹${amount}` : ''
+    const waUrl = `https://wa.me/916375250267?text=${encodeURIComponent(`Salam! I want to pay my monthly Thali dues${amtStr}. Please assist with payment verification.`)}`
+    window.location.href = waUrl
+    return true
+  }
+
   let targetUri = uri
   if (app === 'gpay') {
     targetUri = uri.replace(/^upi:\/\/pay\?/, 'tez://upi/pay?')
@@ -45,9 +52,6 @@ const launchUpiApp = async (uri, app = 'upi') => {
     targetUri = uri.replace(/^upi:\/\/pay\?/, 'phonepe://pay?')
   } else if (app === 'paytm') {
     targetUri = uri.replace(/^upi:\/\/pay\?/, 'paytmmp://pay?')
-  } else if (app === 'whatsapp') {
-    const rawQuery = uri.replace(/^upi:\/\/pay\?/, '')
-    targetUri = `intent://pay?${rawQuery}#Intent;scheme=upi;package=com.whatsapp;end`
   }
 
   if (typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.()) {
@@ -570,7 +574,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
       return
     }
     setOpeningUpi(true)
-    const success = await launchUpiApp(upiUri, appChoice)
+    const success = await launchUpiApp(upiUri, appChoice, lockedDueAmount)
     setOpeningUpi(false)
     if (!success) {
       toast.error('Could not open UPI app directly. Please scan or save the QR code.')
