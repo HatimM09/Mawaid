@@ -1,38 +1,43 @@
 import React from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
 
-// Official NPCI UPI URI Specification Generator for Google Pay for Business Merchant
+// Official NPCI Standard UPI URI Generator (Clean universal compliant format)
 export const generateUpiString = ({
   upiId = '6375250267@okbizaxis',
-  payeeName = 'MURTUJA', // Bank registered name on Axis Bank account to prevent NPCI name-mismatch phishing blocks
+  payeeName = 'MURTUJA', // Bank registered name on account
   amount,
   note = 'Monthly Thali Contribution',
-  mc = '5812',
-  aid = 'uGICAgKCipYeAPg',
-  tr = 'BCR2DN7TTKH2LLQF'
+  mc = '',
+  tr = null
 }) => {
   const cleanUpi = (upiId || '6375250267@okbizaxis').trim()
   const cleanName = (payeeName || 'MURTUJA').trim()
-  const cleanMc = (mc && String(mc).trim().length === 4 ? String(mc).trim() : '5812')
-  const cleanAid = (aid || 'uGICAgKCipYeAPg').trim()
-  const cleanTr = (tr || 'BCR2DN7TTKH2LLQF').trim()
 
-  const params = new URLSearchParams({
-    pa: cleanUpi,
-    pn: cleanName,
-    mc: cleanMc,
-    tr: cleanTr,
-    aid: cleanAid,
-    ver: '01',
-    mode: '01',
-    cu: 'INR'
-  })
+  const params = new URLSearchParams()
+  params.set('pa', cleanUpi)
+  params.set('pn', cleanName)
+  params.set('cu', 'INR')
 
+  // Amount formatted with strictly 2 decimals
   if (amount && Number(amount) > 0) {
     params.set('am', Number(amount).toFixed(2))
   }
+
+  // Safe transaction note without illegal symbols (#, &, ?, %) that break intent URL parsing
   if (note) {
-    params.set('tn', note.trim())
+    const cleanNote = String(note).replace(/[#&?%/\\]/g, ' ').substring(0, 48).trim()
+    if (cleanNote) params.set('tn', cleanNote)
+  }
+
+  // Dynamic unique transaction reference to prevent NPCI duplicate/replay rejections
+  const uniqueTr = (tr && tr !== 'BCR2DN7TTKH2LLQF')
+    ? String(tr).trim()
+    : `ALM${Date.now()}${Math.floor(1000 + Math.random() * 9000)}`
+  params.set('tr', uniqueTr)
+
+  // Only pass mc if verified and non-default
+  if (mc && String(mc).trim().length === 4 && mc !== '5812') {
+    params.set('mc', String(mc).trim())
   }
 
   return `upi://pay?${params.toString()}`

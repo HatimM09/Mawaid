@@ -24,6 +24,11 @@ auth_info_baileys
 whatsapp-bot-service/node_modules
 whatsapp-bot-service/auth_info_baileys
 
+# Local data exports & temporary scripts
+*.csv
+*.xlsx
+scripts/export_salads.mjs
+
 # System files
 Thumbs.db
 desktop.ini

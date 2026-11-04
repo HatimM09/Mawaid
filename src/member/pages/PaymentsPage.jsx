@@ -36,12 +36,21 @@ const monthLabelOf = (key) => {
 const formatInr = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 const isValidVpa = (v) => /^[\w.-]{2,256}@[a-zA-Z]{2,64}$/.test((v || '').trim())
 
-// Native Capacitor / Web UPI App Launcher
-const launchUpiApp = async (uri) => {
+// Native Capacitor / Web UPI App Launcher with targeted app intent support
+const launchUpiApp = async (uri, app = 'upi') => {
+  let targetUri = uri
+  if (app === 'gpay') {
+    targetUri = uri.replace(/^upi:\/\/pay\?/, 'tez://upi/pay?')
+  } else if (app === 'phonepe') {
+    targetUri = uri.replace(/^upi:\/\/pay\?/, 'phonepe://pay?')
+  } else if (app === 'paytm') {
+    targetUri = uri.replace(/^upi:\/\/pay\?/, 'paytmmp://pay?')
+  }
+
   if (typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.()) {
     try {
       const { AppLauncher } = await import('@capacitor/app-launcher')
-      const { completed } = await AppLauncher.openUrl({ url: uri })
+      const { completed } = await AppLauncher.openUrl({ url: targetUri })
       if (completed) return true
     } catch (err) {
       console.warn('[PaymentsPage] Native AppLauncher error, falling back to web:', err)
@@ -49,7 +58,7 @@ const launchUpiApp = async (uri) => {
   }
   try {
     const a = document.createElement('a')
-    a.href = uri
+    a.href = targetUri
     a.rel = 'noopener noreferrer'
     a.style.display = 'none'
     document.body.appendChild(a)
@@ -57,7 +66,7 @@ const launchUpiApp = async (uri) => {
     document.body.removeChild(a)
     return true
   } catch {
-    window.location.href = uri
+    window.location.href = targetUri
     return true
   }
 }
@@ -497,18 +506,21 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     }
   }, [loading, isManager, lastAutoCycleMonth, currentMonthKey, execute25thAutoCycle])
 
-  // ── Dynamic UPI String for Payer (Locked to exact management-approved due) ──
+  // ── Dynamic NPCI-Compliant UPI String for Payer (Locked to exact management-approved due) ──
   const activePayAmount = Math.max(1, lockedDueAmount)
   const upiUri = useMemo(() => {
+    const thaliLabel = userProfile?.thali_number ? `Thali ${userProfile.thali_number}` : ''
+    const memberLabel = userProfile?.name || 'Member'
+    const noteText = `${paymentTitle} - ${memberLabel} ${thaliLabel}`.trim()
+
     return generateUpiString({
       upiId: configuredUpiId,
-      payeeName: 'MURTUJA', // Bank KYC registered name matching Axis Bank records (prevents NPCI name-mismatch phishing blocks)
+      payeeName: payeeName || 'MURTUJA', // Bank KYC registered name matching account records
       amount: activePayAmount,
-      note: `${paymentTitle} - ${userProfile?.name || 'Member'} ${userProfile?.thali_number ? `(#${userProfile.thali_number})` : ''}`,
-      mc: merchantCode,
-      tr: 'BCR2DN7TTKH2LLQF'
+      note: noteText,
+      mc: merchantCode
     })
-  }, [configuredUpiId, activePayAmount, paymentTitle, userProfile, merchantCode])
+  }, [configuredUpiId, payeeName, activePayAmount, paymentTitle, userProfile, merchantCode])
 
   // ── Copy UPI ID ──
   const handleCopyUpiId = async () => {
@@ -544,14 +556,14 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     }
   }
 
-  // ── 1-Tap Pay Button Handler ──
-  const handle1TapPay = async () => {
+  // ── 1-Tap Pay Button Handler (Supports GPay, PhonePe, Paytm, or Default UPI) ──
+  const handle1TapPay = async (appChoice = 'upi') => {
     if (!isPaymentActive) {
       toast.error('Payments are temporarily paused by management.')
       return
     }
     setOpeningUpi(true)
-    const success = await launchUpiApp(upiUri)
+    const success = await launchUpiApp(upiUri, appChoice)
     setOpeningUpi(false)
     if (!success) {
       toast.error('Could not open UPI app directly. Please scan or save the QR code.')
@@ -2291,10 +2303,10 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               <span>Save QR to Gallery (Recommended • 100% Success)</span>
             </button>
 
-            {/* 1-Tap Pay Button */}
+            {/* Primary 1-Tap Pay Button */}
             <button
               type="button"
-              onClick={handle1TapPay}
+              onClick={() => handle1TapPay('upi')}
               disabled={openingUpi || !isPaymentActive}
               style={{
                 width: '100%', padding: '13px 18px', borderRadius: 12, border: 'none',
@@ -2307,6 +2319,47 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               <Smartphone size={17} />
               <span>{openingUpi ? 'Opening UPI App…' : `Pay ₹${formatInr(lockedDueAmount)} via UPI App`}</span>
             </button>
+
+            {/* Quick Direct App Selectors (Bypasses OS Intent Chooser Glitches) */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 10 }}>
+              <button
+                type="button"
+                onClick={() => handle1TapPay('gpay')}
+                disabled={openingUpi || !isPaymentActive}
+                style={{
+                  padding: '9px 6px', borderRadius: 10, border: `1px solid ${t.border}`,
+                  background: 'rgba(255, 255, 255, 0.05)', color: t.text, fontSize: 12, fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5
+                }}
+              >
+                <span style={{ color: '#4285F4', fontWeight: 900 }}>G</span>
+                <span>Pay</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handle1TapPay('phonepe')}
+                disabled={openingUpi || !isPaymentActive}
+                style={{
+                  padding: '9px 6px', borderRadius: 10, border: `1px solid ${t.border}`,
+                  background: 'rgba(255, 255, 255, 0.05)', color: '#a855f7', fontSize: 12, fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5
+                }}
+              >
+                <span>PhonePe</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handle1TapPay('paytm')}
+                disabled={openingUpi || !isPaymentActive}
+                style={{
+                  padding: '9px 6px', borderRadius: 10, border: `1px solid ${t.border}`,
+                  background: 'rgba(255, 255, 255, 0.05)', color: '#00baf2', fontSize: 12, fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5
+                }}
+              >
+                <span>Paytm</span>
+              </button>
+            </div>
 
             {/* Copy UPI ID Button */}
             <button
