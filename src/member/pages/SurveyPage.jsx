@@ -30,6 +30,7 @@ export default function SurveyPage({ appSettings = {} }) {
   const [openDay, setOpenDay] = useState(null)
   const [openMeal, setOpenMeal] = useState(null)
   const [surveyMap, setSurveyMap] = useState({}) // weekId -> flat row
+  const [swapNotice, setSwapNotice] = useState(null)
   const [loading, setLoading] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
   const initialLoadDone = useRef(false)
@@ -44,8 +45,16 @@ export default function SurveyPage({ appSettings = {} }) {
     if (isFirst) setLoading(true)
     else setIsSyncing(true)
     try {
-      const { data: map } = await fetchUserSurveyRows(activeUserId, [primaryWeekId])
-      setSurveyMap(map || {})
+      const [surveyRes, noticeRes] = await Promise.all([
+        fetchUserSurveyRows(activeUserId, [primaryWeekId]),
+        supabase.from('app_settings').select('value').eq('key', `menu_swap_notice_${primaryWeekId}`).maybeSingle()
+      ])
+      setSurveyMap(surveyRes.data || {})
+      if (noticeRes.data?.value) {
+        try { setSwapNotice(JSON.parse(noticeRes.data.value)) } catch { setSwapNotice(null) }
+      } else {
+        setSwapNotice(null)
+      }
       initialLoadDone.current = true
     } catch {
       setSurveyMap({})
@@ -402,12 +411,31 @@ export default function SurveyPage({ appSettings = {} }) {
         </div>
       </div>
 
+      {/* Swapped Menu Alert Banner */}
+      {swapNotice && (
+        <div style={{
+          marginBottom: 14, padding: '12px 14px', borderRadius: 14,
+          background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(245, 158, 11, 0.04))',
+          border: '1.5px solid rgba(245, 158, 11, 0.35)',
+          display: 'flex', alignItems: 'center', gap: 10
+        }}>
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(245, 158, 11, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <RefreshCw size={15} color="#f59e0b" />
+          </div>
+          <div style={{ fontSize: 12, lineHeight: 1.45, color: t.text }}>
+            <strong style={{ color: '#fbbf24' }}>Menu Schedule Updated:</strong> {swapNotice.message || 'Dishes were swapped by management. Your survey choices have been automatically moved to follow your selected food!'}
+          </div>
+        </div>
+      )}
+
       {/* Day-by-Day Cards List */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {activeDaySummary.map(({ day, lunchStatus, dinnerStatus }, idx) => {
           const [y, m, d] = activeWeekId.split('-').map(Number)
           const dayDate = new Date(y, m - 1, d + idx)
           const dateLabel = dayDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+          const shortDay = day.substring(0, 3).toLowerCase()
+          const swapInfo = swapNotice?.swaps?.[shortDay]
 
           const canEditThisDay = isWindowEditable
             ? true
@@ -424,14 +452,15 @@ export default function SurveyPage({ appSettings = {} }) {
               style={{
                 padding: '14px 16px',
                 borderRadius: 16,
-                background: t.card,
-                border: `1px solid ${t.border}`,
+                background: swapInfo ? 'linear-gradient(135deg, rgba(245,158,11,0.06), rgba(0,0,0,0))' : t.card,
+                border: swapInfo ? '1.5px solid rgba(245, 158, 11, 0.45)' : `1px solid ${t.border}`,
+                boxShadow: swapInfo ? '0 4px 16px rgba(245,158,11,0.08)' : 'none',
                 transition: 'border-color 0.2s'
               }}
             >
               {/* Day Header Row */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{
                     width: 28,
                     height: 28,
@@ -453,6 +482,15 @@ export default function SurveyPage({ appSettings = {} }) {
                   <span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, background: t.inputBg, border: `1px solid ${t.border}`, padding: '2px 8px', borderRadius: 999 }}>
                     {dateLabel}
                   </span>
+                  {swapInfo && (
+                    <span style={{
+                      fontSize: 10.5, fontWeight: 800, color: '#f59e0b',
+                      background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.35)',
+                      padding: '2px 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 4
+                    }}>
+                      <RefreshCw size={10} /> Swapped with {swapInfo.swappedWith}
+                    </span>
+                  )}
                 </div>
 
                 {canEditThisDay ? (

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { UtensilsCrossed, SunMedium, MoonStar, ChevronDown, CalendarDays, Sparkles } from 'lucide-react'
+import { UtensilsCrossed, SunMedium, MoonStar, ChevronDown, CalendarDays, Sparkles, RefreshCw } from 'lucide-react'
+import { supabase } from '../../lib/firebaseClient'
 import { useWeeklyMenu } from '../../common/useWeeklyMenu'
 import { useAuth, useTheme } from '../../admin/context'
 import { getCalendarWeekDate, addWeeks } from '../../common/utils'
@@ -30,6 +31,7 @@ export default function WeeklyMenuPage() {
   const [expandedDay, setExpandedDay] = useState(todayKey)
   const { user } = useAuth()
   const [userSurvey, setUserSurvey] = useState(null)
+  const [swapNotice, setSwapNotice] = useState(null)
 
   const weekOptions = useMemo(() => [
     { id: calendarWeekId, label: 'This Week' },
@@ -42,7 +44,7 @@ export default function WeeklyMenuPage() {
     return DAYS.some(d => (weeklyMenu[d]?.lunch?.length || 0) > 0 || (weeklyMenu[d]?.dinner?.length || 0) > 0)
   }, [weeklyMenu])
 
-  // Fetch user survey response for the selected week
+  // Fetch user survey response and swap notice for the selected week
   useEffect(() => {
     let active = true
     const fetchSurvey = async () => {
@@ -50,7 +52,20 @@ export default function WeeklyMenuPage() {
       const { data: normal } = await fetchUserSurveyRow(user.id, selectedWeekId)
       if (active) setUserSurvey(normal || null)
     }
+    const fetchSwapNotice = async () => {
+      const { data } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', `menu_swap_notice_${selectedWeekId}`)
+        .maybeSingle()
+      if (active && data?.value) {
+        try { setSwapNotice(JSON.parse(data.value)) } catch { setSwapNotice(null) }
+      } else if (active) {
+        setSwapNotice(null)
+      }
+    }
     fetchSurvey()
+    fetchSwapNotice()
     return () => { active = false }
   }, [user?.id, selectedWeekId])
 
@@ -161,10 +176,29 @@ export default function WeeklyMenuPage() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Menu Swap Notice Banner */}
+          {swapNotice && (
+            <div style={{
+              padding: '14px 18px', borderRadius: 20,
+              background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(245, 158, 11, 0.04))',
+              border: '1.5px solid rgba(245, 158, 11, 0.35)',
+              display: 'flex', alignItems: 'center', gap: 12
+            }}>
+              <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(245, 158, 11, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <RefreshCw size={17} color="#f59e0b" />
+              </div>
+              <div style={{ fontSize: 12.5, lineHeight: 1.5, color: t.text }}>
+                <strong style={{ color: '#fbbf24' }}>Menu Schedule Notice:</strong> {swapNotice.message || 'Dishes were swapped by management. Member responses have been automatically moved to follow their selected food!'}
+              </div>
+            </div>
+          )}
+
           {DAYS.map((day) => {
           const menu = weeklyMenu[day] || { en: '', ar: '', lunch: [], dinner: [] }
           const isToday = day === todayKey
           const isExpanded = day === expandedDay
+          const shortDay = day.substring(0, 3).toLowerCase()
+          const swapInfo = swapNotice?.swaps?.[shortDay]
 
           return (
             <div
@@ -173,14 +207,14 @@ export default function WeeklyMenuPage() {
               onClick={() => setExpandedDay(isExpanded ? null : day)}
               style={{
                 borderRadius: 28,
-                background: isExpanded ? 'rgba(255, 215, 0, 0.05)' : t.card,
-                border: `1.5px solid ${isToday ? t.accent : isExpanded ? t.borderActive : t.border}`,
+                background: isExpanded ? 'rgba(255, 215, 0, 0.05)' : swapInfo ? 'linear-gradient(135deg, rgba(245,158,11,0.06), rgba(0,0,0,0))' : t.card,
+                border: `1.5px solid ${isToday ? t.accent : swapInfo ? 'rgba(245, 158, 11, 0.45)' : isExpanded ? t.borderActive : t.border}`,
                 padding: '20px',
                 cursor: 'pointer',
                 transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                 position: 'relative',
                 overflow: 'hidden',
-                boxShadow: isExpanded ? '0 15px 45px rgba(0,0,0,0.4)' : '0 4px 12px rgba(0,0,0,0.1)'
+                boxShadow: isExpanded ? '0 15px 45px rgba(0,0,0,0.4)' : swapInfo ? '0 4px 16px rgba(245,158,11,0.08)' : '0 4px 12px rgba(0,0,0,0.1)'
               }}
             >
               {isToday && (
@@ -205,8 +239,20 @@ export default function WeeklyMenuPage() {
                     {day.slice(0, 2).toUpperCase()}
                   </div>
                   <div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: isExpanded ? t.accent : t.text, fontFamily: "'Playfair Display',serif" }}>
-                      {day.charAt(0).toUpperCase() + day.slice(1)}
+                    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                      <span style={{ fontSize: 18, fontWeight: 800, color: isExpanded ? t.accent : t.text, fontFamily: "'Playfair Display',serif" }}>
+                        {day.charAt(0).toUpperCase() + day.slice(1)}
+                      </span>
+                      {swapInfo && (
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          fontSize: 10.5, fontWeight: 800, color: '#f59e0b',
+                          background: 'rgba(245, 158, 11, 0.15)', border: '1px solid rgba(245, 158, 11, 0.35)',
+                          padding: '2px 8px', borderRadius: 999
+                        }}>
+                          <RefreshCw size={10} /> Swapped with {swapInfo.swappedWith}
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: 12, color: t.textSub, fontFamily: "'DM Sans',sans-serif", marginTop: 2, opacity: 0.85, maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {[...(menu.lunch || []), ...(menu.dinner || [])].slice(0, 3).join(' • ') || (menu.ar ? menu.ar : 'Special Menu Coming Soon')}

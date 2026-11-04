@@ -1,7 +1,7 @@
 // src/admin/SettingsPage.jsx
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '../lib/firebaseClient'
-import { Save, RefreshCw, Calendar, Send, Clock, Trash2, Upload, Download, FileSpreadsheet } from 'lucide-react'
+import { Save, RefreshCw, Calendar, Send, Clock, Trash2, Upload, Download, FileSpreadsheet, ArrowLeftRight, Shuffle } from 'lucide-react'
 import { T, PageWrap, PageTitle, AdminCard, Btn, Alert, Input, SectionHeader } from './ui'
 import { getSurveyTargetWeek, getCalendarWeekDate, addWeeks, DAYS } from '../common/utils'
 import { fetchWeekRows } from '../lib/surveyRows'
@@ -662,6 +662,376 @@ export default function SettingsPage() {
     })
   }
 
+  // ── Smart Menu Swap & Member Response Sync ──
+  const [swapDayA, setSwapDayA] = useState('tuesday')
+  const [swapDayB, setSwapDayB] = useState('wednesday')
+  const [swapMealScope, setSwapMealScope] = useState('both')
+  const [swapping, setSwapping] = useState(false)
+
+  const capDay = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : ''
+
+  const handleSwapDays = async (dayA, dayB, scope = 'both') => {
+    if (dayA === dayB) {
+      setMsg({ text: 'Please select two different days to swap.', type: 'error' })
+      return
+    }
+
+    const nameA = capDay(dayA)
+    const nameB = capDay(dayB)
+    const confirmPrompt = `Swap ${nameA} and ${nameB} (${scope === 'both' ? 'Both Meals' : scope.toUpperCase()}) for ${targetWeek}?\n\nThis will:\n1. Update the weekly menu.\n2. Automatically swap all member survey responses so their dish choices remain 100% accurate.\n3. Send an in-app and push notification to all members.\n\nProceed?`
+
+    if (!window.confirm(confirmPrompt)) return
+
+    setSwapping(true)
+    setMsg({ text: `🔄 Swapping ${nameA} and ${nameB} & syncing member responses...`, type: 'info' })
+
+    try {
+      const shortA = dayA.substring(0, 3).toLowerCase()
+      const shortB = dayB.substring(0, 3).toLowerCase()
+
+      // 1. Swap in-memory menu
+      const updatedMenu = { ...menu }
+      const dishesA = updatedMenu[dayA] || { lunch: '', dinner: '', ar: '' }
+      const dishesB = updatedMenu[dayB] || { lunch: '', dinner: '', ar: '' }
+
+      if (scope === 'both') {
+        const temp = { ...dishesA }
+        updatedMenu[dayA] = { ...dishesB }
+        updatedMenu[dayB] = temp
+      } else if (scope === 'lunch') {
+        const tempL = dishesA.lunch
+        dishesA.lunch = dishesB.lunch
+        dishesB.lunch = tempL
+      } else if (scope === 'dinner') {
+        const tempD = dishesA.dinner
+        dishesA.dinner = dishesB.dinner
+        dishesB.dinner = tempD
+      }
+      setMenu(updatedMenu)
+
+      // 2. Upsert swapped rows in weekly_menu
+      const menuRows = [
+        {
+          day_name: dayA,
+          week_start: targetWeek,
+          day_ar: updatedMenu[dayA]?.ar || ARABIC_DAYS[dayA] || '',
+          lunch: updatedMenu[dayA]?.lunch || '',
+          dinner: updatedMenu[dayA]?.dinner || '',
+          publish_at: null,
+        },
+        {
+          day_name: dayB,
+          week_start: targetWeek,
+          day_ar: updatedMenu[dayB]?.ar || ARABIC_DAYS[dayB] || '',
+          lunch: updatedMenu[dayB]?.lunch || '',
+          dinner: updatedMenu[dayB]?.dinner || '',
+          publish_at: null,
+        }
+      ]
+      const { error: menuErr } = await supabase.from('weekly_menu').upsert(menuRows, { onConflict: 'week_start,day_name' })
+      if (menuErr) throw menuErr
+
+      // 3. Fetch existing member survey responses for this week for dayA and dayB
+      const { data: memberRows, error: fetchErr } = await supabase
+        .from('survey_day_responses')
+        .select('*')
+        .eq('week_id', targetWeek)
+        .in('day', [shortA, shortB])
+
+      if (fetchErr) throw fetchErr
+
+      let syncedCount = 0
+      if (memberRows && memberRows.length > 0) {
+        const byUser = {}
+        for (const row of memberRows) {
+          if (!byUser[row.user_id]) byUser[row.user_id] = {}
+          byUser[row.user_id][row.day] = row
+        }
+
+        const updates = []
+        for (const [userId, userDays] of Object.entries(byUser)) {
+          const rowA = userDays[shortA]
+          const rowB = userDays[shortB]
+
+          if (rowA && rowB) {
+            syncedCount++
+            if (scope === 'both') {
+              updates.push({
+                ...rowA,
+                l_status: rowB.l_status,
+                l_dish_1: rowB.l_dish_1, l_dish_2: rowB.l_dish_2, l_dish_3: rowB.l_dish_3, l_dish_4: rowB.l_dish_4, l_dish_5: rowB.l_dish_5,
+                d_status: rowB.d_status,
+                d_dish_1: rowB.d_dish_1, d_dish_2: rowB.d_dish_2, d_dish_3: rowB.d_dish_3, d_dish_4: rowB.d_dish_4, d_dish_5: rowB.d_dish_5,
+                updated_at: new Date().toISOString()
+              })
+              updates.push({
+                ...rowB,
+                l_status: rowA.l_status,
+                l_dish_1: rowA.l_dish_1, l_dish_2: rowA.l_dish_2, l_dish_3: rowA.l_dish_3, l_dish_4: rowA.l_dish_4, l_dish_5: rowA.l_dish_5,
+                d_status: rowA.d_status,
+                d_dish_1: rowA.d_dish_1, d_dish_2: rowA.d_dish_2, d_dish_3: rowA.d_dish_3, d_dish_4: rowA.d_dish_4, d_dish_5: rowA.d_dish_5,
+                updated_at: new Date().toISOString()
+              })
+            } else if (scope === 'lunch') {
+              updates.push({
+                ...rowA,
+                l_status: rowB.l_status,
+                l_dish_1: rowB.l_dish_1, l_dish_2: rowB.l_dish_2, l_dish_3: rowB.l_dish_3, l_dish_4: rowB.l_dish_4, l_dish_5: rowB.l_dish_5,
+                updated_at: new Date().toISOString()
+              })
+              updates.push({
+                ...rowB,
+                l_status: rowA.l_status,
+                l_dish_1: rowA.l_dish_1, l_dish_2: rowA.l_dish_2, l_dish_3: rowA.l_dish_3, l_dish_4: rowA.l_dish_4, l_dish_5: rowA.l_dish_5,
+                updated_at: new Date().toISOString()
+              })
+            } else if (scope === 'dinner') {
+              updates.push({
+                ...rowA,
+                d_status: rowB.d_status,
+                d_dish_1: rowB.d_dish_1, d_dish_2: rowB.d_dish_2, d_dish_3: rowB.d_dish_3, d_dish_4: rowB.d_dish_4, d_dish_5: rowB.d_dish_5,
+                updated_at: new Date().toISOString()
+              })
+              updates.push({
+                ...rowB,
+                d_status: rowA.d_status,
+                d_dish_1: rowA.d_dish_1, d_dish_2: rowA.d_dish_2, d_dish_3: rowA.d_dish_3, d_dish_4: rowA.d_dish_4, d_dish_5: rowA.d_dish_5,
+                updated_at: new Date().toISOString()
+              })
+            }
+          }
+        }
+
+        for (let i = 0; i < updates.length; i += 100) {
+          await supabase.from('survey_day_responses').upsert(updates.slice(i, i + 100), { onConflict: 'user_id,week_id,day' })
+        }
+      }
+
+      // 4. Save swap notice in app_settings
+      const swapNoticeData = {
+        week_id: targetWeek,
+        type: 'single_swap',
+        swaps: {
+          [shortA]: { swappedWith: nameB, swappedDay: shortB, scope },
+          [shortB]: { swappedWith: nameA, swappedDay: shortA, scope }
+        },
+        message: `${nameA} and ${nameB} dishes were swapped. Member survey responses have been synced.`,
+        updated_at: new Date().toISOString()
+      }
+      await supabase.from('app_settings').upsert([
+        { key: `menu_swap_notice_${targetWeek}`, value: JSON.stringify(swapNoticeData) }
+      ], { onConflict: 'key' })
+
+      // 5. Invalidate caches
+      queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] })
+      queryClient.invalidateQueries({ queryKey: ['surveyRows'] })
+      queryClient.invalidateQueries({ queryKey: ['dailySurveyTracking'] })
+
+      // 6. Send in-app and push notifications
+      const notifMsg = `The menu for ${nameA} and ${nameB} (${targetWeek}) was swapped. Your survey choices have been automatically moved to follow your selected food!`
+      const { data: allUsers } = await supabase.from('user_stats').select('user_id').limit(5000)
+      const notifRows = (allUsers || []).map(u => ({
+        user_id: u.user_id,
+        title: `🔄 Menu Updated: ${nameA} ⇄ ${nameB} Swapped`,
+        message: notifMsg,
+        type: 'menu_swap',
+        url: '/survey',
+        sender_name: 'Al-Mawaid',
+      }))
+      for (let i = 0; i < notifRows.length; i += 200) {
+        await supabase.from('notifications').insert(notifRows.slice(i, i + 200))
+      }
+
+      try {
+        await supabase.functions.invoke('send-push', {
+          body: {
+            title: `🔄 Menu Updated: ${nameA} ⇄ ${nameB} Swapped`,
+            body: `Dishes for ${nameA} and ${nameB} were swapped. Your survey choices have been automatically preserved with each dish!`,
+            target_type: 'all',
+            user_id: null,
+            url: '/survey',
+            notify_in_app: false,
+            sender_name: 'Al-Mawaid',
+          }
+        })
+      } catch (pushErr) {
+        console.warn('[Settings] Push notification failed on swap:', pushErr)
+      }
+
+      setMsg({
+        text: `✅ ${nameA} ⇄ ${nameB} swapped successfully! ${syncedCount} member survey responses synchronized & all members notified.`,
+        type: 'success'
+      })
+    } catch (err) {
+      console.error('[handleSwapDays] error:', err)
+      setMsg({ text: `Swap failed: ${err.message}`, type: 'error' })
+    } finally {
+      setSwapping(false)
+    }
+  }
+
+  // Invert Entire Week (Whole Menu Swap)
+  const handleInvertWeekMenu = async () => {
+    const confirmPrompt = `Invert the ENTIRE week's menu schedule for ${targetWeek}?\n\nThis will swap:\n• Mon ⇄ Sat\n• Tue ⇄ Fri\n• Wed ⇄ Thu\n\nAll existing member survey responses will automatically swap to follow each dish, and a push notification will be sent to all members.\n\nProceed?`
+    if (!window.confirm(confirmPrompt)) return
+
+    setSwapping(true)
+    setMsg({ text: `🔃 Inverting full week menu & syncing all member responses...`, type: 'info' })
+
+    try {
+      const pairs = [
+        ['monday', 'saturday'],
+        ['tuesday', 'friday'],
+        ['wednesday', 'thursday']
+      ]
+
+      const updatedMenu = { ...menu }
+      const menuRows = []
+
+      for (const [day1, day2] of pairs) {
+        const temp = { ...updatedMenu[day1] }
+        updatedMenu[day1] = { ...updatedMenu[day2] }
+        updatedMenu[day2] = temp
+
+        menuRows.push(
+          {
+            day_name: day1,
+            week_start: targetWeek,
+            day_ar: updatedMenu[day1]?.ar || ARABIC_DAYS[day1] || '',
+            lunch: updatedMenu[day1]?.lunch || '',
+            dinner: updatedMenu[day1]?.dinner || '',
+            publish_at: null,
+          },
+          {
+            day_name: day2,
+            week_start: targetWeek,
+            day_ar: updatedMenu[day2]?.ar || ARABIC_DAYS[day2] || '',
+            lunch: updatedMenu[day2]?.lunch || '',
+            dinner: updatedMenu[day2]?.dinner || '',
+            publish_at: null,
+          }
+        )
+      }
+
+      setMenu(updatedMenu)
+
+      const { error: menuErr } = await supabase.from('weekly_menu').upsert(menuRows, { onConflict: 'week_start,day_name' })
+      if (menuErr) throw menuErr
+
+      const { data: memberRows, error: fetchErr } = await supabase
+        .from('survey_day_responses')
+        .select('*')
+        .eq('week_id', targetWeek)
+
+      if (fetchErr) throw fetchErr
+
+      let totalSynced = 0
+      if (memberRows && memberRows.length > 0) {
+        const byUser = {}
+        for (const row of memberRows) {
+          if (!byUser[row.user_id]) byUser[row.user_id] = {}
+          byUser[row.user_id][row.day] = row
+        }
+
+        const updates = []
+        for (const [userId, userDays] of Object.entries(byUser)) {
+          for (const [day1, day2] of pairs) {
+            const short1 = day1.substring(0, 3)
+            const short2 = day2.substring(0, 3)
+            const row1 = userDays[short1]
+            const row2 = userDays[short2]
+
+            if (row1 && row2) {
+              totalSynced++
+              updates.push({
+                ...row1,
+                l_status: row2.l_status,
+                l_dish_1: row2.l_dish_1, l_dish_2: row2.l_dish_2, l_dish_3: row2.l_dish_3, l_dish_4: row2.l_dish_4, l_dish_5: row2.l_dish_5,
+                d_status: row2.d_status,
+                d_dish_1: row2.d_dish_1, d_dish_2: row2.d_dish_2, d_dish_3: row2.d_dish_3, d_dish_4: row2.d_dish_4, d_dish_5: row2.d_dish_5,
+                updated_at: new Date().toISOString()
+              })
+              updates.push({
+                ...row2,
+                l_status: row1.l_status,
+                l_dish_1: row1.l_dish_1, l_dish_2: row1.l_dish_2, l_dish_3: row1.l_dish_3, l_dish_4: row1.l_dish_4, l_dish_5: row1.l_dish_5,
+                d_status: row1.d_status,
+                d_dish_1: row1.d_dish_1, d_dish_2: row1.d_dish_2, d_dish_3: row1.d_dish_3, d_dish_4: row1.d_dish_4, d_dish_5: row1.d_dish_5,
+                updated_at: new Date().toISOString()
+              })
+            }
+          }
+        }
+
+        for (let i = 0; i < updates.length; i += 100) {
+          await supabase.from('survey_day_responses').upsert(updates.slice(i, i + 100), { onConflict: 'user_id,week_id,day' })
+        }
+      }
+
+      const swapNoticeData = {
+        week_id: targetWeek,
+        type: 'invert_week',
+        swaps: {
+          mon: { swappedWith: 'Saturday', swappedDay: 'sat', scope: 'both' },
+          sat: { swappedWith: 'Monday', swappedDay: 'mon', scope: 'both' },
+          tue: { swappedWith: 'Friday', swappedDay: 'fri', scope: 'both' },
+          fri: { swappedWith: 'Tuesday', swappedDay: 'tue', scope: 'both' },
+          wed: { swappedWith: 'Thursday', swappedDay: 'thu', scope: 'both' },
+          thu: { swappedWith: 'Wednesday', swappedDay: 'wed', scope: 'both' },
+        },
+        message: 'The entire weekly menu schedule was inverted. All member responses have been synchronized with their dishes.',
+        updated_at: new Date().toISOString()
+      }
+      await supabase.from('app_settings').upsert([
+        { key: `menu_swap_notice_${targetWeek}`, value: JSON.stringify(swapNoticeData) }
+      ], { onConflict: 'key' })
+
+      queryClient.invalidateQueries({ queryKey: ['weeklyMenu'] })
+      queryClient.invalidateQueries({ queryKey: ['surveyRows'] })
+      queryClient.invalidateQueries({ queryKey: ['dailySurveyTracking'] })
+
+      const notifMsg = `The entire weekly thali menu for ${targetWeek} has been inverted. Your survey responses have been automatically preserved with each dish!`
+      const { data: allUsers } = await supabase.from('user_stats').select('user_id').limit(5000)
+      const notifRows = (allUsers || []).map(u => ({
+        user_id: u.user_id,
+        title: '🔃 Weekly Menu Schedule Inverted',
+        message: notifMsg,
+        type: 'menu_invert',
+        url: '/survey',
+        sender_name: 'Al-Mawaid',
+      }))
+      for (let i = 0; i < notifRows.length; i += 200) {
+        await supabase.from('notifications').insert(notifRows.slice(i, i + 200))
+      }
+
+      try {
+        await supabase.functions.invoke('send-push', {
+          body: {
+            title: '🔃 Al-Mawaid · Weekly Menu Inverted',
+            body: `The full weekly thali menu was inverted. Your survey choices have been automatically moved to match your dishes!`,
+            target_type: 'all',
+            user_id: null,
+            url: '/survey',
+            notify_in_app: false,
+            sender_name: 'Al-Mawaid',
+          }
+        })
+      } catch (pushErr) {
+        console.warn('[Settings] Push notification failed on invert:', pushErr)
+      }
+
+      setMsg({
+        text: `✅ Entire week inverted successfully! All member survey responses synchronized & push notifications sent.`,
+        type: 'success'
+      })
+    } catch (err) {
+      console.error('[handleInvertWeekMenu] error:', err)
+      setMsg({ text: `Invert failed: ${err.message}`, type: 'error' })
+    } finally {
+      setSwapping(false)
+    }
+  }
+
   if (loading) return (
     <PageWrap>
       <PageTitle>Settings</PageTitle>
@@ -899,6 +1269,93 @@ export default function SettingsPage() {
                 )}
               </div>
             )}
+          </div>
+
+          {/* Smart Menu Swap & Member Response Sync Tool */}
+          <div style={{
+            marginBottom: 20, padding: 18, borderRadius: 16,
+            background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(99, 102, 241, 0.04))',
+            border: '1.5px solid rgba(245, 158, 11, 0.25)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(245, 158, 11, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <ArrowLeftRight size={17} color="#f59e0b" />
+                </div>
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fbbf24' }}>
+                    🔄 Smart Menu Swap &amp; Member Response Sync ({targetWeek})
+                  </div>
+                  <div style={{ fontSize: 11.5, color: T.textSub }}>
+                    Swaps dishes in the menu AND moves all member survey responses so their dish choices follow the food. Sends notifications outside the app.
+                  </div>
+                </div>
+              </div>
+
+              {/* Invert Whole Week Button */}
+              <button
+                type="button"
+                disabled={swapping || publishing}
+                onClick={handleInvertWeekMenu}
+                style={{
+                  padding: '8px 14px', borderRadius: 10, border: '1px solid rgba(129, 140, 248, 0.3)',
+                  background: 'rgba(99, 102, 241, 0.12)', color: '#a5b4fc', fontSize: 12, fontWeight: 800,
+                  cursor: swapping ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                  boxShadow: '0 2px 8px rgba(99, 102, 241, 0.15)'
+                }}
+              >
+                <Shuffle size={14} />
+                <span>{swapping ? 'Inverting…' : 'Invert Entire Week (Mon ⇄ Sat, etc.)'}</span>
+              </button>
+            </div>
+
+            {/* Single Day / Meal Swap Row */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: 'rgba(0,0,0,0.2)', padding: '12px 14px', borderRadius: 12 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: T.textSub }}>Swap Day:</span>
+              <select
+                value={swapDayA}
+                onChange={e => setSwapDayA(e.target.value)}
+                style={{ padding: '8px 12px', borderRadius: 8, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 12.5, fontWeight: 700 }}
+              >
+                {DAYS.map(d => <option key={d} value={d}>{capDay(d)}</option>)}
+              </select>
+
+              <span style={{ color: '#f59e0b', fontWeight: 900 }}>⇄</span>
+
+              <select
+                value={swapDayB}
+                onChange={e => setSwapDayB(e.target.value)}
+                style={{ padding: '8px 12px', borderRadius: 8, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 12.5, fontWeight: 700 }}
+              >
+                {DAYS.map(d => <option key={d} value={d}>{capDay(d)}</option>)}
+              </select>
+
+              <select
+                value={swapMealScope}
+                onChange={e => setSwapMealScope(e.target.value)}
+                style={{ padding: '8px 12px', borderRadius: 8, background: T.inputBg, border: `1px solid ${T.inputBorder}`, color: T.text, fontSize: 12.5, fontWeight: 700 }}
+              >
+                <option value="both">Both Lunch &amp; Dinner</option>
+                <option value="lunch">Lunch Only</option>
+                <option value="dinner">Dinner Only</option>
+              </select>
+
+              <button
+                type="button"
+                disabled={swapping || publishing || swapDayA === swapDayB}
+                onClick={() => handleSwapDays(swapDayA, swapDayB, swapMealScope)}
+                style={{
+                  padding: '8px 16px', borderRadius: 8, border: 'none',
+                  background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#ffffff',
+                  fontSize: 12.5, fontWeight: 800, cursor: swapping ? 'wait' : 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 4px 12px rgba(245, 158, 11, 0.25)',
+                  marginLeft: 'auto'
+                }}
+              >
+                <ArrowLeftRight size={14} />
+                <span>{swapping ? 'Swapping…' : 'Swap & Sync Member Responses'}</span>
+              </button>
+            </div>
           </div>
 
           <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', padding:'8px 10px', borderRadius:10, background:'rgba(255,255,255,0.03)', border:`1px solid ${T.border}`, fontSize:11 }}>
