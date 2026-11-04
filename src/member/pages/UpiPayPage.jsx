@@ -30,11 +30,20 @@ const formatInr = (n) =>
 const isNativePlatform = () =>
   typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.()
 
-async function launchUpiApp(uri) {
+async function launchUpiApp(uri, app = 'upi') {
+  let targetUri = uri
+  if (app === 'gpay') {
+    targetUri = uri.replace(/^upi:\/\/pay\?/, 'tez://upi/pay?')
+  } else if (app === 'phonepe') {
+    targetUri = uri.replace(/^upi:\/\/pay\?/, 'phonepe://pay?')
+  } else if (app === 'paytm') {
+    targetUri = uri.replace(/^upi:\/\/pay\?/, 'paytmmp://pay?')
+  }
+
   if (isNativePlatform()) {
     try {
       const { AppLauncher } = await import('@capacitor/app-launcher')
-      const { completed } = await AppLauncher.openUrl({ url: uri })
+      const { completed } = await AppLauncher.openUrl({ url: targetUri })
       if (completed) return true
     } catch (err) {
       console.warn('[UpiPay] Native UPI launch failed, trying the web handler', err)
@@ -42,7 +51,7 @@ async function launchUpiApp(uri) {
   }
   try {
     const a = document.createElement('a')
-    a.href = uri
+    a.href = targetUri
     a.rel = 'noopener noreferrer'
     a.style.display = 'none'
     document.body.appendChild(a)
@@ -50,7 +59,7 @@ async function launchUpiApp(uri) {
     document.body.removeChild(a)
     return true
   } catch {
-    window.location.href = uri
+    window.location.href = targetUri
     return true
   }
 }
@@ -157,15 +166,18 @@ export default function UpiPayPage() {
 
   // Full UPI Deep-Link
   const upiUri = useMemo(() => {
+    const thaliLabel = profile?.thali_number ? `Thali ${profile.thali_number}` : ''
+    const memberLabel = profile?.name || 'Member'
+    const noteText = `${title} - ${memberLabel} ${thaliLabel}`.trim()
+
     return generateUpiString({
       upiId: receiver,
-      payeeName: 'MURTUJA', // Axis Bank KYC registered name to prevent NPCI name-mismatch phishing blocks
+      payeeName: payeeName || 'MURTUJA',
       amount: amountValid ? numericAmount : undefined,
-      note: `${title} - ${profile?.name || 'Member'} ${profile?.thali_number ? `(#${profile.thali_number})` : ''}`,
-      mc: merchantCode,
-      tr: 'BCR2DN7TTKH2LLQF'
+      note: noteText,
+      mc: merchantCode
     })
-  }, [receiver, amountValid, numericAmount, title, profile, merchantCode])
+  }, [receiver, payeeName, amountValid, numericAmount, title, profile, merchantCode])
 
   const flashCopied = useCallback(() => {
     setCopied(true)
@@ -213,7 +225,7 @@ export default function UpiPayPage() {
     }
   }
 
-  const handleOpenUpi = async () => {
+  const handleOpenUpi = async (app = 'upi') => {
     if (!paymentsEnabled) {
       toast.error('Payments are currently paused.')
       return
@@ -225,7 +237,7 @@ export default function UpiPayPage() {
     if (loading || opening) return
 
     setOpening(true)
-    const opened = await launchUpiApp(upiUri)
+    const opened = await launchUpiApp(upiUri, app)
     setOpening(false)
 
     if (!opened) {
@@ -459,13 +471,54 @@ export default function UpiPayPage() {
 
             {/* Direct 1-Tap Pay Button */}
             <Btn
-              onClick={handleOpenUpi}
+              onClick={() => handleOpenUpi('upi')}
               disabled={!canCopy || opening}
               style={{ width: '100%', marginTop: 12, padding: '14px 20px', fontSize: 15 }}
             >
               <Smartphone size={17} />
               {opening ? 'Opening UPI app…' : `Pay ₹${formatInr(numericAmount || DEFAULT_DUE)} via UPI App`}
             </Btn>
+
+            {/* Direct App Launchers (1-Click for WhatsApp / Mobile users) */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginTop: 10, width: '100%' }}>
+              <button
+                type="button"
+                onClick={() => handleOpenUpi('gpay')}
+                disabled={!canCopy || opening}
+                style={{
+                  padding: '9px 6px', borderRadius: 10, border: `1px solid ${t.border}`,
+                  background: 'rgba(255, 255, 255, 0.05)', color: t.text, fontSize: 12, fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5
+                }}
+              >
+                <span style={{ color: '#4285F4', fontWeight: 900 }}>G</span>
+                <span>Pay</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenUpi('phonepe')}
+                disabled={!canCopy || opening}
+                style={{
+                  padding: '9px 6px', borderRadius: 10, border: `1px solid ${t.border}`,
+                  background: 'rgba(255, 255, 255, 0.05)', color: '#a855f7', fontSize: 12, fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5
+                }}
+              >
+                <span>PhonePe</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenUpi('paytm')}
+                disabled={!canCopy || opening}
+                style={{
+                  padding: '9px 6px', borderRadius: 10, border: `1px solid ${t.border}`,
+                  background: 'rgba(255, 255, 255, 0.05)', color: '#00baf2', fontSize: 12, fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5
+                }}
+              >
+                <span>Paytm</span>
+              </button>
+            </div>
 
             {/* Copy UPI ID Button */}
             <button
