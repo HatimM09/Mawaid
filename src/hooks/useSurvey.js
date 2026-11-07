@@ -160,7 +160,14 @@ export const getDishType = (dish, dayName, meal, idx, appSettings) => {
 
 export const normalizeDishValue = (val, dish, isCount) => {
   if (val === undefined || val === null || val === '') return null
-  if (isRotiItem(dish)) return String(val).toLowerCase() === 'yes' ? 'yes' : 'no'
+  if (isRotiItem(dish)) {
+    const s = String(typeof val === 'object' ? (val?.status || val?.value) : val).toLowerCase().trim()
+    if (s === 'no' || s === '0' || s === '0%' || s === 'false' || s === 'skip' || s === 'skipped') return 'no'
+    if (s === 'yes' || s === 'true' || s === 'applied' || s === 'opted_in') return 'yes'
+    const num = parseInt(s, 10)
+    if (!isNaN(num) && num > 0) return s.endsWith('%') ? 'yes' : String(num)
+    return 'yes'
+  }
   if (isCount) {
     if (String(val).toLowerCase() === 'no') return 'no'
     if (typeof val === 'object' && val?.status) return val
@@ -180,9 +187,15 @@ export const normalizeDishValue = (val, dish, isCount) => {
 }
 
 export const denormalizeDishValue = (val, dish, isCount) => {
-  if (val === 'yes' || val === 'Yes') return isRotiItem(dish) ? 'Yes' : 'Yes'
   if (val === 'no' || val === 'No') return 'No'
-  if (isRotiItem(dish)) return String(val).toLowerCase() === 'yes' ? 'Yes' : 'No'
+  if (isRotiItem(dish)) {
+    const s = String(typeof val === 'object' ? (val?.status || val?.value) : val).toLowerCase().trim()
+    if (s === 'no' || s === '0' || s === '0%' || s === 'false' || s === 'skip' || s === 'skipped') return 'No'
+    if (s === 'yes' || s === 'true' || s === 'applied' || s === 'opted_in') return 'Yes'
+    const num = parseInt(s, 10)
+    if (!isNaN(num) && num > 0) return s.endsWith('%') ? 'Yes' : String(num)
+    return 'Yes'
+  }
   if (isCount) {
     if (val === 'no' || val === 'No' || val === null) return 'No'
     if (typeof val === 'object' && val?.status === 'yes') return String(val.value)

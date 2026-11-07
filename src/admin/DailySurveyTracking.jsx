@@ -640,8 +640,18 @@ export default function DailySurveyTracking() {
       const strVal = String(val).trim().toLowerCase()
 
       if (stat.isRoti) {
-        if (strVal === 'yes') stat.yesCount++
-        else if (strVal === 'no') stat.noCount++
+        const isExplicitNo = strVal === 'no' || strVal === 'false' || strVal === '0' || strVal === '0%' || strVal === 'skip' || strVal === 'skipped'
+        if (isExplicitNo) {
+          stat.noCount++
+        } else {
+          stat.yesCount++
+          const num = parseInt(strVal, 10)
+          if (!isNaN(num) && num > 0 && !strVal.endsWith('%')) {
+            stat.totalCount += num
+          } else {
+            stat.totalCount += 1
+          }
+        }
         stat.validResponses++
       } else if (stat.isCount) {
         if (strVal !== 'no') {

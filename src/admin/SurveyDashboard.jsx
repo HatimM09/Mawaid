@@ -274,9 +274,11 @@ export default function SurveyDashboard() {
         if (val === undefined || val === null) return 'N/A'
         const isRoti = dish.toLowerCase().includes('roti') || dish.toLowerCase().includes('naan')
         if (isRoti) {
-          const yes = String(val).toLowerCase() === 'yes'
-          if (yes) dishTotals[dish] = (dishTotals[dish] || 0) + 1
-          return yes ? 'YES' : 'NO'
+          const s = String(val).toLowerCase().trim()
+          const isNo = s === 'no' || s === '0' || s === 'false' || s === 'skip' || s === 'skipped'
+          const yes = !isNo && (s === 'yes' || s === 'true' || parseInt(s) > 0)
+          if (yes) dishTotals[dish] = (dishTotals[dish] || 0) + (parseInt(s) > 0 ? parseInt(s) : 1)
+          return yes ? (parseInt(s) > 0 && !s.endsWith('%') ? `${parseInt(s)} ROTIS` : 'YES') : 'NO'
         }
         const isCount = (typeof val === 'string' && !val.endsWith('%') && String(val).toLowerCase() !== 'yes' && String(val).toLowerCase() !== 'no') || typeof val === 'number'
         const numVal = parseInt(val) || 0

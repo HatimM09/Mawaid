@@ -655,22 +655,8 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
     }
 
     if (value === null || value === undefined || value === '') {
-      return {
-        bg: 'rgba(255,255,255,0.02)',
-        border: 'rgba(255,255,255,0.08)',
-        label: '—',
-        labelColor: 'rgba(255,255,255,0.2)',
-        glow: null,
-        typeLabel: isRoti ? 'ROTI' : isCount ? 'COUNT' : 'PORTION',
-        typeColor: '#6b7280'
-      }
-    }
-
-    const strVal = String(typeof value === 'object' ? value.status : value).toLowerCase().trim()
-
-    // 1. ROTI ITEM
-    if (isRoti) {
-      if (strVal === 'yes') {
+      // If meal is Applied and it's a roti dish, default to YES
+      if (isRoti && status === 'Applied') {
         return {
           bg: 'rgba(16, 185, 129, 0.12)',
           border: '#10b981',
@@ -682,13 +668,46 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
         }
       }
       return {
-        bg: 'rgba(239, 68, 68, 0.08)',
-        border: '#ef4444',
-        label: 'NO',
-        labelColor: '#ef4444',
-        glow: 'rgba(239, 68, 68, 0.4)',
+        bg: 'rgba(255,255,255,0.02)',
+        border: 'rgba(255,255,255,0.08)',
+        label: '—',
+        labelColor: 'rgba(255,255,255,0.2)',
+        glow: null,
+        typeLabel: isRoti ? 'ROTI' : isCount ? 'COUNT' : 'PORTION',
+        typeColor: '#6b7280'
+      }
+    }
+
+    const strVal = String(typeof value === 'object' ? (value?.status || value?.value) : value).toLowerCase().trim()
+
+    // 1. ROTI ITEM
+    if (isRoti) {
+      const isExplicitNo = strVal === 'no' || strVal === 'false' || strVal === '0' || strVal === '0%' || strVal === 'skip' || strVal === 'skipped'
+      if (isExplicitNo) {
+        return {
+          bg: 'rgba(239, 68, 68, 0.08)',
+          border: '#ef4444',
+          label: 'NO',
+          labelColor: '#ef4444',
+          glow: 'rgba(239, 68, 68, 0.4)',
+          typeLabel: 'ROTI',
+          typeColor: '#ef4444'
+        }
+      }
+
+      // Check if value is a count (e.g. 2 rotis, 4 rotis, 1 person)
+      const numVal = parseInt(strVal, 10)
+      const isCountRoti = !isNaN(numVal) && numVal > 0 && !strVal.endsWith('%')
+      const displayLabel = isCountRoti ? `${numVal} ${numVal === 1 ? 'ROTI' : 'ROTIS'}` : 'YES'
+
+      return {
+        bg: 'rgba(16, 185, 129, 0.12)',
+        border: '#10b981',
+        label: displayLabel,
+        labelColor: '#10b981',
+        glow: 'rgba(16, 185, 129, 0.6)',
         typeLabel: 'ROTI',
-        typeColor: '#ef4444'
+        typeColor: '#10b981'
       }
     }
 

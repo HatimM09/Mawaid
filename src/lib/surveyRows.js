@@ -135,19 +135,39 @@ export function buildMealDishMap(flatRow, day, mealName, menuList, isRotiFn) {
   result._status = normalizeMealStatus(rawStatus)
   names.forEach((d, idx) => {
     let pos = idx
-    if (snapshotList.length > 0 && snapshotList.includes(d)) {
-      pos = snapshotList.indexOf(d)
+    if (snapshotList.length > 0) {
+      const cleanD = String(d || '').trim().toLowerCase()
+      const foundIdx = snapshotList.findIndex(s => String(s || '').trim().toLowerCase() === cleanD)
+      if (foundIdx >= 0) pos = foundIdx
     }
     const val = flatRow && pos >= 0 ? flatRow[`${dk}_${mk}_dish_${pos + 1}`] : null
     if (val !== undefined && val !== null && val !== '') {
       if (isRotiFn && isRotiFn(d)) {
-        result[d] = String(val).toLowerCase() === 'yes' ? 'yes' : 'no'
+        const strVal = String(typeof val === 'object' ? (val?.status || val?.value) : val).toLowerCase().trim()
+        const isExplicitNo = strVal === 'no' || strVal === 'false' || strVal === '0' || strVal === '0%' || strVal === 'skip' || strVal === 'skipped'
+        if (isExplicitNo) {
+          result[d] = 'no'
+        } else if (strVal === 'yes' || strVal === 'true' || strVal === 'applied' || strVal === 'opted_in') {
+          result[d] = 'yes'
+        } else {
+          const num = parseInt(strVal, 10)
+          if (!isNaN(num) && num > 0) {
+            result[d] = strVal.endsWith('%') ? 'yes' : String(num)
+          } else {
+            result[d] = 'yes'
+          }
+        }
       } else {
         const lv = String(val).toLowerCase().trim()
         result[d] = (lv === 'yes' || lv === 'no') ? lv : val
       }
     } else {
-      result[d] = null
+      // If meal is applied and this is a roti dish, default to 'yes' unless skipped
+      if (isRotiFn && isRotiFn(d) && result._status === 'Applied') {
+        result[d] = 'yes'
+      } else {
+        result[d] = null
+      }
     }
   })
   return result

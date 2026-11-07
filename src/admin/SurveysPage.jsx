@@ -475,7 +475,11 @@ export default function SurveysPage() {
           }
         }
         if (isRotiDish[dish]) {
-          if (String(val).toLowerCase() === 'yes') counts[dish] = (counts[dish] || 0) + 1
+          const s = String(val).toLowerCase().trim()
+          const isNo = s === 'no' || s === '0' || s === 'false' || s === 'skip' || s === 'skipped'
+          if (!isNo && (s === 'yes' || s === 'true' || parseInt(s) > 0)) {
+            counts[dish] = (counts[dish] || 0) + (parseInt(s) > 0 ? parseInt(s) : 1)
+          }
         } else if (isCountDish[dish]) {
           counts[dish] += (parseInt(val) || 0)
         } else if (isPctDish[dish]) {
@@ -665,9 +669,11 @@ export default function SurveysPage() {
                 
                 const isRoti = d.toLowerCase().includes('roti') || d.toLowerCase().includes('naan')
                 if (isRoti) {
-                  const yes = String(val).toLowerCase() === 'yes'
-                  if (yes) dishTotals[d] = (dishTotals[d] || 0) + 1
-                  return yes ? 'YES' : 'NO'
+                  const s = String(val).toLowerCase().trim()
+                  const isNo = s === 'no' || s === '0' || s === 'false' || s === 'skip' || s === 'skipped'
+                  const yes = !isNo && (s === 'yes' || s === 'true' || parseInt(s) > 0)
+                  if (yes) dishTotals[d] = (dishTotals[d] || 0) + (parseInt(s) > 0 ? parseInt(s) : 1)
+                  return yes ? (parseInt(s) > 0 && !s.endsWith('%') ? `${parseInt(s)} ROTIS` : 'YES') : 'NO'
                 }
                 const isCount = (typeof val === 'string' && !val.endsWith('%') && String(val).toLowerCase() !== 'yes' && String(val).toLowerCase() !== 'no') || typeof val === 'number'
                 const numVal = parseInt(val) || 0
