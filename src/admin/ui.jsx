@@ -564,7 +564,12 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
   }
 
   const mealData = displayMeal === 'lunch' ? user.lunch : user.dinner
-  const dishes = mealData?.dishes || (displayMeal === user.currentMeal ? user.dishResponses : {}) || {}
+  const candidateDishes = (mealData?.dishes && Object.keys(mealData.dishes).filter(k => k !== '_status').length > 0)
+    ? mealData.dishes
+    : (user.dishResponses && Object.keys(user.dishResponses).filter(k => k !== '_status').length > 0
+      ? user.dishResponses
+      : (user[displayMeal]?.dishes || {}))
+  const dishes = candidateDishes || {}
   const dishEntries = Object.entries(dishes).filter(([k]) => k !== '_status')
   const total = dishEntries.length
 
@@ -667,6 +672,30 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
           typeColor: '#10b981'
         }
       }
+      // If meal is Applied and it's count dish, default to 1 PERSON
+      if (status === 'Applied' && isCount) {
+        return {
+          bg: 'rgba(99, 102, 241, 0.12)',
+          border: '#6366f1',
+          label: '1 PERSON',
+          labelColor: '#818cf8',
+          glow: 'rgba(99, 102, 241, 0.6)',
+          typeLabel: 'COUNT',
+          typeColor: '#6366f1'
+        }
+      }
+      // If meal is Applied and portion dish, default to 100%
+      if (status === 'Applied') {
+        return {
+          bg: 'rgba(16, 185, 129, 0.15)',
+          border: '#10b981',
+          label: '100%',
+          labelColor: '#34d399',
+          glow: 'rgba(16, 185, 129, 0.6)',
+          typeLabel: 'PORTION',
+          typeColor: '#10b981'
+        }
+      }
       return {
         bg: 'rgba(255,255,255,0.02)',
         border: 'rgba(255,255,255,0.08)',
@@ -682,7 +711,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
 
     // 1. ROTI ITEM
     if (isRoti) {
-      const isExplicitNo = strVal === 'no' || strVal === 'false' || strVal === '0' || strVal === '0%' || strVal === 'skip' || strVal === 'skipped'
+      const isExplicitNo = strVal === 'no' || strVal === 'false' || strVal === 'skip' || strVal === 'skipped'
       if (isExplicitNo) {
         return {
           bg: 'rgba(239, 68, 68, 0.08)',

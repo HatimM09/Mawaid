@@ -82,11 +82,34 @@ export function flattenDayRow(rows) {
 export async function fetchUserSurveyRow(userId, weekId) {
   if (!userId || !weekId) return { data: null, error: null }
   const cleanWeekId = String(weekId).trim().split('T')[0]
-  const { data: dayData, error: dayErr } = await supabase
+  const cleanId = String(userId).trim().replace(/^ALMAWAID:/i, '').replace(/^#/, '').trim()
+
+  // First try direct user_id match
+  let { data: dayData, error: dayErr } = await supabase
     .from('survey_day_responses')
     .select('*')
-    .eq('user_id', userId)
     .eq('week_id', cleanWeekId)
+    .eq('user_id', cleanId)
+
+  // If not found and cleanId might be a thali number or different format, try thali_number match
+  if (!dayData || dayData.length === 0) {
+    const { data: byThali } = await supabase
+      .from('survey_day_responses')
+      .select('*')
+      .eq('week_id', cleanWeekId)
+      .eq('thali_number', cleanId)
+    if (byThali && byThali.length > 0) dayData = byThali
+  }
+
+  // Also try with original userId if different
+  if ((!dayData || dayData.length === 0) && cleanId !== userId) {
+    const { data: byOrig } = await supabase
+      .from('survey_day_responses')
+      .select('*')
+      .eq('week_id', cleanWeekId)
+      .eq('user_id', userId)
+    if (byOrig && byOrig.length > 0) dayData = byOrig
+  }
 
   if (dayData && dayData.length > 0) {
     const flat = flattenDayRow(dayData)
@@ -126,25 +149,58 @@ export function buildMealDishMap(flatRow, day, mealName, menuList, isRotiFn) {
   try {
     const snap = flatRow?.dish_snapshot
     const obj = typeof snap === 'string' ? JSON.parse(snap) : snap
-    const list = obj?.[`${dk}_${mk}`]
+    const list = obj?.[`${dk}_${mk}`] || obj?.[mk] || obj?.[mealName]
     if (Array.isArray(list)) snapshotList = list.filter(Boolean)
   } catch { snapshotList = [] }
   const names = cleanMenu.length > 0 ? cleanMenu : snapshotList
   const result = {}
-  const rawStatus = flatRow ? flatRow[`${dk}_${mk}_status`] : null
+  const rawStatus = flatRow ? (flatRow[`${dk}_${mk}_status`] ?? flatRow[`${mk}_status`] ?? flatRow.status) : null
   result._status = normalizeMealStatus(rawStatus)
+
+  // Normalize dish name strings (strip emojis, special chars, multiple whitespaces)
+  const normDish = (s) => String(s || '').toLowerCase()
+    .replace(/[\u{1F300}-\u{1F9FF}]/gu, '')
+    .replace(/[^a-z0-9]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
   names.forEach((d, idx) => {
     let pos = idx
     if (snapshotList.length > 0) {
-      const cleanD = String(d || '').trim().toLowerCase()
-      const foundIdx = snapshotList.findIndex(s => String(s || '').trim().toLowerCase() === cleanD)
+      const cleanD = normDish(d)
+      let foundIdx = snapshotList.findIndex(s => normDish(s) === cleanD)
+      if (foundIdx === -1) {
+        foundIdx = snapshotList.findIndex(s => {
+          const cleanS = normDish(s)
+          return cleanS && cleanD && (cleanS.includes(cleanD) || cleanD.includes(cleanS))
+        })
+      }
       if (foundIdx >= 0) pos = foundIdx
     }
-    const val = flatRow && pos >= 0 ? flatRow[`${dk}_${mk}_dish_${pos + 1}`] : null
+
+    // Try several key patterns:
+    // 1. flattened day key: mon_l_dish_1
+    // 2. meal key: l_dish_1
+    // 3. raw day response key: dish_1
+    // 4. direct dish name match in flatRow or flatRow.dishResponses
+    let val = null
+    if (flatRow) {
+      val = flatRow[`${dk}_${mk}_dish_${pos + 1}`]
+      if (val === undefined || val === null) {
+        val = flatRow[`${mk}_dish_${pos + 1}`]
+      }
+      if (val === undefined || val === null) {
+        val = flatRow[`dish_${pos + 1}`]
+      }
+      if (val === undefined || val === null) {
+        val = flatRow[d] ?? flatRow.dishResponses?.[d]
+      }
+    }
+
     if (val !== undefined && val !== null && val !== '') {
       if (isRotiFn && isRotiFn(d)) {
         const strVal = String(typeof val === 'object' ? (val?.status || val?.value) : val).toLowerCase().trim()
-        const isExplicitNo = strVal === 'no' || strVal === 'false' || strVal === '0' || strVal === '0%' || strVal === 'skip' || strVal === 'skipped'
+        const isExplicitNo = strVal === 'no' || strVal === 'false' || strVal === 'skip' || strVal === 'skipped'
         if (isExplicitNo) {
           result[d] = 'no'
         } else if (strVal === 'yes' || strVal === 'true' || strVal === 'applied' || strVal === 'opted_in') {
@@ -154,7 +210,8 @@ export function buildMealDishMap(flatRow, day, mealName, menuList, isRotiFn) {
           if (!isNaN(num) && num > 0) {
             result[d] = strVal.endsWith('%') ? 'yes' : String(num)
           } else {
-            result[d] = 'yes'
+            // If it was '0%' or '0' but member is Applied, default to 'yes'
+            result[d] = result._status === 'Applied' ? 'yes' : 'no'
           }
         }
       } else {
@@ -162,9 +219,9 @@ export function buildMealDishMap(flatRow, day, mealName, menuList, isRotiFn) {
         result[d] = (lv === 'yes' || lv === 'no') ? lv : val
       }
     } else {
-      // If meal is applied and this is a roti dish, default to 'yes' unless skipped
-      if (isRotiFn && isRotiFn(d) && result._status === 'Applied') {
-        result[d] = 'yes'
+      // Default when meal is applied:
+      if (result._status === 'Applied') {
+        result[d] = (isRotiFn && isRotiFn(d)) ? 'yes' : '100%'
       } else {
         result[d] = null
       }
@@ -175,25 +232,31 @@ export function buildMealDishMap(flatRow, day, mealName, menuList, isRotiFn) {
 
 // Load the member's MOST RECENT week (latest week_id with any saved day).
 export async function fetchLatestUserSurveyRow(userId) {
+  if (!userId) return { data: null, error: null }
+  const cleanId = String(userId).trim().replace(/^ALMAWAID:/i, '').replace(/^#/, '').trim()
+
   const { data: weeks } = await supabase
     .from('survey_day_responses')
     .select('week_id')
-    .eq('user_id', userId)
+    .or(`user_id.eq.${cleanId},thali_number.eq.${cleanId}`)
     .order('week_id', { ascending: false })
     .limit(1)
 
   const latest = weeks && weeks.length ? weeks[0].week_id : null
-  if (latest) return fetchUserSurveyRow(userId, latest)
+  if (latest) return fetchUserSurveyRow(cleanId, latest)
 
   return { data: null, error: null }
 }
 
 // Load every member's row for a week.
 export async function fetchWeekRows(weekId) {
+  if (!weekId) return { data: [], error: null }
+  const cleanWeekId = String(weekId).trim().split('T')[0]
   const { data: dayData, error: dayErr } = await supabase
     .from('survey_day_responses')
     .select('*')
-    .eq('week_id', weekId)
+    .eq('week_id', cleanWeekId)
+    .limit(10000)
 
   const dayFlats = flattenDayRows(dayData || [])
   return { data: dayFlats, error: dayErr || null }
@@ -252,10 +315,12 @@ export async function eraseSurveySlot(userId, weekId, day, meal) {
 }
 
 // Load all rows for all users (used by admin grids).
-export async function fetchAllUserRows() {
+export async function fetchAllUserRows(limit = 10000) {
   const { data: dayData, error: dayErr } = await supabase
     .from('survey_day_responses')
     .select('*')
+    .order('updated_at', { ascending: false })
+    .limit(limit)
 
   const dayFlats = flattenDayRows(dayData || [])
   return { data: dayFlats, error: dayErr || null }

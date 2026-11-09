@@ -8,7 +8,7 @@ import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Grid, Modal, SectionHeader, SurveyResponseDisplay, PackingTVView, fmtDate, fmtDateTime, ErrorBanner } from './ui'
 import { getSurveyTargetWeek, DAYS, MEALS, parseDishArray, formatWeekRange, getCurrentMealByTime } from '../common/utils'
 import { isRotiItem, isCountInput, getDishSnapshot } from '../hooks/useSurvey'
-import { fetchUserSurveyRow, fetchAllUserRows, eraseSurveySlot, buildMealDishMap } from '../lib/surveyRows'
+import { fetchUserSurveyRow, fetchLatestUserSurveyRow, fetchAllUserRows, eraseSurveySlot, buildMealDishMap } from '../lib/surveyRows'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
 } from 'recharts'
@@ -150,7 +150,13 @@ export default function SurveysPage() {
       const targetUserId = u.user_id || u.id
       const weekId = (weekFilter && weekFilter !== 'all') ? weekFilter : surveyWeekId()
       
-      const { data: row } = await fetchUserSurveyRow(targetUserId, weekId)
+      let { data: row } = await fetchUserSurveyRow(targetUserId, weekId)
+      if (!row) {
+        try {
+          const { data: latestRow } = await fetchLatestUserSurveyRow(targetUserId)
+          if (latestRow) row = latestRow
+        } catch { /* fallback is best-effort */ }
+      }
       
       // Fresh menu for this week so scan shows real dish names, not Dish1
       let freshMenu = {}

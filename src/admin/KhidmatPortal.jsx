@@ -450,6 +450,13 @@ export default function KhidmatPortal({ signOut }) {
         } catch { /* skip week when its survey row can't be fetched */ }
       }
 
+      if (!row) {
+        try {
+          const { data: latestRow } = await fetchLatestUserSurveyRow(targetUserId)
+          if (latestRow) row = latestRow
+        } catch { /* fallback is best-effort */ }
+      }
+
       const activeWeekId = row?.week_id || calWeek
 
       // Check stop thali requests
@@ -493,12 +500,25 @@ export default function KhidmatPortal({ signOut }) {
         isStoppedDinner = isStoppedOnDay(allReqs, selDateStr, 'dinner')
       } catch (e) { console.warn(e) }
 
-      const { data: menuRow } = await supabase
+      let { data: menuRow } = await supabase
         .from('weekly_menu')
         .select('*')
         .eq('day_name', today)
         .eq('week_start', activeWeekId)
         .maybeSingle()
+
+      if (!menuRow) {
+        try {
+          const { data: fallbackMenu } = await supabase
+            .from('weekly_menu')
+            .select('*')
+            .ilike('day_name', today)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          if (fallbackMenu) menuRow = fallbackMenu
+        } catch { /* fallback menu is best-effort */ }
+      }
 
       // Canonical dish-map (same builder as tracker + profile) plus an
       // explicit per-dish COUNT/PORTION/ROTI map so the TV never has to

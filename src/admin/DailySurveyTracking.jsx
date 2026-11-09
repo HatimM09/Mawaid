@@ -134,12 +134,22 @@ export default function DailySurveyTracking() {
 
       // Fetch survey row for this user in activeWeekId
       let row = {}
+      const safeThali = cleanThali(u.thali_number || '')
       try {
-        const { data: dayRows } = await supabase
+        let query = supabase
           .from('survey_day_responses')
           .select('*')
           .eq('week_id', activeWeekId)
-          .or(`user_id.eq.${targetUserId},thali_number.eq.${u.thali_number || ''}`)
+
+        if (targetUserId && safeThali) {
+          query = query.or(`user_id.eq.${targetUserId},thali_number.eq.${safeThali}`)
+        } else if (targetUserId) {
+          query = query.eq('user_id', targetUserId)
+        } else if (safeThali) {
+          query = query.eq('thali_number', safeThali)
+        }
+
+        const { data: dayRows } = await query
 
         if (dayRows && dayRows.length > 0) {
           const flats = flattenDayRows(dayRows)
@@ -154,6 +164,13 @@ export default function DailySurveyTracking() {
           const { data: single } = await fetchUserSurveyRow(targetUserId, activeWeekId)
           if (single) row = single
         } catch { /* fallback row lookup is best-effort */ }
+      }
+
+      if (!row || !row[statusKey]) {
+        try {
+          const { data: latest } = await fetchLatestUserSurveyRow(targetUserId)
+          if (latest) row = latest
+        } catch { /* fallback latest lookup is best-effort */ }
       }
 
       const resolvedWeekId = activeWeekId
@@ -208,7 +225,25 @@ export default function DailySurveyTracking() {
         })
       } catch { /* menu fetch is best-effort; scan falls back to cached menus */ }
       const dayNameLower = day.toLowerCase()
-      const dayMenu = freshMenu[dayNameLower] || (weeklyMenu.__byWeek?.[resolvedWeekId]?.[dayNameLower]) || displayMenu[dayNameLower] || weeklyMenu[dayNameLower] || weeklyMenu[day] || {}
+      let dayMenu = freshMenu[dayNameLower] || (weeklyMenu.__byWeek?.[resolvedWeekId]?.[dayNameLower]) || displayMenu[dayNameLower] || weeklyMenu[dayNameLower] || weeklyMenu[day] || {}
+
+      // Fallback: if dayMenu is missing lunch or dinner, query latest menu for this day_name
+      if (!dayMenu.lunch?.length && !dayMenu.dinner?.length) {
+        try {
+          const { data: fallbackRows } = await supabase
+            .from('weekly_menu')
+            .select('day_name,lunch,dinner')
+            .ilike('day_name', dayNameLower)
+            .order('created_at', { ascending: false })
+            .limit(1)
+          if (fallbackRows && fallbackRows.length > 0) {
+            dayMenu = {
+              lunch: parseDishArray(fallbackRows[0].lunch),
+              dinner: parseDishArray(fallbackRows[0].dinner),
+            }
+          }
+        } catch { /* ignore fallback error */ }
+      }
 
       const scanBuildDishMap = (mealName, menuList) =>
         buildMealDishMap(row, day, mealName, menuList, isRotiItem)
@@ -354,13 +389,34 @@ export default function DailySurveyTracking() {
 
       // Load ALL merged survey rows (per user+week: live day rows first,
       // legacy flat mirror as the fallback for historical weeks).
-      const { data: allRows, error: subsError } = await fetchAllUserRows()
+      const { data: allRowsData, error: subsError } = await fetchAllUserRows()
       if (subsError) throw subsError
+      const allRows = allRowsData || []
 
       // Collect distinct week_ids for filter
       const targetWeeksList = getSurveyTargetWeeks(settingsMap)
       const cal = getCalendarWeekDate()
       const effectiveWeek = resolveTrackerWeekId(settingsMap, weekFilter)
+
+      // Ensure effectiveWeek rows are explicitly loaded so nothing is truncated by limits:
+      try {
+        const { data: effectiveWeekRows } = await fetchWeekRows(effectiveWeek)
+        if (effectiveWeekRows && effectiveWeekRows.length > 0) {
+          effectiveWeekRows.forEach(ew => {
+            const idx = allRows.findIndex(r => r.week_id === ew.week_id && (
+              (r.user_id && ew.user_id && String(r.user_id).trim() === String(ew.user_id).trim()) ||
+              (r.thali_number && ew.thali_number && String(r.thali_number).trim() === String(ew.thali_number).trim())
+            ))
+            if (idx >= 0) {
+              allRows[idx] = { ...allRows[idx], ...ew }
+            } else {
+              allRows.unshift(ew)
+            }
+          })
+        }
+      } catch (err) {
+        console.warn('Error fetching effectiveWeek rows:', err)
+      }
 
       const allWeeks = [...new Set([
         ...targetWeeksList,
@@ -455,14 +511,14 @@ export default function DailySurveyTracking() {
 
       const matchUserRow = (r, u) => {
         if (!r || !u) return false
-        if (r.user_id && u.user_id) {
-          return String(r.user_id).trim() === String(u.user_id).trim()
-        }
+        if (r.user_id && u.user_id && String(r.user_id).trim() === String(u.user_id).trim()) return true
         if (r.thali_number && u.thali_number) {
           const ctR = cleanThali(r.thali_number)
           const ctU = cleanThali(u.thali_number)
           if (ctR && ctU && ctR === ctU) return true
         }
+        if (r.user_id && u.thali_number && cleanThali(r.user_id) === cleanThali(u.thali_number)) return true
+        if (u.user_id && r.thali_number && cleanThali(u.user_id) === cleanThali(r.thali_number)) return true
         if (r.email && u.email && r.email.toLowerCase().trim() === u.email.toLowerCase().trim()) return true
         return false
       }
@@ -470,8 +526,12 @@ export default function DailySurveyTracking() {
       const results = (users || []).map(u => {
         const candidates = (allRows || []).filter(r => matchUserRow(r, u))
 
-        // Strictly match responses for the active effectiveWeek
-        const resp = candidates.find(r => r.week_id === effectiveWeek) || {}
+        // Match responses for the active effectiveWeek; fallback to latest candidate response if any
+        let resp = candidates.find(r => r.week_id === effectiveWeek)
+        if (!resp && candidates.length > 0) {
+          resp = candidates[0]
+        }
+        if (!resp) resp = {}
 
         const userWeekId = effectiveWeek
         const userWeekMenu = weekMenusMap[userWeekId] || (weeklyMenu.__byWeek?.[userWeekId]) || activeDisplayMenu || {}
