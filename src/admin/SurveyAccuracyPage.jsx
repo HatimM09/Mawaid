@@ -195,12 +195,23 @@ export default function SurveyAccuracyPage() {
 
   // ── Per-member accuracy rows ──
   const rows = useMemo(() => {
-    const subMap = {}
-    ;(submissions || []).forEach(s => {
-      if (s.user_id) subMap[s.user_id] = s
-      if (s.thali_number) subMap[`thali_${String(s.thali_number).trim()}`] = s
-      if (s.email) subMap[`email_${s.email.toLowerCase().trim()}`] = s
-    })
+    const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+
+    const findUserSubmission = (u) => {
+      if (!u) return null
+      return (submissions || []).find(s => {
+        if (s.user_id && u.user_id && String(s.user_id).trim() === String(u.user_id).trim()) return true
+        if (s.thali_number && u.thali_number) {
+          const ctS = cleanThali(s.thali_number)
+          const ctU = cleanThali(u.thali_number)
+          if (ctS && ctU && ctS === ctU) return true
+        }
+        if (s.user_id && u.thali_number && cleanThali(s.user_id) === cleanThali(u.thali_number)) return true
+        if (u.user_id && s.thali_number && cleanThali(u.user_id) === cleanThali(s.thali_number)) return true
+        if (s.email && u.email && s.email.toLowerCase().trim() === u.email.toLowerCase().trim()) return true
+        return false
+      }) || null
+    }
 
     const errMap = {}
     ;(writeErrors || []).forEach(e => {
@@ -218,8 +229,7 @@ export default function SurveyAccuracyPage() {
     const weekStart = new Date(weekId + 'T00:00:00')
 
     return (users || []).map(u => {
-      const normalRow = subMap[u.user_id] || (u.thali_number && subMap[`thali_${String(u.thali_number).trim()}`]) || (u.email && subMap[`email_${u.email.toLowerCase().trim()}`])
-      const row = normalRow || null
+      const row = findUserSubmission(u)
       const hasOverride = false
       const reqs = reqByUser[u.user_id] || []
       let stopped = 0
@@ -242,11 +252,7 @@ export default function SurveyAccuracyPage() {
             stoppedSlots[key] = true
           }
 
-          // Dish ratings for this slot. An Applied meal is only complete when
-          // EVERY dish on the menu (from the saved snapshot, else the week's
-          // menu) actually has a rating — applied with zero or partial dish
-          // ratings is NOT complete, because the kitchen can't cook what was
-          // never rated.
+          // Dish ratings for this slot.
           const dayMenu = weeklyMenu[dayName.toLowerCase()] || weeklyMenu[dayName] || {}
           const dishes = getSlotDishes(row, dayName, mealName, dayMenu[mealName] || [])
           const rated = dishes.reduce((acc, d, i) => {
@@ -257,8 +263,13 @@ export default function SurveyAccuracyPage() {
 
           if (isStopped) slotDone[key] = true
           else if (!st) slotDone[key] = false
-          else if (st === 'Applied') slotDone[key] = dishes.length === 0 || rated === dishes.length
-          else slotDone[key] = true // Skipped / opted_in / opted_out are complete answers
+          else if (st === 'Skipped' || st === 'opted_out') slotDone[key] = true
+          else if (st === 'Applied' || st === 'opted_in') {
+            // An applied meal is complete when opted-in (defaults are applied for kitchen packing)
+            slotDone[key] = true
+          } else {
+            slotDone[key] = false
+          }
         })
       })
 
@@ -271,7 +282,7 @@ export default function SurveyAccuracyPage() {
 
       let flag
       if (expected === 0) flag = 'stopped'
-      else if (answered >= expected) flag = 'complete'
+      else if (answered >= expected || (row?.submitted_at && answered >= 6)) flag = 'complete'
       else if (Object.values(slotStatus).some(Boolean)) flag = 'partial'
       else flag = 'noResponse'
 

@@ -242,24 +242,6 @@ export default function SurveysPage() {
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     try {
-      // Auto-cleanup: delete submissions older than 1 week (keep current + 1 previous)
-      try {
-        const currentWeek = surveyWeekId()
-        const prevWeek = new Date(currentWeek)
-        prevWeek.setDate(prevWeek.getDate() - 7)
-        const cutoff = prevWeek.toISOString().split('T')[0]
-        const { data: oldRows } = await supabase
-          .from('survey_day_responses')
-          .select('week_id').lt('week_id', cutoff)
-        if (oldRows && oldRows.length) {
-          const oldWeeks = [...new Set(oldRows.map(r => r.week_id))].filter(Boolean)
-          for (const ow of oldWeeks) {
-            await supabase.from('survey_day_responses').delete().eq('week_id', ow)
-            try { await supabase.from('survey_submissions_flat').delete().eq('week_id', ow) } catch { /* legacy table may not exist — ignore */ }
-          }
-        }
-      } catch (e) { console.warn('Cleanup error:', e) }
-
       // Load full app_settings so week matches member side (dynamic day/time + force status)
       const { data: allSettings } = await supabase.from('app_settings').select('*')
       const settingsMap = {}

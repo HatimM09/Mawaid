@@ -387,8 +387,14 @@ export default function Dashboard() {
 
     setUsersList(allUsers.data || [])
 
-    const submittedIds = new Set(submissions.map(row => row.user_id))
-    const missing = (allUsers.data || []).filter(user => !submittedIds.has(user.user_id))
+    const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+    const submittedIds = new Set(submissions.map(row => row.user_id).filter(Boolean))
+    const submittedThalis = new Set(submissions.map(row => cleanThali(row.thali_number)).filter(Boolean))
+    const missing = (allUsers.data || []).filter(user => {
+      if (user.user_id && submittedIds.has(user.user_id)) return false
+      if (user.thali_number && submittedThalis.has(cleanThali(user.thali_number))) return false
+      return true
+    })
     setMissingSurveys(missing)
 
     // Update trend based on real data

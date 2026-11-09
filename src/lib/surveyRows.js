@@ -22,17 +22,35 @@ function parseMetaJson(val) {
 // Expected shape: mon_l_status, mon_l_dish_1, …, sat_d_dish_5, plus metadata.
 export function flattenDayRows(rows) {
   const byUser = {}
+  const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+
   for (const row of rows || []) {
     if (!row || !row.day) continue
     const rawDay = String(row.day).trim().toLowerCase()
     const normDay = rawDay.length > 3 ? rawDay.substring(0, 3) : rawDay
     if (!DAY_KEYS.includes(normDay)) continue
-    const key = `${row.user_id || row.thali_number}|${row.week_id}`
-    let flat = byUser[key]
+
+    const ct = cleanThali(row.thali_number)
+    const uid = row.user_id ? String(row.user_id).trim() : ''
+    const em = row.email ? String(row.email).toLowerCase().trim() : ''
+    const wid = String(row.week_id || '').trim().split('T')[0]
+
+    // Find if a flat object already exists for this user in this week
+    let flat = Object.values(byUser).find(f => {
+      if (f.week_id !== wid) return false
+      if (uid && f.user_id && f.user_id === uid) return true
+      if (ct && f.thali_number && cleanThali(f.thali_number) === ct) return true
+      if (uid && f.thali_number && cleanThali(f.thali_number) === cleanThali(uid)) return true
+      if (ct && f.user_id && cleanThali(f.user_id) === ct) return true
+      if (em && f.email && f.email === em) return true
+      return false
+    })
+
     if (!flat) {
-      flat = byUser[key] = {
+      const primaryKey = `${uid || ct || em}|${wid}`
+      flat = byUser[primaryKey] = {
         user_id: row.user_id,
-        week_id: row.week_id,
+        week_id: wid,
         thali_number: row.thali_number,
         email: row.email,
         dish_snapshot: parseMetaJson(row.dish_snapshot),
@@ -42,14 +60,15 @@ export function flattenDayRows(rows) {
         updated_at: row.updated_at,
       }
     } else {
+      if (row.user_id && !flat.user_id) flat.user_id = row.user_id
+      if (row.thali_number && !flat.thali_number) flat.thali_number = row.thali_number
+      if (row.email && !flat.email) flat.email = row.email
       if (row.dish_snapshot) {
         flat.dish_snapshot = { ...flat.dish_snapshot, ...parseMetaJson(row.dish_snapshot) }
       }
       if (row.edit_metadata) {
         flat.edit_metadata = { ...flat.edit_metadata, ...parseMetaJson(row.edit_metadata) }
       }
-      if (row.thali_number && !flat.thali_number) flat.thali_number = row.thali_number
-      if (row.email && !flat.email) flat.email = row.email
       if (row.submitted_at && (!flat.submitted_at || row.submitted_at > flat.submitted_at)) {
         flat.submitted_at = row.submitted_at
       }

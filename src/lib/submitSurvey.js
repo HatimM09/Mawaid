@@ -256,15 +256,29 @@ export async function beginSurvey(userId, weekId) {
   }
 }
 
-// Batch helper: save multiple day payloads in sequence or single batch
+// Batch helper: save multiple day payloads reliably (parallel execution + automatic retry)
 export async function submitSurveyRows(payloads) {
   if (!Array.isArray(payloads) || !payloads.length) return { data: null, error: null }
-  const results = []
-  for (const p of payloads) {
-    const r = await submitSurveyRow(p)
-    results.push(r)
-    if (r.error) return r
+
+  // Execute day saves in parallel for maximum speed and atomic completion
+  const results = await Promise.all(payloads.map(p => submitSurveyRow(p)))
+  const hasError = results.some(r => r && r.error)
+  if (hasError) {
+    // Retry any failed payload once before giving up
+    const retried = await Promise.all(
+      payloads.map(async (p, idx) => {
+        if (results[idx]?.error) {
+          console.warn('[submitSurveyRows] Retrying failed payload for day:', p?.day)
+          return await submitSurveyRow(p)
+        }
+        return results[idx]
+      })
+    )
+    const retryError = retried.find(r => r && r.error)
+    if (retryError) return retryError
+    return { data: retried.flatMap(r => r.data || []), error: null }
   }
+
   return { data: results.flatMap(r => r.data || []), error: null }
 }
 

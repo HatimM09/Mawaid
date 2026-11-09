@@ -515,9 +515,14 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
 
     if (lStatus === 'Applied') {
       tLunchDishes.forEach((dish, idx) => {
-        const val = tState.lunchResponses?.[dish] ?? existingRow?.[`${tDayKey}_l_dish_${idx+1}`]
+        let val = tState.lunchResponses?.[dish] ?? existingRow?.[`${tDayKey}_l_dish_${idx+1}`]
         const isCount = isCountInput(liveAppSettings, tDay, 'lunch', idx)
-        // Only explicit user choices are written — never invent a default.
+        const isRoti = isRotiItem(dish)
+        if ((val === undefined || val === null || val === '') && isFinalSubmit) {
+          if (isRoti) val = 'yes'
+          else if (isCount) val = snackDefaults?.[`dish_${idx+1}`] ?? 1
+          else val = 100
+        }
         if (val !== undefined && val !== null && val !== '') {
           payload[`${tDayKey}_l_dish_${idx+1}`] = denormalizeDishValue(val, dish, isCount)
         }
@@ -525,9 +530,14 @@ export default function SurveyModal({ onClose, appSettings = {}, initialDay, ini
     }
     if (dStatus === 'Applied') {
       tDinnerDishes.forEach((dish, idx) => {
-        const val = tState.dinnerResponses?.[dish] ?? existingRow?.[`${tDayKey}_d_dish_${idx+1}`]
+        let val = tState.dinnerResponses?.[dish] ?? existingRow?.[`${tDayKey}_d_dish_${idx+1}`]
         const isCount = isCountInput(liveAppSettings, tDay, 'dinner', idx)
-        // Only explicit user choices are written — never invent a default.
+        const isRoti = isRotiItem(dish)
+        if ((val === undefined || val === null || val === '') && isFinalSubmit) {
+          if (isRoti) val = 'yes'
+          else if (isCount) val = snackDefaults?.[`dish_${idx+1}`] ?? 1
+          else val = 100
+        }
         if (val !== undefined && val !== null && val !== '') {
           payload[`${tDayKey}_d_dish_${idx+1}`] = denormalizeDishValue(val, dish, isCount)
         }

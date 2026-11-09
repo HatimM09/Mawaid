@@ -354,23 +354,6 @@ export default function DailySurveyTracking() {
     else setRefreshing(true)
     
     try {
-      // Auto-cleanup: delete submissions older than 1 week
-      try {
-        const currentWeek = surveyWeekId()
-        const prevWeek = new Date(currentWeek)
-        prevWeek.setDate(prevWeek.getDate() - 7)
-        const cutoff = prevWeek.toISOString().split('T')[0]
-        const { data: oldRows } = await supabase
-          .from('survey_day_responses')
-          .select('week_id').lt('week_id', cutoff)
-        if (oldRows && oldRows.length) {
-          const oldWeeks = [...new Set(oldRows.map(r => r.week_id))].filter(Boolean)
-          for (const ow of oldWeeks) {
-            await supabase.from('survey_day_responses').delete().eq('week_id', ow)
-          }
-        }
-      } catch (e) { console.warn('Cleanup error:', e) }
-
       // Load app settings (dish input config, survey open hour, status, user overrides)
       const { data: allSettings } = await supabase.from('app_settings').select('*')
       const settingsMap = {}
