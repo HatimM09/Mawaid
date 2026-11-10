@@ -3,6 +3,66 @@
 import { supabase } from './firebaseClient'
 import { DAY_KEYS, getSurveyTargetWeek } from '../common/utils'
 
+// ── Survey-submission notifications (in-app + outside-app OS push) ──────────
+// Aggregated per session in submitSurveyRows so a 6-day save produces ONE
+// notification, not six. The server's daily content guard in send-push
+// prevents any duplicates.
+const DAY_LABELS = { mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday' }
+const MEAL_LIST = { l: 'lunch', d: 'dinner' }
+
+function daysLabelList(days) {
+  return (days || []).map(d => DAY_LABELS[d] || d).join(', ')
+}
+
+function mealsInPayload(payload) {
+  const meals = []
+  if (Object.keys(payload).some(k => k.startsWith('l_') || k.startsWith('lunch'))) meals.push(MEAL_LIST.l)
+  if (Object.keys(payload).some(k => k.startsWith('d_') || k.startsWith('dinner'))) meals.push(MEAL_LIST.d)
+  return meals
+}
+
+async function notifySurveyConfirmed({ payload, days }) {
+  try {
+    const meals = mealsInPayload(payload)
+    const mealText = meals.length ? ` (${meals.join(' & ')})` : ''
+    const dayText = `${daysLabelList(days)}${mealText}`
+    await supabase.functions.invoke('send-push', {
+      body: {
+        title: '✅ Survey Submitted',
+        body: `Thank you! Your survey for ${dayText} was saved successfully.`,
+        target_type: 'specific',
+        user_id: payload.user_id,
+        url: '/',
+        type: 'survey_confirmed',
+        notify_in_app: true,
+        sender_name: 'Al-Mawaid',
+      }
+    })
+  } catch (e) {
+    console.warn('[submitSurvey] Confirmation notification failed:', e?.message || e)
+  }
+}
+
+async function notifyAdminsSurveySubmitted({ thaliLabel, payload, days }) {
+  try {
+    const meals = mealsInPayload(payload)
+    const body = `${thaliLabel} submitted survey for ${daysLabelList(days)}${meals.length ? ` — ${meals.join(' & ')}` : ''}.`
+    await supabase.functions.invoke('send-push', {
+      body: {
+        title: '📋 Survey Submitted',
+        body,
+        target_type: 'admins',
+        url: '/admin/survey-tracking',
+        type: 'survey',
+        notify_in_app: true,
+        sender_name: 'Al-Mawaid',
+      }
+    })
+  } catch (e) {
+    console.warn('[submitSurvey] Admin submission alert failed:', e?.message || e)
+  }
+}
+
 // Best-effort admin alert: a failed save must never be invisible.
 async function notifyAdmins(message) {
   try {
@@ -230,6 +290,16 @@ export async function submitSurveyRow(payload) {
     logClientWrite({ user_id: userId, week_id: weekId, day, action: 'submit', payload, status: 'success' })
   }
 
+  // ✅ Notify once (member confirmation + admin alert) unless this save is part
+  // of an aggregated multi-day session — submitSurveyRows sends one summary.
+  if (!payload._suppressNotify) {
+    const notifyPayload = { ...payload, user_id: payload.user_id || userId }
+    await Promise.all([
+      notifySurveyConfirmed({ payload: notifyPayload, days: targetDays }),
+      notifyAdminsSurveySubmitted({ thaliLabel, payload: notifyPayload, days: targetDays }),
+    ])
+  }
+
   return { data, error: null }
 }
 
@@ -260,13 +330,16 @@ export async function beginSurvey(userId, weekId) {
 export async function submitSurveyRows(payloads) {
   if (!Array.isArray(payloads) || !payloads.length) return { data: null, error: null }
 
+  // The individual saves run silently; ONE aggregated confirmation is sent below.
+  const effective = payloads.map(p => ({ ...p, _suppressNotify: true }))
+
   // Execute day saves in parallel for maximum speed and atomic completion
-  const results = await Promise.all(payloads.map(p => submitSurveyRow(p)))
+  const results = await Promise.all(effective.map(p => submitSurveyRow(p)))
   const hasError = results.some(r => r && r.error)
   if (hasError) {
     // Retry any failed payload once before giving up
     const retried = await Promise.all(
-      payloads.map(async (p, idx) => {
+      effective.map(async (p, idx) => {
         if (results[idx]?.error) {
           console.warn('[submitSurveyRows] Retrying failed payload for day:', p?.day)
           return await submitSurveyRow(p)
@@ -276,10 +349,38 @@ export async function submitSurveyRows(payloads) {
     )
     const retryError = retried.find(r => r && r.error)
     if (retryError) return retryError
-    return { data: retried.flatMap(r => r.data || []), error: null }
+    const data = retried.flatMap(r => r.data || [])
+    await notifyAggregated(payloads)
+    return { data, error: null }
   }
 
+  await notifyAggregated(payloads)
   return { data: results.flatMap(r => r.data || []), error: null }
+}
+
+// One consolidated member confirmation + admin alert per submission session,
+// regardless of how many days/meals were saved.
+async function notifyAggregated(allPayloads) {
+  const firstPayload = allPayloads[0]
+  const days = [...new Set(allPayloads.map(p => (p.day || '').trim().toLowerCase()).filter(Boolean))]
+  const { thaliLabel } = await resolveThaliLabel(firstPayload)
+  await Promise.all([
+    notifySurveyConfirmed({ payload: firstPayload, days }),
+    notifyAdminsSurveySubmitted({ thaliLabel, payload: firstPayload, days }),
+  ])
+}
+
+async function resolveThaliLabel(payload) {
+  // Prefer the thali label already attached to the payload when present
+  const thaliNo = payload?.thali_number || payload?.thaliNumber
+  if (thaliNo) return { thaliLabel: `Thali ${String(thaliNo).replace(/^#/, '')}` }
+  try {
+    if (payload?.user_id) {
+      const { data: u } = await supabase.from('user_stats').select('thali_number').eq('user_id', payload.user_id).maybeSingle()
+      if (u?.thali_number) return { thaliLabel: `Thali ${String(u.thali_number).replace(/^#/, '')}` }
+    }
+  } catch { /* fallback below */ }
+  return { thaliLabel: 'A member' }
 }
 
 export const submitSurvey = submitSurveyRow

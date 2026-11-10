@@ -272,6 +272,24 @@ function ThaliRequestsSection() {
             url: '/admin/requests'
           }
         })
+
+        // ✅ Acknowledge the member so they know their request is with admin
+        try {
+          await supabase.functions.invoke('send-push', {
+            body: {
+              title: '📨 ' + labelText + ' Request Received',
+              body: 'Your ' + labelText.toLowerCase() + ' request is pending review. You will be notified once it is approved.',
+              target_type: 'specific',
+              user_id: user.id,
+              notify_in_app: true,
+              type: 'request_received',
+              sender_name: 'Al-Mawaid',
+              url: '/post'
+            }
+          })
+        } catch (ackErr) {
+          console.warn('Member request-ack notification failed:', ackErr)
+        }
       } catch (notifyErr) {
         console.warn('Admin notification error:', notifyErr)
       }
@@ -930,6 +948,24 @@ function QueriesSection() {
             url: '/admin/queries'
           }
         })
+
+        // ✅ Acknowledge the member: ticket is with the admin team
+        try {
+          await supabase.functions.invoke('send-push', {
+            body: {
+              title: '🎫 Ticket Raised',
+              body: 'Your query has been raised. Our admin team will respond shortly — you will be notified here.',
+              target_type: 'specific',
+              user_id: user.id,
+              notify_in_app: true,
+              type: 'query_receipt',
+              sender_name: 'Al-Mawaid',
+              url: '/post'
+            }
+          })
+        } catch (ackErr) {
+          console.warn('Member query-ack notification failed:', ackErr)
+        }
       } catch (notifyErr) {
         console.warn('Admin query notification failed:', notifyErr)
       }

@@ -41,6 +41,18 @@ serve(async (req) => {
 
     // ── Auto-open survey (Saturday 8:00 PM) ──
     if (action === 'auto_open') {
+      // Idempotency guard: if the survey is already open, skip immediately.
+      // Cron services often re-fire inside the open window; re-running this
+      // action would send the SAME "Survey Open" message again and again.
+      const { data: currentStatus } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'survey_status')
+        .maybeSingle()
+      if (currentStatus?.value === 'open') {
+        return new Response(JSON.stringify({ ok: true, action: 'auto_open', skipped: true, reason: 'already_open' }), { status: 200, headers })
+      }
+
       await supabase.from('app_settings').upsert({ key: 'survey_status', value: 'open', updated_at: new Date().toISOString() })
       // Push notification to all users that survey is open
       try {
@@ -113,10 +125,37 @@ serve(async (req) => {
         return new Response(JSON.stringify({ ok: true, sent: 0 }), { status: 200, headers })
       }
 
-      const notifications = pendingUsers.map(user_id => ({
+      const reminderMessage = `Don't forget to submit your ${dayName} ${mealType === 'l' ? 'lunch' : 'dinner'} survey!`
+
+      // ── Duplicate guard: ONE reminder per user per day+meal ──
+      // The cron fires every 30 minutes; without this the same message is
+      // inserted (and pushed) for every pending user all day — even after
+      // they've read it. Users who already received this exact reminder
+      // (read or unread) today are skipped permanently for this meal.
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+      const reminderRows: { user_id: string }[] = []
+      for (let i = 0; i < pendingUsers.length; i += 500) {
+        const chunk = pendingUsers.slice(i, i + 500)
+        const { data: alreadySent } = await supabase
+          .from('notifications')
+          .select('user_id')
+          .eq('type', 'survey_reminder')
+          .eq('message', reminderMessage)
+          .in('user_id', chunk)
+          .gte('created_at', todayStart)
+        if (alreadySent) reminderRows.push(...alreadySent)
+      }
+      const remindedToday = new Set(reminderRows.map((r: any) => r.user_id))
+      const freshPending = pendingUsers.filter(id => !remindedToday.has(id))
+
+      if (freshPending.length === 0) {
+        return new Response(JSON.stringify({ ok: true, sent: 0, skipped: pendingUsers.length, reason: 'already_reminded_today' }), { status: 200, headers })
+      }
+
+      const notifications = freshPending.map(user_id => ({
         user_id,
         title: 'Survey Reminder',
-        message: `Don't forget to submit your ${dayName} ${mealType === 'l' ? 'lunch' : 'dinner'} survey!`,
+        message: reminderMessage,
         type: 'survey_reminder',
         url: '/',
         sender_name: 'Al-Mawaid',
@@ -124,7 +163,26 @@ serve(async (req) => {
 
       await supabase.from('notifications').insert(notifications)
 
-      return new Response(JSON.stringify({ ok: true, sent: pendingUsers.length }), { status: 200, headers })
+      // ── Deliver the reminder OUTSIDE the app (OS tray) too ──
+      // Rows above give the in-app inbox; this delivers the same deduplicated
+      // set as a real push. notify_in_app=false because rows already exist.
+      try {
+        await fetch(`${SUPABASE_URL}/functions/v1/send-push`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SERVICE_ROLE_KEY}` },
+          body: JSON.stringify({
+            title: 'Survey Reminder',
+            body: reminderMessage,
+            url: '/',
+            type: 'survey_reminder',
+            user_ids: freshPending,
+            notify_in_app: false,
+            collapse_key: `survey_rem_${weekId}_${dk}_${mealType}`,
+          }),
+        })
+      } catch (e) { console.error('survey_reminder push failed:', e) }
+
+      return new Response(JSON.stringify({ ok: true, sent: freshPending.length, skipped: pendingUsers.length - freshPending.length }), { status: 200, headers })
     }
 
     // ── Daily digest (6 PM) ──
@@ -160,15 +218,33 @@ serve(async (req) => {
       // Send digest to admins
       const { data: admins } = await supabase.from('user_stats').select('user_id').eq('role', 'admin')
       if (admins?.length) {
-        const notifications = admins.map(a => ({
-          user_id: a.user_id,
-          title: 'Survey Digest',
-          message: `${dayName}: Lunch ${lunchApplied}✅ / ${lunchSkipped}❌ / ${lunchPending}⏳ | Dinner ${dinnerApplied}✅ / ${dinnerSkipped}❌ / ${dinnerPending}⏳`,
-          type: 'survey_digest',
-          url: '/admin/survey-tracking',
-          sender_name: 'Al-Mawaid',
-        }))
-        await supabase.from('notifications').insert(notifications)
+        const adminIds = admins.map(a => a.user_id)
+        const digestMessage = `${dayName}: Lunch ${lunchApplied}✅ / ${lunchSkipped}❌ / ${lunchPending}⏳ | Dinner ${dinnerApplied}✅ / ${dinnerSkipped}❌ / ${dinnerPending}⏳`
+
+        // Duplicate guard: admins may get these more than once if cron
+        // double-fires or a manual trigger overlaps with the scheduled run.
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
+        const { data: existingDigests } = await supabase
+          .from('notifications')
+          .select('user_id')
+          .eq('type', 'survey_digest')
+          .eq('message', digestMessage)
+          .in('user_id', adminIds)
+          .gte('created_at', todayStart)
+        const alreadyAdvised = new Set((existingDigests || []).map((d: any) => d.user_id))
+        const pendingAdmins = adminIds.filter(id => !alreadyAdvised.has(id))
+
+        if (pendingAdmins.length > 0) {
+          const notifications = pendingAdmins.map(user_id => ({
+            user_id,
+            title: 'Survey Digest',
+            message: digestMessage,
+            type: 'survey_digest',
+            url: '/admin/survey-tracking',
+            sender_name: 'Al-Mawaid',
+          }))
+          await supabase.from('notifications').insert(notifications)
+        }
       }
 
       return new Response(JSON.stringify({ ok: true, applied: { lunch: lunchApplied, dinner: dinnerApplied } }), { status: 200, headers })

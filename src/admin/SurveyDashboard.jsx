@@ -236,15 +236,29 @@ export default function SurveyDashboard() {
   const sendReminderNow = async () => {
     try {
       const pendingUsers = trackUsers.filter(u => u.status === 'Not Submitted')
-      let sent = 0
-      for (const u of pendingUsers) {
-        await supabase.from('notifications').insert({
-          user_id: u.user_id, title: '📋 Survey Reminder',
-          message: `Please submit your ${trackDay} ${trackMeal} survey.`, url: '/survey', type: 'survey_reminder'
-        })
-        sent++
+      if (pendingUsers.length === 0) {
+        alert('No pending users — everyone has submitted.')
+        return
       }
-      alert(`Sent reminders to ${sent} user(s)`)
+      // Deliver outside the app as a real OS push (batch targeted). The server
+      // (send-push) inserts the in-app inbox rows itself AND de-duplicates:
+      // users who already got this exact reminder today are skipped.
+      const { data: pushResult, error: pushError } = await supabase.functions.invoke('send-push', {
+        body: {
+          title: '📋 Survey Reminder',
+          body: `Please submit your ${trackDay} ${trackMeal} survey.`,
+          url: '/survey',
+          type: 'survey_reminder',
+          user_ids: pendingUsers.map(u => u.user_id),
+          notify_in_app: true,
+          collapse_key: `manual_rem_${trackDay}_${trackMeal}`,
+          sender_name: 'Al-Mawaid'
+        }
+      })
+      if (pushError) throw pushError
+      const sentCount = Number(pushResult?.sent) || 0
+      const deduped = pendingUsers.length - sentCount
+      alert(`Sent reminders to ${sentCount} user(s)${deduped > 0 ? ` (${deduped} already reminded today — skipped)` : ''}`)
     } catch (err) {
       alert('Error sending reminders: ' + err.message)
     }

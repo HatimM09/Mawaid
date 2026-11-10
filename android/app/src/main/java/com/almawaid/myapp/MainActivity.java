@@ -10,6 +10,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.animation.AccelerateInterpolator;
@@ -166,6 +167,25 @@ public class MainActivity extends BridgeActivity {
             NotificationManager notificationManager = getSystemService(NotificationManager.class);
             if (notificationManager == null) return;
 
+            // ── Custom Al-Mawaid chime ──────────────────────────────────────
+            // Versioned channel setup: Android ignores setSound() on an
+            // already-created channel, so bump CHANNEL_CONFIG_VERSION to
+            // delete and recreate the channels with the chime sound.
+            final int CHANNEL_CONFIG_VERSION = 2;
+            android.content.SharedPreferences prefs =
+                getSharedPreferences("almawaid_prefs", MODE_PRIVATE);
+            boolean needsRecreate = prefs.getInt("channel_config_version", 0) < CHANNEL_CONFIG_VERSION;
+            if (needsRecreate) {
+                for (String id : new String[]{"default", "broadcasts", "queries", "requests", "reminders", "rich_media"}) {
+                    notificationManager.deleteNotificationChannel(id);
+                }
+            }
+            android.media.AudioAttributes soundAttrs = new android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build();
+            Uri chimeUri = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.al_mawaid_chime);
+
             // Default channel
             NotificationChannel defaultChannel = new NotificationChannel(
                 "default",
@@ -174,6 +194,9 @@ public class MainActivity extends BridgeActivity {
             );
             defaultChannel.setDescription("Notifications from Al-Mawaid");
             defaultChannel.setShowBadge(true);
+            defaultChannel.enableVibration(true);
+            defaultChannel.setVibrationPattern(new long[]{0, 120, 60, 120});
+            defaultChannel.setSound(chimeUri, soundAttrs);
             notificationManager.createNotificationChannel(defaultChannel);
 
             // Broadcasts channel
@@ -184,6 +207,9 @@ public class MainActivity extends BridgeActivity {
             );
             broadcastChannel.setDescription("Weekly menu published, admin announcements, and system broadcasts");
             broadcastChannel.setShowBadge(true);
+            broadcastChannel.enableVibration(true);
+            broadcastChannel.setVibrationPattern(new long[]{0, 120, 60, 120});
+            broadcastChannel.setSound(chimeUri, soundAttrs);
             notificationManager.createNotificationChannel(broadcastChannel);
 
             // Queries channel
@@ -194,6 +220,7 @@ public class MainActivity extends BridgeActivity {
             );
             queryChannel.setDescription("Replies from Al-Mawaid team to your queries and support tickets");
             queryChannel.setShowBadge(true);
+            queryChannel.setSound(chimeUri, soundAttrs);
             notificationManager.createNotificationChannel(queryChannel);
 
             // Requests channel
@@ -204,6 +231,7 @@ public class MainActivity extends BridgeActivity {
             );
             requestChannel.setDescription("Updates on your thali requests (resume, stop, extra food)");
             requestChannel.setShowBadge(true);
+            requestChannel.setSound(chimeUri, soundAttrs);
             notificationManager.createNotificationChannel(requestChannel);
 
             // Reminders channel
@@ -214,6 +242,7 @@ public class MainActivity extends BridgeActivity {
             );
             reminderChannel.setDescription("Survey reminders and meal timing notifications");
             reminderChannel.setShowBadge(false);
+            reminderChannel.setSound(chimeUri, soundAttrs);
             notificationManager.createNotificationChannel(reminderChannel);
 
             // Rich media channel (for BigPictureStyle, media notifications)
@@ -226,7 +255,12 @@ public class MainActivity extends BridgeActivity {
             richChannel.setShowBadge(true);
             richChannel.enableVibration(true);
             richChannel.setVibrationPattern(new long[]{0, 200, 100, 200});
+            richChannel.setSound(chimeUri, soundAttrs);
             notificationManager.createNotificationChannel(richChannel);
+
+            if (needsRecreate) {
+                prefs.edit().putInt("channel_config_version", CHANNEL_CONFIG_VERSION).apply();
+            }
         }
     }
 }

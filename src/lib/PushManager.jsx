@@ -61,6 +61,34 @@ async function savePushSubscription(userId, subscription) {
 
 export const PENDING_DEEP_LINK_KEY = 'almawaid_pending_deep_link'
 
+// ── Dedup store ──────────────────────────────────────────────────────────────
+// localStorage so duplicates are suppressed across tabs AND app restarts
+// (sessionStorage is wiped when the tab closes, which is exactly when the
+// re-delivered cron reminders used to show up again).
+const DEDUP_PREFIX = 'alm_seen_'
+const DEDUP_TTL_MS = 12 * 60 * 60 * 1000 // 12h
+
+function seenCheck(key) {
+  try {
+    const raw = localStorage.getItem(DEDUP_PREFIX + key)
+    if (!raw) return null
+    const ts = Number(raw)
+    if (!ts || Date.now() - ts > DEDUP_TTL_MS) {
+      localStorage.removeItem(DEDUP_PREFIX + key)
+      return null
+    }
+    return ts
+  } catch { return null }
+}
+
+function seenSet(key) {
+  try { localStorage.setItem(DEDUP_PREFIX + key, String(Date.now())) } catch { /* storage full/blocked */ }
+}
+
+function seenClear(key) {
+  try { localStorage.removeItem(DEDUP_PREFIX + key) } catch { /* ignore */ }
+}
+
 function navigateTo(url) {
   if (!url || url === '/') return
   // Persist for cold starts: if the app/tabs aren't mounted yet (login screen,
@@ -118,21 +146,24 @@ function subscribeRealtime(realtimeChannel, user, cancelledRef, retryCount = 0) 
 
         const now = Date.now()
 
-        // 1. Skip if this exact notification ID was already handled in this session
-        if (idKey && sessionStorage.getItem(idKey)) return
+        // 1. Skip if this exact notification ID was already handled recently
+        //    (persists across restarts — the same row can be re-delivered by
+        //    both the realtime channel and the OS push after a cold start).
+        if (idKey && seenCheck(idKey)) return
         if (idKey) {
-          sessionStorage.setItem(idKey, String(now))
-          setTimeout(() => { try { sessionStorage.removeItem(idKey) } catch (e) { console.debug('[PushManager] cleanup skipped', e && e.message) } }, 120000)
+          seenSet(idKey)
+          setTimeout(() => seenClear(idKey), 120000)
         }
 
-        // 2. Content signature cooldown (survey notifications: 15 min cooldown; standard: 60 sec)
-        const lastSeenStr = sessionStorage.getItem(contentKey)
+        // 2. Content signature cooldown: suppresses identical content re-runs
+        //    from rapid cron ticks (survey: 15 min, standard: 60 sec).
+        const lastSeenTs = seenCheck(contentKey)
         const cooldownMs = isSurveyType ? 15 * 60 * 1000 : 60 * 1000
-        if (lastSeenStr && (now - Number(lastSeenStr)) < cooldownMs) {
+        if (lastSeenTs && (now - lastSeenTs) < cooldownMs) {
           return
         }
-        sessionStorage.setItem(contentKey, String(now))
-        setTimeout(() => { try { sessionStorage.removeItem(contentKey) } catch (e) { console.debug('[PushManager] cleanup skipped', e && e.message) } }, cooldownMs)
+        seenSet(contentKey)
+        setTimeout(() => seenClear(contentKey), cooldownMs)
 
         // No in-app popup: the OS-level push (Web Push / FCM) already notified
         // the user outside the app. Just refresh the Alerts tab + badge.
@@ -217,10 +248,21 @@ export default function PushManager() {
             await PushNotifications.register()
             PushNotifications.addListener('registration', async (token) => {
               if (token?.value && !cancelledRef.current) {
-                await supabase.from('push_subscriptions').upsert(
-                  { user_id: user.id, fcm_token: token.value, token_type: 'fcm', updated_at: new Date().toISOString() },
-                  { onConflict: 'user_id, token_type' }
-                )
+                try {
+                  await supabase.from('push_subscriptions').upsert(
+                    { user_id: user.id, fcm_token: token.value, token_type: 'fcm', updated_at: new Date().toISOString() },
+                    { onConflict: 'user_id, token_type' }
+                  )
+                  // This Android device may ALSO be registered via the native
+                  // bridge as an 'expo' token — same device, pushed twice.
+                  // Keep the fresh Capacitor FCM token and drop the stale row.
+                  await supabase.from('push_subscriptions')
+                    .delete()
+                    .eq('user_id', user.id)
+                    .eq('token_type', 'expo')
+                } catch (e) {
+                  console.warn('[PushManager] Token sync notice:', e?.message || e)
+                }
               }
             })
             PushNotifications.addListener('pushNotificationReceived', (n) => {
@@ -281,9 +323,12 @@ export default function PushManager() {
             }
             if (!cancelledRef.current) await savePushSubscription(user.id, sub)
 
-            // Also try to get FCM token via Firebase SDK for better delivery
-            // Only attempt if VITE_FIREBASE_VAPID_KEY is explicitly configured (avoids 401 from mismatched key)
-            if (import.meta.env.VITE_FIREBASE_VAPID_KEY) {
+            // Only try to get an FCM token via Firebase SDK if the Web Push
+            // subscription FAILED. Registering both channels from the same
+            // browser makes every message arrive TWICE (Web Push + FCM both
+            // trigger this service worker's push handler). The FCM path here
+            // remains as a fallback only.
+            if (!sub && import.meta.env.VITE_FIREBASE_VAPID_KEY) {
               try {
                 const { requestForToken } = await import('../lib/firebase')
                 const fcmToken = await requestForToken()

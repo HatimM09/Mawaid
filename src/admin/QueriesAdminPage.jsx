@@ -85,7 +85,8 @@ export default function QueriesAdminPage() {
             body: `Your "${subjectLabel}" query is being looked into. Open the app for details.`,
             target_type: 'specific',
             user_id: existing.user_id,
-            url: '/post'
+            url: '/post',
+            type: 'query_reply'
           }
         })
       } catch (notifyErr) {
@@ -112,7 +113,8 @@ export default function QueriesAdminPage() {
             body: `Your "${subjectLabel}" ticket is resolved. Open the app if you need anything else.`,
             target_type: 'specific',
             user_id: existing.user_id,
-            url: '/post'
+            url: '/post',
+            type: 'query_resolved'
           }
         })
       } catch (notifyErr) {
@@ -157,7 +159,8 @@ export default function QueriesAdminPage() {
               body: `"${subjectLabel}" — ${shortBody}`,
               target_type: 'specific',
               user_id: userId,
-              url: '/post'
+              url: '/post',
+              type: 'query_reply'
             }
           })
         } catch (notifyErr) {

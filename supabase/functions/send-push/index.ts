@@ -69,6 +69,20 @@ async function getFCMAccessToken(): Promise<string> {
   return _fcmToken.accessToken
 }
 
+// ── Stable dedup key (FNV-1a) ────────────────────────────────────────────────
+// Derives a deterministic identifier from notification content/params so that
+// duplicate sends of the same message REPLACE the previous tray entry instead
+// of stacking a second identical notification.
+function dedupKey(...parts: (string | undefined | null)[]): string {
+  let h = 0x811c9dc5
+  const s = parts.filter(Boolean).join('|')
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return 'alm_' + h.toString(36)
+}
+
 serve(async (req) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -94,6 +108,7 @@ serve(async (req) => {
     const {
       user_id: rawUserId,
       target_user_id,
+      user_ids,
       title,
       body,
       url,
@@ -112,8 +127,37 @@ serve(async (req) => {
       collapse_key,
     } = raw
     const user_id = rawUserId || target_user_id || null
+    const targetUserIds = Array.isArray(user_ids) && user_ids.length > 0
+      ? user_ids.filter(Boolean)
+      : null // Batch targeted list (explicit user IDs), distinct from target_type routing
     // channels: optional filter — ['webpush','expo','fcm']. Default = all.
     const allow = (ch: string) => !Array.isArray(channels) || channels.length === 0 || channels.includes(ch)
+
+    // Stable tag so identical content collapses in the OS tray instead of
+    // stacking duplicates. An explicit collapse_key keeps its identity.
+    const contentTag = collapse_key
+      ? `alm_${collapse_key}_${dedupKey(title || '', body || '')}`
+      : dedupKey(title || '', body || '', url || '', type || '')
+
+    // ── Android notification channel routing (each channel plays the Al-Mawaid chime) ──
+    const TYPE_CHANNEL_MAP: Record<string, string> = {
+      new_query: 'queries',
+      query_reply: 'queries',
+      query_resolved: 'queries',
+      query_receipt: 'queries',
+      new_request: 'requests',
+      request_approved: 'requests',
+      request_rejected: 'requests',
+      request_received: 'requests',
+      broadcast: 'broadcasts',
+      menu: 'broadcasts',
+      survey_reminder: 'reminders',
+      reminder: 'reminders',
+      survey: 'default',
+      survey_digest: 'default',
+      feedback: 'default',
+    }
+    const fcmChannelId = TYPE_CHANNEL_MAP[type || ''] || 'default'
 
     // Handle scheduling
     if (scheduled_for) {
@@ -141,6 +185,13 @@ serve(async (req) => {
     if (user_id && target_type === 'specific') {
       const { data: subs } = await supabase.from('push_subscriptions').select('*').eq('user_id', user_id)
       allPushSubs = subs || []
+    } else if (targetUserIds) {
+      // Batch targeted push (e.g., cron reminders): resolve subs for explicit ID list
+      const { data: subs } = await supabase
+        .from('push_subscriptions')
+        .select('*')
+        .in('user_id', targetUserIds.slice(0, 2000))
+      allPushSubs = subs || []
     } else if (target_type === 'admins') {
       const { data: admins } = await supabase.from('user_stats').select('user_id').eq('role', 'admin')
       const adminIds = admins?.map((a: any) => a.user_id).filter(Boolean) || []
@@ -162,6 +213,8 @@ serve(async (req) => {
         let inAppIds: string[] = []
         if (target_type === 'specific' && user_id) {
           inAppIds = [user_id]
+        } else if (targetUserIds) {
+          inAppIds = targetUserIds.slice(0, 10000)
         } else if (target_type === 'admins') {
           const { data: admins } = await supabase.from('user_stats').select('user_id').eq('role', 'admin')
           inAppIds = admins?.map((a: any) => a.user_id).filter(Boolean) || []
@@ -170,16 +223,42 @@ serve(async (req) => {
           inAppIds = members?.map((m: any) => m.user_id).filter(Boolean) || []
         }
         if (inAppIds.length) {
-          const rows = inAppIds.map((uid: string) => ({
-            user_id: uid,
-            title: title || 'Al-Mawaid',
-            message: body || '',
-            url: url || '/',
-            type: type || 'info',
-            sender_name: sender_name || 'Al-Mawaid',
-          }))
-          for (let i = 0; i < rows.length; i += 200) {
-            await supabase.from('notifications').insert(rows.slice(i, i + 200))
+          // ── Duplicate guard: skip users who already hold the exact same
+          // title+message row created today (double cron runs, double admin
+          // click, service-retry). The same message is never duplicated in
+          // the inbox, or pushed twice, within the same day. ──
+          const todayStart = new Date();
+          todayStart.setUTCHours(0, 0, 0, 0);
+          const reminderText = body || ''
+          const alreadyNotified = new Set<string>()
+          for (let i = 0; i < inAppIds.length; i += 500) {
+            const chunk = inAppIds.slice(i, i + 500)
+            const { data: existing } = await supabase
+              .from('notifications')
+              .select('user_id')
+              .eq('title', title)
+              .eq('message', reminderText)
+              .in('user_id', chunk)
+              .gte('created_at', todayStart.toISOString())
+            for (const row of existing || []) alreadyNotified.add(row.user_id)
+          }
+          const freshIds = inAppIds.filter((uid: string) => !alreadyNotified.has(uid))
+          console.log(`[send-push] In-app dedup: ${inAppIds.length - freshIds.length} of ${inAppIds.length} users already got this content today`)
+          if (freshIds.length === 0) {
+            // Nothing new to write — fall through so push delivery skips too
+            allPushSubs = []
+          } else {
+            const rows = freshIds.map((uid: string) => ({
+              user_id: uid,
+              title: title || 'Al-Mawaid',
+              message: body || '',
+              url: url || '/',
+              type: type || 'info',
+              sender_name: sender_name || 'Al-Mawaid',
+            }))
+            for (let i = 0; i < rows.length; i += 200) {
+              await supabase.from('notifications').insert(rows.slice(i, i + 200))
+            }
           }
         }
       } catch (e) {
@@ -194,6 +273,17 @@ serve(async (req) => {
     const webPushSubs = allow('webpush') ? allPushSubs.filter((s: any) => s.token_type === 'webpush' && s.subscription_json) : []
     const expoSubs = allow('expo') ? allPushSubs.filter((s: any) => s.token_type === 'expo' && s.fcm_token) : []
     const fcmSubs = allow('fcm') ? allPushSubs.filter((s: any) => s.token_type === 'fcm' && s.fcm_token) : []
+
+    // De-duplicate across channels for users registered on BOTH Web Push and
+    // FCM from the same browser (a legacy double-registration): FCM/expo (rich,
+    // native-quality) wins, so that device receives ONE message, not two.
+    const fcmUserSet = new Set(fcmSubs.map((s: any) => s.user_id))
+    const expoUserSet = new Set(expoSubs.map((s: any) => s.user_id))
+    const webPushToSend = webPushSubs.filter((s: any) => !fcmUserSet.has(s.user_id) && !expoUserSet.has(s.user_id))
+    const droppedWebPushDupes = webPushSubs.length - webPushToSend.length
+    if (droppedWebPushDupes > 0) {
+      console.log(`[send-push] Suppressed ${droppedWebPushDupes} duplicate web-push delivery(ies) for FCM-covered users`)
+    }
 
     let sent = 0, failed = 0
 
@@ -217,10 +307,10 @@ serve(async (req) => {
     }
 
     // Send Web Push notifications
-    if (webPushSubs.length > 0) {
+    if (webPushToSend.length > 0) {
       const results = await Promise.allSettled(
-        webPushSubs.map((sub: any) =>
-          sendWithRetry(() => sendWebPush(sub.subscription_json, title, body, url || '/', image_url, sender_name, big_picture_url, actions, style))
+        webPushToSend.map((sub: any) =>
+          sendWithRetry(() => sendWebPush(sub.subscription_json, title, body, url || '/', image_url, sender_name, big_picture_url, actions, style, contentTag, fcmChannelId))
         )
       )
       for (let i = 0; i < results.length; i++) {
@@ -238,7 +328,7 @@ serve(async (req) => {
           if (errMsg.includes('410') || errMsg.includes('404') || errMsg.includes('expired')) {
             await supabase.from('push_subscriptions')
               .delete()
-              .eq('user_id', webPushSubs[i].user_id)
+              .eq('user_id', webPushToSend[i].user_id)
               .eq('token_type', 'webpush')
           }
         }
@@ -248,7 +338,7 @@ serve(async (req) => {
     // Send Expo Push notifications
     if (expoSubs.length > 0) {
       const results = await Promise.allSettled(
-        expoSubs.map((sub: any) => sendWithRetry(() => sendExpoPush(sub.fcm_token, title, body, url || '/')))
+        expoSubs.map((sub: any) => sendWithRetry(() => sendExpoPush(sub.fcm_token, title, body, url || '/', fcmChannelId)))
       )
       for (const r of results) {
         if (r.status === 'fulfilled' && r.value.ok) sent++
@@ -259,7 +349,7 @@ serve(async (req) => {
     // Send FCM Push (native Android / Capacitor)
     if (fcmSubs.length > 0) {
       const results = await Promise.allSettled(
-        fcmSubs.map((sub: any) => sendWithRetry(() => sendFCMPush(sub.fcm_token, title, body, url || '/', big_picture_url, actions, style, collapse_key)))
+        fcmSubs.map((sub: any) => sendWithRetry(() => sendFCMPush(sub.fcm_token, title, body, url || '/', big_picture_url, actions, style, collapse_key || contentTag, fcmChannelId)))
       )
       for (let i = 0; i < results.length; i++) {
         const result = results[i]
@@ -284,14 +374,14 @@ serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify({ ok: true, sent, failed, webpush: webPushSubs.length, expo: expoSubs.length, fcm: fcmSubs.length }), { status: 200, headers })
+    return new Response(JSON.stringify({ ok: true, sent, failed, webpush: webPushToSend.length, expo: expoSubs.length, fcm: fcmSubs.length }), { status: 200, headers })
   } catch (err) {
     console.error('[send-push] Error:', err)
     return new Response(JSON.stringify({ ok: false, error: err.message }), { status: 500, headers })
   }
 })
 
-async function sendWebPush(subscriptionJson: string | object, title: string, body: string, url: string, image?: string, sender_name?: string, bigPictureUrl?: string, actions?: any[], style?: string) {
+async function sendWebPush(subscriptionJson: string | object, title: string, body: string, url: string, image?: string, sender_name?: string, bigPictureUrl?: string, actions?: any[], style?: string, contentTag?: string, channelId?: string) {
   if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
     throw new Error('VAPID keys not configured')
   }
@@ -299,19 +389,24 @@ async function sendWebPush(subscriptionJson: string | object, title: string, bod
   const payload = JSON.stringify({
     title, body, url, image: image || undefined, sender_name: sender_name || undefined,
     badge: '/al-mawaid.png', vibrate: [200, 100, 200], requireInteraction: true,
-    tag: `al-mawaid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    // Custom Al-Mawaid chime (used by Safari/macOS; Chrome plays its own
+    // system sound, which is why the native app uses channel sounds)
+    sound: '/sounds/al_mawaid_chime.wav',
+    // Stable tag derived from content: a duplicate send REPLACES the tray
+    // entry instead of stacking a second identical notification.
+    tag: contentTag || `al-mawaid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     actions: actions || [{ action: 'open', title: 'View' }, { action: 'dismiss', title: 'Dismiss' }],
     timestamp: Date.now(),
-    bigPictureUrl, style,
+    channelId, bigPictureUrl, style,
   })
   return webpush.sendNotification(subscription, payload)
 }
 
-async function sendExpoPush(expoToken: string, title: string, body: string, url: string) {
+async function sendExpoPush(expoToken: string, title: string, body: string, url: string, channelId?: string) {
   const res = await fetch('https://exp.host/--/api/v2/push/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ to: expoToken, sound: 'default', title, body, data: { url }, _displayInForeground: true }),
+    body: JSON.stringify({ to: expoToken, sound: 'default', title, body, data: { url }, channelId, _displayInForeground: true }),
   })
   if (!res.ok) {
     const err = await res.json()
@@ -320,11 +415,12 @@ async function sendExpoPush(expoToken: string, title: string, body: string, url:
   return res.json()
 }
 
-async function sendFCMPush(fcmToken: string, title: string, body: string, url: string, bigPictureUrl?: string, actions?: any[], style?: string, collapseKey?: string) {
+async function sendFCMPush(fcmToken: string, title: string, body: string, url: string, bigPictureUrl?: string, actions?: any[], style?: string, collapseKey?: string, channelId?: string) {
   const accessToken = await getFCMAccessToken()
   const androidNotification: any = {
-    channelId: 'default',
-    sound: 'default',
+    channelId: channelId || 'default',
+    sound: 'al_mawaid_chime',
+    defaultSound: false,
     priority: 'high',
     clickAction: url || '/',
   }

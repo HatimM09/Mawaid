@@ -146,7 +146,8 @@ export default function RequestsAdminPage() {
             body,
             target_type: 'specific',
             user_id: userId,
-            url: '/post'
+            url: '/post',
+            type: status === 'approved' ? 'request_approved' : 'request_rejected'
           }
         })
       } catch (notifyErr) {

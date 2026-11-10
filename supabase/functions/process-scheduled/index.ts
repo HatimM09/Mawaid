@@ -142,6 +142,7 @@ serve(async (_req: Request) => {
                 url: '/',
                 target_type: broadcast.target_type === 'specific' ? 'specific' : null,
                 user_id: broadcast.target_user_id || null,
+                type: 'broadcast',
                 image_url: broadcast.media_url || undefined,
                 sender_name: broadcast.sender_name || 'Al-Mawaid',
                 big_picture_url: broadcast.media_url || undefined,
