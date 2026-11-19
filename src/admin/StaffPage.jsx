@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../lib/firebaseClient'
 import { Plus, Trash2, RefreshCw, Shield } from 'lucide-react'
-import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Alert, Input, fmtDate } from './ui'
+import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Alert, Input, fmtDate, SrBadge } from './ui'
 import { AdminTableSkeleton } from '../common/Skeleton'
 
 export default function StaffPage() {
@@ -94,7 +94,8 @@ export default function StaffPage() {
     cook: '#5eba82',
   }
 
-  const rows = staff.map(s => [
+  const rows = staff.map((s, idx) => [
+    <SrBadge key={`sr-staff-${s.id || idx}`} num={idx + 1} />,
     <div>
       <div style={{ fontWeight: 600, color: T.text, fontSize: 14 }}>{s.name}</div>
       <div style={{ color: T.textSub, fontSize: 12 }}>{s.email}</div>
@@ -156,7 +157,7 @@ export default function StaffPage() {
       {loading ? <AdminTableSkeleton rows={5} /> : (
         <AdminCard style={{ padding: 0 }}>
           <Table
-            headers={['Member', 'Role', 'Phone', 'Added', 'Actions']}
+            headers={['Sr #', 'Member', 'Role', 'Phone', 'Added', 'Actions']}
             rows={rows}
             emptyMsg="No staff members yet. Add your first one above."
           />

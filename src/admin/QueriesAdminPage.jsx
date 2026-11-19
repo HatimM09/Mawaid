@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { supabase } from '../lib/firebaseClient'
 import { RefreshCw, Search, Send, ChevronDown, ChevronUp, ShieldAlert, Lock } from 'lucide-react'
-import { T, PageWrap, PageTitle, AdminCard, Badge, Btn, fmtDateTime } from './ui'
+import { T, PageWrap, PageTitle, AdminCard, Badge, Btn, fmtDateTime, SrBadge } from './ui'
 import { AdminTableSkeleton } from '../common/Skeleton'
 
 const STATUS_COLORS = { open: '#e09855', resolved: '#5eba82', in_progress: '#9aabb8' }
@@ -245,7 +245,7 @@ export default function QueriesAdminPage() {
           {filtered.length === 0 && (
             <div style={{ textAlign: 'center', padding: '40px 0', color: T.textSub }}>No queries found.</div>
           )}
-          {filtered.map(q => {
+          {filtered.map((q, idx) => {
             const u = users[q.user_id] || {}
             const status = q.status || 'open'
             const isExpanded = expanded === q.id
@@ -261,6 +261,7 @@ export default function QueriesAdminPage() {
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+                      <SrBadge num={idx + 1} />
                       <span style={{ fontWeight: 700, color: T.text, fontSize: 14 }}>{u.name || '—'}</span>
                       <span style={{ color: T.textSub, fontSize: 12 }}>#{u.thali_number || '—'}</span>
                       <Badge color={STATUS_COLORS[status]}>{status}</Badge>

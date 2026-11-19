@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/firebaseClient'
 import { RefreshCw, Search, Star, Download } from 'lucide-react'
-import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, StatCard, fmtDateTime } from './ui'
+import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, StatCard, fmtDateTime, SrBadge } from './ui'
 import { AdminTableSkeleton } from '../common/Skeleton'
 import { getCalendarWeekDate } from '../common/utils'
 import { downloadWeeklyFeedbackPdf, getFeedbackWeekId } from './feedbackReportPdf'
@@ -108,13 +108,14 @@ export default function FeedbackAdminPage() {
     return matchSearch && matchDay && matchTime
   })
 
-  const rows = filtered.map(r => {
+  const rows = filtered.map((r, idx) => {
     const u = users[r.user_id] || {}
     const dayMenu = menu[r.day] || {}
     const lunchDishes = dayMenu.lunch || ''
     const dinnerDishes = dayMenu.dinner || ''
 
     return [
+      <SrBadge key={`sr-fb-${r.id || idx}`} num={idx + 1} />,
       <div>
         <div style={{ fontWeight: 600, color: T.text, fontSize: 13 }}>{u.name || '—'}</div>
         <div style={{ color: T.textSub, fontSize: 11 }}>#{u.thali_number || '—'}</div>
@@ -199,7 +200,7 @@ export default function FeedbackAdminPage() {
       {loading ? <AdminTableSkeleton rows={5} /> : (
         <AdminCard style={{ padding: 0 }}>
           <Table
-            headers={['Thali User', 'Day', 'Lunch (Menu)', 'Dinner (Menu)', 'Comments', 'Submitted']}
+            headers={['Sr #', 'Thali User', 'Day', 'Lunch (Menu)', 'Dinner (Menu)', 'Comments', 'Submitted']}
             rows={rows}
             emptyMsg="No feedback found."
           />

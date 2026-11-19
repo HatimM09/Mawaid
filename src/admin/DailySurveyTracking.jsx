@@ -10,7 +10,7 @@ import {
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { 
   T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner, Grid,
-  SectionHeader, Modal, PackingTVView, ErrorBanner
+  SectionHeader, Modal, PackingTVView, ErrorBanner, SrBadge
 } from './ui'
 
 import { 
@@ -852,8 +852,8 @@ export default function DailySurveyTracking() {
               <div className="col-body">
                 {yesMembers.length === 0 ? (
                   <div style={{ padding: 20, textAlign: 'center', color: T.textSub, fontSize: 12 }}>No one has applied yet.</div>
-                ) : yesMembers.map(u => (
-                  <MemberRow key={u.user_id} user={u} onClick={() => { document.documentElement.requestFullscreen().catch(() => {}); setSelectedUser(u) }} />
+                ) : yesMembers.map((u, idx) => (
+                  <MemberRow key={u.user_id} user={u} index={idx + 1} onClick={() => { document.documentElement.requestFullscreen().catch(() => {}); setSelectedUser(u) }} />
                 ))}
               </div>
             </AdminCard>
@@ -869,8 +869,8 @@ export default function DailySurveyTracking() {
               <div className="col-body">
                 {noMembers.length === 0 ? (
                   <div style={{ padding: 20, textAlign: 'center', color: T.textSub, fontSize: 12 }}>No opt-outs yet.</div>
-                ) : noMembers.map(u => (
-                  <MemberRow key={u.user_id} user={u} onClick={() => { document.documentElement.requestFullscreen().catch(() => {}); setSelectedUser(u) }} />
+                ) : noMembers.map((u, idx) => (
+                  <MemberRow key={u.user_id} user={u} index={idx + 1} onClick={() => { document.documentElement.requestFullscreen().catch(() => {}); setSelectedUser(u) }} />
                 ))}
               </div>
             </AdminCard>
@@ -886,8 +886,8 @@ export default function DailySurveyTracking() {
               <div className="col-body">
                 {noResponse.length === 0 ? (
                   <div style={{ padding: 20, textAlign: 'center', color: T.textSub, fontSize: 12 }}>All users have responded!</div>
-                ) : noResponse.map(u => (
-                  <PendingMemberRow key={u.user_id} user={u} onClick={() => { document.documentElement.requestFullscreen().catch(() => {}); setSelectedUser(u) }} />
+                ) : noResponse.map((u, idx) => (
+                  <PendingMemberRow key={u.user_id} user={u} index={idx + 1} onClick={() => { document.documentElement.requestFullscreen().catch(() => {}); setSelectedUser(u) }} />
                 ))}
               </div>
             </AdminCard>
@@ -1012,7 +1012,7 @@ export default function DailySurveyTracking() {
   )
 }
 
-function PendingMemberRow({ user, onClick }) {
+function PendingMemberRow({ user, index, onClick }) {
   return (
     <div 
       onClick={onClick}
@@ -1032,6 +1032,7 @@ function PendingMemberRow({ user, onClick }) {
         e.currentTarget.style.transform = 'translateX(0)';
       }}
     >
+      {index != null && <SrBadge num={index} />}
       <div style={{ 
         width: 24, height: 24, borderRadius: 8, background: 'rgba(212,175,55,0.08)', 
         border: '1px solid rgba(212,175,55,0.3)',
@@ -1047,7 +1048,7 @@ function PendingMemberRow({ user, onClick }) {
   )
 }
 
-function MemberRow({ user, onClick }) {
+function MemberRow({ user, index, onClick }) {
   return (
     <div 
       onClick={onClick}
@@ -1067,7 +1068,8 @@ function MemberRow({ user, onClick }) {
         e.currentTarget.style.transform = 'translateX(0)';
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        {index != null && <SrBadge num={index} />}
         <div style={{
           width: 24, height: 24, borderRadius: 8,
           background: user.stopped ? 'rgba(239,68,68,0.15)' : 'rgba(212,175,55,0.1)',

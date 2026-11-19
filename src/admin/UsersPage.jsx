@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/firebaseClient'
 import { Search, RefreshCw, UserPlus, Edit2, Trash2, X, Shield, Phone, MapPin, UserCheck, QrCode, Download, Printer, Eye, EyeOff } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
-import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Input, Grid, SectionHeader, fmtDate, Alert } from './ui'
+import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Input, Grid, SectionHeader, fmtDate, Alert, SrBadge } from './ui'
 import { useOutletContext } from 'react-router-dom'
 
 export default function UsersPage() {
@@ -269,7 +269,8 @@ export default function UsersPage() {
     missingInfo: users.filter(u => !u.thali_number || !u.name).length
   }
 
-  const rows = filtered.map(u => [
+  const rows = filtered.map((u, idx) => [
+    <SrBadge key={`sr-${u.user_id || u.id || idx}`} num={idx + 1} />,
     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
       <div style={{
         width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
@@ -401,7 +402,7 @@ export default function UsersPage() {
         <>
           <AdminCard style={{ padding: 0, overflow: 'hidden' }}>
             <Table
-              headers={['User Identity', 'Thali #', 'Contact', 'Address', 'Joined On', 'QR Code & Actions']}
+              headers={['Sr #', 'User Identity', 'Thali #', 'Contact', 'Address', 'Joined On', 'QR Code & Actions']}
               rows={rows}
               emptyMsg="No thali users found matching your search."
             />

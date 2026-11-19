@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { supabase } from '../lib/firebaseClient'
 import { RefreshCw, Search, CheckCircle, Clock, XCircle, ShieldAlert, Lock } from 'lucide-react'
-import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, fmtDate, fmtDateTime } from './ui'
+import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, fmtDate, fmtDateTime, SrBadge } from './ui'
 import { AdminTableSkeleton } from '../common/Skeleton'
 
 const STATUS_COLORS = { pending: '#e09855', approved: '#5eba82', rejected: '#e05555' }
@@ -178,10 +178,11 @@ export default function RequestsAdminPage() {
     return matchSearch && matchStatus && matchType && matchMode && matchTime
   })
 
-  const rows = filtered.map(r => {
+  const rows = filtered.map((r, idx) => {
     const u = users[r.user_id] || {}
     const status = r.status || 'pending'
     return [
+      <SrBadge key={`sr-req-${r.id || idx}`} num={idx + 1} />,
       <div>
         <div style={{ fontWeight: 600, color: T.text, fontSize: 13 }}>{u.name || '—'}</div>
         <div style={{ color: T.textSub, fontSize: 11 }}>#{u.thali_number || '—'}</div>
@@ -336,7 +337,7 @@ export default function RequestsAdminPage() {
       {loading ? <AdminTableSkeleton rows={5} /> : (
         <AdminCard style={{ padding: 0 }}>
           <Table
-            headers={['Thali User', 'Type', 'Request Details', 'Dates / Schedule', 'Status', 'Submitted At', 'Actions']}
+            headers={['Sr #', 'Thali User', 'Type', 'Request Details', 'Dates / Schedule', 'Status', 'Submitted At', 'Actions']}
             rows={rows}
             emptyMsg="No requests found."
           />

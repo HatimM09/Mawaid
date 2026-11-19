@@ -5,7 +5,7 @@ import { supabase } from '../lib/firebaseClient'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { RefreshCw, Search, Filter, Utensils, Download, User as UserIcon, Calendar as CalendarIcon, Scan, X, Trash2 } from 'lucide-react'
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
-import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Grid, Modal, SectionHeader, SurveyResponseDisplay, PackingTVView, fmtDate, fmtDateTime, ErrorBanner } from './ui'
+import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Grid, Modal, SectionHeader, SurveyResponseDisplay, PackingTVView, fmtDate, fmtDateTime, ErrorBanner, SrBadge } from './ui'
 import { getSurveyTargetWeek, DAYS, MEALS, parseDishArray, formatWeekRange, getCurrentMealByTime } from '../common/utils'
 import { isRotiItem, isCountInput, getDishSnapshot } from '../hooks/useSurvey'
 import { fetchUserSurveyRow, fetchLatestUserSurveyRow, fetchAllUserRows, eraseSurveySlot, buildMealDishMap } from '../lib/surveyRows'
@@ -507,10 +507,11 @@ export default function SurveysPage() {
   }
 
   // TABLE ROWS - AGGREGATE VIEW
-  const aggregateRows = filtered.map(r => {
+  const aggregateRows = filtered.map((r, idx) => {
     const u = users[r.user_id] || {}
     const qtys = r.dish_responses || {}
     return [
+      <SrBadge key={`sr-agg-${r.id || idx}`} num={idx + 1} />,
       <div>
         <div style={{ fontWeight: 600, color: T.text, fontSize: 13 }}>{u.name || '—'}</div>
         <div style={{ color: T.textSub, fontSize: 11 }}>Thali #{u.thali_number || '—'}</div>
@@ -559,8 +560,8 @@ export default function SurveysPage() {
 
   // DAILY BREAKDOWN (Pivoted Table)
   const dailyDishes = weeklyMenu[dayFilter]?.[mealFilter] || []
-  const dailyHeaders = ['Thali User', ...dailyDishes, 'Submitted', 'Action']
-  const dailyRows = filtered.map(r => {
+  const dailyHeaders = ['Sr #', 'Thali User', ...dailyDishes, 'Submitted', 'Action']
+  const dailyRows = filtered.map((r, idx) => {
     const u = users[r.user_id] || {}
     const qtys = r.dish_responses || {}
 
@@ -601,6 +602,7 @@ export default function SurveysPage() {
     })
 
     return [
+      <SrBadge key={`sr-day-${r.id || idx}`} num={idx + 1} />,
       <div>
         <div style={{ fontWeight: 600, color: T.text, fontSize: 13 }}>{u.name || '—'}</div>
         <div style={{ color: T.textSub, fontSize: 11 }}>Thali #{u.thali_number || '—'}</div>
@@ -830,7 +832,7 @@ export default function SurveysPage() {
         <AdminCard style={{ padding: 0, overflow: 'hidden', borderRadius: 24 }}>
           {viewMode === 'aggregate' ? (
             <Table
-              headers={['Thali User', 'Week', 'Day', 'Meal', 'Quantities Selected', 'Submitted', 'Action']}
+              headers={['Sr #', 'Thali User', 'Week', 'Day', 'Meal', 'Quantities Selected', 'Submitted', 'Action']}
               rows={aggregateRows}
               emptyMsg="No survey logs found for this filter."
             />

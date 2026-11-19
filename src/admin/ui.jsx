@@ -187,6 +187,32 @@ export const SlideDrawer = ({ isOpen, onClose, title, children, width = 480 }) =
   </>
 )
 
+export const SrBadge = ({ num, prefix = '#' }) => {
+  const formatted = typeof num === 'number' ? String(num).padStart(2, '0') : String(num)
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minWidth: 32,
+      height: 24,
+      padding: '0 6px',
+      borderRadius: 6,
+      background: 'rgba(197, 160, 89, 0.08)',
+      border: '1px solid rgba(197, 160, 89, 0.22)',
+      color: 'var(--accent-primary)',
+      fontFamily: "'Space Grotesk', 'JetBrains Mono', monospace",
+      fontSize: 11,
+      fontWeight: 700,
+      fontVariantNumeric: 'tabular-nums',
+      letterSpacing: '0.03em',
+      lineHeight: 1
+    }}>
+      {prefix && !formatted.startsWith(prefix) ? `${prefix}${formatted}` : formatted}
+    </span>
+  )
+}
+
 export const StatCard = ({ icon, label, value, color, sub }) => (
   <AdminCard style={{ 
     display: 'flex', alignItems: 'center', gap: 14,
@@ -207,7 +233,7 @@ export const StatCard = ({ icon, label, value, color, sub }) => (
       <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {label}
       </div>
-      <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1, marginTop: 4 }}>
+      <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1.1, marginTop: 4, fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: 'tabular-nums' }}>
         {value}
       </div>
       {sub && <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4, opacity: 0.8 }}>{sub}</div>}
@@ -215,52 +241,89 @@ export const StatCard = ({ icon, label, value, color, sub }) => (
   </AdminCard>
 )
 
-export const Table = ({ headers, rows, emptyMsg = 'No data found.' }) => (
-  <div style={{ overflowX: 'auto', borderRadius: 16, border: '1px solid var(--border-light)', background: 'rgba(0, 0, 0, 0.2)' }}>
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, minWidth: 600 }}>
-      <thead>
-        <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-light)' }}>
-          {headers.map((h, i) => (
-            <th key={i} style={{
-              padding: '20px 16px', textAlign: 'left',
-              color: 'var(--text-tertiary)', fontWeight: 800,
-              fontSize: 11, letterSpacing: '0.15em', textTransform: 'uppercase',
-              whiteSpace: 'nowrap',
-            }}>
-              {h}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.length === 0 ? (
-          <tr>
-            <td colSpan={headers.length} style={{
-              padding: '48px 16px', textAlign: 'center',
-              color: 'var(--text-tertiary)', fontSize: 14,
-            }}>
-              {emptyMsg}
-            </td>
+export const Table = ({ headers, rows, emptyMsg = 'No data found.', withSrNo = false, srHeader = 'Sr #' }) => {
+  const isFirstHeaderSr = headers.length > 0 && /^(sr\.?|#|sr\s*#|sl\.?|s\.?no\.?)$/i.test(String(headers[0]).trim())
+  
+  const finalHeaders = (withSrNo && !isFirstHeaderSr) ? [srHeader, ...headers] : headers
+  const finalRows = (withSrNo && !isFirstHeaderSr)
+    ? rows.map((r, i) => [<SrBadge key={`sr-${i}`} num={i + 1} />, ...r])
+    : rows
+
+  const srColIndex = finalHeaders.findIndex(h => /^(sr\.?|#|sr\s*#|sl\.?|s\.?no\.?)$/i.test(String(h).trim()))
+
+  return (
+    <div className="admin-table-wrap" style={{ 
+      overflowX: 'auto', 
+      borderRadius: 16, 
+      border: '1px solid var(--border-light)', 
+      background: 'rgba(10, 13, 20, 0.35)',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+    }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, minWidth: 600 }}>
+        <thead>
+          <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-light)' }}>
+            {finalHeaders.map((h, i) => {
+              const isSr = i === srColIndex
+              return (
+                <th key={i} style={{
+                  padding: isSr ? '16px 10px' : '16px 16px', 
+                  textAlign: isSr ? 'center' : 'left',
+                  width: isSr ? 56 : undefined,
+                  color: 'var(--text-tertiary)', fontWeight: 800,
+                  fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {h}
+                </th>
+              )
+            })}
           </tr>
-        ) : rows.map((row, ri) => (
-          <tr key={ri} style={{
-            borderBottom: ri < rows.length - 1 ? '1px solid var(--border-light)' : 'none',
-            transition: 'background 0.2s',
-          }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-          >
-            {row.map((cell, ci) => (
-              <td key={ci} style={{ padding: '20px 16px', color: 'var(--text-primary)', verticalAlign: 'middle', fontSize: 15, fontWeight: 500 }}>
-                {cell}
+        </thead>
+        <tbody>
+          {finalRows.length === 0 ? (
+            <tr>
+              <td colSpan={finalHeaders.length} style={{
+                padding: '48px 16px', textAlign: 'center',
+                color: 'var(--text-tertiary)', fontSize: 14,
+              }}>
+                {emptyMsg}
               </td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-)
+            </tr>
+          ) : finalRows.map((row, ri) => (
+            <tr key={ri} style={{
+              borderBottom: ri < finalRows.length - 1 ? '1px solid var(--border-light)' : 'none',
+              transition: 'background 0.18s ease-in-out',
+            }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(197, 160, 89, 0.035)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              {row.map((cell, ci) => {
+                const isSr = ci === srColIndex
+                const renderedCell = (isSr && (typeof cell === 'number' || (typeof cell === 'string' && /^\d+$/.test(cell))))
+                  ? <SrBadge num={cell} />
+                  : cell
+
+                return (
+                  <td key={ci} style={{ 
+                    padding: isSr ? '14px 10px' : '14px 16px', 
+                    color: 'var(--text-primary)', 
+                    verticalAlign: 'middle', 
+                    fontSize: 14, 
+                    fontWeight: 500,
+                    textAlign: isSr ? 'center' : 'left',
+                    width: isSr ? 56 : undefined
+                  }}>
+                    {renderedCell}
+                  </td>
+                )
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 export const Badge = ({ children, color = 'var(--accent-cyan)', style = {} }) => {
   const isVar = String(color).startsWith('var(')

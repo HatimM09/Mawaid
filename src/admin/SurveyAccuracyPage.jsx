@@ -19,7 +19,7 @@ import { getSlotDishes } from '../hooks/useSurvey'
 import { fetchWeekRows, fetchAllUserRows, eraseSurveySlot } from '../lib/surveyRows'
 import {
   T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner, Grid,
-  StatCard, Modal, Alert, fmtDateTime, fmtDate, ErrorBanner
+  StatCard, Modal, Alert, fmtDateTime, fmtDate, ErrorBanner, SrBadge
 } from './ui'
 
 const SLOT_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat']
@@ -535,6 +535,7 @@ export default function SurveyAccuracyPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 900 }}>
               <thead>
                 <tr style={{ textAlign: 'left', color: T.textSub, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', borderBottom: `1px solid ${T.border}` }}>
+                  <th style={{ padding: '12px 14px', width: 44, textAlign: 'center' }}>Sr #</th>
                   <th style={{ padding: '12px 16px' }}>Member</th>
                   <th style={{ padding: '12px 16px', minWidth: 130 }}>Progress</th>
                   <th style={{ padding: '12px 16px' }}>Applied</th>
@@ -546,7 +547,7 @@ export default function SurveyAccuracyPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(r => {
+                {filtered.map((r, idx) => {
                   const isOpen = !!expanded[r.user_id]
                   const pct = r.expected ? Math.round((r.answered / r.expected) * 100) : 0
                   const rowColor = r.failed ? 'rgba(239,68,68,0.04)' : (r.flag === 'partial' ? 'rgba(245,158,11,0.04)' : 'transparent')
@@ -554,6 +555,9 @@ export default function SurveyAccuracyPage() {
                   return (
                     <React.Fragment key={r.user_id}>
                       <tr style={{ borderBottom: `1px solid ${T.border}`, color: T.text, background: rowColor }}>
+                        <td style={{ padding: '12px 14px', textAlign: 'center', width: 44 }}>
+                          <SrBadge num={idx + 1} />
+                        </td>
                         <td style={{ padding: '12px 16px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                             {r.hasOverride && <ShieldCheck size={13} color="#10b981" title="Has override submissions" />}
@@ -600,7 +604,7 @@ export default function SurveyAccuracyPage() {
                       </tr>
                       {isOpen && (
                         <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                          <td colSpan={8} style={{ padding: '0 16px 16px' }}>
+                          <td colSpan={9} style={{ padding: '0 16px 16px' }}>
                             {/* ── TOP MEMBER ACTIONS STRIP ── */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, padding: '8px 12px', background: T.card, borderRadius: 10, border: `1px solid ${T.border}`, flexWrap: 'wrap', gap: 8 }}>
                               <span style={{ fontSize: 12, fontWeight: 700, color: T.textSub }}>
@@ -795,6 +799,7 @@ export default function SurveyAccuracyPage() {
               <table style={{ width:'100%', borderCollapse:'collapse', fontSize: 12, minWidth: 780 }}>
                 <thead>
                   <tr style={{ textAlign:'left', color: T.textSub, fontSize: 10, textTransform:'uppercase', letterSpacing:'0.08em', borderBottom:`1px solid ${T.border}` }}>
+                    <th style={{ padding:'10px 14px', width: 44, textAlign: 'center' }}>Sr #</th>
                     <th style={{ padding:'10px 14px' }}>Time</th>
                     <th style={{ padding:'10px 14px' }}>Member</th>
                     <th style={{ padding:'10px 14px' }}>Action</th>
@@ -804,13 +809,16 @@ export default function SurveyAccuracyPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredWriteLog.slice(0, 100).map(e => {
+                  {filteredWriteLog.slice(0, 100).map((e, idx) => {
                     const u = userMapForLog[e.user_id] || {}
                     const isError = e.status==='error'
                     const isOpen = !!writeLogExpanded[e.id]
                     return (
                       <React.Fragment key={e.id}>
                         <tr style={{ borderBottom:`1px solid ${T.border}`, background: isError ? 'rgba(239,68,68,0.03)' : 'transparent' }}>
+                          <td style={{ padding:'10px 14px', textAlign: 'center', width: 44 }}>
+                            <SrBadge num={idx + 1} />
+                          </td>
                           <td style={{ padding:'10px 14px', whiteSpace:'nowrap', color: T.textSub, fontSize: 11 }}>{fmtDateTime(e.created_at)}</td>
                           <td style={{ padding:'10px 14px' }}>
                             <div style={{ fontWeight: 700, fontSize: 12 }}>{u.name || 'Unknown'}</div>
@@ -825,7 +833,7 @@ export default function SurveyAccuracyPage() {
                         </tr>
                         {isOpen && (
                           <tr style={{ borderBottom:`1px solid ${T.border}` }}>
-                            <td colSpan={6} style={{ padding:'0 14px 14px' }}>
+                            <td colSpan={7} style={{ padding:'0 14px 14px' }}>
                               <div style={{ background: T.inputBg, borderRadius: 10, padding: 12 }}>
                                 <div style={{ fontSize: 11, fontWeight: 800, color: T.textSub, marginBottom: 6, textTransform:'uppercase' }}>Payload</div>
                                 <pre style={{ margin:0, fontSize: 11, color: T.text, whiteSpace:'pre-wrap', wordBreak:'break-word', fontFamily:'monospace', lineHeight:1.5 }}>{JSON.stringify(e.payload||{}, null, 2)}</pre>

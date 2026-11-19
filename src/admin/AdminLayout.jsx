@@ -492,6 +492,26 @@ export default function AdminLayout() {
         main::-webkit-scrollbar { width: 4px; }
         main::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
 
+        .admin-table-wrap::-webkit-scrollbar { height: 6px; }
+        .admin-table-wrap::-webkit-scrollbar-thumb { background: rgba(197, 160, 89, 0.25); border-radius: 6px; }
+        .admin-table-wrap::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); }
+
+        .admin-btn:active {
+          transform: scale(0.97) translateY(1px) !important;
+        }
+
+        .admin-card {
+          position: relative;
+        }
+        .admin-card:hover {
+          border-color: rgba(197, 160, 89, 0.24) !important;
+        }
+
+        .admin-sr-mono {
+          font-family: 'Space Grotesk', 'JetBrains Mono', monospace;
+          font-variant-numeric: tabular-nums;
+        }
+
         .smooth-appear {
           animation: fadeSlideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }

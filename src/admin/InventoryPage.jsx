@@ -13,7 +13,7 @@ import {
 import {
   T, PageWrap, PageTitle, AdminCard, Table,
   Badge, Btn, Spinner, StatCard, Grid,
-  Input, Select, Alert
+  Input, Select, Alert, SrBadge
 } from './ui'
 import { MASTER_INVENTORY_ITEMS } from '../common/masterInventoryData'
 
@@ -434,12 +434,13 @@ export default function InventoryPage({ role: roleProp, initialTab = 'stock' }) 
     return <span style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)', padding: '2px 8px', borderRadius: 6, fontSize: 10, fontWeight: 800 }}>PCS</span>
   }
 
-  const stockRows = filtered.map(p => {
+  const stockRows = filtered.map((p, idx) => {
     const cat = CATEGORIES.find(c => c.id === p.category_id)
     const minQty = Number(p.low_stock ?? p.low_stock_threshold ?? 5)
     const stockVal = Number(p.stock ?? 0)
     const isLow = stockVal <= minQty
     return [
+      <SrBadge key={`sr-stock-${p.id || idx}`} num={idx + 1} />,
       <div key={`item-${p.id}`} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(212, 175, 55, 0.1)', border: '1px solid rgba(212, 175, 55, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>
           {getProductIcon(p.name, p.category_id)}
@@ -522,8 +523,9 @@ export default function InventoryPage({ role: roleProp, initialTab = 'stock' }) 
     ]
   })
 
-  const logRows = auditLog.map((l) => {
+  const logRows = auditLog.map((l, idx) => {
     return [
+      <SrBadge key={`sr-log-${l.id || idx}`} num={idx + 1} />,
       <div key={l.id} style={{ fontWeight: 600 }}>{l.item_name || `Item #${l.item_id}`}</div>,
       <Badge key={`action-${l.id}`} color={l.action === 'add' ? T.success : T.danger}>{l.action?.toUpperCase()}</Badge>,
       <div key={`qty-${l.id}`} style={{ fontWeight: 700 }}>{l.quantity}</div>,
@@ -767,7 +769,7 @@ export default function InventoryPage({ role: roleProp, initialTab = 'stock' }) 
           </Grid>
         ) : (
           <AdminCard style={{ padding: 0, overflow: 'hidden' }}>
-            <Table headers={['Item Detail', 'Category', 'Unit', 'Min. Qty', 'Current Stock', 'Actions']} rows={stockRows} emptyMsg="No inventory items found." />
+            <Table headers={['Sr #', 'Item Detail', 'Category', 'Unit', 'Min. Qty', 'Current Stock', 'Actions']} rows={stockRows} emptyMsg="No inventory items found." />
           </AdminCard>
         )
       ) : (
@@ -798,7 +800,7 @@ export default function InventoryPage({ role: roleProp, initialTab = 'stock' }) 
           </Grid>
 
           <AdminCard style={{ padding: 0, overflow: 'hidden' }}>
-            <Table headers={['Item', 'Type', 'Qty', 'Notes', 'Date & Time']} rows={logRows} emptyMsg="No transaction history yet." />
+            <Table headers={['Sr #', 'Item', 'Type', 'Qty', 'Notes', 'Date & Time']} rows={logRows} emptyMsg="No transaction history yet." />
           </AdminCard>
         </div>
       )}
