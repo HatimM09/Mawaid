@@ -81,7 +81,7 @@ export default function GooglePayStandeeCard({
 
       {/* ── 2. Card Content Area ── */}
       <div style={{ padding: '20px 22px 18px 22px', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-        
+
         {/* Google Pay Logo Row */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, marginBottom: 8 }}>
           {/* Authentic Google Pay G-Ribbon SVG */}

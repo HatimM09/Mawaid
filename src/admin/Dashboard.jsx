@@ -3,15 +3,18 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/firebaseClient'
 import {
-  Users, Star, Calendar, RefreshCw, ArrowUpRight, ChevronRight, AlertCircle, AlertTriangle, QrCode
+  Users, Star, Calendar, RefreshCw, ArrowUpRight, ChevronRight, AlertCircle, AlertTriangle, QrCode,
+  Clock, Tv, CheckCircle2, XCircle, Send, Check, MessageSquare, Shield, Activity, Sparkles, Scan
 } from 'lucide-react'
 import {
-  T, PageWrap, StatCard, AdminCard, Badge, Spinner, Btn, Modal
+  T, PageWrap, StatCard, AdminCard, Badge, Spinner, Btn, Modal, PackingTVView
 } from './ui'
 import { QRCodeCanvas } from 'qrcode.react'
 import { jsPDF } from 'jspdf'
 import { getSurveyTargetWeek } from '../common/utils'
 import { fetchWeekRows } from '../lib/surveyRows'
+import { resolveScannedUser, extractScanTarget } from './scanParser'
+import { playScanSound } from './scanAudio'
 import {
   BarChart, Bar, XAxis, Tooltip, ResponsiveContainer,
   AreaChart, Area, PieChart, Pie, Cell,
@@ -31,6 +34,8 @@ export default function Dashboard() {
   const [inventoryTrend, setInventoryTrend] = useState([
     { name: '1', count: 40 }, { name: '2', count: 30 }, { name: '3', count: 55 }, { name: '4', count: 35 }, { name: '5', count: 70 }, { name: '6', count: 45 }, { name: '7', count: 50 },
   ])
+  const [recentRequests, setRecentRequests] = useState([])
+  const [selectedTVUser, setSelectedTVUser] = useState(null)
   const [badgeKey, setBadgeKey] = useState(0)
   const [lowStockKey, setLowStockKey] = useState(0)
   const [requestsKey, setRequestsKey] = useState(0)
@@ -332,7 +337,7 @@ export default function Dashboard() {
       if (appSettings) appSettings.forEach(row => { settings[row.key] = row.value })
     } catch { /* ignore */ }
     const currentWeekId = getSurveyTargetWeek(settings)
-    const [u, s, f, r, q, allUsers, allSubmissions, allOverride, allInventory] = await Promise.all([
+    const [u, s, f, r, q, allUsers, allSubmissions, allOverride, allInventory, recentReqs] = await Promise.all([
       supabase.from('user_stats').select('user_id', { count: 'exact', head: true }),
       fetchWeekRows(currentWeekId).then(res => ({ count: (res.data || []).length })),
       supabase.from('daily_feedback').select('id', { count: 'exact', head: true }),
@@ -345,6 +350,7 @@ export default function Dashboard() {
       // normal day-responses rows, so without this they show as "pending".
       supabase.from('survey_day_responses').select('user_id, day, l_status, d_status').eq('week_id', currentWeekId),
       supabase.from('inventory').select('id, stock, low_stock_threshold'),
+      supabase.from('thali_requests').select('*').order('created_at', { ascending: false }).limit(5),
     ])
 
     const today = ['sun','mon','tue','wed','thu','fri','sat'][new Date().getDay()]
@@ -386,6 +392,7 @@ export default function Dashboard() {
     })
 
     setUsersList(allUsers.data || [])
+    setRecentRequests(recentReqs.data || [])
 
     const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
     const submittedIds = new Set(submissions.map(row => row.user_id).filter(Boolean))
@@ -406,6 +413,17 @@ export default function Dashboard() {
       })))
     }
   }, [])
+
+  const handleQuickRequestAction = async (id, status) => {
+    try {
+      const { error } = await supabase.from('thali_requests').update({ status }).eq('id', id)
+      if (error) throw error
+      setRecentRequests(prev => prev.map(r => r.id === id ? { ...r, status } : r))
+      showToast(`Request ${status}`, '✅')
+    } catch (e) {
+      alert('Failed: ' + e.message)
+    }
+  }
 
 
   const showToast = useCallback((message, icon) => {
@@ -509,20 +527,31 @@ export default function Dashboard() {
     }
   }, [loadStats, loadFeedbackByDay, showToast])
 
-  // --- WIRELESS SCANNER REDIRECT ---
+  // --- HIGH-PRECISION WIRELESS & HARDWARE SCANNER LISTENER ---
   useEffect(() => {
     let scanBuffer = ''
     let lastKeyTime = Date.now()
 
     const handleKeyDown = (e) => {
+      const isInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'
       const now = Date.now()
-      if (now - lastKeyTime > 100) scanBuffer = ''
+      if (now - lastKeyTime > 180) scanBuffer = ''
       lastKeyTime = now
 
       if (e.key === 'Enter') {
-        if (scanBuffer.startsWith('ALMAWAID:')) {
-          const userId = scanBuffer.split(':')[1]
-          navigate(`/admin/surveys?userId=${userId}`)
+        const text = scanBuffer.trim()
+        if (text && (text.length >= 2 || text.toUpperCase().includes('ALMAWAID'))) {
+          if (isInput) e.target.blur()
+          e.preventDefault()
+          resolveScannedUser(text, usersList).then(u => {
+            if (u) {
+              playScanSound('proceed')
+              navigate(`/admin/survey-tracking?scan=${encodeURIComponent(u.user_id || u.thali_number)}`)
+            } else {
+              playScanSound('skip')
+              showToast(`Unknown member scanned: ${text}`, '❌')
+            }
+          })
           scanBuffer = ''
         }
       } else if (e.key.length === 1) {
@@ -532,7 +561,7 @@ export default function Dashboard() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [navigate])
+  }, [navigate, usersList, showToast])
 
   if (loading) return <Spinner />
 
@@ -541,58 +570,98 @@ export default function Dashboard() {
       {/* Dashboard Bento Grid */}
       <div className="bento-grid">
         {/* Header */}
-        <div style={{ gridArea: 'header', marginBottom: 10 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 900, color: 'var(--accent-gold)', margin: 0, letterSpacing: '0.1em' }}>ADMIN PORTAL</h1>
+        <div style={{ gridArea: 'header', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '3px 10px', borderRadius: 999,
+                background: 'var(--accent-bg)', border: '1px solid var(--accent-border)',
+                fontSize: 10, fontWeight: 800, color: 'var(--accent-primary)',
+                letterSpacing: '0.12em', textTransform: 'uppercase'
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-primary)', boxShadow: '0 0 8px var(--accent-primary)' }} />
+                OPERATIONAL COMMAND CENTER
+              </span>
+            </div>
+            <h1 style={{ fontSize: 26, fontWeight: 900, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em' }}>
+              Al-Mawaid Administration
+            </h1>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => navigate('/admin/survey-tracking')}
+              style={{
+                padding: '9px 16px', borderRadius: 12, border: '1px solid var(--accent-border)',
+                background: 'var(--accent-bg)', color: 'var(--accent-primary)',
+                fontSize: 12, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                transition: 'all 0.2s cubic-bezier(0.32, 0.72, 0, 1)'
+              }}
+            >
+              <span>📊 Live Survey Tracking</span>
+            </button>
+            <button
+              onClick={() => setQrHubOpen(true)}
+              style={{
+                padding: '9px 16px', borderRadius: 12, border: 'none',
+                background: 'var(--accent-grad)', color: '#000',
+                fontSize: 12, fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                boxShadow: '0 4px 14px rgba(0,0,0,0.15)', transition: 'all 0.2s cubic-bezier(0.32, 0.72, 0, 1)'
+              }}
+            >
+              <QrCode size={14} /> <span>Print Tiffin Stickers</span>
+            </button>
+          </div>
         </div>
 
         {/* Stat Cards */}
         <AdminCard 
           onClick={() => navigate('/admin/users')}
-          style={{ gridArea: 'stat1', background: 'rgba(212, 175, 55, 0.05)', border: '1px solid rgba(212, 175, 55, 0.1)', cursor: 'pointer', transition: 'all 0.3s' }}
+          style={{ gridArea: 'stat1', background: 'var(--bg-card)', border: '1px solid var(--border-light)', cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.32, 0.72, 0, 1)' }}
           className="hover-lift"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Users size={16} color="var(--accent-gold)" />
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--accent-bg)', border: '1px solid var(--accent-border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Users size={16} color="var(--accent-primary)" />
             </div>
             <QrCode 
               size={14} 
-              color="var(--accent-gold)" 
-              style={{ opacity: 0.5, cursor: 'pointer' }} 
+              color="var(--accent-primary)" 
+              style={{ opacity: 0.7, cursor: 'pointer' }} 
               onClick={(e) => {
                 e.stopPropagation()
                 setQrHubOpen(true)
               }} 
             />
           </div>
-          <div style={{ fontSize: 32, fontWeight: 900, marginTop: 12 }}>{stats.users}</div>
+          <div style={{ fontSize: 32, fontWeight: 900, marginTop: 12, color: 'var(--text-primary)', fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: 'tabular-nums' }}>{stats.users}</div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)' }}>Members (QR Ready)</div>
         </AdminCard>
 
         <AdminCard 
           onClick={() => navigate(`/admin/survey-tracking?meal=${new Date().getHours() + new Date().getMinutes() / 60 >= 20 || new Date().getHours() + new Date().getMinutes() / 60 < 14 ? 'lunch' : 'dinner'}`)}
-          style={{ gridArea: 'stat2', background: 'rgba(212, 175, 55, 0.05)', border: '1px solid rgba(212, 175, 55, 0.1)', cursor: 'pointer', transition: 'all 0.3s' }}
+          style={{ gridArea: 'stat2', background: 'var(--bg-card)', border: '1px solid var(--border-light)', cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.32, 0.72, 0, 1)' }}
           className="hover-lift"
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--accent-bg)', border: '1px solid var(--accent-border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ fontSize: 16 }}>🍱</span>
             </div>
             <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-tertiary)' }}>
               {new Date().toLocaleDateString('en-GB', { weekday: 'long' })}
             </div>
           </div>
-          <div style={{ fontSize: 32, fontWeight: 900, marginTop: 12 }}>{stats.todayThalis}</div>
+          <div style={{ fontSize: 32, fontWeight: 900, marginTop: 12, color: 'var(--text-primary)', fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: 'tabular-nums' }}>{stats.todayThalis}</div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)' }}>
             Thalis for {new Date().getHours() + new Date().getMinutes() / 60 >= 20 || new Date().getHours() + new Date().getMinutes() / 60 < 14 ? 'Lunch' : 'Dinner'}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
             <div style={{ flex: 1, padding: '6px 10px', borderRadius: 8, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', textAlign: 'center' }}>
-              <span style={{ fontSize: 15, fontWeight: 900, color: '#10b981' }}>{stats.todayLunch}</span>
+              <span style={{ fontSize: 15, fontWeight: 900, color: '#10b981', fontFamily: "'Space Grotesk', monospace" }}>{stats.todayLunch}</span>
               <span style={{ fontSize: 9.5, fontWeight: 800, color: 'var(--text-tertiary)', marginLeft: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Yes Lunch</span>
             </div>
             <div style={{ flex: 1, padding: '6px 10px', borderRadius: 8, background: 'rgba(94,156,224,0.08)', border: '1px solid rgba(94,156,224,0.2)', textAlign: 'center' }}>
-              <span style={{ fontSize: 15, fontWeight: 900, color: '#5e9ce0' }}>{stats.todayDinner}</span>
+              <span style={{ fontSize: 15, fontWeight: 900, color: '#5e9ce0', fontFamily: "'Space Grotesk', monospace" }}>{stats.todayDinner}</span>
               <span style={{ fontSize: 9.5, fontWeight: 800, color: 'var(--text-tertiary)', marginLeft: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Yes Dinner</span>
             </div>
           </div>
@@ -600,78 +669,259 @@ export default function Dashboard() {
 
         <AdminCard 
           onClick={() => navigate('/admin/queries')}
-          style={{ gridArea: 'stat3', background: 'rgba(212, 175, 55, 0.05)', border: '1px solid rgba(212, 175, 55, 0.1)', cursor: 'pointer', transition: 'all 0.3s' }}
+          style={{ gridArea: 'stat3', background: 'var(--bg-card)', border: '1px solid var(--border-light)', cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.32, 0.72, 0, 1)' }}
           className="hover-lift"
         >
-          <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ color: 'var(--accent-gold)', fontWeight: 900, fontSize: 18 }}>?</span>
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--accent-bg)', border: '1px solid var(--accent-border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ color: 'var(--accent-primary)', fontWeight: 900, fontSize: 18 }}>?</span>
           </div>
-          <div style={{ fontSize: 32, fontWeight: 900, marginTop: 12 }}>{stats.queries}</div>
+          <div style={{ fontSize: 32, fontWeight: 900, marginTop: 12, color: 'var(--text-primary)', fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: 'tabular-nums' }}>{stats.queries}</div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)' }}>Open Queries</div>
         </AdminCard>
 
         <AdminCard 
           onClick={() => navigate('/admin/inventory')} 
-          style={{ gridArea: 'stat4', background: 'rgba(212, 175, 55, 0.05)', border: '1px solid rgba(212, 175, 55, 0.1)', cursor: 'pointer', transition: 'all 0.3s' }}
+          style={{ gridArea: 'stat4', background: 'var(--bg-card)', border: '1px solid var(--border-light)', cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.32, 0.72, 0, 1)' }}
           className="hover-lift"
         >
-          <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <AlertTriangle size={16} color="var(--accent-gold)" />
+          <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--accent-bg)', border: '1px solid var(--accent-border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <AlertTriangle size={16} color="var(--accent-primary)" />
           </div>
-          <div style={{ fontSize: 32, fontWeight: 900, marginTop: 12, color: stats.lowStock > 0 ? '#f43f5e' : 'var(--accent-gold)' }}><span key={lowStockKey} className="stock-glow">{stats.lowStock}</span></div>
+          <div style={{ fontSize: 32, fontWeight: 900, marginTop: 12, color: stats.lowStock > 0 ? '#f43f5e' : 'var(--accent-primary)', fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: 'tabular-nums' }}><span key={lowStockKey} className="stock-glow">{stats.lowStock}</span></div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)' }}>Low Stock Items</div>
         </AdminCard>
 
-        {/* QR Identity Hub — Core Member Registry */}
+        {/* ── LIVE OPERATIONS COMMAND MODULE (TV Packing & Meal Service) ── */}
+        <AdminCard style={{
+          gridArea: 'live-ops',
+          background: 'radial-gradient(ellipse at top left, rgba(212, 175, 55, 0.08), transparent 70%), var(--bg-card)',
+          border: '1px solid var(--border-light)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+          position: 'relative',
+          overflow: 'hidden'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px', borderRadius: 20, background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }} />
+                Meal Dispatch Active
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-primary)', fontFamily: "'Space Grotesk', sans-serif" }}>
+                Live Operations & Packing Desk
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                Real-time kitchen tally for today ({stats.todayThalis} active thalis)
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => navigate('/admin/tracking')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '8px 14px', borderRadius: 10,
+                  background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-light)',
+                  color: 'var(--text-primary)', fontSize: 12, fontWeight: 700,
+                  cursor: 'pointer', transition: 'all 0.2s'
+                }}
+              >
+                <Activity size={14} color="var(--accent-gold)" />
+                Survey Tracker
+              </button>
+              <button
+                onClick={() => {
+                  if (usersList.length > 0) {
+                    setSelectedTVUser(usersList[0])
+                  } else {
+                    navigate('/admin/tracking?scan=true')
+                  }
+                }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '8px 14px', borderRadius: 10,
+                  background: 'linear-gradient(135deg, var(--accent-gold), #b8860b)',
+                  border: 'none', color: '#000', fontSize: 12, fontWeight: 800,
+                  cursor: 'pointer', boxShadow: '0 4px 14px rgba(212,175,55,0.25)',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <Tv size={14} />
+                Launch TV View
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Metrics Bar */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, background: 'rgba(255,255,255,0.02)', padding: '12px 14px', borderRadius: 14, border: '1px solid var(--border-glass)' }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)' }}>LUNCH THALIS</div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: 'var(--accent-gold)', fontFamily: "'Space Grotesk', sans-serif" }}>
+                {stats.todayLunch}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)' }}>DINNER THALIS</div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: '#60a5fa', fontFamily: "'Space Grotesk', sans-serif" }}>
+                {stats.todayDinner}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)' }}>SUBMISSION RATE</div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: '#10b981', fontFamily: "'Space Grotesk', sans-serif" }}>
+                {stats.users > 0 ? Math.round((stats.surveys / stats.users) * 100) : 0}%
+              </div>
+            </div>
+          </div>
+
+          {/* Progress meter */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700, marginBottom: 6 }}>
+              <span style={{ color: 'var(--text-tertiary)' }}>Active Weekly Coverage</span>
+              <span style={{ color: 'var(--text-primary)' }}>{stats.surveys} of {stats.users} members submitted</span>
+            </div>
+            <div style={{ width: '100%', height: 7, borderRadius: 6, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: `${stats.users > 0 ? Math.min(100, Math.round((stats.surveys / stats.users) * 100)) : 0}%`,
+                background: 'linear-gradient(90deg, var(--accent-gold), #10b981)',
+                borderRadius: 6,
+                transition: 'width 0.8s cubic-bezier(0.32, 0.72, 0, 1)'
+              }} />
+            </div>
+          </div>
+        </AdminCard>
+
+        {/* ── QUICK ACTION DESK: PENDING THALI REQUESTS ── */}
+        <AdminCard style={{
+          gridArea: 'quick-requests',
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-light)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 8, borderBottom: '1px solid var(--border-light)' }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>Pending Requests</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>1-Click Fast Approval Desk</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Badge color="var(--accent-gold)">{recentRequests.filter(r => (r.status || 'pending') === 'pending').length} Actionable</Badge>
+              <Btn variant="ghost" size="sm" onClick={() => navigate('/admin/requests')} style={{ padding: '4px 8px', fontSize: 11 }}>
+                View All
+              </Btn>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', maxHeight: 220 }} className="custom-scroll">
+            {recentRequests.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '30px 0', fontSize: 13, color: 'var(--text-tertiary)' }}>
+                <CheckCircle2 size={24} color="#10b981" style={{ margin: '0 auto 8px', opacity: 0.8 }} />
+                No pending requests. All clear!
+              </div>
+            ) : recentRequests.map(req => {
+              const isPending = (req.status || 'pending') === 'pending'
+              const isStop = req.request_type === 'stop'
+              return (
+                <div key={req.id} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 12px', borderRadius: 10,
+                  background: isPending ? 'rgba(212, 175, 55, 0.04)' : 'rgba(255,255,255,0.01)',
+                  border: `1px solid ${isPending ? 'var(--accent-border)' : 'var(--border-glass)'}`,
+                  transition: 'all 0.2s'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                    <div style={{
+                      padding: '4px 8px', borderRadius: 6,
+                      background: isStop ? 'rgba(244,63,94,0.12)' : 'rgba(16,185,129,0.12)',
+                      color: isStop ? '#f43f5e' : '#10b981',
+                      fontSize: 10, fontWeight: 900, textTransform: 'uppercase'
+                    }}>
+                      {req.request_type || 'Req'}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                        {req.name || `User #${req.user_id ? req.user_id.slice(0, 6) : '—'}`}
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                        {req.from_date || 'Immediate'} {req.to_date ? `→ ${req.to_date}` : ''}
+                      </div>
+                    </div>
+                  </div>
+
+                  {isPending ? (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        onClick={() => handleQuickRequestAction(req.id, 'approved')}
+                        title="Approve"
+                        style={{
+                          width: 28, height: 28, borderRadius: 8,
+                          background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)',
+                          color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Check size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleQuickRequestAction(req.id, 'rejected')}
+                        title="Reject"
+                        style={{
+                          width: 28, height: 28, borderRadius: 8,
+                          background: 'rgba(244, 63, 94, 0.15)', border: '1px solid rgba(244, 63, 94, 0.3)',
+                          color: '#f43f5e', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: req.status === 'approved' ? '#10b981' : '#f43f5e' }}>
+                      {req.status}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </AdminCard>
+
+        {/* ── QR IDENTITY HUB — CORE MEMBER REGISTRY & HIGH-DPI STICKERS ── */}
         <AdminCard style={{ gridArea: 'qr-hub', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 8, borderBottom: '1px solid var(--border-light)' }}>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 800 }}>QR Identity Hub</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Core Registry Node</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>QR Identity & Stickers</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>600 DPI Thermal & PDF Sticker Hub</div>
             </div>
             <QrCode size={20} color="var(--accent-gold)" />
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', maxHeight: 240 }} className="custom-scroll">
-            {(missingSurveys || []).slice(0, 6).map(u => (
-              <div key={u.user_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', transition: 'all 0.2s' }} className="member-row">
+            {(usersList || []).slice(0, 6).map(u => (
+              <div key={u.user_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-glass)', transition: 'all 0.2s' }} className="member-row">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(212, 175, 55, 0.08)', color: 'var(--accent-gold)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 900 }}>
+                  <div style={{ minWidth: 36, height: 32, padding: '0 8px', borderRadius: 8, background: 'rgba(212, 175, 55, 0.08)', color: 'var(--accent-gold)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 900, fontFamily: "'Space Grotesk', monospace" }}>
                     #{u.thali_number || '—'}
                   </div>
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 700 }}>{u.name || 'Anonymous'}</div>
-                    <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1 }}>Pending survey</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{u.name || 'Anonymous'}</div>
+                    <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1 }}>ID: {u.user_id ? u.user_id.slice(0, 8) : '—'}</div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      window.open(`https://wa.me/${helpline ? helpline.replace(/[^0-9]/g,'') : ''}?text=Hi%20${encodeURIComponent(u.name || 'Member')}%2C%20please%20submit%20your%20weekly%20meal%20survey.%20`, '_blank')
-                    }}
-                    style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid rgba(37,211,102,0.3)', background: 'rgba(37,211,102,0.08)', color: '#25D366', cursor: 'pointer', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}
-                    title="Direct Message"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                    Msg
-                  </button>
                   <Btn variant="ghost" size="sm" onClick={(e) => {
                     e.stopPropagation()
                     setSelectedQRUser(u)
                     setQrHubOpen(true)
                   }} style={{ padding: '6px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <QrCode size={12} /> Show QR
+                    <QrCode size={12} /> Sticker
                   </Btn>
                 </div>
               </div>
             ))}
-            {(!missingSurveys || missingSurveys.length === 0) && (
-              <div style={{ textAlign: 'center', padding: '30px 0', fontSize: 13, color: 'var(--text-tertiary)' }}>
-                <div style={{ fontSize: 24, marginBottom: 8 }}>✓</div>
-                All members have submitted their surveys
-              </div>
-            )}
           </div>
 
           <Btn
@@ -679,16 +929,16 @@ export default function Dashboard() {
             style={{ borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 4 }}
             onClick={() => setQrHubOpen(true)}
           >
-            <QrCode size={14} /> Open QR Hub
+            <QrCode size={14} /> Open Full Sticker Generator
           </Btn>
         </AdminCard>
 
-        {/* Inventory */}
+        {/* ── INVENTORY MONITOR ── */}
         <AdminCard onClick={() => navigate('/admin/inventory')} style={{ gridArea: 'inventory', display: 'flex', flexDirection: 'column', gap: 12, cursor: 'pointer' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 800 }}>Inventory</div>
-              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Stock levels</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>Inventory Monitor</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Stock balance & burn-rate</div>
             </div>
             <ChevronRight size={18} color="var(--text-tertiary)" />
           </div>
@@ -705,35 +955,48 @@ export default function Dashboard() {
               </AreaChart>
             </ResponsiveContainer>
           </div>
-        </AdminCard>
-
-        {/* Thali */}
-        <AdminCard onClick={() => navigate('/admin/requests')} style={{ gridArea: 'thali', display: 'flex', flexDirection: 'column', gap: 12, cursor: 'pointer' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(212, 175, 55, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Star size={18} color="var(--accent-gold)" />
+          {stats.lowStock > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8, background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.2)', color: '#f43f5e', fontSize: 11, fontWeight: 700 }}>
+              <AlertTriangle size={12} />
+              {stats.lowStock} items critically low
             </div>
-            <div style={{ fontSize: 24, fontWeight: 900 }}><span key={requestsKey} className="requests-glow">{stats.requests}</span></div>
-          </div>
-          <div style={{ fontSize: 13, fontWeight: 700 }}>Thali Requests</div>
-          <Btn variant="primary" size="sm" style={{ width: '100%' }}>View All</Btn>
+          )}
         </AdminCard>
 
-        {/* Missing Surveys */}
+        {/* ── PENDING SURVEY NOTIFICATIONS & WHATSAPP DISPATCH ── */}
         <AdminCard onClick={() => navigate('/admin/surveys')} style={{ gridArea: 'actionable', display: 'flex', flexDirection: 'column', gap: 12, cursor: 'pointer' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent-pink)' }}>PENDING SURVEYS</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent-pink)', letterSpacing: '0.04em' }}>SURVEY OUTSTANDING</div>
             <Badge color="var(--accent-pink)"><span key={badgeKey} className="badge-pulse">{missingSurveys.length}</span></Badge>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', maxHeight: 200, display: 'flex', flexDirection: 'column', gap: 8 }} className="custom-scroll">
             {missingSurveys.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 12, color: 'var(--text-tertiary)' }}>All members have submitted! ✓</div>
-            ) : missingSurveys.map(u => (                  <div key={u.user_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)' }}>
+              <div style={{ textAlign: 'center', padding: '20px 0', fontSize: 12, color: 'var(--text-tertiary)' }}>
+                <CheckCircle2 size={24} color="#10b981" style={{ margin: '0 auto 6px' }} />
+                100% responses recorded!
+              </div>
+            ) : missingSurveys.slice(0, 15).map(u => (
+              <div key={u.user_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 10, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ fontSize: 10, fontWeight: 900, color: '#ffffff', width: 30, textShadow: '0 0 6px rgba(212,175,55,0.2)' }}>#{u.thali_number || '—'}</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#ffffff', textShadow: '0 0 6px rgba(255,255,255,0.06)' }}>{u.name || 'Anonymous'}</div>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: 'var(--accent-primary)', width: 36, fontFamily: "'Space Grotesk', monospace" }}>#{u.thali_number || '—'}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{u.name || 'Anonymous'}</div>
                 </div>
-                <ArrowUpRight size={14} color="var(--text-tertiary)" />
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    window.open(`https://wa.me/${helpline ? helpline.replace(/[^0-9]/g,'') : ''}?text=Hi%20${encodeURIComponent(u.name || 'Member')}%2C%20please%20submit%20your%20weekly%20meal%20survey.%20`, '_blank')
+                  }}
+                  style={{
+                    padding: '4px 8px', borderRadius: 6,
+                    background: 'rgba(37,211,102,0.1)', border: '1px solid rgba(37,211,102,0.3)',
+                    color: '#25D366', cursor: 'pointer', fontSize: 10, fontWeight: 700,
+                    display: 'flex', alignItems: 'center', gap: 4
+                  }}
+                  title="WhatsApp Prompt"
+                >
+                  <Send size={10} />
+                  Ping
+                </button>
               </div>
             ))}
           </div>
@@ -749,7 +1012,7 @@ export default function Dashboard() {
           grid-template-areas: 
             "header header header header"
             "stat1 stat2 stat3 stat4"
-            "qr-hub qr-hub inventory thali"
+            "live-ops live-ops quick-requests quick-requests"
             "qr-hub qr-hub inventory actionable";
         }
 
@@ -763,13 +1026,14 @@ export default function Dashboard() {
           animation: slideUp 0.5s ease-out forwards;
         }
 
-        .bento-grid > *:nth-child(1) { animation-delay: 0.1s; }
-        .bento-grid > *:nth-child(2) { animation-delay: 0.15s; }
-        .bento-grid > *:nth-child(3) { animation-delay: 0.2s; }
-        .bento-grid > *:nth-child(4) { animation-delay: 0.25s; }
-        .bento-grid > *:nth-child(5) { animation-delay: 0.3s; }
-        .bento-grid > *:nth-child(6) { animation-delay: 0.35s; }
-        .bento-grid > *:nth-child(7) { animation-delay: 0.4s; }
+        .bento-grid > *:nth-child(1) { animation-delay: 0.05s; }
+        .bento-grid > *:nth-child(2) { animation-delay: 0.1s; }
+        .bento-grid > *:nth-child(3) { animation-delay: 0.15s; }
+        .bento-grid > *:nth-child(4) { animation-delay: 0.2s; }
+        .bento-grid > *:nth-child(5) { animation-delay: 0.25s; }
+        .bento-grid > *:nth-child(6) { animation-delay: 0.3s; }
+        .bento-grid > *:nth-child(7) { animation-delay: 0.35s; }
+        .bento-grid > *:nth-child(8) { animation-delay: 0.4s; }
 
         @media (max-width: 1200px) {
           .bento-grid {
@@ -778,23 +1042,28 @@ export default function Dashboard() {
               "header header"
               "stat1 stat2"
               "stat3 stat4"
+              "live-ops live-ops"
+              "quick-requests quick-requests"
               "qr-hub qr-hub"
-              "inventory thali"
-              "actionable actionable";
+              "inventory actionable";
           }
         }
 
         @media (max-width: 768px) {
           .bento-grid {
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: 1fr;
             grid-template-areas: 
-              "header header"
-              "stat1 stat2"
-              "stat3 stat4"
-              "qr-hub qr-hub"
-              "inventory inventory"
-              "thali actionable";
-            gap: 12px;
+              "header"
+              "stat1"
+              "stat2"
+              "stat3"
+              "stat4"
+              "live-ops"
+              "quick-requests"
+              "qr-hub"
+              "inventory"
+              "actionable";
+            gap: 14px;
           }
           
           .bento-grid > div[style*="gridArea: 'header'"] {
@@ -998,6 +1267,16 @@ export default function Dashboard() {
           </div>
         )}
       </Modal>
+
+      {/* Fullscreen TV Packing View Modal */}
+      {selectedTVUser && (
+        <PackingTVView 
+          user={selectedTVUser} 
+          meal={stats.todayLunch >= stats.todayDinner ? 'lunch' : 'dinner'} 
+          day={['sun','mon','tue','wed','thu','fri','sat'][new Date().getDay()]}
+          onClose={() => setSelectedTVUser(null)} 
+        />
+      )}
 
       {/* Real-time toast notification */}
       <div key={toast.key} className="toast-pop" style={{

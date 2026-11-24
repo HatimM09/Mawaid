@@ -18,6 +18,8 @@ import {
 } from '../common/utils'
 import { isRotiItem } from '../hooks/useSurvey'
 import { fetchUserSurveyRow, fetchAllUserRows, buildMealDishMap, normalizeMealStatus } from '../lib/surveyRows'
+import { resolveScannedUser, extractScanTarget } from './scanParser'
+import { playScanSound } from './scanAudio'
 import RequestsAdminPage from './RequestsAdminPage'
 import QueriesAdminPage from './QueriesAdminPage'
 import DailySurveyTracking from './DailySurveyTracking'
@@ -100,8 +102,8 @@ function ScanHeaderCard({ staffInfo, onScan, onNotices, currentMeal, mealOverrid
       display: 'flex', 
       flexDirection: 'column', 
       gap: 20,
-      background: 'linear-gradient(135deg, rgba(197, 160, 89, 0.05) 0%, rgba(15, 12, 8, 0.9) 100%)',
-      border: '1px solid var(--accent-border)',
+      background: 'var(--bg-card)',
+      border: '1px solid var(--border-light)',
       position: 'relative',
       overflow: 'hidden'
     }}>
@@ -145,7 +147,7 @@ function ScanHeaderCard({ staffInfo, onScan, onNotices, currentMeal, mealOverrid
             alignItems: 'center',
             gap: 10,
             padding: '10px 16px',
-            background: 'rgba(197, 160, 89, 0.1)',
+            background: 'var(--accent-bg)',
             border: '1px solid var(--accent-border)',
             borderRadius: 50,
             minWidth: 160
@@ -370,24 +372,22 @@ export default function KhidmatPortal({ signOut }) {
     return () => clearInterval(interval)
   }, [mealOverride])
 
-  // --- WIRELESS SCANNER SUPPORT ---
+  // --- WIRELESS & USB SCANNER SUPPORT ---
   useEffect(() => {
     let scanBuffer = ''
     let lastKeyTime = Date.now()
 
     const handleKeyDown = (e) => {
+      if (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return
       const now = Date.now()
-      if (now - lastKeyTime > 100) scanBuffer = ''
+      if (now - lastKeyTime > 150) scanBuffer = ''
       lastKeyTime = now
 
       if (e.key === 'Enter') {
         const text = scanBuffer.trim()
+        scanBuffer = ''
         if (text) {
-          const userId = text.replace(/^ALMAWAID:/i, '').trim()
-          if (userId) {
-            processScan(userId)
-          }
-          scanBuffer = ''
+          processScan(text)
         }
       } else if (e.key.length === 1) {
         scanBuffer += e.key
@@ -398,28 +398,15 @@ export default function KhidmatPortal({ signOut }) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  const processScan = async (rawUserId) => {
+  const processScan = async (rawInput) => {
     try {
-      const cleanId = String(rawUserId || '').trim().replace(/^ALMAWAID:/i, '').trim()
-      if (!cleanId) return
-
-      const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-      const cleanTarget = cleanThali(cleanId)
-
-      let { data: u } = await supabase.from('user_stats').select('*').eq('user_id', cleanId).maybeSingle()
+      if (!rawInput) return
+      const u = await resolveScannedUser(rawInput)
       if (!u) {
-        const { data: uById } = await supabase.from('user_stats').select('*').eq('id', cleanId).maybeSingle()
-        u = uById
+        playScanSound('skip')
+        return
       }
-      if (!u) {
-        const { data: uByThali } = await supabase.from('user_stats').select('*').eq('thali_number', cleanId).maybeSingle()
-        u = uByThali
-      }
-      if (!u && cleanTarget) {
-        const { data: allU } = await supabase.from('user_stats').select('*')
-        u = (allU || []).find(x => cleanThali(x.thali_number) === cleanTarget || (x.email && x.email.toLowerCase().trim() === cleanId.toLowerCase()))
-      }
-      if (!u) return
+      playScanSound('proceed')
       
       const targetUserId = u.user_id || u.id
       const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
@@ -585,36 +572,51 @@ export default function KhidmatPortal({ signOut }) {
 
   // --- CAMERA SCANNER ---
   useEffect(() => {
-    if (isScanning) {
-      const qrBoxSize = window.innerWidth < 600 ? 200 : 250;
-      const scanner = new Html5QrcodeScanner("portal-reader", {
-        fps: 10,
-        qrbox: qrBoxSize,
-        supportedScanTypes: [
-          Html5QrcodeScanType.SCAN_TYPE_CAMERA,
-          Html5QrcodeScanType.SCAN_TYPE_FILE
-        ],
-        experimentalFeatures: { useBarCodeDetectorIfSupported: true }
-      });
-      
-      const handleScan = async (decodedText) => {
-        if (decodedText.startsWith('ALMAWAID:')) {
-          const userId = decodedText.split(':')[1];
+    if (!isScanning) return
+    let scanner = null
+    let isCancelled = false
+
+    const timer = setTimeout(() => {
+      if (isCancelled) return
+      const el = document.getElementById("portal-reader")
+      if (!el) return
+
+      try {
+        const qrBoxSize = window.innerWidth < 600 ? 200 : 250;
+        scanner = new Html5QrcodeScanner("portal-reader", {
+          fps: 10,
+          qrbox: qrBoxSize,
+          supportedScanTypes: [
+            Html5QrcodeScanType.SCAN_TYPE_CAMERA,
+            Html5QrcodeScanType.SCAN_TYPE_FILE
+          ],
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+        });
+        
+        const handleScan = async (decodedText) => {
+          if (!decodedText) return;
           try {
             await scanner.clear();
           } catch (e) {
             console.error("Failed to clear scanner", e);
           }
           setIsScanning(false);
-          processScan(userId);
-        }
-      };
+          processScan(decodedText);
+        };
 
-      scanner.render(handleScan, () => {});
-      return () => {
+        scanner.render(handleScan, () => {});
+      } catch (err) {
+        console.warn('Portal QR scanner initialization deferred:', err)
+      }
+    }, 80)
+
+    return () => {
+      isCancelled = true
+      clearTimeout(timer)
+      if (scanner) {
         scanner.clear().catch(e => console.error("Scanner cleanup failed", e));
-      };
-    }
+      }
+    };
   }, [isScanning])
 
   useEffect(() => {

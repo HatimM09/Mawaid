@@ -122,7 +122,7 @@ export default function UpiPayPage() {
         if (cfgErr) setLoadError('Could not verify receiver UPI ID. Showing default.')
 
         const map = {}
-        ;(rows || []).forEach(r => { map[r.key] = r.value })
+          ; (rows || []).forEach(r => { map[r.key] = r.value })
         setReceiverVpa(String(map.upi_id || '').trim())
         if (map.upi_mc) setMerchantCode(String(map.upi_mc).trim())
         if (map.upi_payee_name) setPayeeName(String(map.upi_payee_name).trim())

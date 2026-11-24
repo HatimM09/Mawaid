@@ -144,7 +144,7 @@ export default function FeedbackAdminPage() {
       <PageTitle>Meal Feedback</PageTitle>
 
       {/* Stats */}
-      <div className="feedback-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
+      <div className="feedback-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
         <StatCard icon="📋" label="Total" value={totals.count} />
         <StatCard icon="🕐" label="Last 24h" value={recentCount} color="#e09855" />
         <StatCard icon="🍛" label="Avg Lunch"  value={`${totals.avgLunch}★`}  color="#c49c5a" />

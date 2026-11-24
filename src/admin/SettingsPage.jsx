@@ -1370,7 +1370,7 @@ export default function SettingsPage() {
                 <div style={{ fontSize: 13, fontWeight: 700, color: T.accent, marginBottom: 10, paddingBottom: 6, borderBottom: `1px solid ${T.border}` }}>
                   {day}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
                   {['lunch', 'dinner'].map(meal => {
                     const dishes = getDishes(day, meal)
                     return (

@@ -204,7 +204,7 @@ export default function QueriesAdminPage() {
       </div>
 
       {/* Quick counts */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
+      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
         {[{ label: 'Open', count: openCount, color: '#e09855' }, { label: 'Resolved', count: resolvedCount, color: '#5eba82' }].map(({ label, count, color }) => (
           <div key={label} style={{
             flex: 1, background: T.card, border: `1px solid ${color}28`,
@@ -255,7 +255,7 @@ export default function QueriesAdminPage() {
                   <div style={{
                     width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
                     background: T.accentGrad, display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', fontSize: 16, fontWeight: 700, color: '#fff',
+                    justifyContent: 'center', fontSize: 16, fontWeight: 900, color: '#000',
                   }}>
                     {(u.name || u.email || 'U').charAt(0).toUpperCase()}
                   </div>

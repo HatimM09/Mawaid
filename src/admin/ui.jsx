@@ -1,9 +1,14 @@
 // src/admin/ui.jsx — shared admin UI primitives
-import React, { useState, useEffect, useId } from 'react'
-import { AlertCircle, X, Maximize2, Minimize2, Trash2 } from 'lucide-react'
+import React, { useState, useEffect, useId, useRef } from 'react'
+import {
+  AlertCircle, X, Maximize2, Minimize2, Trash2, Volume2, VolumeX,
+  Mic, MicOff, Sun, Moon, Clock, Sparkles, HelpCircle, History, RotateCcw,
+  CheckCircle2, XCircle
+} from 'lucide-react'
 import { eraseSurveySlot } from '../lib/surveyRows'
 import { isRotiItem } from '../hooks/useSurvey'
 import { formatWeekRange, getCurrentMealByTime } from '../common/utils'
+import { playScanSound, speakScanStatus } from './scanAudio'
 
 export const T = {
   bg: 'var(--bg-deep)',
@@ -33,7 +38,59 @@ export const T = {
 
 export const updateSystemTheme = (themeId) => {
   const root = document.documentElement;
-  if (themeId === 'dark') {
+  try {
+    localStorage.setItem('almawaid_admin_theme', themeId)
+  } catch {}
+
+  if (themeId === 'obsidian') {
+    // Pure OLED Obsidian & High-Contrast Champagne (Stitch Dark Flagship)
+    root.style.setProperty('--bg-deep', '#06080c');
+    root.style.setProperty('--bg-surface', 'rgba(18, 22, 34, 0.7)');
+    root.style.setProperty('--bg-card', 'rgba(18, 22, 34, 0.7)');
+    root.style.setProperty('--bg-card-hover', 'rgba(197, 160, 89, 0.08)');
+    root.style.setProperty('--bg-grad', 'linear-gradient(180deg, #06080c 0%, #0d1118 100%)');
+    root.style.setProperty('--text-primary', '#ffffff');
+    root.style.setProperty('--text-tertiary', 'rgba(255, 255, 255, 0.65)');
+    root.style.setProperty('--accent-primary', '#e5c07b');
+    root.style.setProperty('--accent-cyan', '#e5c07b');
+    root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #e5c07b, #c5a059)');
+    root.style.setProperty('--accent-bg', 'rgba(229, 192, 123, 0.1)');
+    root.style.setProperty('--accent-border', 'rgba(229, 192, 123, 0.35)');
+    root.style.setProperty('--border-light', 'rgba(255, 255, 255, 0.08)');
+    root.style.setProperty('--border-active', 'rgba(229, 192, 123, 0.5)');
+    root.style.setProperty('--input-bg', 'rgba(255, 255, 255, 0.03)');
+    root.style.setProperty('--input-border', 'rgba(255, 255, 255, 0.12)');
+    root.style.setProperty('--success-color', '#10b981');
+    root.style.setProperty('--success-bg', 'rgba(16, 185, 129, 0.12)');
+    root.style.setProperty('--danger-color', '#f43f5e');
+    root.style.setProperty('--danger-bg', 'rgba(244, 63, 94, 0.12)');
+    root.style.setProperty('--warn-color', '#f59e0b');
+    root.style.setProperty('--warn-bg', 'rgba(245, 158, 11, 0.12)');
+  } else if (themeId === 'studio') {
+    // Crisp Studio Daylight (Ultra High-Contrast Light for Packaging Kitchen Ambient Lighting)
+    root.style.setProperty('--bg-deep', '#f8fafc');
+    root.style.setProperty('--bg-surface', '#ffffff');
+    root.style.setProperty('--bg-card', '#ffffff');
+    root.style.setProperty('--bg-card-hover', '#f1f5f9');
+    root.style.setProperty('--bg-grad', 'linear-gradient(180deg, #f8fafc 0%, #edf2f7 100%)');
+    root.style.setProperty('--text-primary', '#0f172a');
+    root.style.setProperty('--text-tertiary', '#475569');
+    root.style.setProperty('--accent-primary', '#936c28');
+    root.style.setProperty('--accent-cyan', '#936c28');
+    root.style.setProperty('--accent-grad', 'linear-gradient(135deg, #b88628, #936c28)');
+    root.style.setProperty('--accent-bg', 'rgba(184, 134, 40, 0.08)');
+    root.style.setProperty('--accent-border', 'rgba(184, 134, 40, 0.3)');
+    root.style.setProperty('--border-light', '#e2e8f0');
+    root.style.setProperty('--border-active', '#b88628');
+    root.style.setProperty('--input-bg', '#ffffff');
+    root.style.setProperty('--input-border', '#cbd5e1');
+    root.style.setProperty('--success-color', '#059669');
+    root.style.setProperty('--success-bg', '#ecfdf5');
+    root.style.setProperty('--danger-color', '#dc2626');
+    root.style.setProperty('--danger-bg', '#fef2f2');
+    root.style.setProperty('--warn-color', '#d97706');
+    root.style.setProperty('--warn-bg', '#fffbeb');
+  } else if (themeId === 'dark') {
     // Dark Mode (violet accent)
     root.style.setProperty('--bg-deep', '#0c0c14');
     root.style.setProperty('--bg-surface', 'rgba(255, 255, 255, 0.04)');
@@ -81,8 +138,8 @@ export const updateSystemTheme = (themeId) => {
     root.style.setProperty('--danger-bg', '#fee2e2');
     root.style.setProperty('--warn-color', '#b45309');
     root.style.setProperty('--warn-bg', '#fef3c7');
-  } else if (themeId === 'royal') {
-    // Professional Royal (Slate & Champagne Gold)
+  } else {
+    // Default: Professional Royal (Slate & Champagne Gold)
     root.style.setProperty('--bg-deep', '#0a0d14');
     root.style.setProperty('--bg-surface', 'rgba(197, 160, 89, 0.03)');
     root.style.setProperty('--bg-card', 'rgba(197, 160, 89, 0.03)');
@@ -105,6 +162,14 @@ export const updateSystemTheme = (themeId) => {
     root.style.setProperty('--danger-bg', 'rgba(239, 68, 68, 0.1)');
     root.style.setProperty('--warn-color', '#f59e0b');
     root.style.setProperty('--warn-bg', 'rgba(245, 158, 11, 0.1)');
+  }
+}
+
+export const getSystemTheme = () => {
+  try {
+    return localStorage.getItem('almawaid_admin_theme') || 'royal'
+  } catch {
+    return 'royal'
   }
 }
 
@@ -137,12 +202,12 @@ export const PageTitle = ({ children, sub }) => (
 
 export const AdminCard = ({ children, style: extra = {}, glass = true, ...props }) => (
   <div className="admin-card" {...props} style={{
-    background: glass ? 'rgba(15, 20, 30, 0.6)' : T.card,
+    background: glass ? 'var(--bg-surface)' : T.card,
     backdropFilter: glass ? 'blur(24px) saturate(1.2)' : 'none',
     WebkitBackdropFilter: glass ? 'blur(24px) saturate(1.2)' : 'none',
     border: `1px solid ${T.border}`,
     borderRadius: 20, padding: 'clamp(20px, 4vw, 28px)',
-    boxShadow: '0 10px 40px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05)',
+    boxShadow: '0 10px 40px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.05)',
     transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
     color: T.text,
     ...extra,
@@ -167,12 +232,12 @@ export const SlideDrawer = ({ isOpen, onClose, title, children, width = 480 }) =
     <div style={{
       position: 'fixed', top: 0, right: 0, bottom: 0,
       width: 'min(100%, ' + (typeof width === 'number' ? width + 'px' : width) + ')',
-      background: 'rgba(19, 23, 32, 0.95)', backdropFilter: 'blur(32px)', zIndex: 3001,
+      background: 'var(--bg-card)', backdropFilter: 'blur(32px)', zIndex: 3001,
       boxShadow: '-20px 0 60px rgba(0,0,0,0.4)',
       transform: isOpen ? 'translateX(0)' : 'translateX(100%)',
       transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
       display: 'flex', flexDirection: 'column',
-      borderLeft: '1px solid var(--border-glass)'
+      borderLeft: '1px solid var(--border-light)'
     }}>
       <div style={{ padding: '28px 36px', borderBottom: '1px solid var(--border-light)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h3 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--text-primary)' }}>{title}</h3>
@@ -256,12 +321,12 @@ export const Table = ({ headers, rows, emptyMsg = 'No data found.', withSrNo = f
       overflowX: 'auto', 
       borderRadius: 16, 
       border: '1px solid var(--border-light)', 
-      background: 'rgba(10, 13, 20, 0.35)',
-      boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+      background: 'var(--bg-surface)',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
     }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5, minWidth: 600 }}>
         <thead>
-          <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-light)' }}>
+          <tr style={{ background: 'var(--input-bg)', borderBottom: '1px solid var(--border-light)' }}>
             {finalHeaders.map((h, i) => {
               const isSr = i === srColIndex
               return (
@@ -571,6 +636,56 @@ export const fmtDateTime = (d) => {
 export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverride, dishInputConfig, onMealToggle }) => {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isErasing, setIsErasing] = useState(false)
+  const [showShortcuts, setShowShortcuts] = useState(false)
+
+  // ── TV Customization States ──
+  const [tvTheme, setTvTheme] = useState(() => {
+    try { return localStorage.getItem('almawaid_tv_theme') || 'dark' } catch { return 'dark' }
+  })
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    try { return localStorage.getItem('almawaid_tv_sound') !== 'false' } catch { return true }
+  })
+  const [voiceEnabled, setVoiceEnabled] = useState(() => {
+    try { return localStorage.getItem('almawaid_tv_voice') === 'true' } catch { return false }
+  })
+  const [clock, setClock] = useState(() => new Date().toLocaleTimeString('en-GB'))
+  const [recentScans, setRecentScans] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem('almawaid_tv_recent_scans')
+      return raw ? JSON.parse(raw) : []
+    } catch { return [] }
+  })
+
+  // Live ticking clock
+  useEffect(() => {
+    const t = setInterval(() => setClock(new Date().toLocaleTimeString('en-GB')), 1000)
+    return () => clearInterval(t)
+  }, [])
+
+  // Persist settings
+  const toggleSound = () => {
+    setSoundEnabled(prev => {
+      const next = !prev
+      try { localStorage.setItem('almawaid_tv_sound', String(next)) } catch {}
+      return next
+    })
+  }
+
+  const toggleVoice = () => {
+    setVoiceEnabled(prev => {
+      const next = !prev
+      try { localStorage.setItem('almawaid_tv_voice', String(next)) } catch {}
+      return next
+    })
+  }
+
+  const cycleTheme = () => {
+    setTvTheme(prev => {
+      const next = prev === 'dark' ? 'daylight' : prev === 'daylight' ? 'amber' : 'dark'
+      try { localStorage.setItem('almawaid_tv_theme', next) } catch {}
+      return next
+    })
+  }
 
   const toggleFullscreen = async () => {
     if (!document.fullscreenElement) {
@@ -578,7 +693,6 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
         await document.documentElement.requestFullscreen()
         setIsFullscreen(true)
       } catch (e) {
-        // Fullscreen not supported or denied
         console.warn('Fullscreen request failed:', e)
       }
     } else {
@@ -591,12 +705,8 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
     }
   }
 
-  // Sync state when user exits via Escape or OS gesture;
-  // also exit fullscreen on unmount so the admin isn't stuck in fullscreen after closing
   useEffect(() => {
-    const handleChange = () => {
-      setIsFullscreen(!!document.fullscreenElement)
-    }
+    const handleChange = () => setIsFullscreen(!!document.fullscreenElement)
     document.addEventListener('fullscreenchange', handleChange)
     return () => {
       document.removeEventListener('fullscreenchange', handleChange)
@@ -605,7 +715,6 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
   }, [])
 
   const getTimeBasedMeal = () => getCurrentMealByTime()
-
   const [selectedMeal, setSelectedMeal] = useState(meal || (mealOverride && currentMeal ? currentMeal : getTimeBasedMeal()))
   useEffect(() => {
     if (meal) setSelectedMeal(meal)
@@ -623,7 +732,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
       targetDate.setDate(mon.getDate() + dayIdx)
       const dateStr = targetDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
       dayFormatted = `${String(activeDay).toUpperCase()} · ${dateStr.toUpperCase()}`
-    } catch { /* invalid week_id date — keep the plain uppercase day label */ }
+    } catch { /* invalid week_id */ }
   }
 
   const mealData = displayMeal === 'lunch' ? user.lunch : user.dinner
@@ -637,13 +746,68 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
   const total = dishEntries.length
 
   const status = mealData?.status || (displayMeal === user.currentMeal ? user.status : null) || 'Not Submitted'
-
   const isStopped = !!user.stopped
 
   const mealLabels = { lunch: 'LUNCH', dinner: 'DINNER' }
   const mealIcons = { lunch: '☀️', dinner: '🌙' }
 
-  // Admin: erase this member's displayed-meal response for the displayed day.
+  // ── SOUND & SPEECH SYNTHESIS TRIGGER ON SCAN ──
+  useEffect(() => {
+    if (!user) return
+    const isProceed = status === 'Applied' && !isStopped
+    if (soundEnabled) {
+      playScanSound(isProceed ? 'proceed' : 'skip')
+    }
+    if (voiceEnabled) {
+      speakScanStatus(user.thali_number, isStopped ? 'STOP THALI' : status, mealLabels[displayMeal])
+    }
+
+    // Record to recent scan history
+    try {
+      const thaliNum = user.thali_number || '—'
+      const item = {
+        id: user.user_id || user.id || thaliNum,
+        thali: thaliNum,
+        name: user.name || 'Member',
+        status: isStopped ? 'STOP THALI' : status,
+        meal: displayMeal,
+        time: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+      }
+      const raw = sessionStorage.getItem('almawaid_tv_recent_scans')
+      const list = raw ? JSON.parse(raw) : []
+      const filtered = list.filter(x => x.thali !== thaliNum)
+      const updated = [item, ...filtered].slice(0, 8)
+      sessionStorage.setItem('almawaid_tv_recent_scans', JSON.stringify(updated))
+      setRecentScans(updated)
+    } catch {}
+  }, [user?.thali_number, displayMeal, status, isStopped])
+
+  // ── KEYBOARD SHORTCUTS FOR TV REMOTE / WIRELESS SCANNER ──
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+      const k = e.key.toLowerCase()
+      if (k === 'f') { e.preventDefault(); toggleFullscreen() }
+      if (k === 'm') {
+        e.preventDefault()
+        const next = displayMeal === 'lunch' ? 'dinner' : 'lunch'
+        setSelectedMeal(next)
+        onMealToggle?.(next)
+      }
+      if (k === 't') { e.preventDefault(); cycleTheme() }
+      if (k === 's') { e.preventDefault(); toggleSound() }
+      if (k === 'v') { e.preventDefault(); toggleVoice() }
+      if (k === '?' || k === '/') { e.preventDefault(); setShowShortcuts(s => !s) }
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault()
+        onClose?.()
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [displayMeal, onMealToggle, onClose])
+
+  // Admin erase
   const canErase = !!(user?.user_id && user?.week_id)
   const handleErase = async () => {
     if (!canErase || isErasing) return
@@ -665,21 +829,11 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
 
   const getResponseStyle = (dish, value, idx) => {
     const isRoti = isRotiItem(dish || '')
-    // Resolve COUNT vs PORTION. dishInputConfig is stored as
-    // { "<day>_<meal>": ["count","percentage",...] } (see SettingsPage /
-    // useSurvey.isCountInput), so the per-index array must be checked first.
-    // Upstream callers may also attach an explicit per-dish map
-    // (mealData.dishTypes / user.dishTypes) computed from the menu order —
-    // prefer it when present since TV grid order can differ from menu order.
     const resolveIsCount = () => {
       if (isRoti) return false
-      // Value shape is authoritative: writers persist percentages with a `%`
-      // suffix (denormalizeDishValue) and counts as plain numbers / objects,
-      // so a `%`-suffixed value is ALWAYS a percentage even if the menu order
-      // or config index has drifted since the response was saved.
       try {
         if (typeof value === 'string' && value.trim().endsWith('%')) return false
-      } catch { /* value not safely readable — continue with the checks below */ }
+      } catch {}
       if (typeof value === 'object' && value !== null && value?.status) return true
       const dt = (mealData && mealData.dishTypes) || user.dishTypes || null
       if (dt && dish && dt[dish] !== undefined) {
@@ -701,21 +855,20 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
           if (cfg[slotKey] === 'count' || cfg[dishKey] === 'count' || cfg[dish] === 'count') return true
           if (cfg[slotKey] === 'percentage' || cfg[dishKey] === 'percentage' || cfg[dish] === 'percentage') return false
         }
-      } catch { /* malformed dishInputConfig entry — fall through to the legacy defaults */ }
+      } catch {}
       if ((typeof value === 'object' && value !== null && value?.status) || (typeof value === 'string' && /person|ppl/i.test(value))) return true
-      // Legacy default mirrors the tracker: lunch slots 0-3 are counts unless configured
       if (displayMeal === 'lunch' && typeof idx === 'number' && idx <= 3) return true
       return false
     }
     const isCount = resolveIsCount()
 
-    // If meal is explicitly skipped
     if (status === 'Skipped' || isStopped) {
       return {
-        bg: 'rgba(239, 68, 68, 0.05)',
-        border: 'rgba(239, 68, 68, 0.25)',
+        bg: tvTheme === 'daylight' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(239, 68, 68, 0.06)',
+        border: '#ef4444',
         label: 'SKIP',
         labelColor: '#ef4444',
+        fillPct: 0,
         glow: null,
         typeLabel: isRoti ? 'ROTI' : isCount ? 'COUNT' : 'PORTION',
         typeColor: '#ef4444'
@@ -723,47 +876,48 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
     }
 
     if (value === null || value === undefined || value === '') {
-      // If meal is Applied and it's a roti dish, default to YES
       if (isRoti && status === 'Applied') {
         return {
-          bg: 'rgba(16, 185, 129, 0.12)',
+          bg: tvTheme === 'daylight' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.12)',
           border: '#10b981',
           label: 'YES',
           labelColor: '#10b981',
+          fillPct: 100,
           glow: 'rgba(16, 185, 129, 0.6)',
           typeLabel: 'ROTI',
           typeColor: '#10b981'
         }
       }
-      // If meal is Applied and it's count dish, default to 1 PERSON
       if (status === 'Applied' && isCount) {
         return {
-          bg: 'rgba(99, 102, 241, 0.12)',
+          bg: tvTheme === 'daylight' ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.12)',
           border: '#6366f1',
           label: '1 PERSON',
           labelColor: '#818cf8',
+          fillPct: 50,
           glow: 'rgba(99, 102, 241, 0.6)',
           typeLabel: 'COUNT',
           typeColor: '#6366f1'
         }
       }
-      // If meal is Applied and portion dish, default to 100%
       if (status === 'Applied') {
         return {
-          bg: 'rgba(16, 185, 129, 0.15)',
+          bg: tvTheme === 'daylight' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(16, 185, 129, 0.15)',
           border: '#10b981',
           label: '100%',
           labelColor: '#34d399',
+          fillPct: 100,
           glow: 'rgba(16, 185, 129, 0.6)',
           typeLabel: 'PORTION',
           typeColor: '#10b981'
         }
       }
       return {
-        bg: 'rgba(255,255,255,0.02)',
-        border: 'rgba(255,255,255,0.08)',
+        bg: tvTheme === 'daylight' ? '#f1f5f9' : 'rgba(255,255,255,0.03)',
+        border: tvTheme === 'daylight' ? '#cbd5e1' : 'rgba(255,255,255,0.08)',
         label: '—',
-        labelColor: 'rgba(255,255,255,0.2)',
+        labelColor: tvTheme === 'daylight' ? '#64748b' : 'rgba(255,255,255,0.3)',
+        fillPct: 0,
         glow: null,
         typeLabel: isRoti ? 'ROTI' : isCount ? 'COUNT' : 'PORTION',
         typeColor: '#6b7280'
@@ -772,38 +926,37 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
 
     const strVal = String(typeof value === 'object' ? (value?.status || value?.value) : value).toLowerCase().trim()
 
-    // 1. ROTI ITEM
+    // ROTI
     if (isRoti) {
       const isExplicitNo = strVal === 'no' || strVal === 'false' || strVal === 'skip' || strVal === 'skipped'
       if (isExplicitNo) {
         return {
-          bg: 'rgba(239, 68, 68, 0.08)',
+          bg: tvTheme === 'daylight' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(239, 68, 68, 0.08)',
           border: '#ef4444',
           label: 'NO',
           labelColor: '#ef4444',
+          fillPct: 0,
           glow: 'rgba(239, 68, 68, 0.4)',
           typeLabel: 'ROTI',
           typeColor: '#ef4444'
         }
       }
-
-      // Check if value is a count (e.g. 2 rotis, 4 rotis, 1 person)
       const numVal = parseInt(strVal, 10)
       const isCountRoti = !isNaN(numVal) && numVal > 0 && !strVal.endsWith('%')
       const displayLabel = isCountRoti ? `${numVal} ${numVal === 1 ? 'ROTI' : 'ROTIS'}` : 'YES'
-
       return {
-        bg: 'rgba(16, 185, 129, 0.12)',
+        bg: tvTheme === 'daylight' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.12)',
         border: '#10b981',
         label: displayLabel,
         labelColor: '#10b981',
+        fillPct: 100,
         glow: 'rgba(16, 185, 129, 0.6)',
         typeLabel: 'ROTI',
         typeColor: '#10b981'
       }
     }
 
-    // 2. COUNT ITEM
+    // COUNT
     if (isCount) {
       if (strVal === 'no' || value === 0 || (typeof value === 'object' && value.status === 'no')) {
         return {
@@ -811,6 +964,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
           border: '#ef4444',
           label: 'NO',
           labelColor: '#ef4444',
+          fillPct: 0,
           glow: 'rgba(239, 68, 68, 0.4)',
           typeLabel: 'COUNT',
           typeColor: '#ef4444'
@@ -818,23 +972,25 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
       }
       const countVal = typeof value === 'object' ? (value.value || 1) : (parseInt(value) || 0)
       return {
-        bg: 'rgba(99, 102, 241, 0.12)',
+        bg: tvTheme === 'daylight' ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.12)',
         border: '#6366f1',
         label: `${countVal} ${countVal === 1 ? 'PERSON' : 'PERSONS'}`,
         labelColor: '#818cf8',
+        fillPct: Math.min(100, countVal * 25),
         glow: 'rgba(99, 102, 241, 0.6)',
         typeLabel: 'COUNT',
         typeColor: '#6366f1'
       }
     }
 
-    // 3. PERCENTAGE / PORTION ITEM
+    // PERCENTAGE / PORTION
     if (strVal === 'no') {
       return {
         bg: 'rgba(239, 68, 68, 0.08)',
         border: '#ef4444',
         label: '0%',
         labelColor: '#f87171',
+        fillPct: 0,
         glow: 'rgba(239, 68, 68, 0.3)',
         typeLabel: 'PORTION',
         typeColor: '#ef4444'
@@ -842,10 +998,11 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
     }
     if (strVal === 'yes') {
       return {
-        bg: 'rgba(16, 185, 129, 0.15)',
+        bg: tvTheme === 'daylight' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.15)',
         border: '#10b981',
         label: '100%',
         labelColor: '#34d399',
+        fillPct: 100,
         glow: 'rgba(16, 185, 129, 0.6)',
         typeLabel: 'PORTION',
         typeColor: '#10b981'
@@ -859,19 +1016,19 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
         border: '#ef4444',
         label: '0%',
         labelColor: '#f87171',
+        fillPct: 0,
         glow: 'rgba(239, 68, 68, 0.3)',
         typeLabel: 'PORTION',
         typeColor: '#ef4444'
       }
     }
-    // Progressive portion scale — mirrors getPctColor so the TV matches the
-    // member option buttons: red → amber → blue → cyan → green.
     if (n <= 25) {
       return {
         bg: 'rgba(245, 158, 11, 0.12)',
         border: '#f59e0b',
         label: `${n}%`,
         labelColor: '#fbbf24',
+        fillPct: n,
         glow: 'rgba(245, 158, 11, 0.4)',
         typeLabel: 'PORTION',
         typeColor: '#f59e0b'
@@ -883,6 +1040,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
         border: '#3b82f6',
         label: `${n}%`,
         labelColor: '#60a5fa',
+        fillPct: n,
         glow: 'rgba(59, 130, 246, 0.5)',
         typeLabel: 'PORTION',
         typeColor: '#3b82f6'
@@ -894,6 +1052,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
         border: '#22d3ee',
         label: `${n}%`,
         labelColor: '#67e8f9',
+        fillPct: n,
         glow: 'rgba(34, 211, 238, 0.45)',
         typeLabel: 'PORTION',
         typeColor: '#22d3ee'
@@ -904,120 +1063,222 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
       border: '#10b981',
       label: `${n}%`,
       labelColor: '#34d399',
+      fillPct: n,
       glow: 'rgba(16, 185, 129, 0.6)',
       typeLabel: 'PORTION',
       typeColor: '#10b981'
     }
   }
 
+  // Dynamic Theme Styling Values
+  const themeBg = tvTheme === 'daylight'
+    ? 'linear-gradient(180deg, #f8fafc 0%, #edf2f7 100%)'
+    : tvTheme === 'amber'
+      ? 'linear-gradient(180deg, #0e0b06 0%, #17120a 100%)'
+      : 'linear-gradient(180deg, #05070c 0%, #0c1017 100%)'
+
+  const themeText = tvTheme === 'daylight' ? '#0f172a' : tvTheme === 'amber' ? '#fef3c7' : '#ffffff'
+
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 9999,
-      background: '#050508', color: '#fff',
+      background: themeBg, color: themeText,
       height: '100dvh', width: '100dvw',
       overflow: 'hidden',
       display: 'flex', flexDirection: 'column',
-      fontFamily: "'Space Grotesk', 'Inter', sans-serif"
+      fontFamily: "'Space Grotesk', 'Inter', sans-serif",
+      transition: 'background 0.3s ease, color 0.3s ease'
     }}>
-      <style>{`.spin { animation: spin 1s linear infinite } @keyframes spin { to { transform: rotate(360deg) } }`}</style>
-      {/* Fullscreen toggle — top left */}
-      <button
-        onClick={toggleFullscreen}
-        title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Enter fullscreen'}
-        aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-        style={{
-          position: 'fixed', top: '1.5vh', left: '1.5vw', zIndex: 10000,
-          background: isFullscreen
-            ? 'rgba(212,175,55,0.15)'
-            : 'rgba(255,255,255,0.08)',
-          border: `1.5px solid ${isFullscreen ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.15)'}`,
-          color: isFullscreen ? '#fcd34d' : '#fff',
-          width: 44, height: 44, borderRadius: '50%',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 18, cursor: 'pointer',
-          transition: 'all 0.2s', backdropFilter: 'blur(20px)',
-          boxShadow: isFullscreen ? '0 0 20px rgba(212,175,55,0.2)' : 'none'
-        }}
-        onMouseEnter={e => {
-          e.currentTarget.style.background = 'rgba(212,175,55,0.2)'
-          e.currentTarget.style.borderColor = 'rgba(212,175,55,0.5)'
-          e.currentTarget.style.color = '#fcd34d'
-        }}
-        onMouseLeave={e => {
-          e.currentTarget.style.background = isFullscreen ? 'rgba(212,175,55,0.15)' : 'rgba(255,255,255,0.08)'
-          e.currentTarget.style.borderColor = isFullscreen ? 'rgba(212,175,55,0.4)' : 'rgba(255,255,255,0.15)'
-          e.currentTarget.style.color = isFullscreen ? '#fcd34d' : '#fff'
-        }}
-      >
-        {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-      </button>
+      <style>{`
+        .spin { animation: spin 1s linear infinite }
+        @keyframes spin { to { transform: rotate(360deg) } }
+        .tv-ctrl-btn {
+          width: 42px; height: 42px; border-radius: 12px;
+          display: flex; alignItems: center; justifyContent: center;
+          cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+          backdrop-filter: blur(16px);
+          outline: none;
+        }
+        .tv-ctrl-btn:hover {
+          transform: translateY(-2px);
+        }
+        .tv-ctrl-btn:active {
+          transform: scale(0.95);
+        }
+      `}</style>
 
-      {/* Admin erase — clears this member's displayed-meal response for the day */}
-      {canErase && (
-        <button
-          onClick={handleErase}
-          disabled={isErasing}
-          title={`Erase ${mealLabels[displayMeal]} response for this member`}
-          aria-label={`Erase ${mealLabels[displayMeal]} response`}
-          style={{
-            position: 'fixed', top: '1.5vh', right: '7vw', zIndex: 10000,
-            background: isErasing ? 'rgba(239,68,68,0.2)' : 'rgba(239, 68, 68, 0.12)',
-            border: '1.5px solid rgba(239, 68, 68, 0.4)',
-            color: '#fca5a5', width: 44, height: 44, borderRadius: '50%',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 18, cursor: isErasing ? 'wait' : 'pointer',
-            transition: 'all 0.2s', backdropFilter: 'blur(20px)',
-            boxShadow: '0 0 16px rgba(239,68,68,0.15)'
-          }}
-          onMouseEnter={e => { if (!isErasing) { e.currentTarget.style.background = 'rgba(239,68,68,0.25)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.7)' } }}
-          onMouseLeave={e => { if (!isErasing) { e.currentTarget.style.background = 'rgba(239,68,68,0.12)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.4)' } }}
-        >
-          {isErasing ? <span className="spin">⟳</span> : <Trash2 size={18} />}
-        </button>
-      )}
+      {/* ── TOP CONTROL BAR ── */}
+      <div style={{
+        position: 'absolute', top: '1.2vh', left: '1.5vw', right: '1.5vw',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        zIndex: 10000, pointerEvents: 'auto'
+      }}>
+        {/* Left: Fullscreen, Live Clock, Shortcuts */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            onClick={toggleFullscreen}
+            className="tv-ctrl-btn"
+            title={isFullscreen ? 'Exit fullscreen (F)' : 'Enter fullscreen (F)'}
+            style={{
+              background: isFullscreen ? 'rgba(212,175,55,0.25)' : 'rgba(255,255,255,0.08)',
+              border: `1.5px solid ${isFullscreen ? 'var(--accent-primary)' : 'rgba(255,255,255,0.15)'}`,
+              color: isFullscreen ? '#fcd34d' : themeText,
+            }}
+          >
+            {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          </button>
 
-      {/* Close button */}
-      <button onClick={onClose} style={{
-        position: 'fixed', top: '1.5vh', right: '1.5vw', zIndex: 10000,
-        background: 'rgba(255,255,255,0.08)', border: '1.5px solid rgba(255,255,255,0.15)',
-        color: '#fff', width: 44, height: 44, borderRadius: '50%',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 20, fontWeight: 900, cursor: 'pointer',
-        transition: 'all 0.2s', backdropFilter: 'blur(20px)'
-      }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.15)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)' }} onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)' }}>
-        ✕
-      </button>
+          {/* Clock Pill */}
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '6px 14px', borderRadius: 12,
+            background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)',
+            fontSize: 12, fontWeight: 700, letterSpacing: '0.06em',
+            fontFamily: "'Space Grotesk', monospace", fontVariantNumeric: 'tabular-nums',
+            color: themeText
+          }}>
+            <Clock size={13} style={{ opacity: 0.7 }} />
+            {clock}
+          </div>
 
-      {/* ── COMPACT HEADER — Bright White for Distance Readability ── */}
+          {/* Wireless Scanner Status Indicator */}
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '6px 12px', borderRadius: 12,
+            background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)',
+            fontSize: 11, fontWeight: 800, color: '#34d399', letterSpacing: '0.04em'
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', boxShadow: '0 0 8px #10b981' }} />
+            SCANNER READY
+          </div>
+        </div>
+
+        {/* Right: Sound, Voice, Theme, Erase, Close */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Sound Chime Toggle */}
+          <button
+            onClick={toggleSound}
+            className="tv-ctrl-btn"
+            title={soundEnabled ? 'Chime Enabled (Press S to toggle)' : 'Chime Muted (Press S to toggle)'}
+            style={{
+              background: soundEnabled ? 'rgba(16, 185, 129, 0.18)' : 'rgba(255,255,255,0.06)',
+              border: `1.5px solid ${soundEnabled ? '#10b981' : 'rgba(255,255,255,0.15)'}`,
+              color: soundEnabled ? '#34d399' : 'rgba(255,255,255,0.4)',
+            }}
+          >
+            {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+          </button>
+
+          {/* Speech Synthesis Voice Announce Toggle */}
+          <button
+            onClick={toggleVoice}
+            className="tv-ctrl-btn"
+            title={voiceEnabled ? 'Voice Announce ON (Press V to toggle)' : 'Voice Announce OFF (Press V to toggle)'}
+            style={{
+              background: voiceEnabled ? 'rgba(99, 102, 241, 0.22)' : 'rgba(255,255,255,0.06)',
+              border: `1.5px solid ${voiceEnabled ? '#6366f1' : 'rgba(255,255,255,0.15)'}`,
+              color: voiceEnabled ? '#a5b4fc' : 'rgba(255,255,255,0.4)',
+            }}
+          >
+            {voiceEnabled ? <Mic size={18} /> : <MicOff size={18} />}
+          </button>
+
+          {/* TV Theme Mode Cycle */}
+          <button
+            onClick={cycleTheme}
+            className="tv-ctrl-btn"
+            title={`Current TV Theme: ${tvTheme.toUpperCase()} (Press T to cycle)`}
+            style={{
+              background: 'rgba(212,175,55,0.15)',
+              border: '1.5px solid rgba(212,175,55,0.4)',
+              color: '#fbbf24',
+            }}
+          >
+            {tvTheme === 'dark' ? <Moon size={18} /> : tvTheme === 'daylight' ? <Sun size={18} /> : <Sparkles size={18} />}
+          </button>
+
+          {/* Keyboard Shortcuts Overlay Trigger */}
+          <button
+            onClick={() => setShowShortcuts(s => !s)}
+            className="tv-ctrl-btn"
+            title="TV Keyboard Shortcuts (?)"
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: '1.5px solid rgba(255,255,255,0.15)',
+              color: themeText,
+            }}
+          >
+            <HelpCircle size={18} />
+          </button>
+
+          {/* Admin erase slot */}
+          {canErase && (
+            <button
+              onClick={handleErase}
+              disabled={isErasing}
+              className="tv-ctrl-btn"
+              title={`Erase ${mealLabels[displayMeal]} response`}
+              style={{
+                background: isErasing ? 'rgba(239,68,68,0.2)' : 'rgba(239, 68, 68, 0.12)',
+                border: '1.5px solid rgba(239, 68, 68, 0.4)',
+                color: '#fca5a5',
+              }}
+            >
+              {isErasing ? <span className="spin">⟳</span> : <Trash2 size={18} />}
+            </button>
+          )}
+
+          {/* Close TV View */}
+          <button
+            onClick={onClose}
+            className="tv-ctrl-btn"
+            title="Close TV View (Esc / Space)"
+            style={{
+              background: 'rgba(255,255,255,0.1)',
+              border: '1.5px solid rgba(255,255,255,0.2)',
+              color: '#ffffff',
+            }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+      </div>
+
+      {/* ── COMPACT HEADER — High Distance Readability ── */}
       <div style={{
         flexShrink: 0,
-        padding: 'clamp(44px, 6vh, 64px) clamp(16px, 3vw, 48px) clamp(4px, 1vh, 12px)',
+        padding: 'clamp(52px, 8vh, 72px) clamp(16px, 3vw, 48px) clamp(4px, 1vh, 12px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 'clamp(10px, 2.5vw, 24px)',
         flexWrap: 'wrap'
       }}>
-        {/* Thali badge & Member Name - bright white with gold glow for distance visibility */}
+        {/* Thali badge & Member Name */}
         <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 12,
-          background: 'linear-gradient(135deg, rgba(212,175,55,0.25), rgba(212,175,55,0.06))',
-          border: '2px solid rgba(212,175,55,0.6)', borderRadius: 'clamp(14px, 2vw, 24px)',
-          padding: 'clamp(6px, 1vh, 12px) clamp(14px, 2vw, 28px)',
-          boxShadow: '0 0 30px rgba(212,175,55,0.15), inset 0 0 20px rgba(212,175,55,0.05)'
+          display: 'inline-flex', alignItems: 'center', gap: 14,
+          background: tvTheme === 'daylight'
+            ? 'linear-gradient(135deg, rgba(184,134,40,0.12), rgba(184,134,40,0.04))'
+            : 'linear-gradient(135deg, rgba(212,175,55,0.25), rgba(212,175,55,0.06))',
+          border: `2px solid ${tvTheme === 'daylight' ? '#b88628' : 'rgba(212,175,55,0.6)'}`,
+          borderRadius: 'clamp(16px, 2vw, 24px)',
+          padding: 'clamp(6px, 1vh, 12px) clamp(16px, 2vw, 32px)',
+          boxShadow: '0 0 30px rgba(212,175,55,0.15)'
         }}>
           <span style={{
-            fontSize: 'clamp(36px, 7vw, 90px)', fontWeight: 900,
-            color: '#ffffff',
-            textShadow: '0 0 30px rgba(212,175,55,0.6), 0 0 60px rgba(212,175,55,0.3)',
-            letterSpacing: '0.04em'
-          }}>#{user?.thali_number || '—'}</span>
+            fontSize: 'clamp(38px, 7vw, 92px)', fontWeight: 900,
+            color: tvTheme === 'daylight' ? '#936c28' : '#ffffff',
+            textShadow: tvTheme === 'daylight' ? 'none' : '0 0 30px rgba(212,175,55,0.6), 0 0 60px rgba(212,175,55,0.3)',
+            letterSpacing: '0.04em',
+            fontVariantNumeric: 'tabular-nums'
+          }}>
+            #{user?.thali_number || '—'}
+          </span>
           {user?.name && (
             <span style={{
-              fontSize: 'clamp(14px, 1.8vw, 26px)', fontWeight: 700,
-              color: 'rgba(255,255,255,0.9)',
-              textShadow: '0 0 16px rgba(255,255,255,0.2)',
-              maxWidth: 'clamp(120px, 20vw, 320px)',
+              fontSize: 'clamp(15px, 1.8vw, 28px)', fontWeight: 700,
+              color: tvTheme === 'daylight' ? '#1e293b' : 'rgba(255,255,255,0.95)',
+              maxWidth: 'clamp(140px, 22vw, 360px)',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
             }}>{user.name}</span>
           )}
@@ -1026,34 +1287,33 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
         {/* Day badge */}
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
-          padding: 'clamp(6px, 0.8vh, 10px) clamp(12px, 1.5vw, 22px)',
-          background: 'rgba(212,175,55,0.1)', border: '2px solid rgba(212,175,55,0.5)', borderRadius: 50,
-          boxShadow: '0 0 20px rgba(212,175,55,0.12)'
+          padding: 'clamp(6px, 0.8vh, 10px) clamp(14px, 1.5vw, 24px)',
+          background: tvTheme === 'daylight' ? 'rgba(0,0,0,0.05)' : 'rgba(212,175,55,0.1)',
+          border: `2px solid ${tvTheme === 'daylight' ? '#94a3b8' : 'rgba(212,175,55,0.5)'}`,
+          borderRadius: 50,
         }}>
           <span style={{ fontSize: 'clamp(14px, 1.8vw, 22px)' }}>📆</span>
           <span style={{
             fontSize: 'clamp(12px, 1.4vw, 18px)', fontWeight: 900,
-            color: '#ffffff',
-            textShadow: '0 0 12px rgba(212,175,55,0.4)',
+            color: themeText,
             textTransform: 'uppercase', letterSpacing: '0.1em', whiteSpace: 'nowrap'
           }}>{dayFormatted}</span>
         </div>
 
-        {/* Meal badge / Interactive Toggle Button */}
+        {/* Meal Interactive Toggle Button */}
         <button
           onClick={() => {
             const next = displayMeal === 'lunch' ? 'dinner' : 'lunch'
             setSelectedMeal(next)
             onMealToggle?.(next)
           }}
-          title="Click to switch between Lunch & Dinner"
+          title="Click or press 'M' to switch meal"
           style={{
             display: 'inline-flex', alignItems: 'center', gap: 8,
-            padding: 'clamp(6px, 0.8vh, 10px) clamp(14px, 1.5vw, 22px)',
-            background: displayMeal === 'lunch' ? 'rgba(245,158,11,0.15)' : 'rgba(99,102,241,0.15)',
-            border: `2px solid ${displayMeal === 'lunch' ? 'rgba(245,158,11,0.6)' : 'rgba(99,102,241,0.6)'}`,
+            padding: 'clamp(6px, 0.8vh, 10px) clamp(14px, 1.5vw, 24px)',
+            background: displayMeal === 'lunch' ? 'rgba(245,158,11,0.18)' : 'rgba(99,102,241,0.18)',
+            border: `2px solid ${displayMeal === 'lunch' ? '#f59e0b' : '#6366f1'}`,
             borderRadius: 50,
-            boxShadow: `0 0 20px ${displayMeal === 'lunch' ? 'rgba(245,158,11,0.2)' : 'rgba(99,102,241,0.2)'}`,
             cursor: 'pointer', transition: 'all 0.2s', outline: 'none'
           }}
           onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.04)' }}
@@ -1062,11 +1322,10 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
           <span style={{ fontSize: 'clamp(14px, 1.8vw, 22px)' }}>{mealIcons[displayMeal]}</span>
           <span style={{
             fontSize: 'clamp(12px, 1.4vw, 18px)', fontWeight: 900,
-            color: '#ffffff',
-            textShadow: '0 0 12px rgba(212,175,55,0.4)',
+            color: displayMeal === 'lunch' ? '#f59e0b' : '#818cf8',
             textTransform: 'uppercase', letterSpacing: '0.12em', whiteSpace: 'nowrap'
           }}>{mealLabels[displayMeal]}</span>
-          <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginLeft: 2, fontWeight: 700 }}>⇄</span>
+          <span style={{ fontSize: 11, opacity: 0.7, marginLeft: 2, fontWeight: 700 }}>⇄</span>
           {mealOverride && (
             <span style={{
               fontSize: 9, fontWeight: 800, color: '#fbbf24',
@@ -1076,38 +1335,19 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
           )}
         </button>
 
-        {/* Week Range Badge */}
-        {(user?.week_range || user?.week_id) && (
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: 'clamp(6px, 0.8vh, 10px) clamp(12px, 1.5vw, 20px)',
-            background: 'rgba(255,255,255,0.06)', border: '1.5px solid rgba(255,255,255,0.2)', borderRadius: 50,
-            boxShadow: '0 0 16px rgba(0,0,0,0.3)'
-          }}>
-            <span style={{ fontSize: 'clamp(12px, 1.4vw, 18px)' }}>📅</span>
-            <span style={{
-              fontSize: 'clamp(11px, 1.3vw, 16px)', fontWeight: 800,
-              color: '#ffffff', letterSpacing: '0.06em', textTransform: 'uppercase',
-              textShadow: '0 0 10px rgba(255,255,255,0.3)'
-            }}>
-              {user.week_range || formatWeekRange(user.week_id)}
-            </span>
-          </div>
-        )}
-
-        {/* Status badge - bright white status text with colored glow */}
+        {/* Status banner */}
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
-          padding: 'clamp(6px, 0.8vh, 10px) clamp(14px, 1.5vw, 24px)', borderRadius: 50,
+          padding: 'clamp(6px, 0.8vh, 10px) clamp(16px, 1.5vw, 26px)', borderRadius: 50,
           background: isStopped
-            ? 'rgba(244, 63, 94, 0.15)'
+            ? 'rgba(244, 63, 94, 0.18)'
             : status === 'Applied'
-              ? 'rgba(16, 185, 129, 0.15)'
+              ? 'rgba(16, 185, 129, 0.18)'
               : status === 'Skipped'
-                ? 'rgba(239, 68, 68, 0.15)'
-                : 'rgba(245, 158, 11, 0.15)',
-          border: `2px solid ${isStopped ? 'rgba(244,63,94,0.6)' : status === 'Applied' ? 'rgba(16,185,129,0.6)' : status === 'Skipped' ? 'rgba(239,68,68,0.6)' : 'rgba(245,158,11,0.6)'}`,
-          boxShadow: `0 0 24px ${isStopped ? 'rgba(244,63,94,0.15)' : status === 'Applied' ? 'rgba(16,185,129,0.15)' : status === 'Skipped' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)'}`
+                ? 'rgba(239, 68, 68, 0.18)'
+                : 'rgba(245, 158, 11, 0.18)',
+          border: `2px solid ${isStopped ? '#f43f5e' : status === 'Applied' ? '#10b981' : status === 'Skipped' ? '#ef4444' : '#f59e0b'}`,
+          boxShadow: `0 0 24px ${isStopped ? 'rgba(244,63,94,0.3)' : status === 'Applied' ? 'rgba(16,185,129,0.3)' : status === 'Skipped' ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)'}`
         }}>
           <span style={{
             width: 12, height: 12, borderRadius: '50%',
@@ -1115,15 +1355,8 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
             boxShadow: `0 0 16px ${isStopped ? '#f43f5e' : status === 'Applied' ? '#10b981' : status === 'Skipped' ? '#ef4444' : '#f59e0b'}`
           }} />
           <span style={{
-            fontSize: 'clamp(11px, 1.2vw, 16px)', fontWeight: 800,
-            color: '#ffffff',
-            textShadow: isStopped
-              ? '0 0 16px rgba(244,63,94,0.6)'
-              : status === 'Applied'
-                ? '0 0 16px rgba(16,185,129,0.5)'
-                : status === 'Skipped'
-                  ? '0 0 16px rgba(239,68,68,0.5)'
-                  : '0 0 16px rgba(245,158,11,0.5)',
+            fontSize: 'clamp(11px, 1.2vw, 17px)', fontWeight: 900,
+            color: isStopped ? '#f43f5e' : status === 'Applied' ? '#10b981' : status === 'Skipped' ? '#ef4444' : '#f59e0b',
             textTransform: 'uppercase', letterSpacing: '0.1em'
           }}>
             {isStopped ? '⏹️ STOP THALI' : status === 'Applied' ? '✅ PROCEED' : status === 'Skipped' ? '❌ SKIPPED' : '⏳ NO RESPONSE'}
@@ -1131,11 +1364,11 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
         </div>
       </div>
 
-      {/* ── MAIN DISH GRID - FILLS FULL SCREEN ── */}
+      {/* ── MAIN DISH GRID ── */}
       <div style={{
         flex: 1, minHeight: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 'clamp(6px, 1.5vh, 16px) clamp(8px, 2vw, 32px) clamp(8px, 1.5vh, 16px)',
+        padding: 'clamp(4px, 1.5vh, 16px) clamp(8px, 2vw, 32px)',
         overflow: 'hidden'
       }}>
         {isStopped ? (
@@ -1145,12 +1378,12 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
               fontSize: 'clamp(40px, 7vw, 88px)',
               fontWeight: 900,
               color: '#f43f5e',
-              textShadow: '0 0 40px rgba(244,63,94,0.5), 0 0 80px rgba(244,63,94,0.2)',
+              textShadow: '0 0 40px rgba(244,63,94,0.5)',
               textTransform: 'uppercase', letterSpacing: '0.06em'
             }}>No Thali</div>
             <div style={{
               fontSize: 'clamp(20px, 2.6vw, 32px)',
-              color: 'rgba(255,255,255,0.85)',
+              color: tvTheme === 'daylight' ? '#334155' : 'rgba(255,255,255,0.85)',
               fontWeight: 600,
               marginTop: 'clamp(8px, 1.5vh, 16px)'
             }}>
@@ -1158,13 +1391,15 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
                 ? `Thali stopped ${new Date(user.stopInfo.from_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}\u00A0${user.stopInfo.to_date && user.stopInfo.to_date !== user.stopInfo.from_date ? `→ ${new Date(user.stopInfo.to_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}`
                 : 'This member has stopped their thali.'}
             </div>
-            <div style={{ fontSize: 'clamp(14px, 1.8vw, 20px)', color: 'rgba(244,63,94,0.7)', marginTop: 'clamp(6px, 1vh, 12px)' }}>⏹️ STOP THALI — NO DISPATCH</div>
+            <div style={{ fontSize: 'clamp(14px, 1.8vw, 20px)', color: '#f43f5e', marginTop: 'clamp(6px, 1vh, 12px)', fontWeight: 700 }}>
+              ⏹️ STOP THALI — NO DISPATCH
+            </div>
           </div>
         ) : dishEntries.length > 0 ? (
           <div style={{
             display: 'grid',
             gridTemplateColumns: total === 1 ? 'minmax(300px, 600px)' : total === 5 ? 'repeat(3, 1fr)' : `repeat(auto-fit, minmax(min(${total <= 2 ? '45vw' : total <= 4 ? '32vw' : '22vw'}, 100%), 1fr))`,
-            gap: 'clamp(8px, 1.2vw, 20px)',
+            gap: 'clamp(10px, 1.4vw, 22px)',
             width: '100%',
             height: '100%',
             maxHeight: '100%',
@@ -1181,38 +1416,49 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  padding: 'clamp(4px, 1vw, 12px) clamp(4px, 0.8vw, 12px)',
+                  padding: 'clamp(6px, 1.2vw, 16px) clamp(6px, 1vw, 16px)',
                   background: style.bg,
                   border: `2px solid ${style.border}`,
-                  borderRadius: 'clamp(12px, 1.5vw, 20px)',
-                  boxShadow: style.glow ? `0 0 30px ${style.glow}` : '0 4px 16px rgba(0,0,0,0.3)',
+                  borderRadius: 'clamp(14px, 1.8vw, 24px)',
+                  boxShadow: style.glow ? `0 0 30px ${style.glow}` : '0 4px 16px rgba(0,0,0,0.15)',
                   textAlign: 'center',
                   position: 'relative',
                   overflow: 'hidden',
                   transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                  animation: `fadeInDish 0.5s cubic-bezier(0.16, 1, 0.3, 1) ${idx * 0.08}s both`
+                  animation: `fadeInDish 0.4s cubic-bezier(0.16, 1, 0.3, 1) ${idx * 0.06}s both`
                 }}>
+                  {/* Visual Level Fill Bar on Card Bottom */}
+                  {style.fillPct > 0 && (
+                    <div style={{
+                      position: 'absolute', bottom: 0, left: 0, right: 0,
+                      height: '6px',
+                      background: style.border,
+                      opacity: 0.7
+                    }}>
+                      <div style={{ width: `${style.fillPct}%`, height: '100%', background: style.labelColor, transition: 'width 0.6s ease' }} />
+                    </div>
+                  )}
+
                   {/* Glow effect */}
-                  {style.glow && (
+                  {style.glow && tvTheme !== 'daylight' && (
                     <div style={{
                       position: 'absolute', inset: 0,
                       background: `radial-gradient(ellipse at center, ${style.glow} 0%, transparent 70%)`,
-                      pointerEvents: 'none', opacity: 0.4
+                      pointerEvents: 'none', opacity: 0.35
                     }} />
                   )}
 
-                  {/* Type Badge — bright white text with colored border for distance visibility */}
+                  {/* Type Badge */}
                   {style.typeLabel && (
                     <div style={{
-                      position: 'absolute', top: 'clamp(4px, 0.6vw, 10px)', right: 'clamp(4px, 0.6vw, 10px)',
+                      position: 'absolute', top: 'clamp(6px, 0.8vw, 12px)', right: 'clamp(6px, 0.8vw, 12px)',
                       zIndex: 2,
-                      padding: 'clamp(2px, 0.3vw, 6px) clamp(6px, 0.7vw, 12px)',
+                      padding: 'clamp(2px, 0.3vw, 5px) clamp(6px, 0.7vw, 12px)',
                       borderRadius: 'clamp(4px, 0.5vw, 8px)',
-                      background: `${style.typeColor}15`,
-                      border: `1px solid ${style.typeColor}60`,
-                      color: '#ffffff',
-                      textShadow: '0 0 10px rgba(255,255,255,0.3)',
-                      fontSize: 'clamp(8px, 0.7vw, 12px)',
+                      background: `${style.typeColor}20`,
+                      border: `1px solid ${style.typeColor}80`,
+                      color: style.typeColor,
+                      fontSize: 'clamp(9px, 0.75vw, 12px)',
                       fontWeight: 900,
                       letterSpacing: '0.08em',
                       fontFamily: "'Space Grotesk', sans-serif"
@@ -1221,16 +1467,15 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
                     </div>
                   )}
 
-                  {/* Dish Name — BRIGHT WHITE with aura glow for distance readability */}
+                  {/* Dish Name */}
                   <div style={{
                     zIndex: 1, width: '100%',
-                    fontSize: 'clamp(28px, min(7vw, 9vh), 88px)',
+                    fontSize: 'clamp(26px, min(6.5vw, 8.5vh), 80px)',
                     fontWeight: 800,
-                    color: '#ffffff',
-                    textShadow: '0 0 24px rgba(255,255,255,0.15), 0 2px 8px rgba(0,0,0,0.5)',
+                    color: tvTheme === 'daylight' ? '#0f172a' : '#ffffff',
                     lineHeight: 1.1,
-                    marginBottom: 'clamp(6px, 0.6vw, 12px)',
-                    paddingRight: 'clamp(24px, 3vw, 48px)',
+                    marginBottom: 'clamp(4px, 0.5vw, 10px)',
+                    paddingRight: 'clamp(24px, 3vw, 44px)',
                     paddingLeft: 'clamp(4px, 0.5vw, 10px)',
                     wordBreak: 'break-word',
                     textAlign: 'center',
@@ -1243,18 +1488,15 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
                     {dish}
                   </div>
 
-                  {/* Value — BRIGHT WHITE with colored glow, visible from 20+ feet */}
+                  {/* Value */}
                   <div style={{
                     zIndex: 1,
-                    fontSize: String(style.label || '').length > 6 ? 'clamp(24px, min(5.5vw, 7.5vh), 54px)' : 'clamp(48px, min(10vw, 13vh), 96px)',
-                    fontWeight: 900,
-                    color: '#ffffff',
+                    fontSize: String(style.label || '').length > 6 ? 'clamp(24px, min(5.5vw, 7vh), 52px)' : 'clamp(46px, min(9.5vw, 12.5vh), 92px)',
+                    fontWeight: 950,
+                    color: style.labelColor,
                     fontFamily: "'Space Grotesk', sans-serif",
                     lineHeight: 0.95,
-                    textShadow: style.glow
-                      ? `0 0 40px ${style.glow}, 0 0 80px ${style.glow}, 0 2px 8px rgba(0,0,0,0.4)`
-                      : '0 0 20px rgba(255,255,255,0.1)',
-                    letterSpacing: '-0.03em',
+                    letterSpacing: '-0.02em',
                     marginTop: 'clamp(2px, 0.3vw, 6px)'
                   }}>
                     {style.label}
@@ -1269,40 +1511,121 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
             <div style={{ fontSize: 'clamp(20px, 3vw, 28px)', fontWeight: 600, color: 'rgba(255,255,255,0.5)' }}>
               No dishes for {mealLabels[displayMeal].toLowerCase()}
             </div>
-            <div style={{ fontSize: 'clamp(14px, 1.8vw, 18px)', color: 'rgba(255,255,255,0.25)' }}>
-              Menu not available or no responses recorded
-            </div>
           </div>
         )}
       </div>
 
-      {/* ── DISMISS BUTTON ── */}
+      {/* ── RECENT SCAN HISTORY STRIP & DISMISS ── */}
       <div style={{
         flexShrink: 0,
-        padding: 'clamp(4px, 0.8vh, 10px) 0 clamp(8px, 1.5vh, 16px)',
-        display: 'flex', justifyContent: 'center'
+        padding: 'clamp(6px, 1vh, 12px) clamp(16px, 2vw, 32px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 12, flexWrap: 'wrap',
+        background: tvTheme === 'daylight' ? 'rgba(0,0,0,0.03)' : 'rgba(0,0,0,0.4)',
+        borderTop: `1px solid ${tvTheme === 'daylight' ? '#e2e8f0' : 'rgba(255,255,255,0.06)'}`
       }}>
-        <button onClick={onClose} style={{
-          padding: 'clamp(8px, 1vh, 14px) clamp(32px, 6vw, 56px)', borderRadius: 12,
-          border: '1px solid rgba(255,255,255,0.08)',
-          background: 'rgba(255,255,255,0.03)',
-          color: 'rgba(255,255,255,0.4)',
-          fontSize: 'clamp(12px, 1.2vw, 15px)', fontWeight: 600,
-          cursor: 'pointer', transition: 'all 0.2s',
-          fontFamily: "'Space Grotesk', sans-serif",
-          textTransform: 'uppercase', letterSpacing: '0.08em'
-        }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = 'rgba(255,255,255,0.4)' }}
+        {/* Recent scans pill strip */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflowX: 'auto', flex: 1, paddingBottom: 2 }}>
+          <span style={{
+            fontSize: 10, fontWeight: 800, color: tvTheme === 'daylight' ? '#64748b' : 'rgba(255,255,255,0.5)',
+            textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4
+          }}>
+            <History size={12} /> Recent:
+          </span>
+          {recentScans.length === 0 ? (
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)' }}>No previous scans in session</span>
+          ) : (
+            recentScans.map((r, i) => (
+              <div
+                key={i}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '4px 10px', borderRadius: 8,
+                  background: r.status === 'STOP THALI'
+                    ? 'rgba(244,63,94,0.15)'
+                    : r.status === 'Applied'
+                      ? 'rgba(16,185,129,0.15)'
+                      : 'rgba(239,68,68,0.15)',
+                  border: `1px solid ${r.status === 'STOP THALI' ? '#f43f5e' : r.status === 'Applied' ? '#10b981' : '#ef4444'}40`,
+                  fontSize: 11, fontWeight: 700, color: themeText,
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <span style={{ color: r.status === 'Applied' ? '#10b981' : '#f43f5e' }}>#{r.thali}</span>
+                <span style={{ opacity: 0.6, fontSize: 9 }}>{r.time}</span>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Dismiss Button */}
+        <button
+          onClick={onClose}
+          style={{
+            padding: '8px 24px', borderRadius: 10,
+            border: '1px solid rgba(255,255,255,0.15)',
+            background: 'rgba(255,255,255,0.06)',
+            color: themeText,
+            fontSize: 12, fontWeight: 700,
+            cursor: 'pointer', transition: 'all 0.2s',
+            fontFamily: "'Space Grotesk', sans-serif",
+            textTransform: 'uppercase', letterSpacing: '0.06em'
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.15)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
         >
-          Dismiss
+          Dismiss (Space)
         </button>
       </div>
 
+      {/* ── KEYBOARD SHORTCUTS POPUP OVERLAY ── */}
+      {showShortcuts && (
+        <div
+          onClick={() => setShowShortcuts(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 10001,
+            background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '90%', maxWidth: 440,
+              background: '#121620', border: '1px solid var(--accent-border)',
+              borderRadius: 20, padding: 24, boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+              color: '#ffffff'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--accent-primary)' }}>⌨️ TV Remote & Scan Shortcuts</div>
+              <button onClick={() => setShowShortcuts(false)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}><X size={18} /></button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
+              {[
+                { key: 'F', desc: 'Toggle Fullscreen Mode' },
+                { key: 'M', desc: 'Switch Lunch ☀️ / Dinner 🌙' },
+                { key: 'T', desc: 'Cycle TV Theme (Dark / Daylight / Amber)' },
+                { key: 'S', desc: 'Toggle Audio Chimes (On / Off)' },
+                { key: 'V', desc: 'Toggle Voice Announcements (On / Off)' },
+                { key: 'Space / Enter', desc: 'Dismiss / Ready for Next Tiffin' },
+                { key: 'Esc', desc: 'Close TV View' },
+              ].map(({ key, desc }) => (
+                <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                  <span style={{ color: 'rgba(255,255,255,0.7)' }}>{desc}</span>
+                  <span style={{ background: 'rgba(197,160,89,0.15)', border: '1px solid rgba(197,160,89,0.3)', padding: '2px 8px', borderRadius: 6, fontWeight: 700, color: 'var(--accent-primary)', fontSize: 11, fontFamily: 'monospace' }}>
+                    {key}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap');
         @keyframes fadeInDish {
-          from { opacity: 0; transform: translateY(24px) scale(0.95); }
+          from { opacity: 0; transform: translateY(20px) scale(0.97); }
           to { opacity: 1; transform: translateY(0) scale(1); }
         }
       `}</style>

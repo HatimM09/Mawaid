@@ -9,6 +9,8 @@ import { T, PageWrap, PageTitle, AdminCard, Table, Badge, Btn, Spinner, Grid, Mo
 import { getSurveyTargetWeek, DAYS, MEALS, parseDishArray, formatWeekRange, getCurrentMealByTime } from '../common/utils'
 import { isRotiItem, isCountInput, getDishSnapshot } from '../hooks/useSurvey'
 import { fetchUserSurveyRow, fetchLatestUserSurveyRow, fetchAllUserRows, eraseSurveySlot, buildMealDishMap } from '../lib/surveyRows'
+import { resolveScannedUser, extractScanTarget } from './scanParser'
+import { playScanSound } from './scanAudio'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
 } from 'recharts'
@@ -56,18 +58,21 @@ export default function SurveysPage() {
     }
   }, [urlUserId, responses]) // Also depend on responses so it can find them if they load later
 
-  // --- WIRELESS SCANNER SUPPORT ---
+  // --- WIRELESS HARDWARE & USB SCANNER SUPPORT ---
   const scanBuffer = useRef('')
   const scanTimeout = useRef(null)
 
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Ignore input elements so normal typing in search works
+      if (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return
+
       if (e.key === 'Enter') {
-        if (scanBuffer.current.startsWith('ALMAWAID:')) {
-          const id = scanBuffer.current.split(':')[1]
-          processDirectScan(id)
-        }
+        const raw = scanBuffer.current.trim()
         scanBuffer.current = ''
+        if (raw) {
+          processDirectScan(raw)
+        }
         return
       }
 
@@ -77,10 +82,8 @@ export default function SurveysPage() {
 
       if (scanTimeout.current) clearTimeout(scanTimeout.current)
       scanTimeout.current = setTimeout(() => {
-        if (!scanBuffer.current.includes(':')) {
-           scanBuffer.current = ''
-        }
-      }, 50)
+        scanBuffer.current = ''
+      }, 200)
     }
 
     window.addEventListener('keydown', handleKeyDown)
@@ -88,7 +91,7 @@ export default function SurveysPage() {
       window.removeEventListener('keydown', handleKeyDown)
       if (scanTimeout.current) clearTimeout(scanTimeout.current)
     }
-  }, [responses])
+  }, [responses, users])
 
   const handleWirelessScan = (userId) => {
     // Find response in currently loaded data
@@ -124,28 +127,16 @@ export default function SurveysPage() {
   const buildAllDishes = (row, dayName, mealName, fallbackList) =>
     buildMealDishMap(row, dayName, mealName, fallbackList, isRotiItem)
 
-  const processDirectScan = async (rawUserId) => {
+  const processDirectScan = async (rawInput) => {
     try {
-      const cleanId = String(rawUserId || '').trim().replace(/^ALMAWAID:/i, '').trim()
-      if (!cleanId) return
-
-      const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-      const cleanTarget = cleanThali(cleanId)
-
-      let { data: u } = await supabase.from('user_stats').select('*').eq('user_id', cleanId).maybeSingle()
+      if (!rawInput) return
+      const cachedList = Object.values(users || {})
+      const u = await resolveScannedUser(rawInput, cachedList)
       if (!u) {
-        const { data: uById } = await supabase.from('user_stats').select('*').eq('id', cleanId).maybeSingle()
-        u = uById
+        playScanSound('skip')
+        return
       }
-      if (!u) {
-        const { data: uByThali } = await supabase.from('user_stats').select('*').eq('thali_number', cleanId).maybeSingle()
-        u = uByThali
-      }
-      if (!u && cleanTarget) {
-        const { data: allU } = await supabase.from('user_stats').select('*')
-        u = (allU || []).find(x => cleanThali(x.thali_number) === cleanTarget || (x.email && x.email.toLowerCase().trim() === cleanId.toLowerCase()))
-      }
-      if (!u) return
+      playScanSound('proceed')
       
       const targetUserId = u.user_id || u.id
       const weekId = (weekFilter && weekFilter !== 'all') ? weekFilter : surveyWeekId()
@@ -209,33 +200,49 @@ export default function SurveysPage() {
 
   // --- CAMERA SCANNER ---
   useEffect(() => {
-    if (isScanning) {
-      const scanner = new Html5QrcodeScanner("qr-reader", {
-        fps: 10,
-        qrbox: 250,
-        supportedScanTypes: [
-          Html5QrcodeScanType.SCAN_TYPE_CAMERA,
-          Html5QrcodeScanType.SCAN_TYPE_FILE
-        ],
-        experimentalFeatures: { useBarCodeDetectorIfSupported: true }
-      });
-      const handleScan = async (decodedText) => {
-        if (decodedText.startsWith('ALMAWAID:')) {
-          const userId = decodedText.split(':')[1];
-          try {
-            await scanner.clear();
-          } catch (e) {
-            console.error("Failed to clear scanner", e);
-          }
-          setIsScanning(false);
-          handleWirelessScan(userId);
-        }
-      };
+    if (!isScanning) return
+    let scanner = null
+    let isCancelled = false
 
-      scanner.render(handleScan, () => { /* onDecodeError intentionally ignored */ });
-      return () => {
-        scanner.clear().catch(e => console.error("Scanner cleanup failed", e));
-      };
+    const timer = setTimeout(() => {
+      if (isCancelled) return
+      const el = document.getElementById("qr-reader")
+      if (!el) return
+
+      try {
+        scanner = new Html5QrcodeScanner("qr-reader", {
+          fps: 10,
+          qrbox: 250,
+          supportedScanTypes: [
+            Html5QrcodeScanType.SCAN_TYPE_CAMERA,
+            Html5QrcodeScanType.SCAN_TYPE_FILE
+          ],
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+        })
+
+        const handleScan = async (decodedText) => {
+          if (!decodedText) return
+          try {
+            await scanner?.clear()
+          } catch (e) {
+            console.warn("Failed to clear scanner", e)
+          }
+          setIsScanning(false)
+          processDirectScan(decodedText)
+        }
+
+        scanner.render(handleScan, () => { /* onDecodeError intentionally ignored */ })
+      } catch (err) {
+        console.warn('QR scanner initialization deferred:', err)
+      }
+    }, 80)
+
+    return () => {
+      isCancelled = true
+      clearTimeout(timer)
+      if (scanner) {
+        try { scanner.clear().catch(() => {}) } catch {}
+      }
     }
   }, [isScanning, responses])
 

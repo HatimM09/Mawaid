@@ -276,7 +276,7 @@ export default function UsersPage() {
         width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
         background: u.avatar_url ? `url(${u.avatar_url}) center/cover` : T.accentGrad,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 15, fontWeight: 700, color: '#fff', border: `1px solid ${T.border}`
+        fontSize: 15, fontWeight: 900, color: '#000', border: `1px solid ${T.border}`
       }}>
         {!u.avatar_url && (u.name || u.email || 'U').charAt(0).toUpperCase()}
       </div>

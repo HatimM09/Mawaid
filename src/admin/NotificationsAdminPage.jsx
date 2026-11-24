@@ -13,7 +13,7 @@ import {
 import { supabase } from '../lib/firebaseClient'
 import {
   T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner,
-  Modal, SlideDrawer, fmtDateTime
+  Modal, SlideDrawer, fmtDateTime, SrBadge
 } from './ui'
 
 const STATUS_COLORS = {
@@ -1583,7 +1583,7 @@ export default function NotificationsAdminPage() {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {filteredHistory.map(notice => {
+                  {filteredHistory.map((notice, idx) => {
                     const status = getNoticeStatus(notice)
                     const entry = schedule.find(s => s.notice_id === notice.id)
                     return (
@@ -1601,7 +1601,8 @@ export default function NotificationsAdminPage() {
                         onMouseEnter={e => { if (detailNotice?.id !== notice.id) { e.currentTarget.style.background = 'rgba(255,255,255,0.03)' } }}
                         onMouseLeave={e => { if (detailNotice?.id !== notice.id) { e.currentTarget.style.background = 'rgba(255,255,255,0.01)' } }}
                       >
-                        {/* Icon */}
+                        {/* Serial Number & Icon */}
+                        <SrBadge num={idx + 1} />
                         <div style={{
                           width: 36, height: 36, borderRadius: 10,
                           background: `${notice.tone || T.accent}12`,
@@ -1715,7 +1716,7 @@ export default function NotificationsAdminPage() {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {recentBroadcasts.map(notice => {
+                  {recentBroadcasts.map((notice, idx) => {
                     const status = getNoticeStatus(notice)
                     return (
                       <div
@@ -1731,6 +1732,7 @@ export default function NotificationsAdminPage() {
                         onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
                         onClick={() => setDetailNotice(notice)}
                       >
+                        <SrBadge num={idx + 1} />
                         <div style={{
                           width: 28, height: 28, borderRadius: 8,
                           background: `${notice.tone || T.accent}10`,
@@ -1798,7 +1800,7 @@ export default function NotificationsAdminPage() {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {scheduledBroadcasts.map(entry => {
+                  {scheduledBroadcasts.map((entry, idx) => {
                     const isRecurringEntry = entry.repeat_interval === 'daily' || entry.repeat_interval === 'weekly' ||
                       entry.delivery === 'recurring_daily' || entry.delivery === 'recurring_weekly'
                     const recurringLabel = isRecurringEntry
@@ -1820,6 +1822,7 @@ export default function NotificationsAdminPage() {
                         onMouseLeave={e => e.currentTarget.style.background = isRecurringEntry ? 'rgba(167,139,250,0.04)' : 'rgba(255,255,255,0.02)'}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <SrBadge num={idx + 1} />
                           <div style={{
                             width: 28, height: 28, borderRadius: 8,
                             background: `${isRecurringEntry ? '#a78bfa' : (STATUS_COLORS[entry.status] || '#a78bfa')}15`,

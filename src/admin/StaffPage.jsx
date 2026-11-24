@@ -130,7 +130,7 @@ export default function StaffPage() {
             <Shield size={16} color={T.accent} />Add New Staff Member
           </div>
           <form onSubmit={handleAdd} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
               <Input label="Full Name" name="staffName" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Hussain Bhai" required />
               <Input label="Email" name="staffEmail" type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="hussain@email.com" required />
               <Input label="Phone" name="staffPhone" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+91 99999 00000" />

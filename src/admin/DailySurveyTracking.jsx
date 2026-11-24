@@ -5,7 +5,8 @@ import { supabase } from '../lib/firebaseClient'
 import { useWeeklyMenu } from '../common/useWeeklyMenu'
 import { 
   Search, RefreshCw, ChevronRight, Check, X, Filter, 
-  Calendar, Utensils, User as UserIcon, Clock, ChevronDown, ChevronUp, Scan, Trash2
+  Calendar, Utensils, User as UserIcon, Clock, ChevronDown, ChevronUp, Scan, Trash2,
+  Tv, Sparkles, CheckCircle2, XCircle, ArrowUpRight
 } from 'lucide-react'
 import { Html5QrcodeScanner, Html5QrcodeScanType } from 'html5-qrcode'
 import { 
@@ -20,7 +21,9 @@ import {
   getCurrentMealByTime, resolveTrackerWeekId
 } from '../common/utils'
 import { getPctColor, isRotiItem, isCountInput } from '../hooks/useSurvey'
-import { fetchUserSurveyRow, fetchAllUserRows, flattenDayRows, buildMealDishMap } from '../lib/surveyRows'
+import { fetchUserSurveyRow, fetchAllUserRows, flattenDayRows, buildMealDishMap, fetchWeekRows, fetchLatestUserSurveyRow } from '../lib/surveyRows'
+import { resolveScannedUser, extractScanTarget } from './scanParser'
+import { playScanSound } from './scanAudio'
 
 // Pick the stop request whose dates best describe the current stopped period
 // (prefer the newest stop that actually covers the day, else the newest stop).
@@ -56,16 +59,23 @@ export default function DailySurveyTracking() {
   const [search, setSearch] = useState('')
   const [users, setUsers] = useState([])
   const usersRef = useRef([])
+  const lastScanRef = useRef({ id: '', time: 0 })
   useEffect(() => {
     usersRef.current = users
   }, [users])
 
   const [selectedUser, setSelectedUser] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
-  const [isScanning, setIsScanning] = useState(false)
+  const [isScanning, setIsScanning] = useState(() => searchParams.get('scan') === 'true')
+  useEffect(() => {
+    if (searchParams.get('scan') === 'true') {
+      setIsScanning(true)
+    }
+  }, [searchParams])
   const [weekFilter, setWeekFilter] = useState('all')
   const [availableWeeks, setAvailableWeeks] = useState([])
   const [dishInputConfig, setDishInputConfig] = useState({})
+  const [mobileColTab, setMobileColTab] = useState('yes')
   // Menu resolved for the week that owns the selected day (calendar vs target)
   const [displayMenu, setDisplayMenu] = useState({})
 
@@ -76,50 +86,38 @@ export default function DailySurveyTracking() {
     return config?.[idx] || (m === 'lunch' && idx <= 3 ? 'count' : 'percentage')
   }
 
-  const processDirectScan = async (rawUserId) => {
+  const processDirectScan = async (rawInput) => {
     // Auto-fullscreen on scan — must be synchronous before any await to preserve user gesture
     document.documentElement.requestFullscreen().catch(() => {})
     try {
-      const cleanId = String(rawUserId || '').trim().replace(/^ALMAWAID:/i, '').trim()
-      if (!cleanId) {
-        alert('Invalid QR code scanned.')
+      if (!rawInput) return
+
+      const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+      const targetStr = String(rawInput).trim()
+
+      // Debounce duplicate scans within 1.2 seconds
+      const now = Date.now()
+      if (lastScanRef.current.id === targetStr && (now - lastScanRef.current.time) < 1200) {
+        return
+      }
+      lastScanRef.current = { id: targetStr, time: now }
+
+      const u = await resolveScannedUser(rawInput, usersRef.current || [])
+      if (!u) {
+        playScanSound('skip')
+        alert('Member not found for scan: ' + targetStr)
         return
       }
 
-      const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
-      const cleanTarget = cleanThali(cleanId)
-
       // 1. FAST PATH: Check if user is already loaded in the tracker table
-      const cached = (usersRef.current || []).find(u => 
-        (u.user_id && String(u.user_id).trim() === cleanId) ||
-        (u.id && String(u.id).trim() === cleanId) ||
-        (u.thali_number && String(u.thali_number).trim() === cleanId) ||
-        (u.thali_number && cleanThali(u.thali_number) === cleanTarget) ||
-        (u.email && String(u.email).toLowerCase().trim() === cleanId.toLowerCase())
+      const cached = (usersRef.current || []).find(x => 
+        (x.user_id && u.user_id && String(x.user_id).trim() === String(u.user_id).trim()) ||
+        (x.thali_number && u.thali_number && cleanThali(x.thali_number) === cleanThali(u.thali_number))
       )
 
       if (cached) {
+        playScanSound(cached.status === 'Applied' ? 'proceed' : 'neutral')
         setSelectedUser(cached)
-        return
-      }
-
-      // 2. FALLBACK PATH: Query DB directly
-      let { data: u } = await supabase.from('user_stats').select('*').eq('user_id', cleanId).maybeSingle()
-      if (!u) {
-        const { data: uById } = await supabase.from('user_stats').select('*').eq('id', cleanId).maybeSingle()
-        u = uById
-      }
-      if (!u) {
-        const { data: uByThali } = await supabase.from('user_stats').select('*').eq('thali_number', cleanId).maybeSingle()
-        u = uByThali
-      }
-      if (!u && cleanTarget) {
-        const { data: allU } = await supabase.from('user_stats').select('*')
-        u = (allU || []).find(x => cleanThali(x.thali_number) === cleanTarget || (x.email && x.email.toLowerCase().trim() === cleanId.toLowerCase()))
-      }
-
-      if (!u) {
-        alert('User not found!')
         return
       }
 
@@ -290,24 +288,22 @@ export default function DailySurveyTracking() {
     }
   }
 
-  // --- WIRELESS SCANNER SUPPORT ---
+  // --- WIRELESS & USB HARDWARE SCANNER SUPPORT ---
   useEffect(() => {
     let scanBuffer = ''
     let lastKeyTime = Date.now()
 
     const handleKeyDown = (e) => {
+      if (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return
       const now = Date.now()
-      if (now - lastKeyTime > 100) scanBuffer = ''
+      if (now - lastKeyTime > 150) scanBuffer = ''
       lastKeyTime = now
 
       if (e.key === 'Enter') {
         const text = scanBuffer.trim()
+        scanBuffer = ''
         if (text) {
-          const userId = text.replace(/^ALMAWAID:/i, '').trim()
-          if (userId) {
-            handleWirelessScan(userId)
-          }
-          scanBuffer = ''
+          processDirectScan(text)
         }
       } else if (e.key.length === 1) {
         scanBuffer += e.key
@@ -596,34 +592,49 @@ export default function DailySurveyTracking() {
   }, [load])
 
   useEffect(() => {
-    if (isScanning) {
-      const scanner = new Html5QrcodeScanner("qr-reader", {
-        fps: 10,
-        qrbox: 250,
-        supportedScanTypes: [
-          Html5QrcodeScanType.SCAN_TYPE_CAMERA,
-          Html5QrcodeScanType.SCAN_TYPE_FILE
-        ],
-        experimentalFeatures: { useBarCodeDetectorIfSupported: true }
-      });
-      const handleScan = async (decodedText) => {
-        const rawText = String(decodedText || '').trim()
-        const userId = rawText.replace(/^ALMAWAID:/i, '').trim()
-        if (userId) {
-          try {
-            await scanner.clear();
-          } catch (e) {
-            console.error("Failed to clear scanner", e);
-          }
-          setIsScanning(false);
-          await processDirectScan(userId);
-        }
-      };
+    if (!isScanning) return
+    let scanner = null
+    let isCancelled = false
 
-      scanner.render((text) => handleScan(text).catch(e => console.error('Scan handler error:', e)), () => {});
-      return () => {
-        scanner.clear().catch(e => console.error("Scanner cleanup failed", e));
-      };
+    const timer = setTimeout(() => {
+      if (isCancelled) return
+      const el = document.getElementById("qr-reader")
+      if (!el) return
+
+      try {
+        scanner = new Html5QrcodeScanner("qr-reader", {
+          fps: 10,
+          qrbox: 250,
+          supportedScanTypes: [
+            Html5QrcodeScanType.SCAN_TYPE_CAMERA,
+            Html5QrcodeScanType.SCAN_TYPE_FILE
+          ],
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true }
+        })
+
+        const handleScan = async (decodedText) => {
+          if (!decodedText) return
+          try {
+            await scanner?.clear()
+          } catch (e) {
+            console.warn("Failed to clear scanner", e)
+          }
+          setIsScanning(false)
+          await processDirectScan(decodedText)
+        }
+
+        scanner.render((text) => handleScan(text).catch(e => console.error('Scan handler error:', e)), () => {})
+      } catch (err) {
+        console.warn('QR scanner initialization deferred:', err)
+      }
+    }, 80)
+
+    return () => {
+      isCancelled = true
+      clearTimeout(timer)
+      if (scanner) {
+        try { scanner.clear().catch(() => {}) } catch {}
+      }
     }
   }, [isScanning, day, meal, weeklyMenu])
 
@@ -721,15 +732,46 @@ export default function DailySurveyTracking() {
     <PageWrap>
       <div className="tracker-dashboard">
         {/* Title row */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 16, flexWrap: 'wrap' }}>
-          <PageTitle style={{ margin: 0 }}>Daily Survey Tracker</PageTitle>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <Btn variant="primary" onClick={() => setIsScanning(true)}>
-              <Scan size={16} /> Scan Tiffin
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 16, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '3px 10px', borderRadius: 999,
+                background: 'rgba(212,175,55,0.1)', border: '1px solid rgba(212,175,55,0.3)',
+                fontSize: 10, fontWeight: 800, color: 'var(--accent-primary)',
+                letterSpacing: '0.12em', textTransform: 'uppercase'
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-primary)', boxShadow: '0 0 8px var(--accent-primary)' }} />
+                LIVE DISH AUDIT &amp; PACKING STATION
+              </span>
+              <span style={{ fontSize: 11, color: T.textSub, fontWeight: 600 }}>
+                {meal === 'lunch' ? '☀️ Lunch Window' : '🌙 Dinner Window'} · {day.toUpperCase()}
+              </span>
+            </div>
+            <PageTitle style={{ margin: 0 }}>Daily Survey Tracker</PageTitle>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Btn 
+              variant="primary" 
+              onClick={() => {
+                const sample = yesMembers[0] || users[0] || { currentDay: day, currentMeal: meal, name: 'Live Packing Station', thali_number: '—' }
+                setSelectedUser(sample)
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #c5a059 0%, #936c28 100%)',
+                color: '#000', fontWeight: 900, boxShadow: '0 4px 16px rgba(197,160,89,0.3)',
+                display: 'inline-flex', alignItems: 'center', gap: 8
+              }}
+            >
+              <Tv size={16} /> <span>TV Live Screen</span>
             </Btn>
-            <Btn variant="outline" onClick={() => load(true)} disabled={refreshing}>
+            <Btn variant="outline" onClick={() => setIsScanning(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <Scan size={16} /> <span>Scan Tiffin</span>
+            </Btn>
+            <Btn variant="outline" onClick={() => load(true)} disabled={refreshing} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               <RefreshCw size={15} className={refreshing ? 'spin' : ''} />
-              {refreshing ? 'Syncing...' : 'Sync Now'}
+              <span>{refreshing ? 'Syncing...' : 'Sync Now'}</span>
             </Btn>
           </div>
         </div>
@@ -739,18 +781,19 @@ export default function DailySurveyTracking() {
         {/* Day, Meal, Search & Sleek Dish Percentages Capsule Row */}
         <div style={{ 
           display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', 
-          alignItems: 'center', background: 'rgba(212, 175, 55, 0.03)', 
-          padding: '8px 16px', borderRadius: 20, border: `1px solid ${T.border}`
+          alignItems: 'center', background: 'var(--bg-surface)', 
+          padding: '10px 16px', borderRadius: 20, border: `1px solid var(--border-light)`,
+          boxShadow: '0 8px 30px rgba(0,0,0,0.1)'
         }}>
           {/* Day Filters */}
           <div style={{ display: 'flex', background: T.inputBg, padding: 3, borderRadius: 12, border: `1px solid ${T.border}`, overflowX: 'auto' }}>
             {DAYS.map(d => (
               <button key={d} onClick={() => setDay(d)}
                 style={{ 
-                  flexShrink: 0, padding: '6px 12px', borderRadius: 8, border: 'none', 
+                  flexShrink: 0, padding: '7px 13px', borderRadius: 9, border: 'none', 
                   background: day === d ? T.accentGrad : 'transparent', 
-                  color: day === d ? '#fff' : T.textSub, 
-                  fontSize: 10, fontWeight: 700, cursor: 'pointer', transition: '0.2s' 
+                  color: day === d ? '#000' : T.textSub, 
+                  fontSize: 11, fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s cubic-bezier(0.32, 0.72, 0, 1)' 
                 }}>
                 {d.charAt(0).toUpperCase() + d.slice(1, 3)}
               </button>
@@ -762,25 +805,29 @@ export default function DailySurveyTracking() {
             {['lunch', 'dinner'].map(m => (
               <button key={m} onClick={() => { setMeal(m); setMealOverride(true) }}
                 style={{ 
-                  padding: '6px 12px', borderRadius: 8, border: 'none', 
-                  background: meal === m ? (m === 'lunch' ? T.accentGrad : '#5e9ce0') : 'transparent', 
-                  color: meal === m ? '#fff' : T.textSub, 
-                  fontSize: 10, fontWeight: 700, cursor: 'pointer', transition: '0.2s' 
+                  padding: '7px 14px', borderRadius: 9, border: 'none', 
+                  background: meal === m ? (m === 'lunch' ? T.accentGrad : 'linear-gradient(135deg, #5e9ce0 0%, #3b82f6 100%)') : 'transparent', 
+                  color: meal === m ? (m === 'lunch' ? '#000' : '#fff') : T.textSub, 
+                  fontSize: 11, fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s cubic-bezier(0.32, 0.72, 0, 1)',
+                  display: 'flex', alignItems: 'center', gap: 6
                 }}>
-                {m.toUpperCase()}
+                <span>{m === 'lunch' ? '☀️' : '🌙'}</span>
+                <span>{m.toUpperCase()}</span>
               </button>
             ))}
           </div>
 
-
           {/* Week Filter Dropdown */}
-          <select value={weekFilter} onChange={e => setWeekFilter(e.target.value)} name="weekFilter"
-            style={{ padding: '6px 12px', borderRadius: 10, background: T.inputBg, border: `1px solid ${T.border}`, color: T.text, fontSize: 11, fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
-            <option value="all">⚡ Auto / Latest Week</option>
-            {availableWeeks.map(w => (
-              <option key={w} value={w}>{formatWeekRange(w)} ({formatWeekShort(w)})</option>
-            ))}
-          </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: T.inputBg, padding: '6px 12px', borderRadius: 12, border: `1px solid ${T.border}` }}>
+            <Calendar size={13} color="var(--accent-primary)" />
+            <select value={weekFilter} onChange={e => setWeekFilter(e.target.value)} name="weekFilter"
+              style={{ background: 'transparent', border: 'none', color: T.text, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', outline: 'none', fontFamily: 'inherit' }}>
+              <option value="all">⚡ Auto / Latest Week</option>
+              {availableWeeks.map(w => (
+                <option key={w} value={w}>{formatWeekRange(w)} ({formatWeekShort(w)})</option>
+              ))}
+            </select>
+          </div>
           
           {/* Search Bar */}
           <div style={{ flex: '1 1 200px', position: 'relative' }}>
@@ -791,8 +838,8 @@ export default function DailySurveyTracking() {
               onChange={e => setSearch(e.target.value)} 
               placeholder="Search thali or name..."
               style={{ 
-                width: '100%', boxSizing: 'border-box', padding: '8px 12px 8px 32px', 
-                borderRadius: 10, background: T.inputBg, border: `1px solid ${T.inputBorder}`, 
+                width: '100%', boxSizing: 'border-box', padding: '9px 12px 9px 34px', 
+                borderRadius: 12, background: T.inputBg, border: `1px solid ${T.inputBorder}`, 
                 color: T.text, fontSize: 13, outline: 'none', fontFamily: 'inherit' 
               }}
             />
@@ -801,15 +848,15 @@ export default function DailySurveyTracking() {
           {/* Inline Dish Stats Strip - shows total piece counts */}
           {Object.keys(dishStats).length > 0 && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              <div style={{ fontSize: 9, fontWeight: 800, color: T.textSub, letterSpacing: '0.05em', textTransform: 'uppercase', marginRight: 4 }}>Totals:</div>
+              <div style={{ fontSize: 9.5, fontWeight: 800, color: T.textSub, letterSpacing: '0.08em', textTransform: 'uppercase', marginRight: 2 }}>PORTIONS:</div>
               {Object.entries(dishStats).map(([dish, stat]) => {
                 let displayVal = ''
                 let unit = ''
-                let statColor = T.accent
+                let statColor = 'var(--accent-primary)'
 
                 if (stat.isRoti) {
                   displayVal = `${stat.yesCount}/${stat.yesCount + stat.noCount}`
-                  unit = 'yes'
+                  unit = 'rotis'
                   const ratio = (stat.yesCount + stat.noCount > 0) ? (stat.yesCount / (stat.yesCount + stat.noCount)) : 0
                   statColor = ratio >= 0.5 ? '#10b981' : '#ef4444'
                 } else if (stat.isCount) {
@@ -822,17 +869,20 @@ export default function DailySurveyTracking() {
                   const portions = (stat.totalPct / 100).toFixed(1)
                   displayVal = `${avgPct}% (${portions} thalis)`
                   unit = ''
-                  statColor = getPctColor(avgPct) || T.accent
+                  statColor = getPctColor(avgPct) || 'var(--accent-primary)'
                 }
 
                 return (
                   <div key={dish} style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    background: T.inputBg, padding: '5px 10px',
-                    borderRadius: 10, border: `1px solid ${statColor ? `${statColor}40` : T.border}`
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    background: 'var(--input-bg)', padding: '5px 12px',
+                    borderRadius: 12, border: `1px solid ${statColor ? `${statColor}40` : T.border}`,
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
                   }}>
                     <span style={{ fontSize: 10, fontWeight: 700, color: T.textSub, textTransform: 'uppercase' }}>{dish}</span>
-                    <span style={{ fontSize: 13, fontWeight: 900, color: statColor }}>{displayVal}{unit && <span style={{ fontSize: 9, fontWeight: 700, color: T.textSub, marginLeft: 2 }}>{unit}</span>}</span>
+                    <span style={{ fontSize: 13, fontWeight: 900, color: statColor, fontFamily: "'Space Grotesk', monospace", fontVariantNumeric: 'tabular-nums' }}>
+                      {displayVal}{unit && <span style={{ fontSize: 9.5, fontWeight: 700, color: T.textSub, marginLeft: 3 }}>{unit}</span>}
+                    </span>
                   </div>
                 )
               })}
@@ -840,18 +890,51 @@ export default function DailySurveyTracking() {
           )}
         </div>
 
+        {/* Mobile Column Switcher (visible on screens <= 960px) */}
+        <div className="mobile-col-switcher" style={{ display: 'none', gap: 8, marginBottom: 14, width: '100%', flexWrap: 'wrap' }}>
+          {[
+            { id: 'yes', label: `✅ YES (${yesMembers.length})`, color: T.success },
+            { id: 'no', label: `❌ NO (${noMembers.length})`, color: T.danger },
+            { id: 'pending', label: `⌛ PENDING (${noResponse.length})`, color: 'var(--text-tertiary)' },
+            { id: 'all', label: `ALL (${filtered.length})`, color: 'var(--accent-primary)' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setMobileColTab(tab.id)}
+              style={{
+                flex: 1, minWidth: 100, padding: '9px 8px', borderRadius: 12, border: 'none',
+                background: mobileColTab === tab.id ? tab.color : 'var(--input-bg)',
+                color: mobileColTab === tab.id ? (tab.id === 'yes' ? '#000' : '#fff') : 'var(--text-tertiary)',
+                fontWeight: 800, fontSize: 11.5, cursor: 'pointer', transition: 'all 0.2s cubic-bezier(0.32, 0.72, 0, 1)',
+                boxShadow: mobileColTab === tab.id ? `0 4px 12px ${tab.color}35` : 'none'
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         {/* 3-Column Side-By-Side Flex Layout */}
         <div className="tracker-row">
           {/* YES Column */}
-          <div className="tracker-col">
+          <div className={`tracker-col ${mobileColTab === 'yes' || mobileColTab === 'all' ? 'col-active' : ''}`}>
             <AdminCard className="col-card" style={{ borderTop: `4px solid ${T.success}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <SectionHeader style={{ margin: 0, fontSize: 13 }}>✅ YES THALI ({yesMembers.length})</SectionHeader>
-                <Badge color={T.success} style={{ padding: '2px 8px' }}>Applied</Badge>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid var(--border-light)' }}>
+                <SectionHeader style={{ margin: 0, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>✅ YES THALI</span>
+                </SectionHeader>
+                <div style={{
+                  padding: '2px 10px', borderRadius: 999,
+                  background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)',
+                  color: '#10b981', fontSize: 12, fontWeight: 900,
+                  fontFamily: "'Space Grotesk', monospace", fontVariantNumeric: 'tabular-nums'
+                }}>
+                  {yesMembers.length}
+                </div>
               </div>
               <div className="col-body">
                 {yesMembers.length === 0 ? (
-                  <div style={{ padding: 20, textAlign: 'center', color: T.textSub, fontSize: 12 }}>No one has applied yet.</div>
+                  <div style={{ padding: 30, textAlign: 'center', color: T.textSub, fontSize: 13 }}>No one has applied yet.</div>
                 ) : yesMembers.map((u, idx) => (
                   <MemberRow key={u.user_id} user={u} index={idx + 1} onClick={() => { document.documentElement.requestFullscreen().catch(() => {}); setSelectedUser(u) }} />
                 ))}
@@ -860,15 +943,24 @@ export default function DailySurveyTracking() {
           </div>
 
           {/* NO Column */}
-          <div className="tracker-col">
+          <div className={`tracker-col ${mobileColTab === 'no' || mobileColTab === 'all' ? 'col-active' : ''}`}>
             <AdminCard className="col-card" style={{ borderTop: `4px solid ${T.danger}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <SectionHeader style={{ margin: 0, fontSize: 13 }}>❌ NO THALI ({noMembers.length})</SectionHeader>
-                <Badge color={T.danger} style={{ padding: '2px 8px' }}>Skipped</Badge>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid var(--border-light)' }}>
+                <SectionHeader style={{ margin: 0, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>❌ NO THALI</span>
+                </SectionHeader>
+                <div style={{
+                  padding: '2px 10px', borderRadius: 999,
+                  background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)',
+                  color: '#ef4444', fontSize: 12, fontWeight: 900,
+                  fontFamily: "'Space Grotesk', monospace", fontVariantNumeric: 'tabular-nums'
+                }}>
+                  {noMembers.length}
+                </div>
               </div>
               <div className="col-body">
                 {noMembers.length === 0 ? (
-                  <div style={{ padding: 20, textAlign: 'center', color: T.textSub, fontSize: 12 }}>No opt-outs yet.</div>
+                  <div style={{ padding: 30, textAlign: 'center', color: T.textSub, fontSize: 13 }}>No opt-outs yet.</div>
                 ) : noMembers.map((u, idx) => (
                   <MemberRow key={u.user_id} user={u} index={idx + 1} onClick={() => { document.documentElement.requestFullscreen().catch(() => {}); setSelectedUser(u) }} />
                 ))}
@@ -877,15 +969,24 @@ export default function DailySurveyTracking() {
           </div>
 
           {/* NO RESPONSE Column */}
-          <div className="tracker-col">
+          <div className={`tracker-col ${mobileColTab === 'pending' || mobileColTab === 'all' ? 'col-active' : ''}`}>
             <AdminCard className="col-card" style={{ borderTop: `4px solid var(--text-tertiary)` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <SectionHeader style={{ margin: 0, fontSize: 13 }}>⌛ PENDING RESPONSE ({noResponse.length})</SectionHeader>
-                <Badge color="var(--text-tertiary)" style={{ padding: '2px 8px' }}>Pending</Badge>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid var(--border-light)' }}>
+                <SectionHeader style={{ margin: 0, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>⌛ PENDING RESPONSE</span>
+                </SectionHeader>
+                <div style={{
+                  padding: '2px 10px', borderRadius: 999,
+                  background: 'rgba(255,255,255,0.06)', border: '1px solid var(--border-light)',
+                  color: 'var(--text-tertiary)', fontSize: 12, fontWeight: 900,
+                  fontFamily: "'Space Grotesk', monospace", fontVariantNumeric: 'tabular-nums'
+                }}>
+                  {noResponse.length}
+                </div>
               </div>
               <div className="col-body">
                 {noResponse.length === 0 ? (
-                  <div style={{ padding: 20, textAlign: 'center', color: T.textSub, fontSize: 12 }}>All users have responded!</div>
+                  <div style={{ padding: 30, textAlign: 'center', color: T.textSub, fontSize: 13 }}>All users have responded!</div>
                 ) : noResponse.map((u, idx) => (
                   <PendingMemberRow key={u.user_id} user={u} index={idx + 1} onClick={() => { document.documentElement.requestFullscreen().catch(() => {}); setSelectedUser(u) }} />
                 ))}
@@ -900,7 +1001,7 @@ export default function DailySurveyTracking() {
         .tracker-dashboard {
           display: flex;
           flex-direction: column;
-          height: calc(100vh - 200px);
+          height: calc(100vh - 180px);
           min-height: 480px;
           box-sizing: border-box;
           overflow: hidden;
@@ -925,9 +1026,11 @@ export default function DailySurveyTracking() {
           flex-direction: column;
           height: 100%;
           min-height: 0;
-          padding: 16px !important;
+          padding: 18px !important;
           box-sizing: border-box;
           overflow: hidden;
+          background: var(--bg-surface) !important;
+          border-radius: 20px !important;
         }
         .col-body {
           flex: 1;
@@ -935,7 +1038,7 @@ export default function DailySurveyTracking() {
           min-height: 0;
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 10px;
           padding-right: 4px;
         }
         /* Custom sleek scrollbars for independent columns */
@@ -955,18 +1058,29 @@ export default function DailySurveyTracking() {
         .spin { animation: spin 1s linear infinite } 
         @keyframes spin { to { transform: rotate(360deg) } }
 
-        @media (max-width: 768px) {
+        @media (max-width: 960px) {
+          .mobile-col-switcher {
+            display: flex !important;
+          }
           .tracker-dashboard {
-            height: auto;
-            overflow: visible;
+            height: auto !important;
+            overflow: visible !important;
           }
           .tracker-row {
-            flex-direction: column;
-            height: auto;
+            flex-direction: column !important;
+            height: auto !important;
           }
           .tracker-col {
-            height: 450px;
-            margin-bottom: 16px;
+            display: none !important;
+            height: auto !important;
+          }
+          .tracker-col.col-active {
+            display: flex !important;
+            height: auto !important;
+          }
+          .col-card {
+            height: auto !important;
+            max-height: 75vh !important;
           }
         }
       `}</style>
@@ -1017,87 +1131,138 @@ function PendingMemberRow({ user, index, onClick }) {
     <div 
       onClick={onClick}
       style={{ 
-        padding: '16px 22px', borderRadius: 14, background: T.inputBg, border: `1px solid ${T.border}`,
-        display: 'flex', alignItems: 'center', gap: 14, fontSize: 15, color: T.textSub,
-        cursor: 'pointer', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+        padding: '12px 16px', borderRadius: 14, background: 'var(--input-bg)', border: '1px solid var(--border-light)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        cursor: 'pointer', transition: 'all 0.25s cubic-bezier(0.32, 0.72, 0, 1)'
       }}
       onMouseEnter={e => {
-        e.currentTarget.style.borderColor = T.accent;
-        e.currentTarget.style.background = T.cardHover;
-        e.currentTarget.style.transform = 'translateX(4px)';
+        e.currentTarget.style.borderColor = 'var(--accent-primary)';
+        e.currentTarget.style.background = 'var(--bg-card-hover)';
+        e.currentTarget.style.transform = 'translateY(-2px)';
       }}
       onMouseLeave={e => {
-        e.currentTarget.style.borderColor = T.border;
-        e.currentTarget.style.background = T.inputBg;
-        e.currentTarget.style.transform = 'translateX(0)';
+        e.currentTarget.style.borderColor = 'var(--border-light)';
+        e.currentTarget.style.background = 'var(--input-bg)';
+        e.currentTarget.style.transform = 'translateY(0)';
       }}
     >
-      {index != null && <SrBadge num={index} />}
-      <div style={{ 
-        width: 24, height: 24, borderRadius: 8, background: 'rgba(212,175,55,0.08)', 
-        border: '1px solid rgba(212,175,55,0.3)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 10, fontWeight: 900, color: '#ffffff',
-        textShadow: '0 0 8px rgba(212,175,55,0.3)'
-      }}>
-        #{user.thali_number}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
+        {index != null && <SrBadge num={index} />}
+        <div style={{ 
+          minWidth: 46, height: 28, padding: '0 8px', borderRadius: 8,
+          background: 'rgba(255,255,255,0.04)', 
+          border: '1px solid var(--border-light)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 11, fontWeight: 900, color: 'var(--text-tertiary)',
+          fontFamily: "'Space Grotesk', monospace",
+          fontVariantNumeric: 'tabular-nums',
+          flexShrink: 0
+        }}>
+          #{user.thali_number || '—'}
+        </div>
+        <div style={{
+          fontWeight: 600, color: 'var(--text-primary)', fontSize: 14,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+        }}>
+          {user.name || 'Member'}
+        </div>
       </div>
-      <div style={{ fontWeight: 600, color: '#ffffff', textShadow: '0 0 6px rgba(255,255,255,0.08)' }}>{user.name}</div>
-      <ChevronRight size={18} color={T.textSub} style={{ marginLeft: 'auto' }} />
+      <ChevronRight size={16} color="var(--text-tertiary)" style={{ flexShrink: 0, marginLeft: 8 }} />
     </div>
   )
 }
 
 function MemberRow({ user, index, onClick }) {
+  const dishPills = []
+  if (user.dishResponses) {
+    Object.entries(user.dishResponses).forEach(([dish, val]) => {
+      if (dish === '_status' || val === null || val === undefined || val === '') return
+      const isRoti = isRotiItem(dish)
+      const strVal = String(val).trim().toLowerCase()
+      if (isRoti) {
+        if (!['no', 'false', 'skip'].includes(strVal)) {
+          const num = parseInt(strVal, 10)
+          dishPills.push(!isNaN(num) && num > 0 && !strVal.endsWith('%') ? `${num} Roti` : 'Roti')
+        }
+      } else if (strVal.endsWith('%') || !isNaN(Number(strVal))) {
+        const n = parseInt(strVal)
+        if (n > 0) dishPills.push(`${dish.substring(0, 10)}: ${n}%`)
+      } else if (strVal !== 'no') {
+        dishPills.push(`${dish.substring(0, 10)}: ${val}`)
+      }
+    })
+  }
+
   return (
     <div 
       onClick={onClick}
       style={{ 
-        padding: '18px 24px', borderRadius: 16, background: T.inputBg, border: `1px solid ${T.border}`,
+        padding: '12px 16px', borderRadius: 14, background: 'var(--input-bg)', border: '1px solid var(--border-light)',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer',
-        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+        transition: 'all 0.25s cubic-bezier(0.32, 0.72, 0, 1)'
       }}
       onMouseEnter={e => {
-        e.currentTarget.style.borderColor = T.accent;
-        e.currentTarget.style.background = T.cardHover;
-        e.currentTarget.style.transform = 'translateX(4px)';
+        e.currentTarget.style.borderColor = 'var(--accent-primary)';
+        e.currentTarget.style.background = 'var(--bg-card-hover)';
+        e.currentTarget.style.transform = 'translateY(-2px)';
+        e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.15)';
       }}
       onMouseLeave={e => {
-        e.currentTarget.style.borderColor = T.border;
-        e.currentTarget.style.background = T.inputBg;
-        e.currentTarget.style.transform = 'translateX(0)';
+        e.currentTarget.style.borderColor = 'var(--border-light)';
+        e.currentTarget.style.background = 'var(--input-bg)';
+        e.currentTarget.style.transform = 'translateY(0)';
+        e.currentTarget.style.boxShadow = 'none';
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
         {index != null && <SrBadge num={index} />}
         <div style={{
-          width: 24, height: 24, borderRadius: 8,
-          background: user.stopped ? 'rgba(239,68,68,0.15)' : 'rgba(212,175,55,0.1)',
-          border: `1px solid ${user.stopped ? 'rgba(239,68,68,0.45)' : 'rgba(212,175,55,0.35)'}`,
+          minWidth: 46, height: 28, padding: '0 8px', borderRadius: 8,
+          background: user.stopped ? 'rgba(239,68,68,0.12)' : 'rgba(212,175,55,0.1)',
+          border: `1.5px solid ${user.stopped ? '#ef4444' : 'var(--accent-primary)'}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 10, fontWeight: 900, color: '#ffffff',
-          textShadow: '0 0 8px rgba(212,175,55,0.3)'
+          fontSize: 11, fontWeight: 900, color: user.stopped ? '#ef4444' : 'var(--accent-primary)',
+          fontFamily: "'Space Grotesk', monospace",
+          fontVariantNumeric: 'tabular-nums',
+          flexShrink: 0,
+          boxShadow: user.stopped ? '0 0 10px rgba(239,68,68,0.2)' : '0 0 10px rgba(212,175,55,0.15)'
         }}>
-          #{user.thali_number}
+          #{user.thali_number || '—'}
         </div>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 600, color: '#ffffff', textShadow: '0 0 6px rgba(255,255,255,0.08)' }}>{user.name}</div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{
+            fontSize: 14, fontWeight: 700, color: 'var(--text-primary)',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+          }}>
+            {user.name || 'Member'}
+          </div>
           {user.stopped ? (
-            <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 800, marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <div style={{ fontSize: 10, color: '#ef4444', fontWeight: 800, marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
               ⏹️ STOP THALI{user.stopInfo?.from_date ? ` · ${user.stopInfo.from_date}` + (user.stopInfo.to_date && user.stopInfo.to_date !== user.stopInfo.from_date ? ` → ${user.stopInfo.to_date}` : '') : ''}
             </div>
           ) : user._isOverride ? (
-            <div style={{ fontSize: 10, color: '#4CAF50', fontWeight: 800, marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ padding: '1px 6px', borderRadius: 4, background: 'rgba(76,175,80,0.15)', border: '1px solid rgba(76,175,80,0.3)' }}>OVERRIDE</span>
+            <div style={{ fontSize: 10, color: '#10b981', fontWeight: 800, marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ padding: '1px 6px', borderRadius: 4, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)' }}>OVERRIDE</span>
             </div>
-          ) : user.updated_at && (
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', fontWeight: 500, marginTop: 2, opacity: 0.7 }}>
-              {new Date(user.updated_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+          ) : (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+              {dishPills.slice(0, 3).map((pill, pi) => (
+                <span key={pi} style={{
+                  fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6,
+                  background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.2)',
+                  color: 'var(--accent-primary)', whiteSpace: 'nowrap'
+                }}>
+                  {pill}
+                </span>
+              ))}
+              {dishPills.length > 3 && (
+                <span style={{ fontSize: 9.5, color: 'var(--text-tertiary)', fontWeight: 700 }}>+{dishPills.length - 3}</span>
+              )}
             </div>
           )}
         </div>
       </div>
-      <ChevronRight size={18} color={T.textSub} />
+      <ChevronRight size={16} color="var(--text-tertiary)" style={{ flexShrink: 0, marginLeft: 8 }} />
     </div>
   )
 }

@@ -300,11 +300,11 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
 
   const paidByMonth = useMemo(() => {
     const map = {}
-    ;(myPayments || []).forEach(p => {
-      if (!p?.created_at) return
-      const k = monthKeyOf(new Date(p.created_at))
-      map[k] = (map[k] || 0) + (Number(p.amount) || 0)
-    })
+      ; (myPayments || []).forEach(p => {
+        if (!p?.created_at) return
+        const k = monthKeyOf(new Date(p.created_at))
+        map[k] = (map[k] || 0) + (Number(p.amount) || 0)
+      })
     return map
   }, [myPayments])
 
