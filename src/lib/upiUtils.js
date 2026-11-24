@@ -1,25 +1,25 @@
 // src/lib/upiUtils.js
 // ═════════════════════════════════════════════════════════════════════════════
-// NPCI Universal Standard UPI Payment & Direct P2P Transfer Engine
-// 100% Free, Zero Gateway Fees, Compatible with Personal & Business Accounts
+// NPCI Universal Standard UPI Payment & Direct Transfer Engine
+// 100% Free, Zero Gateway Fees, Compatible with Personal VPAs & Business Handles
 // ═════════════════════════════════════════════════════════════════════════════
 
 /**
  * Generates an official NPCI-compliant UPI URI.
  *
- * Supports both:
- * 1. Personal P2P (Savings account / Personal UPI): clean pa, pn, am, cu, tn.
- * 2. Google Pay Business (@okbizaxis): includes mc=5812 and valid tr to satisfy
- *    Google Pay Business merchant rail requirements.
+ * CRITICAL FIX FOR GOOGLE PAY & AXIS BANK DECLINES:
+ * Never inject a dynamic `tr` (Transaction Reference) parameter unless an actual
+ * Payment Gateway backend registered it with the acquiring bank.
+ * Passing a fake `tr` causes Axis Bank / Google Pay to treat the static payment
+ * as an unverified e-commerce order and decline it immediately after UPI PIN entry!
  */
 export function generateUpiString({
   upiId = '6375250267@okbizaxis',
   payeeName = 'Al Mawaid',
   amount = null,
   note = 'Monthly Thali Contribution',
-  mc = '5812',
-  tr = null,
-  isMerchant = null
+  mc = null,
+  tr = null
 }) {
   const cleanUpi = String(upiId || '6375250267@okbizaxis').trim()
   const cleanName = String(payeeName || 'Al Mawaid').trim()
@@ -44,15 +44,14 @@ export function generateUpiString({
     if (cleanNote) params.set('tn', cleanNote)
   }
 
-  // Detect whether this VPA is a Google Pay Business (@okbizaxis) or BharatPe merchant
-  const isBizHandle = /@okbizaxis|@okmerchant|@bharatpe/i.test(cleanUpi)
-  const shouldAttachMerchant = isMerchant !== null ? isMerchant : isBizHandle
+  // Only attach `mc` if explicitly passed by admin AND valid 4-digit code (not '0000')
+  if (mc && String(mc).trim().length === 4 && String(mc).trim() !== '0000') {
+    params.set('mc', String(mc).trim())
+  }
 
-  if (shouldAttachMerchant) {
-    const validMc = mc && String(mc).trim().length === 4 ? String(mc).trim() : '5812'
-    params.set('mc', validMc)
-    const uniqueTr = tr ? String(tr).trim() : `ALM${Date.now()}${Math.floor(1000 + Math.random() * 9000)}`
-    params.set('tr', uniqueTr)
+  // Only attach `tr` if explicitly passed by a real merchant order engine
+  if (tr && String(tr).trim()) {
+    params.set('tr', String(tr).trim())
   }
 
   return `upi://pay?${params.toString()}`
@@ -64,15 +63,10 @@ export function generateUpiString({
 export function buildTargetedUpiUri(upiUri, app = 'upi') {
   if (!upiUri) return ''
   const queryStr = upiUri.replace(/^upi:\/\/pay\?/, '')
-  const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
 
   switch (app) {
     case 'gpay':
-      // For Google Pay, standard upi:// with fallback or tez://
-      if (isAndroid) {
-        // Native intent launching for Google Pay
-        return `tez://upi/pay?${queryStr}`
-      }
+      // tez:// launches Google Pay directly on Android / iOS
       return `tez://upi/pay?${queryStr}`
 
     case 'phonepe':
@@ -104,13 +98,14 @@ export async function launchUpiApp(uri, app = 'upi', amount = null, helpline = '
     const waPhone = String(helpline || '916375250267').replace(/[^0-9]/g, '')
     const targetPhone = waPhone.startsWith('91') ? waPhone : `91${waPhone}`
     const waUrl = `https://wa.me/${targetPhone}?text=${encodeURIComponent(
-      `Salam! I want to pay my monthly Thali dues${amtStr}. Please assist with payment verification.`
+      `Salam! I want to pay my monthly Thali dues${amtStr}. Please share payment details or verify my transfer.`
     )}`
     window.location.href = waUrl
     return true
   }
 
   const targetUri = buildTargetedUpiUri(uri, app)
+  const universalUri = uri.startsWith('upi://') ? uri : `upi://pay?${uri.replace(/^[a-z]+:\/\/[^?]*\?/, '')}`
 
   // 1. If running inside Capacitor Native Android Shell
   if (typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.()) {
@@ -119,11 +114,18 @@ export async function launchUpiApp(uri, app = 'upi', amount = null, helpline = '
       const { completed } = await AppLauncher.openUrl({ url: targetUri })
       if (completed) return true
     } catch (err) {
-      console.warn('[launchUpiApp] Native AppLauncher failed, trying browser navigation:', err)
+      console.warn('[launchUpiApp] Targeted openUrl failed, trying universal upi://', err)
+      try {
+        const { AppLauncher } = await import('@capacitor/app-launcher')
+        const { completed } = await AppLauncher.openUrl({ url: universalUri })
+        if (completed) return true
+      } catch (e) {
+        console.warn('[launchUpiApp] Universal AppLauncher failed:', e)
+      }
     }
   }
 
-  // 2. Browser Navigation via invisible anchor click
+  // 2. Browser Navigation via invisible anchor click with fallback
   try {
     const a = document.createElement('a')
     a.href = targetUri
@@ -135,8 +137,13 @@ export async function launchUpiApp(uri, app = 'upi', amount = null, helpline = '
     return true
   } catch {
     // 3. Fallback direct window location
-    window.location.href = targetUri
-    return true
+    try {
+      window.location.href = targetUri
+      return true
+    } catch {
+      window.location.href = universalUri
+      return true
+    }
   }
 }
 

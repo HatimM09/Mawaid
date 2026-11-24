@@ -15,7 +15,8 @@ import {
   Clock, RefreshCw, AlertCircle, Sparkles, ChevronRight, X, Download,
   ArrowLeft, Info, Send, Users, Search, Filter, MessageSquare, Phone,
   CheckSquare, Square, Edit3, SlidersHorizontal, BellRing, Eye, EyeOff,
-  UserX, UserCheck, ToggleLeft, ToggleRight, Smartphone, Copy, Play, Zap, Banknote
+  UserX, UserCheck, ToggleLeft, ToggleRight, Smartphone, Copy, Play, Zap, Banknote,
+  Building2, AlertTriangle
 } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import toast from 'react-hot-toast'
@@ -44,8 +45,15 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
   // ── Configuration State ──
   const [configuredUpiId, setConfiguredUpiId] = useState(appSettings.upi_id || '6375250267@okbizaxis')
   const [fallbackUpiId, setFallbackUpiId] = useState(appSettings.upi_id_2 || '')
-  const [merchantCode, setMerchantCode] = useState(appSettings.upi_mc || '5812')
+  const [selectedUpiSlot, setSelectedUpiSlot] = useState('primary') // 'primary' | 'backup'
+  const [merchantCode, setMerchantCode] = useState(appSettings.upi_mc || '')
   const [payeeName, setPayeeName] = useState(appSettings.upi_payee_name || 'Al Mawaid')
+  const [bankName, setBankName] = useState(appSettings.bank_name || 'Axis Bank')
+  const [bankAccountNo, setBankAccountNo] = useState(appSettings.bank_account_no || '921020037841489')
+  const [bankIfsc, setBankIfsc] = useState(appSettings.bank_ifsc || 'UTIB0000000')
+  const [bankHolder, setBankHolder] = useState(appSettings.bank_holder || 'MURTUJA MOHAMMADHUSSAIN HAMID')
+  const [copiedBankField, setCopiedBankField] = useState('')
+  const [showDirectBankCard, setShowDirectBankCard] = useState(false)
   const [defaultDue, setDefaultDue] = useState(Number(appSettings.default_payment_due || 1500))
   const [paymentTitle, setPaymentTitle] = useState(appSettings.payment_title || 'Monthly Thali Contribution')
   const [isPaymentActive, setIsPaymentActive] = useState(appSettings.payment_enabled !== 'false')
@@ -115,6 +123,10 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
     if (appSettings.upi_id_2 !== undefined) setFallbackUpiId(appSettings.upi_id_2 || '')
     if (appSettings.upi_mc !== undefined) setMerchantCode(appSettings.upi_mc || '')
     if (appSettings.upi_payee_name) setPayeeName(appSettings.upi_payee_name)
+    if (appSettings.bank_name) setBankName(appSettings.bank_name)
+    if (appSettings.bank_account_no) setBankAccountNo(appSettings.bank_account_no)
+    if (appSettings.bank_ifsc) setBankIfsc(appSettings.bank_ifsc)
+    if (appSettings.bank_holder) setBankHolder(appSettings.bank_holder)
     if (appSettings.default_payment_due) {
       const due = Number(appSettings.default_payment_due)
       setDefaultDue(due)
@@ -474,29 +486,46 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
 
   // ── Dynamic NPCI-Compliant UPI String for Payer (Locked to exact management-approved due) ──
   const activePayAmount = Math.max(1, lockedDueAmount)
+  const activeReceiverVpa = (selectedUpiSlot === 'backup' && fallbackUpiId?.trim())
+    ? fallbackUpiId.trim()
+    : (configuredUpiId || '6375250267@okbizaxis').trim()
+
   const upiUri = useMemo(() => {
     const thaliLabel = userProfile?.thali_number ? `Thali ${userProfile.thali_number}` : ''
     const memberLabel = userProfile?.name || 'Member'
     const noteText = `${paymentTitle} - ${memberLabel} ${thaliLabel}`.trim()
 
     return generateUpiString({
-      upiId: configuredUpiId,
+      upiId: activeReceiverVpa,
       payeeName: payeeName || 'MURTUJA', // Bank KYC registered name matching account records
       amount: activePayAmount,
       note: noteText,
       mc: merchantCode
     })
-  }, [configuredUpiId, payeeName, activePayAmount, paymentTitle, userProfile, merchantCode])
+  }, [activeReceiverVpa, payeeName, activePayAmount, paymentTitle, userProfile, merchantCode])
 
   // ── Copy UPI ID ──
   const handleCopyUpiId = async () => {
     try {
-      await navigator.clipboard.writeText(configuredUpiId)
+      await navigator.clipboard.writeText(activeReceiverVpa)
       setCopiedUpi(true)
-      toast.success('UPI ID copied to clipboard!')
+      toast.success(`Copied ${activeReceiverVpa} to clipboard!`)
       setTimeout(() => setCopiedUpi(false), 2500)
     } catch {
       toast('Copied! Paste inside your UPI app.', { icon: '📋' })
+    }
+  }
+
+  // ── Copy Bank Account Field ──
+  const handleCopyBankField = async (field, val) => {
+    if (!val) return
+    try {
+      await navigator.clipboard.writeText(String(val).trim())
+      setCopiedBankField(field)
+      toast.success(`Copied: ${val}`)
+      setTimeout(() => setCopiedBankField(''), 2500)
+    } catch {
+      toast('Copied!', { icon: '📋' })
     }
   }
 
@@ -1178,6 +1207,10 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
         { key: 'upi_id_2', value: (fallbackUpiId || '').trim() },
         { key: 'upi_mc', value: (merchantCode || '').trim() },
         { key: 'upi_payee_name', value: payeeName.trim() },
+        { key: 'bank_name', value: (bankName || '').trim() },
+        { key: 'bank_account_no', value: (bankAccountNo || '').trim() },
+        { key: 'bank_ifsc', value: (bankIfsc || '').trim() },
+        { key: 'bank_holder', value: (bankHolder || '').trim() },
         { key: 'default_payment_due', value: String(defaultDue) },
         { key: 'payment_title', value: paymentTitle.trim() },
         { key: 'payment_enabled', value: String(isPaymentActive) }
@@ -2223,6 +2256,47 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               )}
             </div>
 
+            {/* ── Primary vs Backup UPI Route Switcher ── */}
+            {fallbackUpiId ? (
+              <div style={{
+                display: 'flex', gap: 6, marginBottom: 12, padding: 4, borderRadius: 12,
+                background: 'rgba(255, 255, 255, 0.05)', border: `1px solid ${t.border}`
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedUpiSlot('primary')}
+                  style={{
+                    flex: 1, padding: '8px 10px', borderRadius: 9, border: 'none',
+                    background: selectedUpiSlot === 'primary' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'transparent',
+                    color: selectedUpiSlot === 'primary' ? '#ffffff' : t.textSub,
+                    fontWeight: 700, fontSize: 12, cursor: 'pointer', transition: 'all 0.2s',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5
+                  }}
+                >
+                  <span>Primary UPI</span>
+                  <span style={{ fontSize: 10, opacity: 0.85, fontFamily: 'monospace' }}>
+                    ({(configuredUpiId || '').split('@')[1] || 'VPA'})
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedUpiSlot('backup')}
+                  style={{
+                    flex: 1, padding: '8px 10px', borderRadius: 9, border: 'none',
+                    background: selectedUpiSlot === 'backup' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'transparent',
+                    color: selectedUpiSlot === 'backup' ? '#ffffff' : t.textSub,
+                    fontWeight: 700, fontSize: 12, cursor: 'pointer', transition: 'all 0.2s',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5
+                  }}
+                >
+                  <span>Backup UPI</span>
+                  <span style={{ fontSize: 10, opacity: 0.85, fontFamily: 'monospace' }}>
+                    ({(fallbackUpiId || '').split('@')[1] || 'Backup'})
+                  </span>
+                </button>
+              </div>
+            ) : null}
+
             {/* ── Official Google Pay Standee Card (NPCI Spec) ── */}
             <div style={{ marginBottom: 14 }}>
               <GooglePayStandeeCard
@@ -2230,7 +2304,7 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                 upiUri={upiUri}
                 payeeName={payeeName}
                 phoneNumber="+91 63752 50267"
-                upiId={configuredUpiId}
+                upiId={activeReceiverVpa}
                 amount={activePayAmount}
                 size={195}
               />
@@ -2367,20 +2441,114 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
               }}
             >
               {copiedUpi ? <Check size={14} color="#34d399" /> : <Copy size={14} />}
-              <span>{copiedUpi ? 'Copied to Clipboard!' : `Copy UPI ID: ${configuredUpiId}`}</span>
+              <span>{copiedUpi ? 'Copied to Clipboard!' : `Copy UPI ID: ${activeReceiverVpa}`}</span>
             </button>
 
-            {/* Notice for First-Time Payers Seeing Bank Risk Warnings */}
+            {/* ── Direct Bank Transfer (A/C + IFSC) Option ── */}
             <div style={{
-              marginTop: 10, padding: '10px 12px', borderRadius: 10,
-              background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)',
-              color: t.textSub, fontSize: 11.5, lineHeight: 1.45
+              marginTop: 12, borderRadius: 14, overflow: 'hidden',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: `1.5px solid ${showDirectBankCard ? 'rgba(59, 130, 246, 0.5)' : t.border}`,
+              transition: 'all 0.2s'
             }}>
-              <strong style={{ color: t.text, display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
-                <span>💡</span> Seeing "Transaction is Risky" or blocked on your phone?
+              <div
+                onClick={() => setShowDirectBankCard(prev => !prev)}
+                style={{
+                  padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  cursor: 'pointer', userSelect: 'none'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Building2 size={17} color="#60a5fa" />
+                  <div>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: t.text }}>
+                      Direct Bank Transfer (A/C + IFSC)
+                    </div>
+                    <div style={{ fontSize: 11, color: t.textSub }}>
+                      100% Success • Use if UPI app or bank server declines PIN
+                    </div>
+                  </div>
+                </div>
+                <span style={{ fontSize: 12, color: '#60a5fa', fontWeight: 700 }}>
+                  {showDirectBankCard ? 'Hide ▲' : 'Show Details ▼'}
+                </span>
+              </div>
+
+              {showDirectBankCard && (
+                <div style={{ padding: '0 14px 14px 14px', borderTop: `1px solid ${t.border}`, fontSize: 12 }}>
+                  <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, padding: '7px 9px', borderRadius: 8, background: 'rgba(255,255,255,0.04)' }}>
+                    <div>
+                      <span style={{ color: t.textSub, fontSize: 11 }}>Account Holder:</span>
+                      <div style={{ fontWeight: 700, color: t.text }}>{bankHolder || 'MURTUJA MOHAMMADHUSSAIN HAMID'}</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, padding: '7px 9px', borderRadius: 8, background: 'rgba(255,255,255,0.04)' }}>
+                    <div>
+                      <span style={{ color: t.textSub, fontSize: 11 }}>Account Number:</span>
+                      <div style={{ fontWeight: 800, fontFamily: 'monospace', color: t.text, fontSize: 13 }}>
+                        {bankAccountNo || '921020037841489'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyBankField('ac', bankAccountNo || '921020037841489')}
+                      style={{
+                        padding: '5px 12px', borderRadius: 6, border: 'none',
+                        background: copiedBankField === 'ac' ? '#10b981' : 'rgba(59, 130, 246, 0.2)',
+                        color: copiedBankField === 'ac' ? '#fff' : '#60a5fa',
+                        fontSize: 11.5, fontWeight: 700, cursor: 'pointer'
+                      }}
+                    >
+                      {copiedBankField === 'ac' ? 'Copied!' : 'Copy A/C'}
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, padding: '7px 9px', borderRadius: 8, background: 'rgba(255,255,255,0.04)' }}>
+                    <div>
+                      <span style={{ color: t.textSub, fontSize: 11 }}>IFSC Code:</span>
+                      <div style={{ fontWeight: 800, fontFamily: 'monospace', color: t.text, fontSize: 13 }}>
+                        {bankIfsc || 'UTIB0000000'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyBankField('ifsc', bankIfsc || 'UTIB0000000')}
+                      style={{
+                        padding: '5px 12px', borderRadius: 6, border: 'none',
+                        background: copiedBankField === 'ifsc' ? '#10b981' : 'rgba(59, 130, 246, 0.2)',
+                        color: copiedBankField === 'ifsc' ? '#fff' : '#60a5fa',
+                        fontSize: 11.5, fontWeight: 700, cursor: 'pointer'
+                      }}
+                    >
+                      {copiedBankField === 'ifsc' ? 'Copied!' : 'Copy IFSC'}
+                    </button>
+                  </div>
+
+                  <div style={{ padding: '7px 9px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', marginBottom: 8 }}>
+                    <span style={{ color: t.textSub, fontSize: 11 }}>Bank:</span>
+                    <div style={{ fontWeight: 700, color: t.text }}>{bankName || 'Axis Bank'}</div>
+                  </div>
+
+                  <div style={{ fontSize: 11, color: t.textSub, lineHeight: 1.5 }}>
+                    💡 In Google Pay, PhonePe, or Paytm, tap <strong>"To Bank A/C"</strong>, paste the Account Number &amp; IFSC, and transfer ₹{formatInr(lockedDueAmount)}. Then submit the 12-digit UTR below.
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Clear Guidance on GPay "Bank Server Down / Declined After PIN" */}
+            <div style={{
+              marginTop: 10, padding: '11px 13px', borderRadius: 12,
+              background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)',
+              color: t.textSub, fontSize: 11.5, lineHeight: 1.55
+            }}>
+              <strong style={{ color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4, fontSize: 12 }}>
+                <AlertTriangle size={15} /> GPay says "Bank Server Down" or "Declined after PIN"?
               </strong>
               <span>
-                UPI apps flag 1-tap browser links for some first-time payees. <strong>Fix:</strong> Tap <strong>Save QR to Gallery</strong> above ➔ Open GPay/PhonePe ➔ Scan QR ➔ <strong>Upload from Gallery</strong> to pay without any warning.
+                1. <strong>Self-Transfer rule:</strong> NPCI strictly blocks paying your own account if your phone is linked to 6375250267. Test from another family member's phone.<br />
+                2. <strong>Bank switch downtime:</strong> Axis Bank's server may be temporarily busy. Tap <strong>Backup UPI</strong> above or <strong>Direct Bank Transfer</strong> to pay with 100% guarantee.
               </span>
             </div>
 
@@ -2875,13 +3043,26 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
 
               <div>
                 <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: t.textSub, marginBottom: 3 }}>
-                  Receiver UPI ID (VPA) *
+                  Primary Receiver UPI ID (VPA) *
                 </label>
                 <input
                   type="text"
                   required
                   value={configuredUpiId}
                   onChange={(e) => setConfiguredUpiId(e.target.value)}
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 10, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, fontSize: 13, fontFamily: 'monospace', outline: 'none' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: t.textSub, marginBottom: 3 }}>
+                  Secondary / Backup UPI ID (Optional - PhonePe / Paytm / GPay Personal)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 6375250267@ybl or yourname@okaxis"
+                  value={fallbackUpiId}
+                  onChange={(e) => setFallbackUpiId(e.target.value)}
                   style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 10, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, fontSize: 13, fontFamily: 'monospace', outline: 'none' }}
                 />
               </div>
@@ -2910,6 +3091,66 @@ export default function PaymentsPage({ onBack, appSettings = {} }) {
                   onChange={(e) => setPaymentTitle(e.target.value)}
                   style={{ width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: 10, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, fontSize: 13, outline: 'none' }}
                 />
+              </div>
+
+              {/* Direct Bank Account Settings */}
+              <div style={{ borderTop: `1px dashed ${t.border}`, paddingTop: 10, marginTop: 4 }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#60a5fa', display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
+                  <Building2 size={14} /> Direct Bank Transfer Details (For Members)
+                </span>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: t.textSub, marginBottom: 3 }}>
+                      Bank Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Axis Bank"
+                      value={bankName}
+                      onChange={(e) => setBankName(e.target.value)}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, fontSize: 12, outline: 'none' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: t.textSub, marginBottom: 3 }}>
+                      IFSC Code
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. UTIB0000000"
+                      value={bankIfsc}
+                      onChange={(e) => setBankIfsc(e.target.value.toUpperCase())}
+                      style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, fontSize: 12, fontFamily: 'monospace', outline: 'none' }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 8 }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: t.textSub, marginBottom: 3 }}>
+                    Bank Account Number
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 921020037841489"
+                    value={bankAccountNo}
+                    onChange={(e) => setBankAccountNo(e.target.value.replace(/[^0-9]/g, ''))}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, fontSize: 12, fontFamily: 'monospace', outline: 'none' }}
+                  />
+                </div>
+
+                <div style={{ marginTop: 8 }}>
+                  <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: t.textSub, marginBottom: 3 }}>
+                    Account Holder Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. MURTUJA MOHAMMADHUSSAIN HAMID"
+                    value={bankHolder}
+                    onChange={(e) => setBankHolder(e.target.value)}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: `1px solid ${t.border}`, background: t.inputBg, color: t.text, fontSize: 12, outline: 'none' }}
+                  />
+                </div>
               </div>
 
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
