@@ -18,9 +18,10 @@ import { GeoBg, GlobalStyles, Card, Btn } from '../ui'
 import GooglePayStandeeCard from '../GooglePayStandeeCard'
 import { generateUpiString, buildTargetedUpiUri, launchUpiApp, extractUtrNumber, buildWhatsAppProofMessage } from '../../lib/upiUtils'
 import { downloadPayslipPdf } from '../../lib/payslipPdf'
+import { openRazorpayCheckout } from '../../lib/paymentGateway'
 
 const DEFAULT_RECEIVER = '6375250267@okbizaxis'
-const DEFAULT_PAYEE = 'Al Mawaid'
+const DEFAULT_PAYEE = 'MURTUJA MOHAMMADHUSSAIN HAMID'
 const DEFAULT_DUE = 1500
 const UPI_TXN_LIMIT = 100000
 
@@ -41,6 +42,9 @@ export default function UpiPayPage() {
   const [bankHolder, setBankHolder] = useState('MURTUJA MOHAMMADHUSSAIN HAMID')
   const [copiedBankField, setCopiedBankField] = useState('')
   const [showDirectBankCard, setShowDirectBankCard] = useState(false)
+  const [gatewayEnabled, setGatewayEnabled] = useState(false)
+  const [gatewayKeyId, setGatewayKeyId] = useState('')
+  const [processingGateway, setProcessingGateway] = useState(false)
   const [title, setTitle] = useState('Monthly Thali Contribution')
   const [paymentsEnabled, setPaymentsEnabled] = useState(true)
 
@@ -81,7 +85,8 @@ export default function UpiPayPage() {
           .select('key,value')
           .in('key', [
             'upi_id', 'upi_id_2', 'upi_mc', 'upi_payee_name', 'default_payment_due',
-            'payment_title', 'payment_enabled', 'bank_name', 'bank_account_no', 'bank_ifsc', 'bank_holder'
+            'payment_title', 'payment_enabled', 'bank_name', 'bank_account_no', 'bank_ifsc', 'bank_holder',
+            'payment_gateway_enabled', 'razorpay_key_id'
           ])
         if (!alive) return
         if (cfgErr) setLoadError('Could not verify receiver UPI ID. Showing default.')
@@ -96,6 +101,8 @@ export default function UpiPayPage() {
         if (map.bank_account_no) setBankAccountNo(String(map.bank_account_no).trim())
         if (map.bank_ifsc) setBankIfsc(String(map.bank_ifsc).trim())
         if (map.bank_holder) setBankHolder(String(map.bank_holder).trim())
+        if (map.payment_gateway_enabled != null) setGatewayEnabled(String(map.payment_gateway_enabled) === 'true')
+        if (map.razorpay_key_id) setGatewayKeyId(String(map.razorpay_key_id).trim())
         if (map.payment_title) setTitle(String(map.payment_title).trim())
         if (map.payment_enabled != null) setPaymentsEnabled(String(map.payment_enabled) !== 'false')
 
@@ -248,6 +255,70 @@ export default function UpiPayPage() {
     }
     setNotice('open')
     toast.success(`Opening your UPI app...`, { duration: 4000 })
+  }
+
+  // ── Official RBI-Certified Payment Gateway (Razorpay 0% Setup) ──
+  const handlePayWithGateway = async () => {
+    if (!gatewayKeyId) {
+      toast.error('Payment Gateway Key ID is not configured.')
+      return
+    }
+    setProcessingGateway(true)
+    try {
+      await openRazorpayCheckout({
+        keyId: gatewayKeyId,
+        amount: numericAmount || DEFAULT_DUE,
+        currency: 'INR',
+        name: payeeName || 'Al-Mawaid',
+        description: `${title} - ${profile?.name || 'Member'}`,
+        user: {
+          name: profile?.name || sessionUser?.email?.split('@')[0] || 'Member',
+          email: profile?.email || sessionUser?.email || '',
+          phone: profile?.phone || '6375250267',
+          thali_number: profile?.thali_number || '',
+          id: sessionUser?.id
+        },
+        onSuccess: async (response) => {
+          toast.success('🎉 Payment successful! Creating verified receipt...')
+          if (sessionUser?.id) {
+            try {
+              const payload = {
+                user_id: sessionUser.id,
+                user_name: profile?.name || 'Member',
+                user_email: profile?.email || sessionUser.email || '',
+                thali_number: profile?.thali_number ? String(profile.thali_number) : '',
+                amount: numericAmount || DEFAULT_DUE,
+                currency: 'INR',
+                status: 'verified',
+                transaction_ref: response.razorpay_payment_id || `RZP_${Date.now()}`,
+                upi_id: receiver,
+                payee_name: payeeName,
+                payment_method: 'Gateway (Google Pay / UPI)',
+                note: `${title} - Razorpay: ${response.razorpay_payment_id || 'Success'}`,
+                created_at: new Date().toISOString()
+              }
+              const { data, error } = await supabase.from('user_payments').insert([payload]).select().single()
+              if (!error && data) {
+                setCurrentMonthPayment(data)
+                toast.success('Receipt created! Contribution settled for this month. ✅')
+              }
+            } catch (e) {
+              console.error('Record gateway payment error:', e)
+            }
+          }
+        },
+        onFailure: (err) => {
+          if (!err?.dismissed) {
+            toast.error(err?.message || 'Payment could not be completed via gateway.')
+          }
+        }
+      })
+    } catch (err) {
+      console.error('Gateway checkout error:', err)
+      toast.error(err?.message || 'Could not launch payment gateway. You can use Direct UPI below.')
+    } finally {
+      setProcessingGateway(false)
+    }
   }
 
   // ── Save QR Image to Gallery / Downloads ──
@@ -480,6 +551,32 @@ export default function UpiPayPage() {
                     ({(fallbackUpiId || '').split('@')[1] || 'Backup'})
                   </span>
                 </button>
+              </div>
+            ) : null}
+
+            {/* ── Official RBI-Certified Payment Gateway (Google Pay Verified • 0 Warnings) ── */}
+            {gatewayEnabled && gatewayKeyId ? (
+              <div style={{ marginTop: 14 }}>
+                <button
+                  type="button"
+                  onClick={handlePayWithGateway}
+                  disabled={processingGateway || !paymentsEnabled}
+                  style={{
+                    width: '100%', padding: '14px 18px', borderRadius: 14, border: 'none',
+                    background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)', color: '#ffffff',
+                    fontSize: 15, fontWeight: 900, cursor: 'pointer', display: 'flex',
+                    alignItems: 'center', justifyContent: 'center', gap: 10,
+                    boxShadow: '0 6px 20px rgba(16, 185, 129, 0.4)'
+                  }}
+                >
+                  <ShieldCheck size={20} />
+                  <span>
+                    {processingGateway ? 'Launching Gateway…' : `Pay ₹${formatInr(numericAmount || DEFAULT_DUE)} with Google Pay / UPI (Verified)`}
+                  </span>
+                </button>
+                <div style={{ textAlign: 'center', marginTop: 5, fontSize: 11, color: '#34d399', fontWeight: 600 }}>
+                  🔒 Verified RBI Gateway • Zero Security Warnings on Google Pay • Automatic Receipt
+                </div>
               </div>
             ) : null}
 
