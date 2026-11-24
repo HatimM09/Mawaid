@@ -15,14 +15,14 @@
  */
 export function generateUpiString({
   upiId = '6375250267@okbizaxis',
-  payeeName = 'Al Mawaid',
+  payeeName = 'MURTUJA MOHAMMADHUSSAIN HAMID',
   amount = null,
-  note = 'Monthly Thali Contribution',
+  note = 'Thali Dues',
   mc = null,
   tr = null
 }) {
   const cleanUpi = String(upiId || '6375250267@okbizaxis').trim()
-  const cleanName = String(payeeName || 'Al Mawaid').trim()
+  const cleanName = String(payeeName || 'MURTUJA MOHAMMADHUSSAIN HAMID').trim()
 
   const params = new URLSearchParams()
   params.set('pa', cleanUpi)
@@ -34,7 +34,7 @@ export function generateUpiString({
     params.set('am', Number(amount).toFixed(2))
   }
 
-  // Clean transaction note (alphanumeric only, max 30 chars, no special characters that break intent URLs)
+  // Clean transaction note (alphanumeric only, max 30 chars, avoids triggering spam filters)
   if (note) {
     const cleanNote = String(note)
       .replace(/[^a-zA-Z0-9 ]/g, ' ')
@@ -91,7 +91,33 @@ export function buildTargetedUpiUri(upiUri, app = 'upi') {
  * Launches the selected UPI app or native chooser.
  */
 export async function launchUpiApp(uri, app = 'upi', amount = null, helpline = '6375250267') {
-  if (!uri) return false
+  if (!uri && app !== 'gpay_number') return false
+
+  if (app === 'gpay_number') {
+    const rawNumber = String(helpline || '6375250267').replace(/[^0-9]/g, '').slice(-10)
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(rawNumber)
+      }
+    } catch { /* clipboard fallback */ }
+
+    // Launch GPay app directly so member can paste number in "Pay phone number"
+    if (typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.()) {
+      try {
+        const { AppLauncher } = await import('@capacitor/app-launcher')
+        const { completed } = await AppLauncher.openUrl({ url: 'tez://' })
+        if (completed) return true
+      } catch (err) {
+        console.warn('[launchUpiApp] AppLauncher tez:// failed:', err)
+      }
+    }
+    try {
+      window.location.href = 'tez://'
+      return true
+    } catch {
+      return true
+    }
+  }
 
   if (app === 'whatsapp') {
     const amtStr = amount ? ` ₹${amount}` : ''

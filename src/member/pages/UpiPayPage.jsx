@@ -148,18 +148,14 @@ export default function UpiPayPage() {
 
   // Full UPI Deep-Link
   const upiUri = useMemo(() => {
-    const thaliLabel = profile?.thali_number ? `Thali ${profile.thali_number}` : ''
-    const memberLabel = profile?.name || 'Member'
-    const noteText = `${title} - ${memberLabel} ${thaliLabel}`.trim()
-
     return generateUpiString({
       upiId: activeReceiverVpa,
-      payeeName: payeeName || 'MURTUJA',
+      payeeName: payeeName || 'MURTUJA MOHAMMADHUSSAIN HAMID',
       amount: amountValid ? numericAmount : undefined,
-      note: noteText,
+      note: 'Thali Dues', // Clean note avoids triggering spam filters
       mc: merchantCode
     })
-  }, [activeReceiverVpa, payeeName, amountValid, numericAmount, title, profile, merchantCode])
+  }, [activeReceiverVpa, payeeName, amountValid, numericAmount, merchantCode])
 
   const flashCopied = useCallback(() => {
     setCopied(true)
@@ -229,6 +225,17 @@ export default function UpiPayPage() {
       return
     }
     if (loading || opening) return
+
+    if (app === 'gpay_number') {
+      try {
+        await navigator.clipboard.writeText('6375250267')
+        toast.success('📱 Copied 6375250267! In Google Pay, tap "Pay phone number" and paste it to pay.', { duration: 6000 })
+      } catch {
+        toast('Copied 6375250267!', { icon: '📋' })
+      }
+      await launchUpiApp(null, 'gpay_number', numericAmount || DEFAULT_DUE, '6375250267')
+      return
+    }
 
     setOpening(true)
     const opened = await launchUpiApp(upiUri, app, numericAmount || DEFAULT_DUE)
@@ -489,20 +496,98 @@ export default function UpiPayPage() {
               />
             </div>
 
-            {/* Save QR Image Button */}
+            {/* ── Google Pay "Risky Transaction" Safety Notice & Instant Bypass ── */}
+            <div style={{
+              marginTop: 12, marginBottom: 12, padding: '12px 14px', borderRadius: 14,
+              background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(220, 38, 38, 0.05) 100%)',
+              border: '1.5px solid rgba(239, 68, 68, 0.35)'
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#f87171', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                <AlertTriangle size={16} />
+                <span>GPay says "This transaction may be risky"?</span>
+              </div>
+              <div style={{ fontSize: 11.5, color: t.textSub, lineHeight: 1.55 }}>
+                Google Pay's AI blocks 1-tap browser links on some phones for anti-fraud safety. <strong>3 Ways to Pay Instantly without any block:</strong>
+                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div>👉 <strong>1. PhonePe or Paytm:</strong> Tap below — PhonePe &amp; Paytm do NOT block this payment.</div>
+                  <div>👉 <strong>2. Save QR to Gallery:</strong> Save QR ➔ In GPay tap <strong>Scan QR</strong> ➔ <strong>Upload from Gallery</strong>.</div>
+                  <div>👉 <strong>3. Pay to Phone Number:</strong> In GPay tap <strong>Pay phone number</strong> ➔ enter <strong>6375250267</strong>.</div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Recommended 1: Pay via PhonePe or Paytm (Zero Risk Block) ── */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+              <button
+                type="button"
+                onClick={() => handleOpenUpi('phonepe')}
+                disabled={!canCopy || opening}
+                style={{
+                  padding: '12px 14px', borderRadius: 12, border: 'none',
+                  background: 'linear-gradient(135deg, #5f259f 0%, #7c3aed 100%)', color: '#ffffff',
+                  fontSize: 13.5, fontWeight: 800, cursor: canCopy ? 'pointer' : 'not-allowed', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', gap: 6,
+                  boxShadow: '0 4px 15px rgba(124, 58, 237, 0.35)'
+                }}
+              >
+                <span>💜 Pay via PhonePe</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenUpi('paytm')}
+                disabled={!canCopy || opening}
+                style={{
+                  padding: '12px 14px', borderRadius: 12, border: 'none',
+                  background: 'linear-gradient(135deg, #002970 0%, #00baf2 100%)', color: '#ffffff',
+                  fontSize: 13.5, fontWeight: 800, cursor: canCopy ? 'pointer' : 'not-allowed', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', gap: 6,
+                  boxShadow: '0 4px 15px rgba(0, 186, 242, 0.35)'
+                }}
+              >
+                <span>💙 Pay via Paytm</span>
+              </button>
+            </div>
+
+            {/* ── Recommended 2: Save QR Image Button ── */}
             <button
               type="button"
               onClick={handleSaveQrImage}
               style={{
-                width: '100%', marginTop: 10, padding: '10px 14px', borderRadius: 12,
-                border: `1px solid ${t.border}`, background: 'rgba(255,255,255,0.04)',
-                color: t.text, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                width: '100%', marginBottom: 10, padding: '12px 14px', borderRadius: 12,
+                border: '1.5px solid rgba(16,185,129,0.4)', background: 'rgba(16,185,129,0.15)',
+                color: '#34d399', fontSize: 13.5, fontWeight: 800, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                boxShadow: '0 2px 8px rgba(16,185,129,0.15)'
+              }}
+            >
+              <Download size={16} />
+              <span>Save QR to Gallery (Scan in GPay • 100% Success)</span>
+            </button>
+
+            {/* ── Recommended 3: Copy Mobile No & Open GPay ── */}
+            <button
+              type="button"
+              onClick={() => handleOpenUpi('gpay_number')}
+              disabled={!canCopy || opening}
+              style={{
+                width: '100%', marginBottom: 10, padding: '12px 14px', borderRadius: 12,
+                border: '1.5px solid rgba(66, 133, 244, 0.4)', background: 'rgba(66, 133, 244, 0.12)',
+                color: '#60a5fa', fontSize: 13.5, fontWeight: 800, cursor: canCopy ? 'pointer' : 'not-allowed',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
               }}
             >
-              <Download size={14} color={t.accent} />
-              <span>Save QR to Gallery (Recommended • 100% Success)</span>
+              <span>📱 Copy Mobile No (6375250267) &amp; Open GPay</span>
             </button>
+
+            {/* Direct 1-Tap Pay Button */}
+            <Btn
+              onClick={() => handleOpenUpi('upi')}
+              disabled={!canCopy || opening}
+              style={{ width: '100%', marginBottom: 10, padding: '13px 20px', fontSize: 14 }}
+            >
+              <Smartphone size={16} />
+              {opening ? 'Opening UPI app…' : `Pay ₹${formatInr(numericAmount || DEFAULT_DUE)} via UPI Intent`}
+            </Btn>
 
             {/* 1-Click WhatsApp Direct Pay Banner */}
             <button
@@ -510,79 +595,16 @@ export default function UpiPayPage() {
               onClick={() => handleOpenUpi('whatsapp')}
               disabled={!canCopy || opening}
               style={{
-                width: '100%', marginTop: 12, padding: '13px 18px', borderRadius: 12, border: 'none',
+                width: '100%', marginBottom: 10, padding: '12px 18px', borderRadius: 12, border: 'none',
                 background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)', color: '#ffffff',
-                fontSize: 14.5, fontWeight: 800, cursor: canCopy ? 'pointer' : 'not-allowed', display: 'flex',
+                fontSize: 13.5, fontWeight: 800, cursor: canCopy ? 'pointer' : 'not-allowed', display: 'flex',
                 alignItems: 'center', justifyContent: 'center', gap: 8,
-                boxShadow: '0 6px 20px rgba(37, 211, 102, 0.35)'
+                boxShadow: '0 4px 15px rgba(37, 211, 102, 0.3)'
               }}
             >
               <Smartphone size={17} />
-              <span>{opening ? 'Opening WhatsApp…' : `Pay ₹${formatInr(numericAmount || DEFAULT_DUE)} via WhatsApp Chat (0% Fee)`}</span>
+              <span>{opening ? 'Opening WhatsApp…' : `Pay ₹${formatInr(numericAmount || DEFAULT_DUE)} via WhatsApp (0% Fee)`}</span>
             </button>
-
-            {/* Direct 1-Tap Pay Button */}
-            <Btn
-              onClick={() => handleOpenUpi('upi')}
-              disabled={!canCopy || opening}
-              style={{ width: '100%', marginTop: 10, padding: '13px 20px', fontSize: 14.5 }}
-            >
-              <Smartphone size={17} />
-              {opening ? 'Opening UPI app…' : `Pay ₹${formatInr(numericAmount || DEFAULT_DUE)} via Any UPI App`}
-            </Btn>
-
-            {/* Direct App Launchers (1-Click for WhatsApp / Mobile users) */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginTop: 10, width: '100%' }}>
-              <button
-                type="button"
-                onClick={() => handleOpenUpi('gpay')}
-                disabled={!canCopy || opening}
-                style={{
-                  padding: '9px 4px', borderRadius: 10, border: `1px solid ${t.border}`,
-                  background: 'rgba(255, 255, 255, 0.05)', color: t.text, fontSize: 11.5, fontWeight: 700,
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4
-                }}
-              >
-                <span style={{ color: '#4285F4', fontWeight: 900 }}>G</span>
-                <span>Pay</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleOpenUpi('phonepe')}
-                disabled={!canCopy || opening}
-                style={{
-                  padding: '9px 4px', borderRadius: 10, border: `1px solid ${t.border}`,
-                  background: 'rgba(255, 255, 255, 0.05)', color: '#a855f7', fontSize: 11.5, fontWeight: 700,
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4
-                }}
-              >
-                <span>PhonePe</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleOpenUpi('paytm')}
-                disabled={!canCopy || opening}
-                style={{
-                  padding: '9px 4px', borderRadius: 10, border: `1px solid ${t.border}`,
-                  background: 'rgba(255, 255, 255, 0.05)', color: '#00baf2', fontSize: 11.5, fontWeight: 700,
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4
-                }}
-              >
-                <span>Paytm</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleOpenUpi('whatsapp')}
-                disabled={!canCopy || opening}
-                style={{
-                  padding: '9px 4px', borderRadius: 10, border: `1px solid ${t.border}`,
-                  background: 'rgba(255, 255, 255, 0.05)', color: '#25D366', fontSize: 11.5, fontWeight: 700,
-                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4
-                }}
-              >
-                <span>WhatsApp</span>
-              </button>
-            </div>
 
             {/* Copy UPI ID Button */}
             <button
