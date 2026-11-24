@@ -15,7 +15,9 @@ import { supabase } from '../../lib/firebaseClient'
 import { ThemeCtx } from '../../admin/context'
 import { THEMES } from '../theme'
 import { GeoBg, GlobalStyles, Card, Btn } from '../ui'
-import GooglePayStandeeCard, { generateUpiString } from '../GooglePayStandeeCard'
+import GooglePayStandeeCard from '../GooglePayStandeeCard'
+import { generateUpiString, buildTargetedUpiUri, launchUpiApp, extractUtrNumber, buildWhatsAppProofMessage } from '../../lib/upiUtils'
+import { downloadPayslipPdf } from '../../lib/payslipPdf'
 
 const DEFAULT_RECEIVER = '6375250267@okbizaxis'
 const DEFAULT_PAYEE = 'Al Mawaid'
@@ -26,54 +28,6 @@ const isValidVpa = (v) => /^[\w.-]{2,256}@[a-zA-Z]{2,64}$/.test((v || '').trim()
 const monthKeyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 const formatInr = (n) =>
   Number(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
-
-const isNativePlatform = () =>
-  typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.()
-
-async function launchUpiApp(uri, app = 'upi', amount = null) {
-  if (app === 'whatsapp') {
-    const amtStr = amount ? ` ₹${amount}` : ''
-    const waUrl = `https://wa.me/916375250267?text=${encodeURIComponent(`Salam! I want to pay my monthly Thali dues${amtStr}. Please assist with payment verification.`)}`
-    window.location.href = waUrl
-    return true
-  }
-
-  let targetUri = uri
-  if (app === 'gpay') {
-    targetUri = uri.replace(/^upi:\/\/pay\?/, 'tez://upi/pay?')
-  } else if (app === 'phonepe') {
-    targetUri = uri.replace(/^upi:\/\/pay\?/, 'phonepe://pay?')
-  } else if (app === 'paytm') {
-    targetUri = uri.replace(/^upi:\/\/pay\?/, 'paytmmp://pay?')
-  }
-
-  if (isNativePlatform()) {
-    try {
-      const { AppLauncher } = await import('@capacitor/app-launcher')
-      const { completed } = await AppLauncher.openUrl({ url: targetUri })
-      if (completed) return true
-    } catch (err) {
-      console.warn('[UpiPay] Native UPI launch failed, trying the web handler', err)
-    }
-  }
-  try {
-    const a = document.createElement('a')
-    a.href = targetUri
-    a.rel = 'noopener noreferrer'
-    a.style.display = 'none'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    return true
-  } catch {
-    if (app === 'whatsapp') {
-      window.location.href = `https://wa.me/916375250267?text=${encodeURIComponent('Salam! I want to pay my monthly Thali dues via WhatsApp.')}`
-      return true
-    }
-    window.location.href = targetUri
-    return true
-  }
-}
 
 export default function UpiPayPage() {
   const [receiverVpa, setReceiverVpa] = useState('')

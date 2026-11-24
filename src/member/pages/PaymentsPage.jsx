@@ -23,7 +23,8 @@ import { supabase } from '../../lib/firebaseClient'
 import { useAuth, useTheme } from '../../admin/context'
 import { BackHeader, Card, Btn, EmptyState } from '../ui'
 import { downloadPayslipPdf } from '../../lib/payslipPdf'
-import GooglePayStandeeCard, { generateUpiString } from '../GooglePayStandeeCard'
+import GooglePayStandeeCard from '../GooglePayStandeeCard'
+import { generateUpiString, buildTargetedUpiUri, launchUpiApp, extractUtrNumber, buildWhatsAppProofMessage } from '../../lib/upiUtils'
 
 // ── Reusable Utilities ──
 const monthKeyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -35,52 +36,6 @@ const monthLabelOf = (key) => {
 }
 const formatInr = (n) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 const isValidVpa = (v) => /^[\w.-]{2,256}@[a-zA-Z]{2,64}$/.test((v || '').trim())
-
-// Native Capacitor / Web UPI App Launcher with targeted app intent support
-const launchUpiApp = async (uri, app = 'upi', amount = null) => {
-  if (app === 'whatsapp') {
-    const amtStr = amount ? ` ₹${amount}` : ''
-    const waUrl = `https://wa.me/916375250267?text=${encodeURIComponent(`Salam! I want to pay my monthly Thali dues${amtStr}. Please assist with payment verification.`)}`
-    window.location.href = waUrl
-    return true
-  }
-
-  let targetUri = uri
-  if (app === 'gpay') {
-    targetUri = uri.replace(/^upi:\/\/pay\?/, 'tez://upi/pay?')
-  } else if (app === 'phonepe') {
-    targetUri = uri.replace(/^upi:\/\/pay\?/, 'phonepe://pay?')
-  } else if (app === 'paytm') {
-    targetUri = uri.replace(/^upi:\/\/pay\?/, 'paytmmp://pay?')
-  }
-
-  if (typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.()) {
-    try {
-      const { AppLauncher } = await import('@capacitor/app-launcher')
-      const { completed } = await AppLauncher.openUrl({ url: targetUri })
-      if (completed) return true
-    } catch (err) {
-      console.warn('[PaymentsPage] Native AppLauncher error, falling back to web:', err)
-    }
-  }
-  try {
-    const a = document.createElement('a')
-    a.href = targetUri
-    a.rel = 'noopener noreferrer'
-    a.style.display = 'none'
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    return true
-  } catch {
-    if (app === 'whatsapp') {
-      window.location.href = `https://wa.me/916375250267?text=${encodeURIComponent('Salam! I want to pay my monthly Thali dues via WhatsApp.')}`
-      return true
-    }
-    window.location.href = targetUri
-    return true
-  }
-}
 
 export default function PaymentsPage({ onBack, appSettings = {} }) {
   const t = useTheme()
