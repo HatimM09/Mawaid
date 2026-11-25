@@ -23,6 +23,7 @@ export function extractScanTarget(rawText) {
                     url.searchParams.get('id') ||
                     url.searchParams.get('thali') ||
                     url.searchParams.get('thali_number') ||
+                    url.searchParams.get('scan') ||
                     url.searchParams.get('u')
       if (param) return param.trim()
     } catch {}
@@ -37,11 +38,11 @@ export function extractScanTarget(rawText) {
     } catch {}
   }
 
-  // 3. Strip ALMAWAID prefix (case-insensitive)
-  text = text.replace(/^ALMAWAID:\s*/i, '').trim()
+  // 3. Strip any ALMAWAID prefix (case-insensitive, handles partial prefix)
+  text = text.replace(/^.*almawaid:\s*/i, '').trim()
 
-  // 4. Strip leading '#'
-  text = text.replace(/^#+/, '').trim()
+  // 4. Strip leading/trailing colons, hashes, quotes, dashes, spaces
+  text = text.replace(/^[:#"'`\s\-]+/, '').replace(/[:#"'`\s\-]+$/, '').trim()
 
   return text
 }
@@ -67,31 +68,39 @@ export function cleanThaliComparable(val) {
  * 3. Handles zero-stripped thali numbers (e.g. barcode scanner sends 0042 for thali 42)
  */
 export async function resolveScannedUser(rawInput, cachedUsers = []) {
+  if (!rawInput) return null
   const target = extractScanTarget(rawInput)
   if (!target) return null
 
   const compTarget = cleanThaliComparable(target)
+  const normTarget = target.toLowerCase().trim()
 
-  // 1. In-memory check
+  // 1. In-memory check against cachedUsers
   if (Array.isArray(cachedUsers) && cachedUsers.length > 0) {
     const match = cachedUsers.find(u => {
       if (!u) return false
-      if (u.user_id && String(u.user_id).trim().toLowerCase() === target.toLowerCase()) return true
-      if (u.id && String(u.id).trim().toLowerCase() === target.toLowerCase()) return true
-      if (u.email && String(u.email).trim().toLowerCase() === target.toLowerCase()) return true
+      if (u.user_id && String(u.user_id).trim().toLowerCase() === normTarget) return true
+      if (u.id && String(u.id).trim().toLowerCase() === normTarget) return true
+      if (u.email && String(u.email).trim().toLowerCase() === normTarget) return true
       if (u.thali_number) {
-        if (String(u.thali_number).trim().toLowerCase() === target.toLowerCase()) return true
-        if (cleanThaliComparable(u.thali_number) === compTarget) return true
+        if (String(u.thali_number).trim().toLowerCase() === normTarget) return true
+        if (compTarget && cleanThaliComparable(u.thali_number) === compTarget) return true
       }
+      if (u.user_id && compTarget && cleanThaliComparable(u.user_id) === compTarget) return true
       return false
     })
     if (match) return match
   }
 
   // 2. Database direct lookup
-  // Check user_id
+  // Check user_id exact
   const { data: byUserId } = await supabase.from('user_stats').select('*').eq('user_id', target).maybeSingle()
   if (byUserId) return byUserId
+
+  if (compTarget && compTarget !== target) {
+    const { data: byCompUserId } = await supabase.from('user_stats').select('*').eq('user_id', compTarget).maybeSingle()
+    if (byCompUserId) return byCompUserId
+  }
 
   // Check UUID id
   if (/^[0-9a-f-]{30,}$/i.test(target)) {
@@ -107,18 +116,26 @@ export async function resolveScannedUser(rawInput, cachedUsers = []) {
   const { data: byThaliHash } = await supabase.from('user_stats').select('*').eq('thali_number', `#${target}`).maybeSingle()
   if (byThaliHash) return byThaliHash
 
+  if (compTarget && compTarget !== target) {
+    const { data: byCompThali } = await supabase.from('user_stats').select('*').eq('thali_number', compTarget).maybeSingle()
+    if (byCompThali) return byCompThali
+    const { data: byCompThaliHash } = await supabase.from('user_stats').select('*').eq('thali_number', `#${compTarget}`).maybeSingle()
+    if (byCompThaliHash) return byCompThaliHash
+  }
+
   // Check email
   if (target.includes('@')) {
     const { data: byEmail } = await supabase.from('user_stats').select('*').ilike('email', target).maybeSingle()
     if (byEmail) return byEmail
   }
 
-  // 3. Fallback: match against all users in user_stats for normalized thali
+  // 3. Fallback: match against all users in user_stats for normalized thali / user_id
   const { data: allUsers } = await supabase.from('user_stats').select('*')
   if (allUsers && allUsers.length > 0) {
     const normMatch = allUsers.find(u => {
-      if (u.thali_number && cleanThaliComparable(u.thali_number) === compTarget) return true
-      if (u.email && u.email.toLowerCase().trim() === target.toLowerCase()) return true
+      if (u.thali_number && compTarget && cleanThaliComparable(u.thali_number) === compTarget) return true
+      if (u.user_id && compTarget && cleanThaliComparable(u.user_id) === compTarget) return true
+      if (u.email && u.email.toLowerCase().trim() === normTarget) return true
       return false
     })
     if (normMatch) return normMatch

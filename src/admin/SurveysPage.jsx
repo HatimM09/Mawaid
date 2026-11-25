@@ -712,12 +712,12 @@ export default function SurveysPage() {
       {/* PACKING STATION TV OVERLAY */}
       {selectedUser && (
         <PackingTVView 
+          key={selectedUser.user_id || selectedUser.id || selectedUser.thali_number}
           user={selectedUser} 
           meal={mealFilter}
           day={dayFilter}
           dishInputConfig={dishInputConfig}
           onMealToggle={(m) => setMealFilter(m)}
-          onScanMember={(rawInput) => processDirectScan(rawInput)}
           onTriggerCameraScan={() => setIsScanning(true)}
           onClose={() => {
             setSelectedUser(null)

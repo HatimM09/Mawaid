@@ -751,6 +751,7 @@ export default function KhidmatPortal({ signOut }) {
 
             {scannedUser && (
               <PackingTVView 
+                key={scannedUser.user_id || scannedUser.id || scannedUser.thali_number}
                 user={scannedUser} 
                 onClose={() => setScannedUser(null)}
                 meal={scannedMeal}
@@ -759,7 +760,6 @@ export default function KhidmatPortal({ signOut }) {
                 mealOverride={mealOverride}
                 onMealToggle={handleMealToggle}
                 onResetAuto={handleResetToAuto}
-                onScanMember={(rawInput) => processScan(rawInput)}
                 onTriggerCameraScan={() => setIsScanning(true)}
               />
             )}

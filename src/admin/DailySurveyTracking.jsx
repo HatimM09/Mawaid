@@ -22,7 +22,7 @@ import {
 } from '../common/utils'
 import { getPctColor, isRotiItem, isCountInput } from '../hooks/useSurvey'
 import { fetchUserSurveyRow, fetchAllUserRows, flattenDayRows, buildMealDishMap, fetchWeekRows, fetchLatestUserSurveyRow } from '../lib/surveyRows'
-import { resolveScannedUser, extractScanTarget } from './scanParser'
+import { resolveScannedUser, extractScanTarget, cleanThaliComparable } from './scanParser'
 import { playScanSound } from './scanAudio'
 
 // Pick the stop request whose dates best describe the current stopped period
@@ -109,7 +109,6 @@ export default function DailySurveyTracking() {
     try {
       if (!rawInput) return
 
-      const cleanThali = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '')
       const targetStr = String(rawInput).trim()
 
       // Debounce duplicate scans within 1.2 seconds
@@ -127,10 +126,16 @@ export default function DailySurveyTracking() {
       }
 
       // 1. FAST PATH: Check if user is already loaded in the tracker table
-      const cached = (usersRef.current || []).find(x => 
-        (x.user_id && u.user_id && String(x.user_id).trim() === String(u.user_id).trim()) ||
-        (x.thali_number && u.thali_number && cleanThali(x.thali_number) === cleanThali(u.thali_number))
-      )
+      const compThali = cleanThaliComparable(u.thali_number || '')
+      const compUserId = cleanThaliComparable(u.user_id || u.id || '')
+      const cached = (usersRef.current || []).find(x => {
+        if (!x) return false
+        if (x.user_id && u.user_id && String(x.user_id).trim().toLowerCase() === String(u.user_id).trim().toLowerCase()) return true
+        if (x.id && u.id && String(x.id).trim().toLowerCase() === String(u.id).trim().toLowerCase()) return true
+        if (x.thali_number && u.thali_number && cleanThaliComparable(x.thali_number) === compThali) return true
+        if (compUserId && x.user_id && cleanThaliComparable(x.user_id) === compUserId) return true
+        return false
+      })
 
       if (cached) {
         playScanSound(cached.status === 'Applied' ? 'proceed' : 'neutral')
@@ -306,30 +311,37 @@ export default function DailySurveyTracking() {
   }
 
   // --- WIRELESS & USB HARDWARE SCANNER SUPPORT ---
+  const scanBufferRef = useRef('')
+  const lastKeyTimeRef = useRef(0)
+  const processDirectScanRef = useRef(processDirectScan)
   useEffect(() => {
-    let scanBuffer = ''
-    let lastKeyTime = Date.now()
+    processDirectScanRef.current = processDirectScan
+  })
 
+  useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return
       const now = Date.now()
-      if (now - lastKeyTime > 150) scanBuffer = ''
-      lastKeyTime = now
+      if (now - lastKeyTimeRef.current > 180) {
+        scanBufferRef.current = ''
+      }
+      lastKeyTimeRef.current = now
 
       if (e.key === 'Enter') {
-        const text = scanBuffer.trim()
-        scanBuffer = ''
-        if (text) {
-          processDirectScan(text)
+        const text = scanBufferRef.current.trim()
+        scanBufferRef.current = ''
+        if (text && text.length >= 1) {
+          e.preventDefault()
+          processDirectScanRef.current?.(text)
         }
       } else if (e.key.length === 1) {
-        scanBuffer += e.key
+        scanBufferRef.current += e.key
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [day, meal, weeklyMenu])
+  }, [])
 
   // Auto-switch meal & day based on time
   const advancedDayRef = useRef(null)
@@ -1130,13 +1142,13 @@ export default function DailySurveyTracking() {
       {/* Packing Station TV View (Pop-up) */}
       {selectedUser && (
         <PackingTVView 
+          key={selectedUser.user_id || selectedUser.id || selectedUser.thali_number}
           user={selectedUser} 
           meal={meal}
           day={day} 
           onClose={() => setSelectedUser(null)}
           dishInputConfig={dishInputConfig}
           onMealToggle={(m) => { setMeal(m); setMealOverride(true) }}
-          onScanMember={(rawInput) => processDirectScan(rawInput)}
           onTriggerCameraScan={() => setIsScanning(true)}
         />
       )}

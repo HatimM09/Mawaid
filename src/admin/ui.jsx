@@ -782,27 +782,20 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
     } catch {}
   }, [user?.thali_number, displayMeal, status, isStopped])
 
-  // ── KEYBOARD SHORTCUTS FOR TV REMOTE & DIRECT BARCODE SCANNER ──
+  // ── KEYBOARD SHORTCUTS FOR TV REMOTE (Only manual, deliberate keypresses) ──
   useEffect(() => {
-    let scanBuffer = ''
-    let lastKeyTime = Date.now()
+    let lastKeyTime = 0
 
     const handleKey = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+      if (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return
+
       const now = Date.now()
-      if (now - lastKeyTime > 180) scanBuffer = ''
+      const timeSinceLastKey = now - lastKeyTime
       lastKeyTime = now
 
-      // Hardware barcode/QR scanner sends Enter after rapid character input
-      if (e.key === 'Enter') {
-        const text = scanBuffer.trim()
-        scanBuffer = ''
-        if (text && (text.length >= 2 || text.toUpperCase().includes('ALMAWAID'))) {
-          e.preventDefault()
-          onScanMember?.(text)
-          return
-        }
-        // Do not close TV screen on Enter to prevent accidental dismissals
+      // If keys are streaming in at scanner speed (< 80ms apart), this is a barcode scanner stream.
+      // Do NOT trigger any single-letter hotkeys (m, c, t, s, v, f) during scanner transmission!
+      if (timeSinceLastKey < 80) {
         return
       }
 
@@ -812,8 +805,9 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
         return
       }
 
-      if (e.key.length === 1) {
-        scanBuffer += e.key
+      // Enter from barcode scanner is handled by the global tracker scanner listener
+      if (e.key === 'Enter') {
+        return
       }
 
       const k = e.key.toLowerCase()
@@ -837,7 +831,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [displayMeal, onMealToggle, onClose, onScanMember, onTriggerCameraScan])
+  }, [displayMeal, onMealToggle, onClose, onTriggerCameraScan])
 
   // Admin erase
   const canErase = !!(user?.user_id && user?.week_id)
