@@ -17,7 +17,7 @@ import {
   getCurrentMealByTime
 } from '../common/utils'
 import { isRotiItem } from '../hooks/useSurvey'
-import { fetchUserSurveyRow, fetchAllUserRows, buildMealDishMap, normalizeMealStatus } from '../lib/surveyRows'
+import { fetchUserSurveyRow, fetchLatestUserSurveyRow, fetchAllUserRows, buildMealDishMap, normalizeMealStatus } from '../lib/surveyRows'
 import { resolveScannedUser, extractScanTarget } from './scanParser'
 import { playScanSound } from './scanAudio'
 import RequestsAdminPage from './RequestsAdminPage'

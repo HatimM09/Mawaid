@@ -154,7 +154,7 @@ export default function DailySurveyTracking() {
 
       // Fetch survey row for this user in activeWeekId
       let row = {}
-      const safeThali = cleanThali(u.thali_number || '')
+      const safeThali = cleanThaliComparable(u.thali_number || '')
       try {
         let query = supabase
           .from('survey_day_responses')
