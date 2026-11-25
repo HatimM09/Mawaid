@@ -173,7 +173,7 @@ export default function AutomationPage() {
       const day = today.getDay()
       const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
       const dayKey = dayNames[day]
-      const mealKey = today.getHours() < 15 ? 'l' : 'd'
+      const mealKey = (today.getHours() < 12 || today.getHours() >= 19) ? 'l' : 'd'
       const statusField = `${dayKey}_${mealKey}_status`
       const isSunday = day === 0
       const weekIds = getSurveyTargetWeeks(s)

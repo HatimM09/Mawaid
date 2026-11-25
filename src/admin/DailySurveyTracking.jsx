@@ -45,10 +45,13 @@ export default function DailySurveyTracking() {
   const urlMeal = searchParams.get('meal')
   const [loading, setLoading] = useState(true)
   const [day, setDay] = useState(() => {
-    const d = new Date().getDay()
-    // Default to Monday if Sunday (since survey is for next week usually, but here we just pick current)
-    if (d === 0) return 'monday' 
-    return ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'][d]
+    const now = new Date()
+    const d = now.getDay()
+    const mins = now.getHours() * 60 + now.getMinutes()
+    // After 7 PM (19:00), dinner is finished; kitchen packs next day's lunch
+    let effectiveDayIdx = (mins >= 19 * 60) ? (d + 1) % 7 : d
+    if (effectiveDayIdx === 0) effectiveDayIdx = 1 
+    return ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'][effectiveDayIdx]
   })
   const getAutoMeal = useCallback(() => getCurrentMealByTime(), [])
   const [meal, setMeal] = useState(() => {
@@ -68,10 +71,24 @@ export default function DailySurveyTracking() {
   const [refreshing, setRefreshing] = useState(false)
   const [isScanning, setIsScanning] = useState(() => searchParams.get('scan') === 'true')
   useEffect(() => {
-    if (searchParams.get('scan') === 'true') {
+    const scanVal = searchParams.get('scan')
+    const tvVal = searchParams.get('tv')
+    if (scanVal === 'true') {
       setIsScanning(true)
+    } else if (scanVal) {
+      processDirectScan(scanVal)
+    } else if (tvVal === 'true' && !selectedUser) {
+      if (usersRef.current && usersRef.current.length > 0) {
+        setSelectedUser(usersRef.current[0])
+      }
     }
   }, [searchParams])
+
+  useEffect(() => {
+    if (searchParams.get('tv') === 'true' && !selectedUser && users.length > 0) {
+      setSelectedUser(users[0])
+    }
+  }, [searchParams, users])
   const [weekFilter, setWeekFilter] = useState('all')
   const [availableWeeks, setAvailableWeeks] = useState([])
   const [dishInputConfig, setDishInputConfig] = useState({})
@@ -226,7 +243,7 @@ export default function DailySurveyTracking() {
       let dayMenu = freshMenu[dayNameLower] || (weeklyMenu.__byWeek?.[resolvedWeekId]?.[dayNameLower]) || displayMenu[dayNameLower] || weeklyMenu[dayNameLower] || weeklyMenu[day] || {}
 
       // Fallback: if dayMenu is missing lunch or dinner, query latest menu for this day_name
-      if (!dayMenu.lunch?.length && !dayMenu.dinner?.length) {
+      if (!dayMenu.lunch?.length || !dayMenu.dinner?.length) {
         try {
           const { data: fallbackRows } = await supabase
             .from('weekly_menu')
@@ -236,8 +253,8 @@ export default function DailySurveyTracking() {
             .limit(1)
           if (fallbackRows && fallbackRows.length > 0) {
             dayMenu = {
-              lunch: parseDishArray(fallbackRows[0].lunch),
-              dinner: parseDishArray(fallbackRows[0].dinner),
+              lunch: dayMenu.lunch?.length ? dayMenu.lunch : parseDishArray(fallbackRows[0].lunch),
+              dinner: dayMenu.dinner?.length ? dayMenu.dinner : parseDishArray(fallbackRows[0].dinner),
             }
           }
         } catch { /* ignore fallback error */ }
@@ -322,17 +339,18 @@ export default function DailySurveyTracking() {
         const autoMeal = getAutoMeal()
         if (autoMeal !== meal) setMeal(autoMeal)
       }
-      // After 8 PM, advance day once per day
-      const h = new Date().getHours()
-      const todayStr = new Date().toDateString()
-      if (h >= 20 && advancedDayRef.current !== todayStr) {
+      // After 7 PM (19:00), advance day once per day
+      const now = new Date()
+      const mins = now.getHours() * 60 + now.getMinutes()
+      const todayStr = now.toDateString()
+      if (mins >= 19 * 60 && advancedDayRef.current !== todayStr) {
         const dayIdx = DAYS.indexOf(day)
         if (dayIdx !== -1) {
           advancedDayRef.current = todayStr
           setDay(DAYS[(dayIdx + 1) % DAYS.length])
         }
       }
-      if (h < 20) advancedDayRef.current = null
+      if (mins < 19 * 60) advancedDayRef.current = null
     }
     tick()
     const id = setInterval(tick, 60000)
@@ -1089,7 +1107,7 @@ export default function DailySurveyTracking() {
       {isScanning && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)',
-          zIndex: 3000, display: 'flex', flexDirection: 'column',
+          zIndex: 10005, display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center', padding: 20
         }}>
           <div style={{ position: 'relative', width: '100%', maxWidth: 400 }}>
@@ -1118,6 +1136,8 @@ export default function DailySurveyTracking() {
           onClose={() => setSelectedUser(null)}
           dishInputConfig={dishInputConfig}
           onMealToggle={(m) => { setMeal(m); setMealOverride(true) }}
+          onScanMember={(rawInput) => processDirectScan(rawInput)}
+          onTriggerCameraScan={() => setIsScanning(true)}
         />
       )}
 

@@ -259,7 +259,7 @@ export default function AdminLayout() {
   const expanded = isMobile() ? mobileDrawer : !collapsed
 
   const currentHour = liveTime.getHours()
-  const mealWindowTag = (currentHour >= 9 && currentHour < 15) ? '☀️ Lunch Session' : (currentHour >= 16 && currentHour < 22) ? '🌙 Dinner Session' : '🕒 Prep Window'
+  const mealWindowTag = (currentHour >= 6 && currentHour < 12) ? '☀️ Lunch Session' : (currentHour >= 12 && currentHour < 19) ? '🌙 Dinner Session' : '🕒 Prep Window'
   const timeFormatted = liveTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
   const activeThemeMeta = THEME_OPTIONS.find(t => t.id === currentTheme) || THEME_OPTIONS[0]
 

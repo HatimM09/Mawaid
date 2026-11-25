@@ -174,14 +174,13 @@ export const getDayKey = (day) => day.substring(0, 3).toLowerCase()
 export const getMealKey = (meal) => meal === 'lunch' ? 'l' : 'd'
 
 // ── Canonical timewise meal resolution (single source of truth) ──
-// Lunch is served before 15:00, dinner 15:00–20:00, after 20:00 the kitchen
-// prepares for the next day so the TV/tracker defaults back to lunch.
-// Previously three copies of this logic drifted (14:00 vs 15:00 cutoffs),
-// which made the same scan show lunch on one screen and dinner on another.
+// Lunch is served until 12:00 PM (noon).
+// Dinner is served 12:00 PM to 7:00 PM (19:00).
+// After 7:00 PM (19:00), the kitchen packs/prepares for next day's lunch.
 export const getCurrentMealByTime = (now = new Date()) => {
   const mins = now.getHours() * 60 + now.getMinutes()
-  if (mins < 15 * 60) return 'lunch'
-  if (mins < 20 * 60) return 'dinner'
+  if (mins < 12 * 60) return 'lunch'
+  if (mins < 19 * 60) return 'dinner'
   return 'lunch'
 }
 

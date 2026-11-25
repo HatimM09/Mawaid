@@ -355,7 +355,7 @@ export default function Dashboard() {
 
     const today = ['sun','mon','tue','wed','thu','fri','sat'][new Date().getDay()]
     const h = new Date().getHours() + new Date().getMinutes() / 60
-    const isLunch = h >= 20 || h < 14
+    const isLunch = h >= 19 || h < 12
     const todayKey = `${today}_${isLunch ? 'l' : 'd'}_status`
     
     // Effective rows: overlay override day statuses on the normal rows so
@@ -639,7 +639,7 @@ export default function Dashboard() {
         </AdminCard>
 
         <AdminCard 
-          onClick={() => navigate(`/admin/survey-tracking?meal=${new Date().getHours() + new Date().getMinutes() / 60 >= 20 || new Date().getHours() + new Date().getMinutes() / 60 < 14 ? 'lunch' : 'dinner'}`)}
+          onClick={() => navigate(`/admin/survey-tracking?meal=${new Date().getHours() + new Date().getMinutes() / 60 >= 19 || new Date().getHours() + new Date().getMinutes() / 60 < 12 ? 'lunch' : 'dinner'}`)}
           style={{ gridArea: 'stat2', background: 'var(--bg-card)', border: '1px solid var(--border-light)', cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.32, 0.72, 0, 1)' }}
           className="hover-lift"
         >
@@ -653,7 +653,7 @@ export default function Dashboard() {
           </div>
           <div style={{ fontSize: 32, fontWeight: 900, marginTop: 12, color: 'var(--text-primary)', fontFamily: "'Space Grotesk', sans-serif", fontVariantNumeric: 'tabular-nums' }}>{stats.todayThalis}</div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)' }}>
-            Thalis for {new Date().getHours() + new Date().getMinutes() / 60 >= 20 || new Date().getHours() + new Date().getMinutes() / 60 < 14 ? 'Lunch' : 'Dinner'}
+            Thalis for {new Date().getHours() + new Date().getMinutes() / 60 >= 19 || new Date().getHours() + new Date().getMinutes() / 60 < 12 ? 'Lunch' : 'Dinner'}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
             <div style={{ flex: 1, padding: '6px 10px', borderRadius: 8, background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', textAlign: 'center' }}>
@@ -718,7 +718,7 @@ export default function Dashboard() {
 
             <div style={{ display: 'flex', gap: 8 }}>
               <button
-                onClick={() => navigate('/admin/tracking')}
+                onClick={() => navigate('/admin/survey-tracking')}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: '8px 14px', borderRadius: 10,
@@ -732,11 +732,7 @@ export default function Dashboard() {
               </button>
               <button
                 onClick={() => {
-                  if (usersList.length > 0) {
-                    setSelectedTVUser(usersList[0])
-                  } else {
-                    navigate('/admin/tracking?scan=true')
-                  }
+                  navigate('/admin/survey-tracking?tv=true')
                 }}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,

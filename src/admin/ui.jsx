@@ -3,7 +3,7 @@ import React, { useState, useEffect, useId, useRef } from 'react'
 import {
   AlertCircle, X, Maximize2, Minimize2, Trash2, Volume2, VolumeX,
   Mic, MicOff, Sun, Moon, Clock, Sparkles, HelpCircle, History, RotateCcw,
-  CheckCircle2, XCircle
+  CheckCircle2, XCircle, Scan
 } from 'lucide-react'
 import { eraseSurveySlot } from '../lib/surveyRows'
 import { isRotiItem } from '../hooks/useSurvey'
@@ -633,7 +633,7 @@ export const fmtDateTime = (d) => {
     dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
-export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverride, dishInputConfig, onMealToggle }) => {
+export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverride, dishInputConfig, onMealToggle, onScanMember, onTriggerCameraScan }) => {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isErasing, setIsErasing] = useState(false)
   const [showShortcuts, setShowShortcuts] = useState(false)
@@ -735,18 +735,18 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
     } catch { /* invalid week_id */ }
   }
 
-  const mealData = displayMeal === 'lunch' ? user.lunch : user.dinner
+  const mealData = displayMeal === 'lunch' ? user?.lunch : user?.dinner
   const candidateDishes = (mealData?.dishes && Object.keys(mealData.dishes).filter(k => k !== '_status').length > 0)
     ? mealData.dishes
-    : (user.dishResponses && Object.keys(user.dishResponses).filter(k => k !== '_status').length > 0
+    : (user?.currentMeal === displayMeal && user?.dishResponses && Object.keys(user.dishResponses).filter(k => k !== '_status').length > 0
       ? user.dishResponses
-      : (user[displayMeal]?.dishes || {}))
+      : (user?.[displayMeal]?.dishes || {}))
   const dishes = candidateDishes || {}
   const dishEntries = Object.entries(dishes).filter(([k]) => k !== '_status')
   const total = dishEntries.length
 
-  const status = mealData?.status || (displayMeal === user.currentMeal ? user.status : null) || 'Not Submitted'
-  const isStopped = !!user.stopped
+  const status = mealData?.status || (displayMeal === user?.currentMeal ? user?.status : null) || 'Not Submitted'
+  const isStopped = !!user?.stopped
 
   const mealLabels = { lunch: 'LUNCH', dinner: 'DINNER' }
   const mealIcons = { lunch: '☀️', dinner: '🌙' }
@@ -782,12 +782,48 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
     } catch {}
   }, [user?.thali_number, displayMeal, status, isStopped])
 
-  // ── KEYBOARD SHORTCUTS FOR TV REMOTE / WIRELESS SCANNER ──
+  // ── KEYBOARD SHORTCUTS FOR TV REMOTE & DIRECT BARCODE SCANNER ──
   useEffect(() => {
+    let scanBuffer = ''
+    let lastKeyTime = Date.now()
+
     const handleKey = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+      const now = Date.now()
+      if (now - lastKeyTime > 180) scanBuffer = ''
+      lastKeyTime = now
+
+      // Hardware barcode/QR scanner sends Enter after rapid character input
+      if (e.key === 'Enter') {
+        const text = scanBuffer.trim()
+        scanBuffer = ''
+        if (text && (text.length >= 2 || text.toUpperCase().includes('ALMAWAID'))) {
+          e.preventDefault()
+          onScanMember?.(text)
+          return
+        }
+        // Do not close TV screen on Enter to prevent accidental dismissals
+        return
+      }
+
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose?.()
+        return
+      }
+
+      if (e.key.length === 1) {
+        scanBuffer += e.key
+      }
+
       const k = e.key.toLowerCase()
       if (k === 'f') { e.preventDefault(); toggleFullscreen() }
+      if (k === 'c') {
+        if (onTriggerCameraScan) {
+          e.preventDefault()
+          onTriggerCameraScan()
+        }
+      }
       if (k === 'm') {
         e.preventDefault()
         const next = displayMeal === 'lunch' ? 'dinner' : 'lunch'
@@ -798,14 +834,10 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
       if (k === 's') { e.preventDefault(); toggleSound() }
       if (k === 'v') { e.preventDefault(); toggleVoice() }
       if (k === '?' || k === '/') { e.preventDefault(); setShowShortcuts(s => !s) }
-      if (e.key === ' ' || e.key === 'Enter') {
-        e.preventDefault()
-        onClose?.()
-      }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [displayMeal, onMealToggle, onClose])
+  }, [displayMeal, onMealToggle, onClose, onScanMember, onTriggerCameraScan])
 
   // Admin erase
   const canErase = !!(user?.user_id && user?.week_id)
@@ -1140,6 +1172,25 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
             <Clock size={13} style={{ opacity: 0.7 }} />
             {clock}
           </div>
+
+          {/* Camera Scan Button */}
+          {onTriggerCameraScan && (
+            <button
+              onClick={onTriggerCameraScan}
+              className="tv-ctrl-btn"
+              title="Scan QR Code with Camera (Press 'C')"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '6px 14px', borderRadius: 12,
+                background: 'linear-gradient(135deg, var(--accent-primary, #c5a059), #936c28)',
+                border: 'none', color: '#000', fontSize: 11, fontWeight: 900,
+                cursor: 'pointer', boxShadow: '0 2px 10px rgba(197, 160, 89, 0.4)'
+              }}
+            >
+              <Scan size={14} />
+              <span>SCAN QR</span>
+            </button>
+          )}
 
           {/* Wireless Scanner Status Indicator */}
           <div style={{
@@ -1603,12 +1654,13 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
               {[
+                { key: 'C', desc: 'Scan QR with Camera' },
+                { key: 'Scanner', desc: 'Scan barcode/QR directly' },
                 { key: 'F', desc: 'Toggle Fullscreen Mode' },
                 { key: 'M', desc: 'Switch Lunch ☀️ / Dinner 🌙' },
                 { key: 'T', desc: 'Cycle TV Theme (Dark / Daylight / Amber)' },
                 { key: 'S', desc: 'Toggle Audio Chimes (On / Off)' },
                 { key: 'V', desc: 'Toggle Voice Announcements (On / Off)' },
-                { key: 'Space / Enter', desc: 'Dismiss / Ready for Next Tiffin' },
                 { key: 'Esc', desc: 'Close TV View' },
               ].map(({ key, desc }) => (
                 <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>

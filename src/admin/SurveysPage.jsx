@@ -717,6 +717,8 @@ export default function SurveysPage() {
           day={dayFilter}
           dishInputConfig={dishInputConfig}
           onMealToggle={(m) => setMealFilter(m)}
+          onScanMember={(rawInput) => processDirectScan(rawInput)}
+          onTriggerCameraScan={() => setIsScanning(true)}
           onClose={() => {
             setSelectedUser(null)
             setSearchParams({})
@@ -858,7 +860,7 @@ export default function SurveysPage() {
       
       {/* SCANNER MODAL */}
       {isScanning && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.95)', backdropFilter: 'blur(10px)', padding: 20 }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 10005, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.95)', backdropFilter: 'blur(10px)', padding: 20 }}>
           <div style={{ position: 'relative', width: '100%', maxWidth: 450 }}>
             <button onClick={() => setIsScanning(false)} aria-label="Close scanner" style={{ position: 'absolute', top: -60, right: 0, background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', width: 44, height: 44, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={24} /></button>
             <div style={{ background: '#fff', borderRadius: 32, padding: 20, overflow: 'hidden', boxShadow: '0 50px 100px rgba(0,0,0,0.5)' }}>

@@ -740,7 +740,7 @@ export default function KhidmatPortal({ signOut }) {
 
             {/* MODALS */}
             {isScanning && (
-              <div style={{ position: 'fixed', inset: 0, zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.9)', padding: 20 }}>
+              <div style={{ position: 'fixed', inset: 0, zIndex: 10005, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.9)', padding: 20 }}>
                 <div style={{ position: 'relative', width: '100%', maxWidth: 400 }}>
                   <button onClick={() => setIsScanning(false)} aria-label="Close scanner" style={{ position: 'absolute', top: -50, right: 0, background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}><X size={32} /></button>
                   <Card style={{ padding: 10, background: '#fff' }}><div id="portal-reader" style={{ width: '100%' }}></div></Card>
@@ -759,6 +759,8 @@ export default function KhidmatPortal({ signOut }) {
                 mealOverride={mealOverride}
                 onMealToggle={handleMealToggle}
                 onResetAuto={handleResetToAuto}
+                onScanMember={(rawInput) => processScan(rawInput)}
+                onTriggerCameraScan={() => setIsScanning(true)}
               />
             )}
 
@@ -943,11 +945,7 @@ function NoticesPortalView() {
 
 
 function NoThaliTracker() {
-  const [meal, setMeal] = useState(() => {
-    const now = new Date()
-    const h = now.getHours(), m = now.getMinutes()
-    return (h > 16 || (h === 16 && m >= 30)) ? 'dinner' : 'lunch'
-  })
+  const [meal, setMeal] = useState(() => getCurrentMealByTime())
   const [skips, setSkips] = useState([])
   const [loading, setLoading] = useState(true)
 

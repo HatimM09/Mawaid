@@ -10,7 +10,7 @@ import {
   T, PageWrap, PageTitle, AdminCard, Badge, Btn, Spinner, Modal,
   SectionHeader, SurveyResponseDisplay, PackingTVView, ErrorBanner
 } from './ui'
-import { getSurveyTargetWeek, DAYS, MEALS, getDayKey, getMealKey } from '../common/utils'
+import { getSurveyTargetWeek, DAYS, MEALS, getDayKey, getMealKey, getCurrentMealByTime } from '../common/utils'
 import { getSlotDishes } from '../hooks/useSurvey'
 import { fetchWeekRows, fetchAllUserRows } from '../lib/surveyRows'
 
@@ -33,7 +33,7 @@ export default function SurveyDashboard() {
     if (d === 0) return 'monday'
     return ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][d]
   })
-  const [trackMeal, setTrackMeal] = useState(() => (new Date().getHours() + new Date().getMinutes() / 60) < 15.5 ? 'lunch' : 'dinner')
+  const [trackMeal, setTrackMeal] = useState(() => getCurrentMealByTime())
   const [trackUsers, setTrackUsers] = useState([])
   const [trackSearch, setTrackSearch] = useState('')
   const [trackWeekFilter, setTrackWeekFilter] = useState('all')
