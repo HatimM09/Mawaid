@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/firebaseClient'
 import {
   Users, Star, Calendar, RefreshCw, ArrowUpRight, ChevronRight, AlertCircle, AlertTriangle, QrCode,
-  Clock, Tv, CheckCircle2, XCircle, Send, Check, MessageSquare, Shield, Activity, Sparkles, Scan
+  Clock, Tv, CheckCircle2, XCircle, Send, Check, MessageSquare, Shield, Activity, Sparkles, Scan, X
 } from 'lucide-react'
 import {
   T, PageWrap, StatCard, AdminCard, Badge, Spinner, Btn, Modal, PackingTVView
