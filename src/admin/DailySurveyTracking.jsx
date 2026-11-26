@@ -70,6 +70,13 @@ export default function DailySurveyTracking() {
   const [selectedUser, setSelectedUser] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [isScanning, setIsScanning] = useState(() => searchParams.get('scan') === 'true')
+  const [scanNotice, setScanNotice] = useState(null)
+  const scanNoticeTimerRef = useRef(null)
+  const showScanNotice = useCallback((msg) => {
+    setScanNotice(msg)
+    if (scanNoticeTimerRef.current) clearTimeout(scanNoticeTimerRef.current)
+    scanNoticeTimerRef.current = setTimeout(() => setScanNotice(null), 3500)
+  }, [])
   useEffect(() => {
     const scanVal = searchParams.get('scan')
     const tvVal = searchParams.get('tv')
@@ -105,7 +112,9 @@ export default function DailySurveyTracking() {
 
   const processDirectScan = async (rawInput) => {
     // Auto-fullscreen on scan — must be synchronous before any await to preserve user gesture
-    document.documentElement.requestFullscreen().catch(() => {})
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {})
+    }
     try {
       if (!rawInput) return
 
@@ -121,7 +130,7 @@ export default function DailySurveyTracking() {
       const u = await resolveScannedUser(rawInput, usersRef.current || [])
       if (!u) {
         playScanSound('skip')
-        alert('Member not found for scan: ' + targetStr)
+        showScanNotice('Member not found for scan: ' + targetStr)
         return
       }
 
@@ -138,8 +147,7 @@ export default function DailySurveyTracking() {
       })
 
       if (cached) {
-        playScanSound(cached.status === 'Applied' ? 'proceed' : 'neutral')
-        setSelectedUser(cached)
+        setSelectedUser({ ...cached })
         return
       }
 
@@ -306,7 +314,7 @@ export default function DailySurveyTracking() {
       })
     } catch (e) {
       console.error(e)
-      alert('Error fetching user data: ' + e.message)
+      showScanNotice('Error fetching user data: ' + e.message)
     }
   }
 
@@ -621,6 +629,9 @@ export default function DailySurveyTracking() {
     }
   }, [load])
 
+  const lastCamScanRef = useRef({ text: '', time: 0 })
+  const camProcessingRef = useRef(false)
+
   useEffect(() => {
     if (!isScanning) return
     let scanner = null
@@ -644,13 +655,18 @@ export default function DailySurveyTracking() {
 
         const handleScan = async (decodedText) => {
           if (!decodedText) return
-          try {
-            await scanner?.clear()
-          } catch (e) {
-            console.warn("Failed to clear scanner", e)
+          const now = Date.now()
+          if (camProcessingRef.current) return
+          if (lastCamScanRef.current.text === decodedText && (now - lastCamScanRef.current.time) < 2500) {
+            return
           }
-          setIsScanning(false)
-          await processDirectScan(decodedText)
+          lastCamScanRef.current = { text: decodedText, time: now }
+          camProcessingRef.current = true
+          try {
+            await processDirectScanRef.current?.(decodedText)
+          } finally {
+            camProcessingRef.current = false
+          }
         }
 
         scanner.render((text) => handleScan(text).catch(e => console.error('Scan handler error:', e)), () => {})
@@ -666,7 +682,7 @@ export default function DailySurveyTracking() {
         try { scanner.clear().catch(() => {}) } catch {}
       }
     }
-  }, [isScanning, day, meal, weeklyMenu])
+  }, [isScanning])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -1115,25 +1131,51 @@ export default function DailySurveyTracking() {
         }
       `}</style>
 
-      {/* QR Scanner Modal */}
-      {isScanning && (
+      {/* Non-blocking scan notice toast */}
+      {scanNotice && (
         <div style={{
+          position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 10010, padding: '10px 18px', borderRadius: 12,
+          background: 'rgba(239, 68, 68, 0.95)', color: '#fff',
+          fontWeight: 700, fontSize: 13, boxShadow: '0 8px 30px rgba(0,0,0,0.45)',
+          pointerEvents: 'none'
+        }}>
+          {scanNotice}
+        </div>
+      )}
+
+      {/* QR Scanner Modal (docks to corner when TV view is open for continuous scanning) */}
+      {isScanning && (
+        <div style={selectedUser ? {
+          position: 'fixed', bottom: 16, right: 16, width: 260,
+          zIndex: 10005, display: 'flex', flexDirection: 'column',
+          borderRadius: 16, boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+          background: '#111827', border: '1px solid rgba(255,255,255,0.18)', padding: 8
+        } : {
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)',
           zIndex: 10005, display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center', padding: 20
         }}>
-          <div style={{ position: 'relative', width: '100%', maxWidth: 400 }}>
-            <button 
+          <div style={{ position: 'relative', width: '100%', maxWidth: selectedUser ? 260 : 400 }}>
+            <button
               onClick={() => setIsScanning(false)}
-              style={{ position: 'absolute', top: -50, right: 0, background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}
+              aria-label="Close scanner"
+              style={selectedUser ? {
+                position: 'absolute', top: -10, right: -10, zIndex: 2,
+                background: '#ef4444', border: 'none', color: '#fff',
+                width: 28, height: 28, borderRadius: '50%', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              } : {
+                position: 'absolute', top: -50, right: 0, background: 'none', border: 'none', color: '#fff', cursor: 'pointer'
+              }}
             >
-              <X size={32} />
+              <X size={selectedUser ? 16 : 32} />
             </button>
-            <AdminCard style={{ padding: 10, background: '#fff' }}>
+            <AdminCard style={{ padding: selectedUser ? 4 : 10, background: '#fff' }}>
               <div id="qr-reader" style={{ width: '100%' }}></div>
             </AdminCard>
-            <p style={{ color: '#fff', textAlign: 'center', marginTop: 20, fontWeight: 600 }}>
-              Scan Tiffin QR Code
+            <p style={{ color: '#fff', textAlign: 'center', marginTop: selectedUser ? 6 : 20, marginBottom: 0, fontWeight: 600, fontSize: selectedUser ? 11 : 14 }}>
+              {selectedUser ? 'Continuous Scan Active — Scan Next QR' : 'Scan Tiffin QR Code'}
             </p>
           </div>
         </div>
@@ -1142,7 +1184,6 @@ export default function DailySurveyTracking() {
       {/* Packing Station TV View (Pop-up) */}
       {selectedUser && (
         <PackingTVView 
-          key={selectedUser.user_id || selectedUser.id || selectedUser.thali_number}
           user={selectedUser} 
           meal={meal}
           day={day} 

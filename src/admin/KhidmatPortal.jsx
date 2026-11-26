@@ -373,6 +373,7 @@ export default function KhidmatPortal({ signOut }) {
   }, [mealOverride])
 
   // --- WIRELESS & USB SCANNER SUPPORT ---
+  const processScanRef = useRef(null)
   useEffect(() => {
     let scanBuffer = ''
     let lastKeyTime = Date.now()
@@ -387,7 +388,8 @@ export default function KhidmatPortal({ signOut }) {
         const text = scanBuffer.trim()
         scanBuffer = ''
         if (text) {
-          processScan(text)
+          e.preventDefault()
+          processScanRef.current?.(text)
         }
       } else if (e.key.length === 1) {
         scanBuffer += e.key
@@ -571,6 +573,12 @@ export default function KhidmatPortal({ signOut }) {
   }
 
   // --- CAMERA SCANNER ---
+  const lastCamScanRef = useRef({ text: '', time: 0 })
+  const camProcessingRef = useRef(false)
+  useEffect(() => {
+    processScanRef.current = processScan
+  })
+
   useEffect(() => {
     if (!isScanning) return
     let scanner = null
@@ -595,16 +603,21 @@ export default function KhidmatPortal({ signOut }) {
         
         const handleScan = async (decodedText) => {
           if (!decodedText) return;
-          try {
-            await scanner.clear();
-          } catch (e) {
-            console.error("Failed to clear scanner", e);
+          const now = Date.now();
+          if (camProcessingRef.current) return;
+          if (lastCamScanRef.current.text === decodedText && (now - lastCamScanRef.current.time) < 2500) {
+            return;
           }
-          setIsScanning(false);
-          processScan(decodedText);
+          lastCamScanRef.current = { text: decodedText, time: now };
+          camProcessingRef.current = true;
+          try {
+            await processScanRef.current?.(decodedText);
+          } finally {
+            camProcessingRef.current = false;
+          }
         };
 
-        scanner.render(handleScan, () => {});
+        scanner.render((text) => handleScan(text).catch(e => console.error('Portal scan error:', e)), () => {});
       } catch (err) {
         console.warn('Portal QR scanner initialization deferred:', err)
       }
@@ -740,18 +753,33 @@ export default function KhidmatPortal({ signOut }) {
 
             {/* MODALS */}
             {isScanning && (
-              <div style={{ position: 'fixed', inset: 0, zIndex: 10005, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.9)', padding: 20 }}>
-                <div style={{ position: 'relative', width: '100%', maxWidth: 400 }}>
-                  <button onClick={() => setIsScanning(false)} aria-label="Close scanner" style={{ position: 'absolute', top: -50, right: 0, background: 'none', border: 'none', color: '#fff', cursor: 'pointer' }}><X size={32} /></button>
-                  <Card style={{ padding: 10, background: '#fff' }}><div id="portal-reader" style={{ width: '100%' }}></div></Card>
-                  <p style={{ color: '#fff', textAlign: 'center', marginTop: 20, fontWeight: 600 }}>Scan Member QR Code</p>
+              <div style={scannedUser ? {
+                position: 'fixed', bottom: 16, right: 16, width: 260,
+                zIndex: 10005, display: 'flex', flexDirection: 'column',
+                borderRadius: 16, boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+                background: '#111827', border: '1px solid rgba(255,255,255,0.18)', padding: 8
+              } : {
+                position: 'fixed', inset: 0, zIndex: 10005, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.9)', padding: 20
+              }}>
+                <div style={{ position: 'relative', width: '100%', maxWidth: scannedUser ? 260 : 400 }}>
+                  <button onClick={() => setIsScanning(false)} aria-label="Close scanner" style={scannedUser ? {
+                    position: 'absolute', top: -10, right: -10, zIndex: 2,
+                    background: '#ef4444', border: 'none', color: '#fff',
+                    width: 28, height: 28, borderRadius: '50%', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  } : {
+                    position: 'absolute', top: -50, right: 0, background: 'none', border: 'none', color: '#fff', cursor: 'pointer'
+                  }}><X size={scannedUser ? 16 : 32} /></button>
+                  <Card style={{ padding: scannedUser ? 4 : 10, background: '#fff' }}><div id="portal-reader" style={{ width: '100%' }}></div></Card>
+                  <p style={{ color: '#fff', textAlign: 'center', marginTop: scannedUser ? 6 : 20, marginBottom: 0, fontWeight: 600, fontSize: scannedUser ? 11 : 14 }}>
+                    {scannedUser ? 'Continuous Scan Active — Scan Next QR' : 'Scan Member QR Code'}
+                  </p>
                 </div>
               </div>
             )}
 
             {scannedUser && (
               <PackingTVView 
-                key={scannedUser.user_id || scannedUser.id || scannedUser.thali_number}
                 user={scannedUser} 
                 onClose={() => setScannedUser(null)}
                 meal={scannedMeal}

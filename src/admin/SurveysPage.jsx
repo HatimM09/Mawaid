@@ -61,6 +61,7 @@ export default function SurveysPage() {
   // --- WIRELESS HARDWARE & USB SCANNER SUPPORT ---
   const scanBuffer = useRef('')
   const scanTimeout = useRef(null)
+  const processDirectScanRef = useRef(null)
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -71,7 +72,8 @@ export default function SurveysPage() {
         const raw = scanBuffer.current.trim()
         scanBuffer.current = ''
         if (raw) {
-          processDirectScan(raw)
+          e.preventDefault()
+          processDirectScanRef.current?.(raw)
         }
         return
       }
@@ -91,7 +93,7 @@ export default function SurveysPage() {
       window.removeEventListener('keydown', handleKeyDown)
       if (scanTimeout.current) clearTimeout(scanTimeout.current)
     }
-  }, [responses, users])
+  }, [])
 
   const handleWirelessScan = (userId) => {
     // Find response in currently loaded data
@@ -198,6 +200,13 @@ export default function SurveysPage() {
     } catch (e) { console.error(e) }
   }
 
+  useEffect(() => {
+    processDirectScanRef.current = processDirectScan
+  })
+
+  const lastCamScanRef = useRef({ text: '', time: 0 })
+  const camProcessingRef = useRef(false)
+
   // --- CAMERA SCANNER ---
   useEffect(() => {
     if (!isScanning) return
@@ -222,16 +231,21 @@ export default function SurveysPage() {
 
         const handleScan = async (decodedText) => {
           if (!decodedText) return
-          try {
-            await scanner?.clear()
-          } catch (e) {
-            console.warn("Failed to clear scanner", e)
+          const now = Date.now()
+          if (camProcessingRef.current) return
+          if (lastCamScanRef.current.text === decodedText && (now - lastCamScanRef.current.time) < 2500) {
+            return
           }
-          setIsScanning(false)
-          processDirectScan(decodedText)
+          lastCamScanRef.current = { text: decodedText, time: now }
+          camProcessingRef.current = true
+          try {
+            await processDirectScanRef.current?.(decodedText)
+          } finally {
+            camProcessingRef.current = false
+          }
         }
 
-        scanner.render(handleScan, () => { /* onDecodeError intentionally ignored */ })
+        scanner.render((text) => handleScan(text).catch(e => console.error('Scan handler error:', e)), () => { /* onDecodeError intentionally ignored */ })
       } catch (err) {
         console.warn('QR scanner initialization deferred:', err)
       }
@@ -244,7 +258,7 @@ export default function SurveysPage() {
         try { scanner.clear().catch(() => {}) } catch {}
       }
     }
-  }, [isScanning, responses])
+  }, [isScanning])
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -712,7 +726,6 @@ export default function SurveysPage() {
       {/* PACKING STATION TV OVERLAY */}
       {selectedUser && (
         <PackingTVView 
-          key={selectedUser.user_id || selectedUser.id || selectedUser.thali_number}
           user={selectedUser} 
           meal={mealFilter}
           day={dayFilter}
@@ -858,17 +871,33 @@ export default function SurveysPage() {
       )}
       <style>{`.spin { animation: spin 1s linear infinite } @keyframes spin { to { transform: rotate(360deg) } }`}</style>
       
-      {/* SCANNER MODAL */}
+      {/* SCANNER MODAL (docks to corner when TV view is open for continuous scanning) */}
       {isScanning && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 10005, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.95)', backdropFilter: 'blur(10px)', padding: 20 }}>
-          <div style={{ position: 'relative', width: '100%', maxWidth: 450 }}>
-            <button onClick={() => setIsScanning(false)} aria-label="Close scanner" style={{ position: 'absolute', top: -60, right: 0, background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', width: 44, height: 44, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={24} /></button>
-            <div style={{ background: '#fff', borderRadius: 32, padding: 20, overflow: 'hidden', boxShadow: '0 50px 100px rgba(0,0,0,0.5)' }}>
+        <div style={selectedUser ? {
+          position: 'fixed', bottom: 16, right: 16, width: 260,
+          zIndex: 10005, display: 'flex', flexDirection: 'column',
+          borderRadius: 16, boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+          background: '#111827', border: '1px solid rgba(255,255,255,0.18)', padding: 8
+        } : {
+          position: 'fixed', inset: 0, zIndex: 10005, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.95)', backdropFilter: 'blur(10px)', padding: 20
+        }}>
+          <div style={{ position: 'relative', width: '100%', maxWidth: selectedUser ? 260 : 450 }}>
+            <button onClick={() => setIsScanning(false)} aria-label="Close scanner" style={selectedUser ? {
+              position: 'absolute', top: -10, right: -10, zIndex: 2,
+              background: '#ef4444', border: 'none', color: '#fff',
+              width: 28, height: 28, borderRadius: '50%', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center'
+            } : {
+              position: 'absolute', top: -60, right: 0, background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', width: 44, height: 44, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center'
+            }}><X size={selectedUser ? 16 : 24} /></button>
+            <div style={{ background: '#fff', borderRadius: selectedUser ? 12 : 32, padding: selectedUser ? 4 : 20, overflow: 'hidden', boxShadow: '0 50px 100px rgba(0,0,0,0.5)' }}>
               <div id="qr-reader" style={{ width: '100%' }}></div>
             </div>
-            <div style={{ color: '#fff', textAlign: 'center', marginTop: 32 }}>
-               <h3 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 900 }}>Scan Member QR</h3>
-               <p style={{ opacity: 0.7, fontSize: 14 }}>Align the thali QR code within the frame</p>
+            <div style={{ color: '#fff', textAlign: 'center', marginTop: selectedUser ? 6 : 32 }}>
+               <h3 style={{ margin: selectedUser ? 0 : '0 0 8px', fontSize: selectedUser ? 11 : 20, fontWeight: selectedUser ? 600 : 900 }}>
+                 {selectedUser ? 'Continuous Scan Active — Scan Next QR' : 'Scan Member QR'}
+               </h3>
+               {!selectedUser && <p style={{ opacity: 0.7, fontSize: 14 }}>Align the thali QR code within the frame</p>}
             </div>
           </div>
         </div>

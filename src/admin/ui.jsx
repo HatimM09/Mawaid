@@ -753,6 +753,7 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
 
   // ── SOUND & SPEECH SYNTHESIS TRIGGER ON SCAN ──
   useEffect(() => {
+    setIsErasing(false)
     if (!user) return
     const isProceed = status === 'Applied' && !isStopped
     if (soundEnabled) {
@@ -780,11 +781,20 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
       sessionStorage.setItem('almawaid_tv_recent_scans', JSON.stringify(updated))
       setRecentScans(updated)
     } catch {}
-  }, [user?.thali_number, displayMeal, status, isStopped])
+  }, [user, displayMeal, status, isStopped])
 
   // ── KEYBOARD SHORTCUTS FOR TV REMOTE (Only manual, deliberate keypresses) ──
   useEffect(() => {
     let lastKeyTime = 0
+    let scannerBurstUntil = 0
+    let hotkeyTimer = null
+
+    const clearPendingHotkey = () => {
+      if (hotkeyTimer) {
+        clearTimeout(hotkeyTimer)
+        hotkeyTimer = null
+      }
+    }
 
     const handleKey = (e) => {
       if (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return
@@ -793,13 +803,8 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
       const timeSinceLastKey = now - lastKeyTime
       lastKeyTime = now
 
-      // If keys are streaming in at scanner speed (< 80ms apart), this is a barcode scanner stream.
-      // Do NOT trigger any single-letter hotkeys (m, c, t, s, v, f) during scanner transmission!
-      if (timeSinceLastKey < 80) {
-        return
-      }
-
       if (e.key === 'Escape') {
+        clearPendingHotkey()
         e.preventDefault()
         onClose?.()
         return
@@ -807,30 +812,47 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
 
       // Enter from barcode scanner is handled by the global tracker scanner listener
       if (e.key === 'Enter') {
+        clearPendingHotkey()
+        scannerBurstUntil = now + 220
+        return
+      }
+
+      // If keys are streaming in at scanner speed (< 120ms apart), this is a barcode scanner stream.
+      // Cancel any pending single-letter hotkey so even the 1st character of a scan never triggers a hotkey!
+      if (timeSinceLastKey < 120 || now < scannerBurstUntil) {
+        clearPendingHotkey()
+        scannerBurstUntil = now + 220
         return
       }
 
       const k = e.key.toLowerCase()
-      if (k === 'f') { e.preventDefault(); toggleFullscreen() }
-      if (k === 'c') {
-        if (onTriggerCameraScan) {
-          e.preventDefault()
-          onTriggerCameraScan()
+      const runHotkey = () => {
+        if (k === 'f') toggleFullscreen()
+        else if (k === 'c') onTriggerCameraScan?.()
+        else if (k === 'm') {
+          const next = displayMeal === 'lunch' ? 'dinner' : 'lunch'
+          setSelectedMeal(next)
+          onMealToggle?.(next)
         }
+        else if (k === 't') cycleTheme()
+        else if (k === 's') toggleSound()
+        else if (k === 'v') toggleVoice()
+        else if (k === '?' || k === '/') setShowShortcuts(s => !s)
       }
-      if (k === 'm') {
-        e.preventDefault()
-        const next = displayMeal === 'lunch' ? 'dinner' : 'lunch'
-        setSelectedMeal(next)
-        onMealToggle?.(next)
+
+      if (['f', 'c', 'm', 't', 's', 'v', '?', '/'].includes(k)) {
+        clearPendingHotkey()
+        hotkeyTimer = setTimeout(() => {
+          hotkeyTimer = null
+          runHotkey()
+        }, 100)
       }
-      if (k === 't') { e.preventDefault(); cycleTheme() }
-      if (k === 's') { e.preventDefault(); toggleSound() }
-      if (k === 'v') { e.preventDefault(); toggleVoice() }
-      if (k === '?' || k === '/') { e.preventDefault(); setShowShortcuts(s => !s) }
     }
     window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
+    return () => {
+      clearPendingHotkey()
+      window.removeEventListener('keydown', handleKey)
+    }
   }, [displayMeal, onMealToggle, onClose, onTriggerCameraScan])
 
   // Admin erase
