@@ -454,7 +454,7 @@ export const Select = ({ label, children, ...props }) => {
   )
 }
 
-export const Btn = ({ children, variant = 'primary', size = 'md', ...props }) => {
+export const Btn = ({ children, variant = 'primary', size = 'md', style: customStyle = {}, className = '', ...props }) => {
   const styles = {
     primary: { background: 'var(--accent-cyan)', color: 'var(--bg-deep)', border: 'none' },
     solid: { background: 'var(--accent-gold)', color: 'var(--bg-deep)', border: 'none' },
@@ -468,17 +468,22 @@ export const Btn = ({ children, variant = 'primary', size = 'md', ...props }) =>
     lg: { padding: '18px 32px', fontSize: 16 },
   }
   return (
-    <button className="admin-btn" style={{
-      borderRadius: 12, fontWeight: 800, cursor: 'pointer',
-      fontFamily: 'inherit', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-      ...styles[variant], ...sizes[size],
-      boxShadow: variant === 'primary' 
-        ? '0 8px 20px rgba(0, 229, 255, 0.3)' 
-        : variant === 'solid'
-          ? '0 8px 20px rgba(212, 175, 55, 0.3)'
-          : 'none'
-    }}
+    <button
+      className={`admin-btn ${className}`.trim()}
+      {...props}
+      style={{
+        borderRadius: 12, fontWeight: 800, cursor: 'pointer',
+        fontFamily: 'inherit', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+        lineHeight: 1.15, textAlign: 'center', boxSizing: 'border-box', verticalAlign: 'middle',
+        ...styles[variant], ...sizes[size],
+        boxShadow: variant === 'primary' 
+          ? '0 8px 20px rgba(0, 229, 255, 0.3)' 
+          : variant === 'solid'
+            ? '0 8px 20px rgba(212, 175, 55, 0.3)'
+            : 'none',
+        ...customStyle
+      }}
       onMouseEnter={e => { 
         e.currentTarget.style.transform = 'translateY(-2px)'; 
         const isFilled = variant === 'primary' || variant === 'solid'
@@ -493,7 +498,6 @@ export const Btn = ({ children, variant = 'primary', size = 'md', ...props }) =>
           ? '0 8px 20px rgba(212, 175, 55, 0.3)' 
           : 'none';
       }}
-      {...props}
     >
       {children}
     </button>
@@ -1142,7 +1146,8 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
         @keyframes spin { to { transform: rotate(360deg) } }
         .tv-ctrl-btn {
           width: 42px; height: 42px; border-radius: 12px;
-          display: flex; alignItems: center; justifyContent: center;
+          display: inline-flex; align-items: center; justify-content: center;
+          padding: 0; line-height: 1; flex-shrink: 0; box-sizing: border-box;
           cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
           backdrop-filter: blur(16px);
           outline: none;
@@ -1196,10 +1201,10 @@ export const PackingTVView = ({ user, onClose, meal, day, currentMeal, mealOverr
               className="tv-ctrl-btn"
               title="Scan QR Code with Camera (Press 'C')"
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '6px 14px', borderRadius: 12,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                width: 'auto', minHeight: 42, padding: '0 14px', borderRadius: 12,
                 background: 'linear-gradient(135deg, var(--accent-primary, #c5a059), #936c28)',
-                border: 'none', color: '#000', fontSize: 11, fontWeight: 900,
+                border: 'none', color: '#000', fontSize: 11, fontWeight: 900, lineHeight: 1,
                 cursor: 'pointer', boxShadow: '0 2px 10px rgba(197, 160, 89, 0.4)'
               }}
             >

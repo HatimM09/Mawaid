@@ -297,7 +297,7 @@ export default function AdminLayout() {
           height: 64px;
           display: flex;
           align-items: center;
-          justifyContent: space-between;
+          justify-content: space-between;
           padding: 0 24px;
           background: var(--bg-card);
           backdrop-filter: blur(24px) saturate(1.2);
@@ -673,6 +673,18 @@ export default function AdminLayout() {
         .admin-table-wrap::-webkit-scrollbar-thumb { background: rgba(197, 160, 89, 0.25); border-radius: 6px; }
         .admin-table-wrap::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); }
 
+        .admin-main button {
+          box-sizing: border-box;
+          line-height: 1.2;
+          vertical-align: middle;
+        }
+        .admin-btn {
+          display: inline-flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          text-align: center !important;
+          box-sizing: border-box !important;
+        }
         .admin-btn:active {
           transform: scale(0.97) translateY(1px) !important;
         }
