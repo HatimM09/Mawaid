@@ -1,0 +1,17 @@
+services:
+  al-mawaid-whatsapp-bot:
+    build: .
+    container_name: al-mawaid-whatsapp-bot
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./auth_info_baileys:/app/auth_info_baileys
+    environment:
+      - PORT=3000
+      - WHATSAPP_TZ_OFFSET_MIN=330
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
